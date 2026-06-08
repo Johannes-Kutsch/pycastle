@@ -32,6 +32,7 @@ from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
 from ..services.flag_profiles import AgentToolPolicyGroup
+from .session_dispatch import prepare_agent_session
 from ..display.status_display import PlainStatusDisplay
 from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailure
 
@@ -243,6 +244,7 @@ class AgentRunner:
             container_workspace=_CONTAINER_WORKSPACE,
             timeout_retries=self._cfg.timeout_retries,
             stage_key_for_role=_stage_key_for_role,
+            prepare_session=prepare_agent_session,
             build_session=self._build_session,
             build_runner=lambda session, status_display: ContainerRunner(
                 request.name,

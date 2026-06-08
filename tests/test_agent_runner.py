@@ -62,6 +62,63 @@ def _project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
 
 
+class _PreparedRunSessionStandIn:
+    def __init__(
+        self,
+        *,
+        initial_run_kind: RunKind,
+        initial_provider_session_id: str | None,
+        resumable_run_kind: RunKind | None = None,
+        resumable_provider_session_id: str | None = None,
+        provider_state_dir_container_path: str | None = None,
+    ) -> None:
+        self.provider_state_dir_container_path = provider_state_dir_container_path
+        self.prepare_for_run_calls = 0
+        self.initial_provider_run_session_calls = 0
+        self.resumable_provider_run_session_calls = 0
+        self.initial_session = _PreparedProviderRunSessionStandIn(
+            run_kind=initial_run_kind,
+            provider_session_id=initial_provider_session_id,
+        )
+        self.resumable_session = _PreparedProviderRunSessionStandIn(
+            run_kind=resumable_run_kind or initial_run_kind,
+            provider_session_id=(
+                initial_provider_session_id
+                if resumable_provider_session_id is None
+                else resumable_provider_session_id
+            ),
+        )
+
+    def prepare_for_run(self) -> None:
+        self.prepare_for_run_calls += 1
+
+    def initial_provider_run_session(self) -> "_PreparedProviderRunSessionStandIn":
+        self.initial_provider_run_session_calls += 1
+        return self.initial_session
+
+    def resumable_provider_run_session(self) -> "_PreparedProviderRunSessionStandIn":
+        self.resumable_provider_run_session_calls += 1
+        return self.resumable_session
+
+    def protocol_reprompt_provider_run_session(self):
+        return None
+
+
+class _PreparedProviderRunSessionStandIn:
+    def __init__(self, *, run_kind: RunKind, provider_session_id: str | None) -> None:
+        self.run_kind = run_kind
+        self.provider_session_id = provider_session_id
+        self.recorded_provider_session_ids: list[str] = []
+        self.successful_run_calls = 0
+
+    def record_provider_session_id(self, provider_session_id: str) -> None:
+        self.provider_session_id = provider_session_id
+        self.recorded_provider_session_ids.append(provider_session_id)
+
+    def record_successful_run(self) -> None:
+        self.successful_run_calls += 1
+
+
 def _make_cfg(tmp_path: Path, **kwargs) -> Config:
     """Create a Config with minimal project-local prompt overrides for AgentRunner tests."""
     prompts_dir = tmp_path / "pycastle" / "prompts"
@@ -3080,6 +3137,242 @@ def test_work_invocation_resume_non_typed_retry_raises_agent_failed_error(
         (RunKind.RESUME, expected_session_id, "resume"),
     ]
     assert ("remove", "Impl", "failed", "error") in status_display.calls
+
+
+def test_work_invocation_typed_fresh_success_returns_adapter_output_and_forwarded_prompt(
+    tmp_path: Path,
+):
+    status_display = RecordingStatusDisplay()
+    prepared_session = _PreparedRunSessionStandIn(
+        initial_run_kind=RunKind.FRESH,
+        initial_provider_session_id="provider-fresh",
+        provider_state_dir_container_path="/workspace/provider-state",
+    )
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role, on_provider_session_id
+            work_calls.append((run_kind, session_uuid, prompt))
+            return PlannerOutput(issues=[])
+
+    service = ClaudeService()
+    session = _FakeSession()
+    runner = _FakeRunner()
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del container_exec
+        assert run_kind is RunKind.FRESH
+        return "caller-rendered prompt text"
+
+    result = asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Planner",
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service=service,
+                model="sonnet",
+                effort="high",
+                output_adapter=ProtocolOutputAdapter(
+                    prompt_factory=prompt_factory,
+                    reprompt_message="reprompt",
+                ),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=0,
+                    stage_key_for_role=lambda role: role.value,
+                    prepare_session=lambda _request: prepared_session,
+                    build_session=lambda *_args: session,
+                    build_runner=lambda *_args: cast(ContainerRunner, runner),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert result == PlannerOutput(issues=[])
+    assert work_calls == [
+        (RunKind.FRESH, "provider-fresh", "caller-rendered prompt text")
+    ]
+    assert prepared_session.prepare_for_run_calls == 1
+    assert prepared_session.initial_provider_run_session_calls == 1
+    assert prepared_session.resumable_provider_run_session_calls == 0
+    assert prepared_session.initial_session.successful_run_calls == 1
+
+
+def test_work_invocation_typed_resume_success_uses_prepared_provider_run_state(
+    tmp_path: Path,
+):
+    prepared_session = _PreparedRunSessionStandIn(
+        initial_run_kind=RunKind.RESUME,
+        initial_provider_session_id="provider-resume",
+    )
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role, on_provider_session_id
+            work_calls.append((run_kind, session_uuid, prompt))
+            return PlannerOutput(issues=[])
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del container_exec
+        assert run_kind is RunKind.RESUME
+        return "resume prompt from adapter"
+
+    result = asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Planner",
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service=ClaudeService(),
+                model="sonnet",
+                effort="high",
+                output_adapter=ProtocolOutputAdapter(
+                    prompt_factory=prompt_factory,
+                    reprompt_message="reprompt",
+                ),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=0,
+                    stage_key_for_role=lambda role: role.value,
+                    prepare_session=lambda _request: prepared_session,
+                    build_session=lambda *_args: _FakeSession(),
+                    build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+            )
+        )
+    )
+
+    assert result == PlannerOutput(issues=[])
+    assert work_calls == [
+        (RunKind.RESUME, "provider-resume", "resume prompt from adapter")
+    ]
+    assert prepared_session.initial_provider_run_session_calls == 1
+    assert prepared_session.resumable_provider_run_session_calls == 0
+    assert prepared_session.initial_session.successful_run_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("initial_run_kind", "initial_provider_session_id", "observed_provider_session_id"),
+    [
+        (RunKind.FRESH, "provider-fresh", "provider-fresh-runtime"),
+        (RunKind.RESUME, "provider-resume", "provider-resume-runtime"),
+    ],
+)
+def test_work_invocation_typed_success_records_provider_session_metadata_through_prepared_run_session(
+    tmp_path: Path,
+    initial_run_kind: RunKind,
+    initial_provider_session_id: str,
+    observed_provider_session_id: str,
+):
+    prepared_session = _PreparedRunSessionStandIn(
+        initial_run_kind=initial_run_kind,
+        initial_provider_session_id=initial_provider_session_id,
+    )
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role, prompt, run_kind, session_uuid
+            assert on_provider_session_id is not None
+            on_provider_session_id(observed_provider_session_id)
+            return PlannerOutput(issues=[])
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del run_kind, container_exec
+        return "caller-rendered prompt text"
+
+    asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Planner",
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service=ClaudeService(),
+                model="sonnet",
+                effort="high",
+                output_adapter=ProtocolOutputAdapter(
+                    prompt_factory=prompt_factory,
+                    reprompt_message="reprompt",
+                ),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=0,
+                    stage_key_for_role=lambda role: role.value,
+                    prepare_session=lambda _request: prepared_session,
+                    build_session=lambda *_args: _FakeSession(),
+                    build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+            )
+        )
+    )
+
+    assert prepared_session.initial_session.recorded_provider_session_ids == [
+        observed_provider_session_id
+    ]
+    assert prepared_session.initial_session.provider_session_id == (
+        observed_provider_session_id
+    )
+    assert prepared_session.initial_session.successful_run_calls == 1
 
 
 def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):

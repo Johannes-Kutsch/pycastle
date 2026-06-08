@@ -33,6 +33,7 @@ from .result import CancellationToken
 from .session_dispatch import SessionDispatchRequest, prepare_agent_session
 
 WorkResultT = TypeVar("WorkResultT")
+_DEFAULT_PREPARE_SESSION = prepare_agent_session
 
 
 class WorkPromptFactory(Protocol):
@@ -90,6 +91,7 @@ class WorkInvocationDependencies:
     build_session: Callable[[Path, AgentService, str | None], Any]
     build_runner: Callable[[Any, Any], ContainerRunner]
     get_git_identity: Callable[[], tuple[str, str]]
+    prepare_session: Callable[[SessionDispatchRequest], Any] = _DEFAULT_PREPARE_SESSION
     transient_status_message: Callable[[TransientAgentError], str] | None = None
 
 
@@ -250,7 +252,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
             stage_key=request.dependencies.stage_key_for_role(request.role),
         )
 
-    prepared_session = prepare_agent_session(
+    prepared_session = request.dependencies.prepare_session(
         SessionDispatchRequest(
             mount_path=request.mount_path,
             role=request.role,
