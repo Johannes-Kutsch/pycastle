@@ -560,3 +560,50 @@ def test_resolve_planner_issue_intake_preserves_duplicate_planner_selections():
 
     assert [issue["number"] for issue in result.issues] == [11, 11]
     assert result.issues[0] == result.issues[1]
+
+
+def test_resolve_planner_issue_intake_uses_prepared_issue_shape_over_planner_echo():
+    from pycastle.issue_readiness import IssueReadinessKind, SliceMode
+    from pycastle.iteration.planning_issue_intake import (
+        PlanReady,
+        prepare_planning_issue_set,
+        resolve_planner_issue_intake,
+    )
+
+    cfg = Config()
+    ready_issue = {
+        "number": 11,
+        "title": "Canonical ready title",
+        "body": "Summary\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    prepared = prepare_planning_issue_set([ready_issue], cfg)
+    planner_output = PlanReady(
+        issues=[
+            {
+                "number": 11,
+                "title": "Planner title",
+                "body": "planner body",
+                "comments": ["planner comment"],
+                "labels": ["docs-slice"],
+                "readiness": "planner readiness",
+            }
+        ],
+        sha="plan-sha",
+    )
+
+    result = resolve_planner_issue_intake(planner_output, prepared)
+
+    assert result.issues == [
+        {
+            "number": 11,
+            "title": "Canonical ready title",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "readiness": result.readiness_by_number[11],
+        }
+    ]
+    assert result.readiness_by_number[11].kind == IssueReadinessKind.READY_AFK
+    assert result.readiness_by_number[11].selected_mode == SliceMode.BEHAVIOR
