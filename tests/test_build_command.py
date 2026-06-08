@@ -537,6 +537,7 @@ def test_wheel_ships_agent_runtime_package_scaffold(tmp_path):
     wheel_members = _wheel_members(tmp_path)
 
     assert "pycastle_agent_runtime/__init__.py" in wheel_members
+    assert "pycastle_agent_runtime/orchestration.py" in wheel_members
     assert "pycastle_agent_runtime/py.typed" in wheel_members
 
 
@@ -545,6 +546,10 @@ def test_sdist_ships_agent_runtime_package_scaffold(tmp_path):
 
     assert any(
         name.endswith("/src/pycastle_agent_runtime/__init__.py")
+        for name in sdist_members
+    )
+    assert any(
+        name.endswith("/src/pycastle_agent_runtime/orchestration.py")
         for name in sdist_members
     )
     assert any(
@@ -624,7 +629,8 @@ def test_local_distribution_installs_importable_agent_runtime_package(tmp_path):
                 (
                     "import pycastle_agent_runtime as runtime; "
                     "print(runtime.AgentRunner.__name__); "
-                    "print(runtime.ServiceRegistry.__name__)"
+                    "print(runtime.ServiceRegistry.__name__); "
+                    "print(runtime.run.__module__)"
                 ),
             ],
             cwd=repo_root,
@@ -634,7 +640,11 @@ def test_local_distribution_installs_importable_agent_runtime_package(tmp_path):
             env=env,
         )
 
-        assert result.stdout.splitlines() == ["AgentRunner", "ServiceRegistry"]
+        assert result.stdout.splitlines() == [
+            "AgentRunner",
+            "ServiceRegistry",
+            "pycastle_agent_runtime.orchestration",
+        ]
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)
 

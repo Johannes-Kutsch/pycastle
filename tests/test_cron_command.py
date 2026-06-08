@@ -25,7 +25,7 @@ def _cron_patches(cfg, fake_docker_svc):
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.init.refresh"),
         patch("pycastle.commands.build.DockerService", return_value=fake_docker_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         yield
 
@@ -105,7 +105,7 @@ def test_cron_cmd_second_invocation_blocks_until_lock_released(tmp_path, monkeyp
 # ── Behavior 2: init --refresh then run; init failure stops run ───────────────
 
 
-def test_cron_cmd_calls_refresh_before_orchestrator(tmp_path, monkeypatch):
+def test_cron_cmd_calls_refresh_before_runtime_entrypoint(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
     monkeypatch.chdir(tmp_path)
@@ -122,21 +122,21 @@ def test_cron_cmd_calls_refresh_before_orchestrator(tmp_path, monkeypatch):
         call_order.append("refresh")
 
     async def _fake_run(*args, **kwargs):
-        call_order.append("orchestrator")
+        call_order.append("runtime")
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.init.refresh", _fake_refresh),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["cron", "--no-improve"])
 
     assert result.exit_code == 0, result.output
-    assert call_order == ["refresh", "orchestrator"]
+    assert call_order == ["refresh", "runtime"]
 
 
-def test_cron_cmd_skips_orchestrator_when_refresh_fails(tmp_path, monkeypatch):
+def test_cron_cmd_skips_runtime_entrypoint_when_refresh_fails(tmp_path, monkeypatch):
     import sys
 
     from pycastle.main import main as cli
@@ -149,30 +149,30 @@ def test_cron_cmd_skips_orchestrator_when_refresh_fails(tmp_path, monkeypatch):
 
     cfg = Config(docker_image_name="img")
     fake_svc = _make_docker_svc()
-    orchestrator_called: list[bool] = []
+    runtime_called: list[bool] = []
 
     def _failing_refresh():
         sys.exit(1)
 
     async def _fake_run(*args, **kwargs):
-        orchestrator_called.append(True)
+        runtime_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.init.refresh", _failing_refresh),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["cron", "--no-improve"])
 
     assert result.exit_code != 0
-    assert not orchestrator_called
+    assert not runtime_called
 
 
 # ── Behavior 3: --no-improve forwards to run ─────────────────────────────────
 
 
-def test_cron_cmd_no_improve_passes_none_improve_mode_to_orchestrator(
+def test_cron_cmd_no_improve_passes_none_improve_mode_to_runtime_entrypoint(
     tmp_path, monkeypatch
 ):
     from pycastle.main import main as cli
@@ -194,7 +194,7 @@ def test_cron_cmd_no_improve_passes_none_improve_mode_to_orchestrator(
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.init.refresh"),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["cron", "--no-improve"])
 
@@ -225,7 +225,7 @@ def test_cron_cmd_without_flags_uses_config_improve_mode(tmp_path, monkeypatch):
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.init.refresh"),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["cron"])
 
@@ -304,7 +304,7 @@ def test_cron_cmd_sweeps_logs_in_effective_dir_after_refresh_updates_logs_dir(
     with (
         patch("pycastle.commands.init.refresh", _refresh),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["cron", "--no-improve"])
 
@@ -334,7 +334,7 @@ def test_cron_cmd_without_flags_uses_none_when_config_improve_mode_not_set(
         patch("pycastle.main.load_config", return_value=cfg),
         patch("pycastle.commands.init.refresh"),
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.iteration.orchestrator.run", _fake_run),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["cron"])
 
