@@ -309,7 +309,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         run_kind=provider_run_session.run_kind,
                         container_exec=container_exec,
                     )
-                    result = await _invoke_work_attempt(
+                    result, successful_run_session = await _invoke_work_attempt(
                         request=request,
                         row=row,
                         prepared_session=prepared_session,
@@ -318,7 +318,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         provider_run_session=provider_run_session,
                     )
                     if request.output_adapter.is_successful_result(result):
-                        provider_run_session.record_successful_run()
+                        successful_run_session.record_successful_run()
                     else:
                         row.close("failed", shutdown_style="error")
                     return request.output_adapter.finalize_result(
@@ -404,7 +404,7 @@ async def _invoke_work_attempt(
     runner: ContainerRunner,
     prompt: str,
     provider_run_session: Any,
-) -> WorkResultT:
+) -> tuple[WorkResultT, Any]:
     reprompt_message = request.output_adapter.protocol_reprompt_message()
     protocol_error_result = request.output_adapter.protocol_error_result()
     max_attempts = (
@@ -414,7 +414,7 @@ async def _invoke_work_attempt(
     work_run_session = provider_run_session
     for _ in range(max_attempts):
         try:
-            return await request.output_adapter.invoke(
+            result = await request.output_adapter.invoke(
                 runner=runner,
                 role=request.role,
                 prompt=work_prompt,
@@ -422,15 +422,16 @@ async def _invoke_work_attempt(
                 session_uuid=work_run_session.provider_session_id,
                 on_provider_session_id=work_run_session.record_provider_session_id,
             )
+            return result, work_run_session
         except AgentOutputProtocolError:
             if reprompt_message is None or protocol_error_result is None:
                 raise
             next_run_session = prepared_session.protocol_reprompt_provider_run_session()
             if next_run_session is None:
                 row.close("failed", shutdown_style="error")
-                return protocol_error_result
+                return protocol_error_result, work_run_session
             work_prompt = reprompt_message
             work_run_session = next_run_session
     row.close("failed", shutdown_style="error")
     assert protocol_error_result is not None
-    return protocol_error_result
+    return protocol_error_result, work_run_session

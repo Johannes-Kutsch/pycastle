@@ -23,6 +23,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents._work_invocation import (
     ProtocolOutputAdapter,
+    TextOutputAdapter,
     WorkInvocationDependencies,
     WorkInvocationRequest,
     invoke_work,
@@ -3485,6 +3486,154 @@ def test_work_invocation_protocol_reprompt_success_records_metadata_on_successfu
         "provider-resume-runtime"
     )
     assert prepared_session.reprompt_session.successful_run_calls == 1
+
+
+def test_work_invocation_protocol_reprompt_exhaustion_raises_protocol_error_and_closes_failed_status(
+    tmp_path: Path,
+):
+    prepared_session = _PreparedRunSessionWithRepromptStandIn(
+        initial_run_kind=RunKind.FRESH,
+        initial_provider_session_id="provider-fresh",
+        reprompt_run_kind=RunKind.RESUME,
+        reprompt_provider_session_id="provider-resume",
+    )
+    status_display = RecordingStatusDisplay()
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role, on_provider_session_id
+            work_calls.append((run_kind, session_uuid, prompt))
+            raise AgentOutputProtocolError("missing tag")
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del container_exec
+        assert run_kind is RunKind.FRESH
+        return "caller-rendered prompt text"
+
+    with pytest.raises(AgentFailedError) as exc_info:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Planner",
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service=ClaudeService(),
+                    model="sonnet",
+                    effort="high",
+                    output_adapter=ProtocolOutputAdapter(
+                        prompt_factory=prompt_factory,
+                        reprompt_message="reprompt",
+                    ),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda _request: prepared_session,
+                        build_session=lambda *_args: _FakeSession(),
+                        build_runner=lambda *_args: cast(
+                            ContainerRunner, _FakeRunner()
+                        ),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                    ),
+                    status_display=status_display,
+                )
+            )
+        )
+
+    assert exc_info.value.failure_class == "protocol_error"
+    assert work_calls == [
+        (RunKind.FRESH, "provider-fresh", "caller-rendered prompt text"),
+        (RunKind.RESUME, "provider-resume", "reprompt"),
+        (RunKind.RESUME, "provider-resume", "reprompt"),
+    ]
+    assert ("remove", "Planner", "failed", "error") in status_display.calls
+
+
+def test_work_invocation_text_output_has_no_protocol_reprompt_path(
+    tmp_path: Path,
+):
+    prepared_session = _PreparedRunSessionWithRepromptStandIn(
+        initial_run_kind=RunKind.FRESH,
+        initial_provider_session_id="provider-fresh",
+        reprompt_run_kind=RunKind.RESUME,
+        reprompt_provider_session_id="provider-resume",
+    )
+    status_display = RecordingStatusDisplay()
+    work_text_calls: list[tuple[RunKind, str | None, str]] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole,
+            tool_policy,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> str:
+            del role, tool_policy, on_provider_session_id
+            work_text_calls.append((run_kind, session_uuid, prompt))
+            raise AgentOutputProtocolError("text outputs do not reprompt")
+
+    with pytest.raises(AgentOutputProtocolError, match="text outputs do not reprompt"):
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Prompt",
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service=ClaudeService(),
+                    model="sonnet",
+                    effort="high",
+                    output_adapter=TextOutputAdapter(prompt="text prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda _request: prepared_session,
+                        build_session=lambda *_args: _FakeSession(),
+                        build_runner=lambda *_args: cast(
+                            ContainerRunner, _FakeRunner()
+                        ),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                    ),
+                    status_display=status_display,
+                )
+            )
+        )
+
+    assert work_text_calls == [(RunKind.FRESH, "provider-fresh", "text prompt")]
+    assert ("remove", "Prompt", "failed", "error") in status_display.calls
 
 
 def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
