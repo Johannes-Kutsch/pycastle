@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tarfile
 import os
+import importlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
@@ -586,6 +587,27 @@ def test_agent_runtime_package_exports_the_runtime_surface():
     assert runtime.TransientError is TransientError
     assert runtime.UnsupportedTokens is UnsupportedTokens
     assert runtime.UsageLimit is UsageLimit
+
+
+def test_pycastle_stage_priority_chain_module_remains_importable_as_runtime_shim():
+    runtime = importlib.import_module("pycastle_agent_runtime.stage_priority_chain")
+    shim = importlib.import_module("pycastle.stage_priority_chain")
+
+    assert shim.chain_entries is runtime.chain_entries
+    assert shim.iter_stage_chain is runtime.iter_stage_chain
+    assert shim.referenced_service_names is runtime.referenced_service_names
+    assert shim.render_chain_label is runtime.render_chain_label
+    assert shim.select_configured_candidate_chain is (
+        runtime.select_configured_candidate_chain
+    )
+    assert shim.validation_labels is runtime.validation_labels
+
+
+def test_pycastle_service_registry_module_remains_importable_as_runtime_shim():
+    runtime = importlib.import_module("pycastle_agent_runtime.service_registry")
+    shim = importlib.import_module("pycastle.services.service_registry")
+
+    assert shim.ServiceRegistry is runtime.ServiceRegistry
 
 
 def test_local_distribution_installs_importable_agent_runtime_package(tmp_path):
