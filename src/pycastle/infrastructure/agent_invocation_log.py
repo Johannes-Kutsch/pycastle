@@ -1,7 +1,7 @@
 import json
 import re
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
@@ -18,6 +18,46 @@ class WorkInvocationLog:
     def append_provider_chunk(self, provider_bytes: bytes) -> None:
         self._log.write(provider_bytes)
         self._log.flush()
+
+
+class LogicalAgentInvocationLog:
+    def __init__(self, owner: "AgentInvocationLog", *, log_path: Path) -> None:
+        self._owner = owner
+        self.log_path = log_path
+
+    def open_work_invocation(
+        self,
+        *,
+        role: AgentRole,
+        run_kind: RunKind,
+        session_uuid: str | None,
+        prompt: str,
+    ) -> AbstractContextManager[WorkInvocationLog]:
+        return self._owner.open_work_invocation(
+            log_path=self.log_path,
+            role=role,
+            run_kind=run_kind,
+            session_uuid=session_uuid,
+            prompt=prompt,
+        )
+
+    def append_work_invocation(
+        self,
+        *,
+        role: AgentRole,
+        run_kind: RunKind,
+        session_uuid: str | None,
+        prompt: str,
+        provider_bytes: bytes,
+    ) -> None:
+        self._owner.append_work_invocation(
+            log_path=self.log_path,
+            role=role,
+            run_kind=run_kind,
+            session_uuid=session_uuid,
+            prompt=prompt,
+            provider_bytes=provider_bytes,
+        )
 
 
 class AgentInvocationLog:
@@ -42,6 +82,20 @@ class AgentInvocationLog:
             except FileExistsError:
                 continue
         raise RuntimeError(f"could not reserve unique agent log path for {stem}")
+
+    def start_logical_session(
+        self,
+        *,
+        agent_name: str,
+        effective_logs_dir: Path,
+    ) -> LogicalAgentInvocationLog:
+        return LogicalAgentInvocationLog(
+            self,
+            log_path=self.reserve(
+                agent_name=agent_name,
+                effective_logs_dir=effective_logs_dir,
+            ),
+        )
 
     @contextmanager
     def open_work_invocation(

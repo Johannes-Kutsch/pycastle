@@ -86,6 +86,7 @@ class FakeService:
         effort="",
         run_kind=RunKind.FRESH,
         session_uuid=None,
+        tool_policy=None,
     ) -> str:
         self.build_command_calls.append(
             {
@@ -94,6 +95,7 @@ class FakeService:
                 "effort": effort,
                 "run_kind": run_kind,
                 "session_uuid": session_uuid,
+                "tool_policy": tool_policy,
             }
         )
         return self.command
@@ -320,6 +322,7 @@ def test_work_executes_selected_service_command(tmp_path):
             "effort": "high",
             "run_kind": RunKind.RESUME,
             "session_uuid": "s1",
+            "tool_policy": None,
         }
     ]
 
@@ -378,6 +381,41 @@ def test_work_reuses_reserved_log_path_across_invocations(tmp_path):
     log_text = runner.log_path.read_text(encoding="utf-8")
     assert '"prompt": "First prompt"' in log_text
     assert '"prompt": "Second prompt"' in log_text
+
+
+def test_work_text_reuses_runner_logical_session_after_work(tmp_path):
+    session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])
+    service = FakeService(events=[Result("plain text result")])
+    runner = ContainerRunner(
+        "agent",
+        cast(DockerSession, session),
+        cfg=Config(logs_dir=tmp_path),
+        service=cast(ClaudeService, service),
+    )
+
+    first_path = runner.log_path
+    asyncio.run(runner.work(_ROLE, "First prompt"))
+    result = asyncio.run(runner.work_text("Second prompt"))
+
+    assert result == "plain text result"
+    assert runner.log_path == first_path
+    log_text = runner.log_path.read_text(encoding="utf-8")
+    assert '"prompt": "First prompt"' in log_text
+    assert '"prompt": "Second prompt"' in log_text
+
+
+def test_container_runners_keep_logical_sessions_in_separate_agent_logs(tmp_path):
+    first_runner, _ = _make_runner(name="agent", tmp_path=tmp_path)
+    second_runner, _ = _make_runner(name="agent", tmp_path=tmp_path)
+
+    asyncio.run(first_runner.work(_ROLE, "First prompt"))
+    asyncio.run(second_runner.work(_ROLE, "Second prompt"))
+
+    assert first_runner.log_path != second_runner.log_path
+    assert "First prompt" in first_runner.log_path.read_text(encoding="utf-8")
+    assert "Second prompt" not in first_runner.log_path.read_text(encoding="utf-8")
+    assert "Second prompt" in second_runner.log_path.read_text(encoding="utf-8")
+    assert "First prompt" not in second_runner.log_path.read_text(encoding="utf-8")
 
 
 def test_work_logs_partial_output_before_agent_timeout(tmp_path):

@@ -43,17 +43,17 @@ class ContainerRunner:
         self._logs_dir = resolve_logs_dir(cfg)
         self._service = service
         self._invocation_log = AgentInvocationLog()
-        self._status_display = (
-            status_display if status_display is not None else PlainStatusDisplay()
-        )
-        self._log_path = self._invocation_log.reserve(
+        self._logical_session = self._invocation_log.start_logical_session(
             agent_name=name,
             effective_logs_dir=self._logs_dir,
+        )
+        self._status_display = (
+            status_display if status_display is not None else PlainStatusDisplay()
         )
 
     @property
     def log_path(self) -> Path:
-        return self._log_path
+        return self._logical_session.log_path
 
     async def setup(self, git_name: str, git_email: str, work_body: str = "") -> None:
         self._logs_dir.mkdir(parents=True, exist_ok=True)
@@ -189,8 +189,7 @@ class ContainerRunner:
         )
         logged_lines = stream_logged_work_lines(
             self._session.exec_stream(command),
-            invocation_log=self._invocation_log,
-            log_path=self._log_path,
+            logical_session=self._logical_session,
             role=role,
             run_kind=run_kind,
             session_uuid=session_uuid,
@@ -242,8 +241,7 @@ class ContainerRunner:
         )
         logged_lines = stream_logged_work_lines(
             self._session.exec_stream(command),
-            invocation_log=self._invocation_log,
-            log_path=self._log_path,
+            logical_session=self._logical_session,
             role=role,
             run_kind=run_kind,
             session_uuid=session_uuid,
