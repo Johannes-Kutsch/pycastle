@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
@@ -88,6 +89,15 @@ def _cfg_referencing_only(
 
 
 def _shipped_defaults_in_wheel(tmp_path: Path) -> set[str]:
+    wheel_members = _wheel_members(tmp_path)
+    return {
+        name[len("pycastle/") :]
+        for name in wheel_members
+        if name.startswith("pycastle/defaults/") and not name.endswith("/")
+    }
+
+
+def _wheel_members(tmp_path: Path) -> set[str]:
     repo_root = Path(__file__).resolve().parents[1]
     build_dir = repo_root / "build"
     shutil.rmtree(build_dir, ignore_errors=True)
@@ -110,16 +120,21 @@ def _shipped_defaults_in_wheel(tmp_path: Path) -> set[str]:
         )
         wheel_path = next(tmp_path.glob("pycastle-*.whl"))
         with ZipFile(wheel_path) as wheel:
-            return {
-                name[len("pycastle/") :]
-                for name in wheel.namelist()
-                if name.startswith("pycastle/defaults/") and not name.endswith("/")
-            }
+            return set(wheel.namelist())
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)
 
 
 def _shipped_defaults_in_sdist(tmp_path: Path) -> set[str]:
+    sdist_members = _sdist_members(tmp_path)
+    return {
+        name.split("src/pycastle/", 1)[1]
+        for name in sdist_members
+        if "src/pycastle/defaults/" in name and not name.endswith("/")
+    }
+
+
+def _sdist_members(tmp_path: Path) -> set[str]:
     from setuptools.build_meta import build_sdist  # type: ignore[import-untyped]
 
     repo_root = Path(__file__).resolve().parents[1]
@@ -128,11 +143,7 @@ def _shipped_defaults_in_sdist(tmp_path: Path) -> set[str]:
     try:
         sdist_name = build_sdist(str(tmp_path))
         with tarfile.open(tmp_path / sdist_name, "r:gz") as sdist:
-            return {
-                name.split("src/pycastle/", 1)[1]
-                for name in sdist.getnames()
-                if "src/pycastle/defaults/" in name and not name.endswith("/")
-            }
+            return set(sdist.getnames())
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)
 
@@ -520,6 +531,112 @@ def test_sdist_ships_current_bundled_runtime_defaults_tree_only(tmp_path):
     assert "defaults/Dockerfile.claude" not in shipped_defaults
     assert "defaults/Dockerfile.codex" not in shipped_defaults
     assert "defaults/Dockerfile.opencode" not in shipped_defaults
+
+
+def test_wheel_ships_agent_runtime_package_scaffold(tmp_path):
+    wheel_members = _wheel_members(tmp_path)
+
+    assert "pycastle_agent_runtime/__init__.py" in wheel_members
+    assert "pycastle_agent_runtime/py.typed" in wheel_members
+
+
+def test_sdist_ships_agent_runtime_package_scaffold(tmp_path):
+    sdist_members = _sdist_members(tmp_path)
+
+    assert any(
+        name.endswith("/src/pycastle_agent_runtime/__init__.py")
+        for name in sdist_members
+    )
+    assert any(
+        name.endswith("/src/pycastle_agent_runtime/py.typed") for name in sdist_members
+    )
+
+
+def test_agent_runtime_package_exports_the_runtime_surface():
+    import pycastle_agent_runtime as runtime
+
+    from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
+    from pycastle.config.types import StageOverride
+    from pycastle.services.agent_service import (
+        AgentService,
+        AssistantTurn,
+        CredentialFailure,
+        HardError,
+        ParsedTurn,
+        PromptTokens,
+        Result,
+        TransientError,
+        UnsupportedTokens,
+        UsageLimit,
+    )
+    from pycastle.services.service_registry import ServiceRegistry
+
+    assert runtime.AgentRunner is AgentRunner
+    assert runtime.AgentRunnerProtocol is AgentRunnerProtocol
+    assert runtime.AgentService is AgentService
+    assert runtime.AssistantTurn is AssistantTurn
+    assert runtime.CredentialFailure is CredentialFailure
+    assert runtime.HardError is HardError
+    assert runtime.ParsedTurn == ParsedTurn
+    assert runtime.PromptTokens is PromptTokens
+    assert runtime.Result is Result
+    assert runtime.RunRequest is RunRequest
+    assert runtime.ServiceRegistry is ServiceRegistry
+    assert runtime.StageOverride is StageOverride
+    assert runtime.TransientError is TransientError
+    assert runtime.UnsupportedTokens is UnsupportedTokens
+    assert runtime.UsageLimit is UsageLimit
+
+
+def test_local_distribution_installs_importable_agent_runtime_package(tmp_path):
+    repo_root = Path(__file__).resolve().parents[1]
+    install_dir = tmp_path / "site-packages"
+    build_dir = repo_root / "build"
+    shutil.rmtree(build_dir, ignore_errors=True)
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                ".",
+                "--no-deps",
+                "--target",
+                str(install_dir),
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        env = dict(os.environ)
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            str(install_dir)
+            if not existing_pythonpath
+            else f"{install_dir}{os.pathsep}{existing_pythonpath}"
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import pycastle_agent_runtime as runtime; "
+                    "print(runtime.AgentRunner.__name__); "
+                    "print(runtime.ServiceRegistry.__name__)"
+                ),
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        assert result.stdout.splitlines() == ["AgentRunner", "ServiceRegistry"]
+    finally:
+        shutil.rmtree(build_dir, ignore_errors=True)
 
 
 def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():
