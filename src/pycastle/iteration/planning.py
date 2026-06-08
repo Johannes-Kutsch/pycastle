@@ -19,9 +19,8 @@ from ._rows import status_row
 from .implement import branch_for
 from .planning_issue_intake import (
     PlanReady,
-    hydrate_planned_issues,
-    evaluate_planning_readiness,
     planning_blocker_summary,
+    prepare_planning_issue_set,
 )
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
@@ -100,8 +99,8 @@ async def planning_phase(
             return verdict
         sha = verdict.sha
 
-        readiness_result = evaluate_planning_readiness(open_issues, deps.cfg)
-        for action in readiness_result.label_sync_actions:
+        prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
+        for action in prepared_issue_set.label_sync_actions:
             if action.intent == "add":
                 deps.github_svc.add_label_to_issue(
                     action.issue_number, action.label_name
@@ -115,12 +114,12 @@ async def planning_phase(
                 action.issue_number, action.label_name
             )
 
-        well_formed = list(readiness_result.ready_candidates)
-        readiness_by_number = dict(readiness_result.ready_readiness_by_number)
+        well_formed = list(prepared_issue_set.ready_candidates)
+        readiness_by_number = dict(prepared_issue_set.ready_readiness_by_number)
 
         if not well_formed:
             blocker_summary = planning_blocker_summary(
-                readiness_result.blocker_summary_inputs
+                prepared_issue_set.blocker_summary_inputs
             )
             lines = ["All ready-for-agent issues are blocked."]
             if blocker_summary:
@@ -169,7 +168,7 @@ async def planning_phase(
             if not output.issues:
                 blocked = _hydrate_blocked_issues(output.blocked, well_formed)
                 blocker_summary = planning_blocker_summary(
-                    readiness_result.blocker_summary_inputs
+                    prepared_issue_set.blocker_summary_inputs
                 )
                 blocked_lines = [
                     _format_blocked_issue_line(blocked_issue)
@@ -186,19 +185,22 @@ async def planning_phase(
                 row.close("\n".join(lines))
                 return AllBlocked(blocked=blocked)
 
-            plan = PlanReady(
-                issues=sorted(output.issues, key=lambda i: i["number"]),
-                sha=sha,
-                readiness_by_number=readiness_by_number,
-            )
-            ready_sources = [
-                {**issue, "readiness": readiness_by_number[issue["number"]]}
-                for issue in well_formed
+            plan_numbers = {issue["number"] for issue in output.issues}
+            hydrated_issues = [
+                issue for issue in well_formed if issue["number"] in plan_numbers
             ]
-            hydrated = hydrate_planned_issues(plan, ready_sources)
+            hydrated = PlanReady(
+                issues=sorted(hydrated_issues, key=lambda i: i["number"]),
+                sha=sha,
+                readiness_by_number={
+                    issue_number: readiness
+                    for issue_number, readiness in readiness_by_number.items()
+                    if issue_number in plan_numbers
+                },
+            )
             if not hydrated.issues:
                 blocker_summary = planning_blocker_summary(
-                    readiness_result.blocker_summary_inputs
+                    prepared_issue_set.blocker_summary_inputs
                 )
                 lines = ["All ready-for-agent issues are blocked."]
                 if blocker_summary:

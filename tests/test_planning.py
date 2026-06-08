@@ -95,6 +95,31 @@ def test_planning_phase_skips_planner_for_single_issue(tmp_path, git_svc):
     git_svc.create_worktree.assert_not_called()
 
 
+def test_planning_phase_single_issue_skip_uses_prepared_issue_body(tmp_path, git_svc):
+    issue = {
+        "number": 5,
+        "title": "Solo",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": None,
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [issue], []))
+
+    assert isinstance(result, PlanReady)
+    assert result.issues == [
+        {
+            "number": 5,
+            "title": "Solo",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+
+
 def test_planning_phase_skip_single_issue_emits_plan_row(tmp_path, git_svc):
     issues = [
         {

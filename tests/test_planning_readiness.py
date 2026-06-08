@@ -403,3 +403,83 @@ def test_planning_readiness_compatibility_shim_reexports_issue_intake_interface(
         planning_readiness.planning_blocker_summary
         is planning_issue_intake.planning_blocker_summary
     )
+
+
+def test_prepare_planning_issue_set_strips_stale_blocker_lines():
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+
+    cfg = Config()
+    raw_issue = {
+        "number": 11,
+        "title": "Ready once stale blocker is removed",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    result = prepare_planning_issue_set([raw_issue], cfg)
+
+    assert result.ready_candidates == (
+        {
+            "number": 11,
+            "title": "Ready once stale blocker is removed",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    )
+
+
+def test_prepare_planning_issue_set_preserves_live_blocker_lines():
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+
+    cfg = Config()
+    blocked_issue = {
+        "number": 12,
+        "title": "Still open blocker",
+        "body": "x" * 120,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    dependent_issue = {
+        "number": 11,
+        "title": "Still blocked",
+        "body": "Summary\n\nBlocked by #12, #99\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    result = prepare_planning_issue_set([dependent_issue, blocked_issue], cfg)
+
+    assert result.ready_candidates[0]["body"] == dependent_issue["body"]
+
+
+def test_prepare_planning_issue_set_normalizes_missing_fields_and_preserves_blocker_inputs():
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+
+    cfg = Config()
+    raw_issue = {
+        "number": 21,
+        "title": "Malformed",
+        "body": None,
+        "comments": None,
+        "labels": None,
+    }
+
+    prepared = prepare_planning_issue_set([raw_issue], cfg)
+    legacy = evaluate_planning_readiness([raw_issue], cfg)
+
+    assert prepared.prepared_issues == (
+        {
+            "number": 21,
+            "title": "Malformed",
+            "body": "",
+            "comments": [],
+            "labels": [],
+        },
+    )
+    assert prepared.ready_candidates == ()
+    assert prepared.label_sync_actions == legacy.label_sync_actions
+    assert planning_blocker_summary(prepared.blocker_summary_inputs) == (
+        planning_blocker_summary(legacy.blocker_summary_inputs)
+    )

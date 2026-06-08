@@ -1,4 +1,5 @@
 import dataclasses
+import re
 from typing import Literal, TypeAlias
 
 from ..config import Config
@@ -80,6 +81,15 @@ class PlanningReadinessResult:
     blocker_summary_inputs: BlockerSummaryInputs = dataclasses.field(
         default_factory=BlockerSummaryInputs
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class PreparedPlanningIssueSet(PlanningReadinessResult):
+    prepared_issues: tuple[dict, ...] = ()
+
+
+_BLOCKED_BY_LINE_RE = re.compile(r"^Blocked by\s+((?:#\d+[\s,]*)+)$")
+_BLOCKED_ISSUE_NUMBER_RE = re.compile(r"#(\d+)")
 
 
 def planning_blocker_summary(blocker_inputs: BlockerSummaryInputs) -> str | None:
@@ -261,3 +271,117 @@ def evaluate_planning_readiness(
             malformed_body_readiness=tuple(body_malformed_readiness),
         ),
     )
+
+
+def prepare_planning_issue_set(
+    issues: list[dict], cfg: Config
+) -> PreparedPlanningIssueSet:
+    open_issue_numbers = {issue["number"] for issue in issues}
+    prepared_issues = tuple(
+        _prepare_issue(issue, open_issue_numbers=open_issue_numbers) for issue in issues
+    )
+    classified_issues = [
+        (issue, resolve_issue_readiness(issue, cfg)) for issue in prepared_issues
+    ]
+    issues_with_outcomes = [
+        (
+            issue,
+            readiness,
+            evaluate_issue_afk_readiness({**issue, "readiness": readiness}, cfg),
+        )
+        for issue, readiness in classified_issues
+    ]
+    slice_malformed = [
+        issue
+        for issue, _, outcome in issues_with_outcomes
+        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_invalid_slice_mode
+    ]
+    slice_malformed_readiness = [
+        readiness
+        for _, readiness, outcome in issues_with_outcomes
+        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_invalid_slice_mode
+    ]
+    body_malformed = [
+        issue
+        for issue, _, outcome in issues_with_outcomes
+        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_short_body
+    ]
+    body_malformed_readiness = [
+        readiness
+        for _, readiness, outcome in issues_with_outcomes
+        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_short_body
+    ]
+    ready_candidates = tuple(
+        issue
+        for issue, _, outcome in issues_with_outcomes
+        if isinstance(outcome, AFKReadyOutcome)
+    )
+    ready_readiness_by_number = {
+        issue["number"]: readiness
+        for issue, readiness, outcome in issues_with_outcomes
+        if isinstance(outcome, AFKReadyOutcome)
+    }
+    return PreparedPlanningIssueSet(
+        prepared_issues=prepared_issues,
+        ready_candidates=ready_candidates,
+        ready_readiness_by_number=ready_readiness_by_number,
+        malformed_body_issues=tuple(body_malformed),
+        malformed_slice_mode_issues=tuple(slice_malformed),
+        label_sync_actions=(
+            _needs_info_actions(
+                [(issue, outcome) for issue, _, outcome in issues_with_outcomes], cfg
+            )
+            + _needs_slice_type_actions(
+                [(issue, outcome) for issue, _, outcome in issues_with_outcomes], cfg
+            )
+        ),
+        blocker_summary_inputs=BlockerSummaryInputs(
+            malformed_slice_mode_issues=tuple(slice_malformed),
+            malformed_body_issues=tuple(body_malformed),
+            malformed_slice_mode_readiness=tuple(slice_malformed_readiness),
+            malformed_body_readiness=tuple(body_malformed_readiness),
+        ),
+    )
+
+
+def _prepare_issue(issue: dict, *, open_issue_numbers: set[int]) -> dict:
+    return {
+        **issue,
+        "body": _strip_stale_blocker_lines(issue.get("body"), open_issue_numbers),
+        "comments": issue.get("comments") or [],
+        "labels": issue.get("labels") or [],
+    }
+
+
+def _strip_stale_blocker_lines(body: str | None, open_issue_numbers: set[int]) -> str:
+    normalized_body = body or ""
+    lines = normalized_body.splitlines()
+    kept_lines: list[str] = []
+    previous_line_removed = False
+    for line in lines:
+        match = _BLOCKED_BY_LINE_RE.fullmatch(line.strip())
+        if match is None:
+            if (
+                previous_line_removed
+                and kept_lines
+                and kept_lines[-1] == ""
+                and line == ""
+            ):
+                previous_line_removed = False
+                continue
+            kept_lines.append(line)
+            previous_line_removed = False
+            continue
+        blocked_numbers = {
+            int(number) for number in _BLOCKED_ISSUE_NUMBER_RE.findall(match.group(1))
+        }
+        if blocked_numbers & open_issue_numbers:
+            kept_lines.append(line)
+            previous_line_removed = False
+            continue
+        previous_line_removed = True
+
+    stripped_body = "\n".join(kept_lines)
+    if normalized_body.endswith("\n"):
+        return f"{stripped_body}\n"
+    return stripped_body
