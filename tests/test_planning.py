@@ -264,6 +264,49 @@ def test_planning_phase_returns_plan_ready_with_issues_sorted_by_number(
     assert [i["number"] for i in result.issues] == [1, 2, 3]
 
 
+def test_planning_phase_preserves_planner_issue_fields_when_hydrating(
+    tmp_path, git_svc
+):
+    source_issue = {
+        "number": 1,
+        "title": "Source title",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": None,
+        "labels": ["behavior-slice"],
+    }
+    planner_issue = {"number": 1, "title": "Planner title"}
+    fake = FakeAgentRunner([PlannerOutput(issues=[planner_issue])])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(
+        planning_phase(
+            deps,
+            [
+                source_issue,
+                {
+                    "number": 2,
+                    "title": "Other",
+                    "body": "x" * 120,
+                    "comments": [],
+                    "labels": ["behavior-slice"],
+                },
+            ],
+            [],
+        )
+    )
+
+    assert isinstance(result, PlanReady)
+    assert result.issues == [
+        {
+            "number": 1,
+            "title": "Planner title",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+
+
 def test_planning_phase_dispatches_plan_template_to_planner(tmp_path, git_svc):
     issues = [
         {

@@ -19,6 +19,7 @@ from ._rows import status_row
 from .implement import branch_for
 from .planning_issue_intake import (
     PlanReady,
+    hydrate_planned_issues,
     planning_blocker_summary,
     prepare_planning_issue_set,
 )
@@ -186,11 +187,8 @@ async def planning_phase(
                 return AllBlocked(blocked=blocked)
 
             plan_numbers = {issue["number"] for issue in output.issues}
-            hydrated_issues = [
-                issue for issue in well_formed if issue["number"] in plan_numbers
-            ]
-            hydrated = PlanReady(
-                issues=sorted(hydrated_issues, key=lambda i: i["number"]),
+            plan = PlanReady(
+                issues=sorted(output.issues, key=lambda i: i["number"]),
                 sha=sha,
                 readiness_by_number={
                     issue_number: readiness
@@ -198,6 +196,11 @@ async def planning_phase(
                     if issue_number in plan_numbers
                 },
             )
+            ready_sources = [
+                {**issue, "readiness": readiness_by_number[issue["number"]]}
+                for issue in well_formed
+            ]
+            hydrated = hydrate_planned_issues(plan, ready_sources)
             if not hydrated.issues:
                 blocker_summary = planning_blocker_summary(
                     prepared_issue_set.blocker_summary_inputs
