@@ -238,6 +238,18 @@ class TextOutputAdapter:
         return result
 
 
+def _ensure_timeout_context(
+    error: AgentTimeoutError,
+    *,
+    role: AgentRole,
+    mount_path: Path,
+) -> AgentTimeoutError:
+    if not error.role_value:
+        error.role_value = role.value
+        error.worktree_path = mount_path
+    return error
+
+
 async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
     from ..iteration._rows import status_row
 
@@ -328,7 +340,12 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         session_namespace=request.session_namespace,
                         service_name=request.service.name,
                     )
-                except AgentTimeoutError:
+                except AgentTimeoutError as err:
+                    _ensure_timeout_context(
+                        err,
+                        role=request.role,
+                        mount_path=request.mount_path,
+                    )
                     if retries_left <= 0:
                         raise
                     restart_num = (

@@ -3729,6 +3729,110 @@ def test_work_invocation_text_output_has_no_protocol_reprompt_path(
     assert ("remove", "Prompt", "failed", "error") in status_display.calls
 
 
+def test_work_invocation_timeout_retry_uses_resumable_provider_run_state_and_successful_retry_metadata(
+    tmp_path: Path,
+):
+    prepared_session = _PreparedRunSessionStandIn(
+        initial_run_kind=RunKind.FRESH,
+        initial_provider_session_id="provider-fresh",
+        resumable_run_kind=RunKind.RESUME,
+        resumable_provider_session_id="provider-resume",
+    )
+    status_display = RecordingStatusDisplay()
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+    prompt_run_kinds: list[RunKind] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role
+            work_calls.append((run_kind, session_uuid, prompt))
+            assert on_provider_session_id is not None
+            if len(work_calls) == 1:
+                on_provider_session_id("provider-fresh-runtime")
+                raise AgentTimeoutError("timeout")
+            if len(work_calls) == 2:
+                on_provider_session_id("provider-resume-runtime-1")
+                raise AgentTimeoutError("timeout")
+            on_provider_session_id("provider-resume-runtime-2")
+            return PlannerOutput(issues=[])
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del container_exec
+        prompt_run_kinds.append(run_kind)
+        return f"{run_kind.value} prompt"
+
+    result = asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Planner",
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                service=ClaudeService(),
+                model="sonnet",
+                effort="high",
+                output_adapter=ProtocolOutputAdapter(
+                    prompt_factory=prompt_factory,
+                    reprompt_message="reprompt",
+                ),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=2,
+                    stage_key_for_role=lambda role: role.value,
+                    prepare_session=lambda _request: prepared_session,
+                    build_session=lambda *_args: _FakeSession(),
+                    build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert result == PlannerOutput(issues=[])
+    assert prompt_run_kinds == [RunKind.FRESH, RunKind.RESUME, RunKind.RESUME]
+    assert work_calls == [
+        (RunKind.FRESH, "provider-fresh", "fresh prompt"),
+        (RunKind.RESUME, "provider-resume", "resume prompt"),
+        (RunKind.RESUME, "provider-resume-runtime-1", "resume prompt"),
+    ]
+    assert prepared_session.initial_session.recorded_provider_session_ids == [
+        "provider-fresh-runtime"
+    ]
+    assert prepared_session.initial_session.successful_run_calls == 0
+    assert prepared_session.resumable_session.recorded_provider_session_ids == [
+        "provider-resume-runtime-1",
+        "provider-resume-runtime-2",
+    ]
+    assert prepared_session.resumable_session.provider_session_id == (
+        "provider-resume-runtime-2"
+    )
+    assert prepared_session.resumable_session.successful_run_calls == 1
+    assert ("print", "Planner", "Timeout — restarting (attempt 1/2)", None) in (
+        status_display.calls
+    )
+    assert ("print", "Planner", "Timeout — restarting (attempt 2/2)", None) in (
+        status_display.calls
+    )
+
+
 def test_work_invocation_timeout_exhaustion_preserves_agent_timeout_context(
     tmp_path: Path,
 ):
