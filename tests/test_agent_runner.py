@@ -3729,6 +3729,70 @@ def test_work_invocation_text_output_has_no_protocol_reprompt_path(
     assert ("remove", "Prompt", "failed", "error") in status_display.calls
 
 
+def test_work_invocation_timeout_exhaustion_preserves_agent_timeout_context(
+    tmp_path: Path,
+):
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole,
+            tool_policy,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AgentTimeoutError("timeout")
+
+    with pytest.raises(AgentTimeoutError) as exc_info:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Runtime Consumer",
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service=ClaudeService(),
+                    model="sonnet",
+                    effort="high",
+                    output_adapter=TextOutputAdapter(prompt="already-rendered prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        build_session=lambda *_args: _FakeSession(),
+                        build_runner=lambda *_args: cast(
+                            ContainerRunner, _FakeRunner()
+                        ),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                    ),
+                )
+            )
+        )
+
+    err = exc_info.value
+    assert err.role_value == AgentRole.IMPLEMENTER.value
+    assert err.worktree_path == tmp_path
+
+
 def test_resume_run_non_typed_exception_does_not_wipe_session(tmp_path):
     """On consecutive non-typed exceptions during a Resume run, start_fresh is not called — session dir is preserved."""
     _seed_implementer_session(tmp_path)
