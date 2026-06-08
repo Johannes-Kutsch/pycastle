@@ -250,6 +250,13 @@ def _ensure_timeout_context(
     return error
 
 
+def format_transient_status_message(err: TransientAgentError) -> str:
+    return (
+        "transient API error: status "
+        f"{err.status_code if err.status_code is not None else 'no status'}"
+    )
+
+
 async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
     from ..iteration._rows import status_row
 

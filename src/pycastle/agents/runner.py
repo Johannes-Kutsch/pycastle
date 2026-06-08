@@ -7,6 +7,7 @@ from ._work_invocation import (
     ProtocolOutputAdapter,
     WorkInvocationDependencies,
     WorkInvocationRequest,
+    format_transient_status_message,
     invoke_work,
 )
 from .output_protocol import (
@@ -259,10 +260,7 @@ class AgentRunner:
                 self._git_service.get_user_name(),
                 self._git_service.get_user_email(),
             ),
-            transient_status_message=lambda err: (
-                "transient API error: status "
-                f"{err.status_code if err.status_code is not None else 'no status'}"
-            ),
+            transient_status_message=format_transient_status_message,
         )
 
         async def prompt_factory(

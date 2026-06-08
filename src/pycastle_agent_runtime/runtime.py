@@ -9,6 +9,7 @@ from pycastle.agents._work_invocation import (
     TextOutputAdapter,
     WorkInvocationDependencies,
     WorkInvocationRequest,
+    format_transient_status_message,
     invoke_work,
 )
 from pycastle.agents.output_protocol import AgentRole
@@ -105,6 +106,7 @@ async def run_prompt(
             runner._git_service.get_user_name(),
             runner._git_service.get_user_email(),
         ),
+        transient_status_message=format_transient_status_message,
     )
 
     return await invoke_work(

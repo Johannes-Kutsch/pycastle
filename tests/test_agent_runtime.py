@@ -11,11 +11,16 @@ from pycastle.agents.output_protocol import PlanParseError
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.result import CancellationToken
 from pycastle.config import Config
-from pycastle.errors import AgentTimeoutError, UsageLimitError
+from pycastle.errors import AgentTimeoutError, TransientAgentError, UsageLimitError
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services import GitService
-from pycastle.services.agent_service import AssistantTurn, ParsedTurn, Result
+from pycastle.services.agent_service import (
+    AssistantTurn,
+    ParsedTurn,
+    Result,
+    TransientError,
+)
 from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -221,6 +226,41 @@ class _TextSuccessRuntimeService(_PlanRecordingRuntimeService):
         if on_provider_session_id is not None:
             on_provider_session_id(self._observed_provider_session_id)
         yield Result(text="exact text from adapter")
+
+
+class _TransientRuntimeService(_PlanRecordingRuntimeService):
+    def __init__(
+        self,
+        name: str,
+        provider_state: ProviderSessionState,
+        *,
+        observed_provider_session_id: str,
+        status_code: int | None,
+    ) -> None:
+        super().__init__(name, provider_state)
+        self._observed_provider_session_id = observed_provider_session_id
+        self._status_code = status_code
+        self.mark_exhausted_calls: list[datetime | None] = []
+
+    def run(
+        self,
+        lines: Iterable[str],
+        on_provider_session_id: Callable[[str], None] | None = None,
+    ) -> Iterator[ParsedTurn]:
+        list(lines)
+        if on_provider_session_id is not None:
+            on_provider_session_id(self._observed_provider_session_id)
+        yield TransientError(
+            status_code=self._status_code,
+            raw_message=(
+                "API Error: 529 Overloaded"
+                if self._status_code is not None
+                else "network drop"
+            ),
+        )
+
+    def mark_exhausted(self, reset_time: datetime | None) -> None:
+        self.mark_exhausted_calls.append(reset_time)
 
 
 class _RuntimeSessionStandIn:
@@ -776,6 +816,75 @@ def test_runtime_package_run_prompt_records_provider_session_metadata_for_text_s
         "service": "fake",
         "provider_session_id": observed_provider_session_id,
     }
+
+
+def test_runtime_package_run_prompt_transient_failure_cancels_token_preserves_service_availability_and_skips_success_metadata(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    status_display = MagicMock()
+    token = CancellationToken()
+    service = _TransientRuntimeService(
+        "fake",
+        ProviderSessionState(RunKind.RESUME, "provider-resume"),
+        observed_provider_session_id="provider-runtime",
+        status_code=529,
+    )
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+    session = _RuntimeSessionStandIn()
+    runner = _RuntimeRunnerStandIn(
+        cfg=_make_cfg(tmp_path),
+        git_service=_make_git_service(),
+        service=service,
+        session=session,
+    )
+    registry = runtime.ServiceRegistry({"fake": service})
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="fake",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        status_display=status_display,
+        token=token,
+        session_namespace="main",
+        run_session_plan=plan,
+    )
+
+    with pytest.raises(TransientAgentError) as exc_info:
+        asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    assert exc_info.value.status_code == 529
+    assert token.is_cancelled is True
+    assert service.mark_exhausted_calls == []
+    status_display.print.assert_any_call(
+        "Runtime Consumer",
+        "transient API error: status 529",
+    )
+    assert session.written_files == [
+        ("Return the final answer only.", "/tmp/.pycastle_prompt")
+    ]
+    assert (
+        RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+            "main",
+        ).service_session_metadata("fake")
+        is None
+    )
 
 
 class _ExpectedFallback(TypedDict):
