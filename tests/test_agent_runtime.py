@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pycastle.agents.output_protocol import PlanParseError
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.result import CancellationToken
 from pycastle.config import Config
@@ -488,7 +489,7 @@ def test_runtime_package_run_prompt_retries_timeout_and_resumes_work_session(
         session_namespace="main",
         run_session_plan=plan,
     )
-    work_calls: list[tuple[RunKind, str | None]] = []
+    work_calls: list[tuple[str, RunKind, str | None]] = []
 
     async def _fake_work_text(
         prompt: str,
@@ -499,8 +500,8 @@ def test_runtime_package_run_prompt_retries_timeout_and_resumes_work_session(
         session_uuid: str | None = None,
         on_provider_session_id=None,
     ) -> str:
-        del prompt, role, tool_policy, on_provider_session_id
-        work_calls.append((run_kind, session_uuid))
+        del role, tool_policy, on_provider_session_id
+        work_calls.append((prompt, run_kind, session_uuid))
         if len(work_calls) == 1:
             raise AgentTimeoutError("timeout")
         return "runtime result"
@@ -514,13 +515,62 @@ def test_runtime_package_run_prompt_retries_timeout_and_resumes_work_session(
 
     assert result == "runtime result"
     assert work_calls == [
-        (RunKind.RESUME, plan.provider_session_id),
-        (RunKind.RESUME, plan.provider_session_id),
+        ("Return the final answer only.", RunKind.RESUME, plan.provider_session_id),
+        ("Return the final answer only.", RunKind.RESUME, plan.provider_session_id),
     ]
     status_display.print.assert_called_once_with(
         "Runtime Agent",
         "Timeout — restarting (attempt 1/1)",
     )
+
+
+def test_runtime_package_run_prompt_does_not_reprompt_on_protocol_error(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("codex")
+    runner = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"codex": service},
+    )
+    registry = runtime.ServiceRegistry({"codex": service})
+    request = runtime.PromptRunRequest(
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+    )
+    work_calls: list[str] = []
+
+    async def _fake_work_text(
+        prompt: str,
+        *,
+        role: AgentRole = AgentRole.IMPLEMENTER,
+        tool_policy=None,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        on_provider_session_id=None,
+    ) -> str:
+        del role, tool_policy, run_kind, session_uuid, on_provider_session_id
+        work_calls.append(prompt)
+        raise PlanParseError("missing required tag")
+
+    with patch.object(ContainerRunner, "work_text", side_effect=_fake_work_text):
+        with pytest.raises(PlanParseError, match="missing required tag"):
+            asyncio.run(
+                runtime.run_prompt(
+                    runner=runner, service_registry=registry, request=request
+                )
+            )
+
+    assert work_calls == ["Return the final answer only."]
 
 
 class _ExpectedFallback(TypedDict):
