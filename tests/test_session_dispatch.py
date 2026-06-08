@@ -217,6 +217,110 @@ def test_prepare_agent_session_returns_prepared_agent_session(tmp_path: Path):
     assert isinstance(session, PreparedAgentSession)
 
 
+def test_session_package_public_interface_prepares_fresh_claude_run_state(
+    tmp_path: Path,
+):
+    from pycastle.session import (
+        ProviderSessionStateRequest as PublicProviderSessionStateRequest,
+        prepare_provider_session_state as public_prepare_provider_session_state,
+    )
+
+    state = public_prepare_provider_session_state(
+        PublicProviderSessionStateRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            session_namespace="",
+            service=cast(AgentService, _ClaudeFilesystemStandIn()),
+        )
+    )
+
+    assert state.run_kind is RunKind.FRESH
+    assert (
+        state.provider_session_id
+        == RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+        ).session_uuid()
+    )
+    assert state.service_state_dir_path == (
+        tmp_path / ".pycastle-session" / "implementer" / "claude"
+    )
+
+
+def test_session_package_public_interface_prepares_resumed_run_session(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    (state_dir / "projects").mkdir(parents=True)
+    (state_dir / "projects" / "transcript.jsonl").write_text(
+        '{"type":"message"}\n',
+        encoding="utf-8",
+    )
+
+    from pycastle.session import (
+        PreparedRunSession,
+        RunSessionRequest,
+        prepare_run_session,
+    )
+
+    session = prepare_run_session(
+        RunSessionRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            session_namespace="",
+            service=ClaudeService(),
+            container_workspace="/workspace",
+        )
+    )
+
+    assert isinstance(session, PreparedRunSession)
+    assert session.run_kind is RunKind.RESUME
+    assert (
+        session.provider_session_id
+        == RoleSession(
+            tmp_path,
+            AgentRole.IMPLEMENTER,
+        ).session_uuid()
+    )
+    assert session.provider_state_dir_container_path == (
+        "/workspace/.pycastle-session/implementer/claude/"
+    )
+
+
+def test_session_package_public_interface_records_success_metadata_for_runtime_session_id(
+    tmp_path: Path,
+):
+    from pycastle.session import (
+        RunSessionRequest,
+        prepare_run_session,
+        record_successful_provider_session_metadata as record_public_success_metadata,
+    )
+
+    session = prepare_run_session(
+        RunSessionRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            session_namespace="main",
+            service=OpenCodeService(),
+            container_workspace="/workspace",
+        )
+    )
+
+    session.initial_provider_run_session().record_provider_session_id(
+        "sess-opencode-runtime"
+    )
+    record_public_success_metadata(session)
+
+    assert RoleSession(
+        tmp_path,
+        AgentRole.IMPROVE,
+        "main",
+    ).service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-opencode-runtime",
+    }
+
+
 def test_prepare_provider_session_state_fresh_claude_uses_deterministic_uuid_and_state_path(
     tmp_path: Path,
 ):

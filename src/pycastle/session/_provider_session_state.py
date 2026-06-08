@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..agents.output_protocol import AgentRole
-from ..agents.session_state import (
+from ._agent_run_session_state import (
     AgentRunSessionState,
     AgentRunSessionStateRequest,
     PreparedAgentProviderRunSession,

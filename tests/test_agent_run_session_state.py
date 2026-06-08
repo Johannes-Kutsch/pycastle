@@ -210,6 +210,42 @@ def test_prepare_agent_run_session_state_reuses_planned_opencode_session_id_on_r
     assert resumable_run.provider_session_id == "sess-persisted"
 
 
+def test_session_package_public_interface_reports_no_protocol_resume_for_unrecoverable_codex_state(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    dir_a = state_dir / "sessions" / "2026" / "05" / "28"
+    dir_b = state_dir / "sessions" / "2026" / "05" / "29"
+    dir_a.mkdir(parents=True)
+    dir_b.mkdir(parents=True)
+    (state_dir / "auth.json").write_text("{}", encoding="utf-8")
+    (dir_a / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-alpha"}\n',
+        encoding="utf-8",
+    )
+    (dir_b / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-beta"}\n',
+        encoding="utf-8",
+    )
+
+    from pycastle.session import (
+        AgentRunSessionStateRequest as PublicAgentRunSessionStateRequest,
+        prepare_agent_run_session_state as public_prepare_agent_run_session_state,
+    )
+
+    state = public_prepare_agent_run_session_state(
+        PublicAgentRunSessionStateRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            session_namespace="",
+            service=CodexService(),
+        )
+    )
+
+    assert state.run_kind is RunKind.FRESH
+    assert state.protocol_reprompt_provider_run_session() is None
+
+
 def test_record_observed_provider_session_id_writes_exact_codex_thread_id_file(
     tmp_path: Path,
 ):
