@@ -20,7 +20,6 @@ from tests.support import (
 )
 from pycastle.iteration.planning_issue_intake import (
     PlanReady,
-    hydrate_planned_issues,
     prepare_planning_issue_set,
 )
 from pycastle.iteration.planning import (
@@ -805,63 +804,6 @@ def test_planning_phase_all_blocked_does_not_hydrate_titles_for_non_ready_candid
     assert plan_removes[0][2].endswith("\n  #6")
 
 
-# ── hydrate_planned_issues ──────────────────────────────────────────────────
-
-
-def test_hydrate_planned_issues_merges_body_and_comments_from_open_issues():
-    plan = PlanReady(
-        issues=[{"number": 1, "title": "A"}, {"number": 2, "title": "B"}],
-        sha="abc123",
-    )
-    open_issues = [
-        {
-            "number": 1,
-            "title": "A",
-            "body": "body of A",
-            "comments": [{"author": "x", "created_at": "t", "body": "hi"}],
-            "labels": ["ready-for-agent", "docs-slice"],
-        },
-        {
-            "number": 2,
-            "title": "B",
-            "body": "body of B",
-            "comments": [],
-            "labels": ["ready-for-agent", "refactor-slice"],
-        },
-    ]
-
-    result = hydrate_planned_issues(plan, open_issues)
-
-    assert result.issues[0]["number"] == 1
-    assert result.issues[0]["body"] == "body of A"
-    assert result.issues[0]["comments"] == [
-        {"author": "x", "created_at": "t", "body": "hi"}
-    ]
-    assert result.issues[0]["labels"] == ["ready-for-agent", "docs-slice"]
-    assert result.issues[1]["number"] == 2
-    assert result.issues[1]["body"] == "body of B"
-    assert result.issues[1]["comments"] == []
-    assert result.issues[1]["labels"] == ["ready-for-agent", "refactor-slice"]
-
-
-def test_hydrate_planned_issues_drops_numbers_not_in_open_issues():
-    plan = PlanReady(
-        issues=[
-            {"number": 1, "title": "A"},
-            {"number": 99, "title": "Hallucinated"},
-        ],
-        sha="abc123",
-    )
-    open_issues = [
-        {"number": 1, "title": "A", "body": "body of A", "comments": [], "labels": []},
-    ]
-
-    result = hydrate_planned_issues(plan, open_issues)
-
-    assert [issue["number"] for issue in result.issues] == [1]
-    assert result.issues[0]["body"] == "body of A"
-
-
 def test_planning_phase_ignores_stale_planner_issue_and_keeps_valid_ones(
     tmp_path, git_svc
 ):
@@ -887,91 +829,6 @@ def test_planning_phase_ignores_stale_planner_issue_and_keeps_valid_ones(
 
     assert isinstance(result, PlanReady)
     assert [issue["number"] for issue in result.issues] == [1]
-
-
-def test_hydrate_planned_issues_carries_readiness_from_sources_into_result():
-    from pycastle.issue_readiness import (
-        IssueReadiness,
-        IssueReadinessKind,
-        SliceMode,
-        WellFormed,
-        WellFormedBody,
-    )
-
-    readiness = IssueReadiness(
-        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
-        body_floor_status=WellFormedBody(stripped_length=100),
-        is_ready=True,
-        selected_mode=SliceMode.BEHAVIOR,
-        kind=IssueReadinessKind.READY_AFK,
-    )
-    plan = PlanReady(issues=[{"number": 1, "title": "A"}], sha="abc123")
-    sources = [
-        {
-            "number": 1,
-            "title": "A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-            "readiness": readiness,
-        }
-    ]
-
-    result = hydrate_planned_issues(plan, sources)
-
-    assert result.readiness_by_number[1] is readiness
-
-
-def test_hydrate_planned_issues_merges_readiness_from_plan_and_sources():
-    from pycastle.issue_readiness import (
-        IssueReadiness,
-        IssueReadinessKind,
-        SliceMode,
-        WellFormed,
-        WellFormedBody,
-    )
-
-    readiness_1 = IssueReadiness(
-        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
-        body_floor_status=WellFormedBody(stripped_length=100),
-        is_ready=True,
-        selected_mode=SliceMode.BEHAVIOR,
-        kind=IssueReadinessKind.READY_AFK,
-    )
-    readiness_2 = IssueReadiness(
-        slice_status=WellFormed(SliceMode.DOCS, label="docs-slice"),
-        body_floor_status=WellFormedBody(stripped_length=120),
-        is_ready=True,
-        selected_mode=SliceMode.DOCS,
-        kind=IssueReadinessKind.READY_AFK,
-    )
-    plan = PlanReady(
-        issues=[{"number": 1, "title": "A"}, {"number": 2, "title": "B"}],
-        sha="abc123",
-        readiness_by_number={1: readiness_1},
-    )
-    sources = [
-        {
-            "number": 1,
-            "title": "A",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-        {
-            "number": 2,
-            "title": "B",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["docs-slice"],
-            "readiness": readiness_2,
-        },
-    ]
-
-    result = hydrate_planned_issues(plan, sources)
-
-    assert result.readiness_by_number[1] is readiness_1
-    assert result.readiness_by_number[2] is readiness_2
 
 
 # ── Config.needs_slice_type_label ────────────────────────────────────────────

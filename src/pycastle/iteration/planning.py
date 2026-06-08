@@ -17,14 +17,8 @@ from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import transient_worktree
 from ._rows import status_row
 from .implement import branch_for
-from .planning_issue_intake import (
-    PlanReady,
-    PreparedPlanningIssueSet,
-    planning_blocker_summary,
-    prepare_planning_issue_set,
-    resolve_planner_all_blocked_intake,
-    resolve_planner_issue_intake,
-)
+from .planning_issue_intake import PlanReady, PreparedPlanningIssueSet
+from . import planning_issue_intake
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
@@ -54,7 +48,7 @@ async def planning_phase(
     issue_set = (
         prepared_issue_set
         if prepared_issue_set is not None
-        else prepare_planning_issue_set(open_issues, deps.cfg)
+        else planning_issue_intake.prepare_planning_issue_set(open_issues, deps.cfg)
     )
 
     if _in_flight:
@@ -106,7 +100,9 @@ async def planning_phase(
         readiness_by_number = dict(issue_set.ready_readiness_by_number)
 
         if not well_formed:
-            blocker_summary = planning_blocker_summary(issue_set.blocker_summary_inputs)
+            blocker_summary = planning_issue_intake.planning_blocker_summary(
+                issue_set.blocker_summary_inputs
+            )
             lines = ["All ready-for-agent issues are blocked."]
             if blocker_summary:
                 lines.append(blocker_summary)
@@ -118,7 +114,7 @@ async def planning_phase(
                 f"only one open issue (#{well_formed[0]['number']}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return resolve_planner_issue_intake(
+            return planning_issue_intake.resolve_planner_issue_intake(
                 PlanReady(
                     issues=[
                         {
@@ -160,8 +156,10 @@ async def planning_phase(
                     f"Planner returned unexpected output type: {type(output).__name__}"
                 )
             if not output.issues:
-                blocked = resolve_planner_all_blocked_intake(output, issue_set)
-                blocker_summary = planning_blocker_summary(
+                blocked = planning_issue_intake.resolve_planner_all_blocked_intake(
+                    output, issue_set
+                )
+                blocker_summary = planning_issue_intake.planning_blocker_summary(
                     issue_set.blocker_summary_inputs
                 )
                 blocked_lines = [
@@ -179,12 +177,12 @@ async def planning_phase(
                 row.close("\n".join(lines))
                 return AllBlocked(blocked=blocked)
 
-            resolved = resolve_planner_issue_intake(
+            resolved = planning_issue_intake.resolve_planner_issue_intake(
                 PlanReady(issues=output.issues, sha=sha),
                 issue_set,
             )
             if not resolved.issues:
-                blocker_summary = planning_blocker_summary(
+                blocker_summary = planning_issue_intake.planning_blocker_summary(
                     issue_set.blocker_summary_inputs
                 )
                 lines = ["All ready-for-agent issues are blocked."]

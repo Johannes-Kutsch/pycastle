@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import re
 from pathlib import Path
 from typing import Protocol, TypeAlias, cast
 
@@ -99,23 +98,6 @@ def validate_issue_report(
     if readiness_error is not None:
         raise RuntimeError(readiness_error)
     return "afk"
-
-
-def strip_stale_blocker_refs(issues: list[dict]) -> list[dict]:
-    open_numbers = {i["number"] for i in issues}
-    result = []
-    for issue in issues:
-        body = issue.get("body") or ""
-        lines = body.splitlines()
-        cleaned = []
-        for line in lines:
-            if re.search(r"blocked\s+by\s+#\d+", line, re.IGNORECASE):
-                refs = {int(m) for m in re.findall(r"#(\d+)", line)}
-                if refs.isdisjoint(open_numbers):
-                    continue
-            cleaned.append(line)
-        result.append({**issue, "body": "\n".join(cleaned)})
-    return result
 
 
 class BranchRefreshBoundary:
