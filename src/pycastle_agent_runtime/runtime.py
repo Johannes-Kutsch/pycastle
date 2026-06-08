@@ -31,7 +31,8 @@ from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.iteration._rows import status_row
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services.flag_profiles import AgentToolPolicyGroup
-from pycastle.services.service_registry import ServiceRegistry
+
+from .service_registry import ServiceRegistry
 
 
 ToolPolicy = AgentToolPolicyGroup
