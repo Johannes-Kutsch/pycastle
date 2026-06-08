@@ -287,6 +287,40 @@ def test_session_package_public_interface_prepares_resumed_run_session(
     )
 
 
+def test_session_package_public_interface_records_success_metadata_for_runtime_session_id(
+    tmp_path: Path,
+):
+    from pycastle.session import (
+        RunSessionRequest,
+        prepare_run_session,
+        record_successful_provider_session_metadata as record_public_success_metadata,
+    )
+
+    session = prepare_run_session(
+        RunSessionRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            session_namespace="main",
+            service=OpenCodeService(),
+            container_workspace="/workspace",
+        )
+    )
+
+    session.initial_provider_run_session().record_provider_session_id(
+        "sess-opencode-runtime"
+    )
+    record_public_success_metadata(session)
+
+    assert RoleSession(
+        tmp_path,
+        AgentRole.IMPROVE,
+        "main",
+    ).service_session_metadata("opencode") == {
+        "service": "opencode",
+        "provider_session_id": "sess-opencode-runtime",
+    }
+
+
 def test_prepare_provider_session_state_fresh_claude_uses_deterministic_uuid_and_state_path(
     tmp_path: Path,
 ):

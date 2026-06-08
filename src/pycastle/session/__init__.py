@@ -10,7 +10,12 @@ from ._provider_session_state import (
     ProviderSessionStateRequest,
     prepare_provider_session_state,
 )
-from .run_dispatch import PreparedRunSession, RunSessionRequest, prepare_run_session
+from .run_dispatch import (
+    PreparedRunSession,
+    RunSessionRequest,
+    prepare_run_session,
+    record_successful_provider_session_metadata,
+)
 from .resume import (
     ExactTranscriptHandoff,
     ProviderIdentity,
@@ -47,4 +52,5 @@ __all__ = [
     "prepare_provider_session_state",
     "prepare_run_session",
     "provider_state_relpath",
+    "record_successful_provider_session_metadata",
 ]
