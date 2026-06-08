@@ -23,34 +23,6 @@ class PlanReady:
     )
 
 
-def hydrate_planned_issues(
-    plan_result: PlanReady, open_issues: list[dict]
-) -> PlanReady:
-    by_number = {i["number"]: i for i in open_issues}
-    hydrated: list[dict] = []
-    readiness_by_number = dict(plan_result.readiness_by_number)
-    for issue in plan_result.issues:
-        source = by_number.get(issue["number"])
-        if source is None:
-            continue
-        hydrated.append(
-            {
-                **issue,
-                "body": source.get("body") or "",
-                "comments": source.get("comments") or [],
-                "labels": source.get("labels") or [],
-            }
-        )
-        readiness = source.get("readiness")
-        if isinstance(readiness, IssueReadiness):
-            readiness_by_number[issue["number"]] = readiness
-    return PlanReady(
-        issues=hydrated,
-        sha=plan_result.sha,
-        readiness_by_number=readiness_by_number,
-    )
-
-
 def resolve_planner_issue_intake(
     plan_result: PlanReady, prepared_issue_set: "PreparedPlanningIssueSet"
 ) -> PlanReady:
