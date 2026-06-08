@@ -29,6 +29,7 @@ from pycastle.errors import (
 )
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.iteration._rows import status_row
+from pycastle.session.agent import RunSessionPlan
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services.flag_profiles import AgentToolPolicyGroup
 
@@ -47,6 +48,9 @@ class PromptRunRequest:
     name: str = "Runtime Agent"
     status_display: Any = None
     work_body: str = ""
+    token: CancellationToken | None = None
+    session_namespace: str = ""
+    run_session_plan: RunSessionPlan | None = None
 
 
 async def run_prompt(
@@ -65,7 +69,7 @@ async def run_prompt(
     if status_display is None:
         status_display = PlainStatusDisplay()
 
-    token = CancellationToken()
+    token = request.token if request.token is not None else CancellationToken()
     if token.is_cancelled:
         raise UsageLimitError(reset_time=None, stage_key=_stage_key_for_role(role))
 
@@ -73,10 +77,10 @@ async def run_prompt(
         SessionDispatchRequest(
             mount_path=request.mount_path,
             role=role,
-            session_namespace="",
+            session_namespace=request.session_namespace,
             service=resolved_service,
             container_workspace=_CONTAINER_WORKSPACE,
-            run_session_plan=None,
+            run_session_plan=request.run_session_plan,
         )
     )
     initial_attempt = True
