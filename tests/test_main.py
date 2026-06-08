@@ -327,7 +327,7 @@ def test_run_cmd_fails_clearly_when_stage_chain_has_no_locally_configured_servic
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -382,7 +382,7 @@ def test_run_cmd_preserves_full_stage_priority_chain_label_for_unconfigured_serv
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -414,7 +414,7 @@ def test_run_cmd_rejects_empty_stage_override_service_before_credentials(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -444,7 +444,7 @@ def test_run_cmd_rejects_empty_stage_override_effort_before_credentials(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -866,7 +866,7 @@ def test_run_cmd_explicit_codex_only_does_not_require_claude_token(
     )
     captured: dict = {}
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["registry"] = kwargs.get("service_registry")
@@ -907,7 +907,7 @@ def test_run_cmd_does_not_seed_unreferenced_codex_service_into_registry(
     captured: dict = {}
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["registry"] = kwargs.get("service_registry")
@@ -950,7 +950,7 @@ def test_run_cmd_routes_opencode_go_key_through_service_env_only(tmp_path, monke
     )
     captured: dict = {}
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["env"] = env
@@ -982,7 +982,7 @@ def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
 
     captured: dict = {}
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["env"] = env
@@ -1014,7 +1014,7 @@ def test_run_cmd_seeds_pool_with_secondary_first_when_present(tmp_path, monkeypa
 
     captured: dict = {}
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["env"] = env
@@ -1077,7 +1077,7 @@ def _run_cmd_capturing_improve_mode(
 
     captured: dict = {}
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     async def _fake_run(env, repo_root, **kwargs):
         captured["improve_mode"] = kwargs.get("improve_mode")
@@ -1446,7 +1446,7 @@ def test_run_cmd_exits_nonzero_on_unknown_service_before_docker_build(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1476,7 +1476,7 @@ def test_run_cmd_exits_nonzero_on_invalid_effort_for_codex_stage(tmp_path, monke
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1510,7 +1510,7 @@ def test_run_cmd_exits_nonzero_on_unsupported_codex_effort_for_stage(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1552,7 +1552,7 @@ def test_run_cmd_exits_nonzero_on_unsupported_codex_effort_for_stage_fallback(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1589,7 +1589,7 @@ def test_run_cmd_exits_nonzero_on_invalid_effort_for_claude_stage(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1621,7 +1621,7 @@ def test_run_cmd_exits_nonzero_on_invalid_claude_model_with_suggestion(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1654,7 +1654,7 @@ def test_run_cmd_exits_nonzero_on_cross_service_model_with_valid_claude_list(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1692,7 +1692,7 @@ def test_run_cmd_rejects_provider_prefixed_model_for_opencode_stage(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1729,7 +1729,7 @@ def test_run_cmd_rejects_non_neutral_effort_for_opencode_stage(tmp_path, monkeyp
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1764,7 +1764,7 @@ def test_run_cmd_rejects_fallback_empty_service(tmp_path, monkeypatch):
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1796,7 +1796,7 @@ def test_run_cmd_rejects_fallback_invalid_model(tmp_path, monkeypatch):
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1838,7 +1838,7 @@ def test_run_cmd_reuses_fallback_stage_label_for_each_invalid_fallback_node(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1873,7 +1873,7 @@ def test_run_cmd_reports_all_violations_in_single_message(tmp_path, monkeypatch)
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1908,7 +1908,7 @@ def test_run_cmd_reports_missing_fields_and_invalid_models_together(
     )
     build_called = []
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: build_called.append(True)
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
@@ -1935,7 +1935,7 @@ def test_run_cmd_valid_config_passes_validation_silently(tmp_path, monkeypatch):
 
     cfg = Config(docker_image_name="img")
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     async def _fake_run(*args, **kwargs):
         pass
