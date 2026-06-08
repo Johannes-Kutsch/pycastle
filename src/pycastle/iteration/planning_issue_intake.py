@@ -82,6 +82,34 @@ def resolve_planner_issue_intake(
     )
 
 
+def resolve_planner_blocked_intake(
+    blocked_entries: list[dict], prepared_issue_set: "PreparedPlanningIssueSet"
+) -> list[dict]:
+    ready_candidates_by_number = {
+        issue["number"]: issue for issue in prepared_issue_set.ready_candidates
+    }
+    resolved_blocked: list[dict] = []
+    for blocked_entry in blocked_entries:
+        number = blocked_entry["number"]
+        if number in ready_candidates_by_number:
+            resolved_blocked.append(
+                {
+                    "number": number,
+                    "title": ready_candidates_by_number[number]["title"],
+                }
+            )
+            continue
+        resolved_blocked.append(_normalize_blocked_entry(blocked_entry))
+    return resolved_blocked
+
+
+def _normalize_blocked_entry(blocked_entry: dict) -> dict:
+    normalized = {"number": blocked_entry["number"]}
+    if "title" in blocked_entry:
+        normalized["title"] = blocked_entry["title"]
+    return normalized
+
+
 LabelActionIntent: TypeAlias = Literal["add", "remove"]
 
 

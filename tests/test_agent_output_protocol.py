@@ -270,7 +270,7 @@ def test_process_stream_planner_defaults_blocked_to_empty_when_absent():
     assert result.blocked == []
 
 
-def test_process_stream_planner_raises_plan_parse_error_for_malformed_blocked():
+def test_process_stream_planner_accepts_number_only_blocked_entries():
     payload = json.dumps(
         {
             "issues": [],
@@ -278,8 +278,9 @@ def test_process_stream_planner_raises_plan_parse_error_for_malformed_blocked():
         }
     )
     lines = [_result_line(f"<plan>{payload}</plan>")]
-    with pytest.raises(PlanParseError, match="blocked"):
-        process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    result = process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.blocked == [{"number": 5}]
 
 
 def test_process_stream_planner_handles_json_wrapped_in_markdown_code_fence():
