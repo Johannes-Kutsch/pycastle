@@ -41,11 +41,11 @@ from .merge import merge_phase
 from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
 from .planning import planning_phase
+from .planning_issue_intake import prepare_planning_issue_set
 from .preflight import (
     PreflightAFK,
     PreflightCache as PreflightCache,
     PreflightHITL,
-    strip_stale_blocker_refs,
 )
 
 _FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
@@ -251,13 +251,13 @@ async def _handle_preflight_outcome(
 async def run_iteration(deps: Deps) -> IterationOutcome:
     try:
         # ── Fetch issues ─────────────────────────────────────────────────────
-        open_issues = strip_stale_blocker_refs(
-            deps.github_svc.get_open_issues(deps.cfg.issue_label)
-        )
+        open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
+        prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
+        prepared_open_issues = list(prepared_issue_set.prepared_issues)
         all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
 
         in_flight = select_in_flight_issues(
-            open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+            prepared_open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
         )
 
         # ── (Improve) — runs when idle: no open issues, no in-flight ────────
@@ -277,14 +277,16 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 if isinstance(improve_result, (PreflightHITL, PreflightAFK)):
                     return await _handle_preflight_outcome(improve_result, deps)
                 # ImproveContinue: re-fetch issues after improve filed new ones
-                open_issues = strip_stale_blocker_refs(
-                    deps.github_svc.get_open_issues(deps.cfg.issue_label)
-                )
+                open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
+                prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
+                prepared_open_issues = list(prepared_issue_set.prepared_issues)
                 all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
                 if not open_issues:
                     return Continue()
                 in_flight = select_in_flight_issues(
-                    open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+                    prepared_open_issues,
+                    repo_root=deps.repo_root,
+                    git_svc=deps.git_svc,
                 )
             else:
                 cap_hit = (
@@ -296,7 +298,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
 
         # ── Plan ─────────────────────────────────────────────────────────────
         plan_result = await planning_phase(
-            deps, open_issues, all_open_issues, in_flight=in_flight
+            deps,
+            open_issues,
+            all_open_issues,
+            prepared_issue_set=prepared_issue_set,
+            in_flight=in_flight,
         )
         if isinstance(plan_result, AllBlocked):
             return Done()
