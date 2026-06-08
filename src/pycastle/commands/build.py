@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .._universal_image_build import (
+    UniversalImageBuildOptions,
+    UniversalImageBuildRequest,
+    build_universal_image,
+)
 from ..config import Config, load_config, resolve_dockerfile
-from ..errors import ConfigValidationError
 from ..services import DockerService
 from ..services.docker_service import BuildOutcome
 
@@ -17,10 +21,6 @@ def main(
 ) -> None:
     if cfg is None:
         cfg = load_config()
-    if not cfg.docker_image_name:
-        raise ConfigValidationError(
-            "docker_image_name is not set. Run `pycastle init` to configure your project."
-        )
 
     if docker_service is None:
         docker_service = DockerService()
@@ -33,14 +33,19 @@ def main(
         python_version = ".".join(parts[:2]) if len(parts) >= 2 else version
 
     print(f"Building {cfg.docker_image_name}...")
-    outcome = docker_service.build_image(
-        cfg.docker_image_name,
-        resolve_dockerfile(Path("pycastle")),
-        Path("."),
-        no_cache=no_cache,
-        stream=stream,
-        terse=terse,
-        python_version=python_version,
+    outcome = build_universal_image(
+        docker_service,
+        UniversalImageBuildRequest(
+            image_tag=cfg.docker_image_name,
+            dockerfile_path=resolve_dockerfile(Path("pycastle")),
+            context_dir=Path("."),
+            options=UniversalImageBuildOptions(
+                no_cache=no_cache,
+                stream=stream,
+                terse=terse,
+                python_version=python_version,
+            ),
+        ),
     )
 
     if not stream:

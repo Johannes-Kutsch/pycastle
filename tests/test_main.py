@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
+from pycastle._universal_image_build import UniversalImageBuildRequest
 from pycastle.config import Config, StageOverride
 from pycastle.errors import (
     ClaudeCliNotFoundError,
@@ -10,6 +11,10 @@ from pycastle.errors import (
     DockerBuildError,
     DockerServiceError,
 )
+
+
+def _built_requests(fake_svc: MagicMock) -> list[UniversalImageBuildRequest]:
+    return [call.args[0] for call in fake_svc.build.call_args_list]
 
 
 # ── Issue 203: cfg injection into _load_env ───────────────────────────────────
@@ -533,7 +538,7 @@ def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
         with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
             CliRunner().invoke(cli, ["build"])
 
-    assert [call.args[0] for call in fake_svc.build_image.call_args_list] == [
+    assert [request.image_tag for request in _built_requests(fake_svc)] == [
         "custom-img"
     ]
 
@@ -547,7 +552,7 @@ def test_build_cmd_exits_zero_on_success(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = Config(docker_image_name="img")
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     with patch("pycastle.main.load_config", return_value=cfg):
         with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
@@ -563,7 +568,7 @@ def test_build_cmd_exits_one_on_docker_service_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = Config(docker_image_name="img")
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = DockerServiceError("docker not found")
+    fake_svc.build.side_effect = DockerServiceError("docker not found")
 
     with patch("pycastle.main.load_config", return_value=cfg):
         with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
@@ -579,7 +584,7 @@ def test_build_cmd_exits_one_on_docker_build_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = Config(docker_image_name="img")
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = DockerBuildError("build failed")
+    fake_svc.build.side_effect = DockerBuildError("build failed")
 
     with patch("pycastle.main.load_config", return_value=cfg):
         with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
@@ -1165,7 +1170,7 @@ def test_run_cmd_improve_and_no_improve_are_mutually_exclusive(tmp_path, monkeyp
 
 
 def _run_cmd_with_build_outcome(tmp_path, monkeypatch, outcome):
-    """Invoke run_cmd with a fake build_image returning outcome; return CliRunner result."""
+    """Invoke run_cmd with a fake typed build request returning outcome; return CliRunner result."""
 
     from pycastle.main import main as cli
 
@@ -1177,7 +1182,7 @@ def _run_cmd_with_build_outcome(tmp_path, monkeypatch, outcome):
 
     cfg = Config(docker_image_name="myimage")
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = outcome
+    fake_svc.build.return_value = outcome
 
     async def _fake_run(*args, **kwargs):
         pass
@@ -1203,7 +1208,7 @@ def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch
     call_order: list[str] = []
 
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = lambda *a, **kw: call_order.append("build")
+    fake_svc.build.side_effect = lambda *a, **kw: call_order.append("build")
 
     async def _fake_run(*args, **kwargs):
         call_order.append("orchestrator")
@@ -1253,7 +1258,7 @@ def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
 
     cfg = Config(docker_image_name="myimage")
     fake_svc = MagicMock()
-    fake_svc.build_image.side_effect = DockerBuildError("build failed: exit 1")
+    fake_svc.build.side_effect = DockerBuildError("build failed: exit 1")
 
     orchestrator_called = []
 
@@ -1314,7 +1319,7 @@ def test_run_cmd_does_not_invoke_docker_when_image_name_empty(tmp_path, monkeypa
     ):
         CliRunner().invoke(cli, ["run"])
 
-    fake_svc.build_image.assert_not_called()
+    fake_svc.build.assert_not_called()
     assert not orchestrator_called
 
 
@@ -1330,7 +1335,7 @@ def test_run_cmd_passes_python_version_from_file_to_build(tmp_path, monkeypatch)
 
     cfg = Config(docker_image_name="myimage")
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     async def _fake_run(*args, **kwargs):
         pass
@@ -1343,8 +1348,7 @@ def test_run_cmd_passes_python_version_from_file_to_build(tmp_path, monkeypatch)
         result = CliRunner().invoke(cli, ["run"])
 
     assert result.exit_code == 0, result.output
-    call_kwargs = fake_svc.build_image.call_args
-    assert call_kwargs.kwargs.get("python_version") == "3.12"
+    assert _built_requests(fake_svc)[0].options.python_version == "3.12"
 
 
 def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
@@ -1358,7 +1362,7 @@ def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
 
     cfg = Config(docker_image_name="myimage")
     fake_svc = MagicMock()
-    fake_svc.build_image.return_value = None
+    fake_svc.build.return_value = None
 
     async def _fake_run(*args, **kwargs):
         pass
@@ -1371,8 +1375,7 @@ def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
         result = CliRunner().invoke(cli, ["run"])
 
     assert result.exit_code == 0, result.output
-    call_kwargs = fake_svc.build_image.call_args
-    assert call_kwargs.kwargs.get("stream") is True
+    assert _built_requests(fake_svc)[0].options.stream is True
 
 
 def test_run_cmd_rejects_no_cache_flag(tmp_path, monkeypatch):

@@ -3,11 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pycastle._universal_image_build import (
     UniversalImageBuildAdapter,
     UniversalImageBuildOptions,
     UniversalImageBuildRequest,
+    build_universal_image,
 )
+from pycastle.errors import ConfigValidationError
 from pycastle.services._docker_build_output import BuildOutcome, FINAL_OUTCOME_EXAMPLES
 from pycastle.services.docker_service import DockerService
 
@@ -48,6 +52,37 @@ def test_universal_image_build_adapter_protocol_accepts_fake_adapter(tmp_path):
     adapter = _FakeUniversalImageBuildAdapter(BuildOutcome.FULL_CACHE_HIT)
 
     result = _build_with_adapter(adapter, request)
+
+    assert result == BuildOutcome.FULL_CACHE_HIT
+    assert adapter.requests == [request]
+
+
+def test_universal_image_build_rejects_empty_image_tag_before_adapter(tmp_path):
+    request = UniversalImageBuildRequest(
+        image_tag="",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+    )
+    adapter = _FakeUniversalImageBuildAdapter(BuildOutcome.FULL_CACHE_HIT)
+
+    with pytest.raises(ConfigValidationError) as exc_info:
+        build_universal_image(adapter, request)
+
+    assert str(exc_info.value) == (
+        "docker_image_name is not set. Run `pycastle init` to configure your project."
+    )
+    assert adapter.requests == []
+
+
+def test_universal_image_build_passes_exact_image_tag_to_adapter(tmp_path):
+    request = UniversalImageBuildRequest(
+        image_tag="registry.example.com/team/pycastle:test-build",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+    )
+    adapter = _FakeUniversalImageBuildAdapter(BuildOutcome.FULL_CACHE_HIT)
+
+    result = build_universal_image(adapter, request)
 
     assert result == BuildOutcome.FULL_CACHE_HIT
     assert adapter.requests == [request]
@@ -158,3 +193,20 @@ def test_docker_service_build_uses_terse_mode_for_typed_request(tmp_path, capsys
         encoding="utf-8",
         errors="replace",
     )
+
+
+def test_docker_service_build_rejects_empty_image_tag_without_starting_docker(
+    tmp_path,
+):
+    docker_service = DockerService()
+    request = UniversalImageBuildRequest(
+        image_tag="",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+    )
+
+    with patch("pycastle.services.docker_service.subprocess.run") as mock_run:
+        with pytest.raises(ValueError, match="image_name must not be empty"):
+            docker_service.build(request)
+
+    mock_run.assert_not_called()
