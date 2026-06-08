@@ -51,6 +51,7 @@ from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
+from pycastle.services.flag_profiles import AgentToolPolicyGroup
 from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -3318,6 +3319,98 @@ def test_work_invocation_typed_resume_success_uses_prepared_run_kind_and_provide
     assert work_calls == [
         (RunKind.RESUME, "provider-resume", "resume prompt from adapter")
     ]
+    assert prepared_session.initial_session.successful_run_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("initial_run_kind", "initial_provider_session_id", "observed_provider_session_id"),
+    [
+        (RunKind.FRESH, "provider-fresh", "provider-fresh-runtime"),
+        (RunKind.RESUME, "provider-resume", "provider-resume-runtime"),
+    ],
+)
+def test_work_invocation_text_success_returns_exact_str_and_records_provider_session_metadata(
+    tmp_path: Path,
+    initial_run_kind: RunKind,
+    initial_provider_session_id: str,
+    observed_provider_session_id: str,
+):
+    prepared_session = _PreparedRunSessionStandIn(
+        initial_run_kind=initial_run_kind,
+        initial_provider_session_id=initial_provider_session_id,
+    )
+    work_calls: list[
+        tuple[str, AgentRole, AgentToolPolicyGroup, RunKind, str | None]
+    ] = []
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id=None,
+        ) -> str:
+            work_calls.append((prompt, role, tool_policy, run_kind, session_uuid))
+            assert on_provider_session_id is not None
+            on_provider_session_id(observed_provider_session_id)
+            return "exact text from adapter"
+
+    result = asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Runtime Consumer",
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                service=ClaudeService(),
+                model="sonnet",
+                effort="high",
+                output_adapter=TextOutputAdapter(
+                    prompt="already-rendered prompt text",
+                    tool_policy=AgentToolPolicyGroup.PARTIAL,
+                ),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=0,
+                    stage_key_for_role=lambda role: role.value,
+                    prepare_session=lambda _request: prepared_session,
+                    build_session=lambda *_args: _FakeSession(),
+                    build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+            )
+        )
+    )
+
+    assert result == "exact text from adapter"
+    assert work_calls == [
+        (
+            "already-rendered prompt text",
+            AgentRole.IMPLEMENTER,
+            AgentToolPolicyGroup.PARTIAL,
+            initial_run_kind,
+            initial_provider_session_id,
+        )
+    ]
+    assert prepared_session.initial_session.recorded_provider_session_ids == [
+        observed_provider_session_id
+    ]
+    assert prepared_session.initial_session.provider_session_id == (
+        observed_provider_session_id
+    )
     assert prepared_session.initial_session.successful_run_calls == 1
 
 

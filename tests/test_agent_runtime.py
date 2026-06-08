@@ -20,6 +20,7 @@ from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
+from pycastle.session import RoleSession
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import RunKind
 
@@ -154,6 +155,35 @@ class _PlanRecordingClaudeRuntimeService(ClaudeService):
             state_dir_container_path=state_dir_container_path,
             token=token,
         )
+
+
+class _PlanRecordingRuntimeService(_RecordingRuntimeService):
+    def __init__(self, name: str, provider_state: ProviderSessionState) -> None:
+        super().__init__(name)
+        self._provider_state = provider_state
+        self.build_env_state_dir_args: list[str | None] = []
+
+    def build_env(
+        self,
+        state_dir_container_path: str | None = None,
+        token: str | None = None,
+    ) -> dict[str, str]:
+        del token
+        self.build_env_state_dir_args.append(state_dir_container_path)
+        return {}
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        del role
+        if namespace:
+            return f".pycastle-session/implementer/{namespace}/{self.name}/"
+        return f".pycastle-session/implementer/{self.name}/"
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        del request
+        return self._provider_state
 
 
 def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: Path):
@@ -571,6 +601,103 @@ def test_runtime_package_run_prompt_does_not_reprompt_on_protocol_error(
             )
 
     assert work_calls == ["Return the final answer only."]
+
+
+@pytest.mark.parametrize(
+    ("provider_state", "prepared_provider_session_id", "observed_provider_session_id"),
+    [
+        (
+            ProviderSessionState(RunKind.FRESH, "provider-fresh"),
+            "provider-fresh",
+            "provider-fresh-runtime",
+        ),
+        (
+            ProviderSessionState(RunKind.RESUME, "provider-resume"),
+            "provider-resume",
+            "provider-resume-runtime",
+        ),
+    ],
+)
+def test_runtime_package_run_prompt_records_provider_session_metadata_for_text_success(
+    tmp_path: Path,
+    provider_state: ProviderSessionState,
+    prepared_provider_session_id: str,
+    observed_provider_session_id: str,
+):
+    import pycastle_agent_runtime as runtime
+
+    service = _PlanRecordingRuntimeService("fake", provider_state)
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="main",
+        service=service,
+    )
+    runner = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([]),
+        service_registry={"fake": service},
+    )
+    registry = runtime.ServiceRegistry({"fake": service})
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="fake",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        tool_policy=runtime.ToolPolicy.PARTIAL,
+        session_namespace="main",
+        run_session_plan=plan,
+    )
+    work_calls: list[tuple[str, object, RunKind, str | None]] = []
+
+    async def _fake_work_text(
+        prompt: str,
+        *,
+        role: AgentRole = AgentRole.IMPLEMENTER,
+        tool_policy=None,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        on_provider_session_id=None,
+    ) -> str:
+        del role
+        work_calls.append((prompt, tool_policy, run_kind, session_uuid))
+        assert on_provider_session_id is not None
+        on_provider_session_id(observed_provider_session_id)
+        return "exact text from adapter"
+
+    with patch.object(ContainerRunner, "work_text", side_effect=_fake_work_text):
+        result = asyncio.run(
+            runtime.run_prompt(
+                runner=runner, service_registry=registry, request=request
+            )
+        )
+
+    assert result == "exact text from adapter"
+    assert work_calls == [
+        (
+            "Return the final answer only.",
+            runtime.ToolPolicy.PARTIAL,
+            provider_state.run_kind,
+            prepared_provider_session_id,
+        )
+    ]
+    assert service.build_env_state_dir_args == [
+        "/home/agent/workspace/.pycastle-session/implementer/main/fake/"
+    ]
+    assert RoleSession(
+        tmp_path,
+        AgentRole.IMPLEMENTER,
+        "main",
+    ).service_session_metadata("fake") == {
+        "service": "fake",
+        "provider_session_id": observed_provider_session_id,
+    }
 
 
 class _ExpectedFallback(TypedDict):
