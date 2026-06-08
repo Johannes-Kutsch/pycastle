@@ -55,13 +55,6 @@ def _hydrate_blocked_issues(blocked: list[dict], open_issues: list[dict]) -> lis
     return hydrated
 
 
-def _fill_fields(issues: list[dict]) -> list[dict]:
-    return [
-        {**i, "body": i.get("body") or "", "comments": i.get("comments") or []}
-        for i in issues
-    ]
-
-
 async def planning_phase(
     deps: _PlanningDeps,
     open_issues: list[dict],
@@ -99,7 +92,7 @@ async def planning_phase(
                 f"resuming {len(_in_flight)} in-flight branch(es) ({nums}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return PlanReady(issues=_fill_fields(_in_flight), sha=verdict.sha)
+            return PlanReady(issues=_in_flight, sha=verdict.sha)
 
         verdict = await deps.preflight_cache.get_safe_sha(deps)
         if isinstance(verdict, (PreflightHITL, PreflightAFK)):
@@ -137,10 +130,18 @@ async def planning_phase(
                 f"only one open issue (#{well_formed[0]['number']}) labeled"
                 f" {deps.cfg.issue_label}, skipping plan agent"
             )
-            return PlanReady(
-                issues=_fill_fields(well_formed),
-                sha=sha,
-                readiness_by_number=readiness_by_number,
+            return resolve_planner_issue_intake(
+                PlanReady(
+                    issues=[
+                        {
+                            "number": well_formed[0]["number"],
+                            "title": well_formed[0]["title"],
+                        }
+                    ],
+                    sha=sha,
+                    readiness_by_number=readiness_by_number,
+                ),
+                issue_set,
             )
 
         async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:

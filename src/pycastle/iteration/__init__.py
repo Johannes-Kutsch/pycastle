@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
@@ -222,19 +221,6 @@ async def _run_implement_and_merge(
     return Continue()
 
 
-def _issues_with_readiness(
-    issues: list[dict], readiness_by_number: Mapping[int, object]
-) -> list[dict]:
-    return [
-        (
-            {**issue, "readiness": readiness}
-            if (readiness := readiness_by_number.get(issue["number"])) is not None
-            else issue
-        )
-        for issue in issues
-    ]
-
-
 async def _handle_preflight_outcome(
     result: PreflightHITL | PreflightAFK, deps: Deps
 ) -> IterationOutcome:
@@ -309,12 +295,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         if isinstance(plan_result, (PreflightHITL, PreflightAFK)):
             return await _handle_preflight_outcome(plan_result, deps)
 
-        issues = _issues_with_readiness(
-            plan_result.issues, plan_result.readiness_by_number
-        )
-
         # ── Implement ────────────────────────────────────────────────────────
-        return await _run_implement_and_merge(issues, deps, plan_result.sha)
+        return await _run_implement_and_merge(plan_result.issues, deps, plan_result.sha)
 
     except AgentFailedError as err:
         issue_number: int | None = None

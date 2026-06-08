@@ -91,7 +91,11 @@ def test_planning_phase_skips_planner_for_single_issue(tmp_path, git_svc):
     result = asyncio.run(planning_phase(deps, issues, []))
 
     assert isinstance(result, PlanReady)
-    assert result.issues == issues
+    assert len(result.issues) == 1
+    assert result.issues[0] == {
+        **issues[0],
+        "readiness": result.readiness_by_number[5],
+    }
     assert len(fake.calls) == 0, "No agent must be called for single-issue skip"
     git_svc.create_worktree.assert_not_called()
 
@@ -117,6 +121,7 @@ def test_planning_phase_single_issue_skip_uses_prepared_issue_body(tmp_path, git
             "body": "Summary\n\n" + ("x" * 120),
             "comments": [],
             "labels": ["behavior-slice"],
+            "readiness": result.readiness_by_number[5],
         }
     ]
 
@@ -151,6 +156,7 @@ def test_planning_phase_single_issue_skip_uses_supplied_planning_issue_intake_re
             "body": "Summary\n\n" + ("x" * 120),
             "comments": [],
             "labels": ["behavior-slice"],
+            "readiness": result.readiness_by_number[5],
         }
     ]
 
@@ -340,6 +346,7 @@ def test_planning_phase_uses_prepared_issue_fields_when_resolving_planner_output
             "body": "Summary\n\n" + ("x" * 120),
             "comments": [],
             "labels": ["behavior-slice"],
+            "readiness": result.readiness_by_number[1],
         }
     ]
     assert result.readiness_by_number[1].selected_mode == SliceMode.BEHAVIOR

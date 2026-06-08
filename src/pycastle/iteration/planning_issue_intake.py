@@ -59,18 +59,24 @@ def resolve_planner_issue_intake(
     sorted_planner_issues = sorted(
         plan_result.issues, key=lambda issue: issue["number"]
     )
-    resolved_issues = [
-        ready_candidates_by_number[number]
-        for issue in sorted_planner_issues
-        if (number := issue["number"]) in ready_candidates_by_number
-    ]
+    ready_readiness_by_number = prepared_issue_set.ready_readiness_by_number
+    resolved_issues = []
+    for issue in sorted_planner_issues:
+        number = issue["number"]
+        source = ready_candidates_by_number.get(number)
+        if source is None:
+            continue
+        readiness = ready_readiness_by_number.get(number)
+        resolved_issues.append(
+            {**source, "readiness": readiness} if readiness is not None else source
+        )
     resolved_numbers = {issue["number"] for issue in resolved_issues}
     return PlanReady(
         issues=resolved_issues,
         sha=plan_result.sha,
         readiness_by_number={
             issue_number: readiness
-            for issue_number, readiness in prepared_issue_set.ready_readiness_by_number.items()
+            for issue_number, readiness in ready_readiness_by_number.items()
             if issue_number in resolved_numbers
         },
     )

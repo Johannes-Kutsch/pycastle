@@ -527,6 +527,7 @@ def test_resolve_planner_issue_intake_drops_non_ready_numbers_and_uses_prepared_
             "body": "Summary\n\n" + ("x" * 120),
             "comments": [],
             "labels": ["behavior-slice"],
+            "readiness": result.readiness_by_number[11],
         }
     ]
 
