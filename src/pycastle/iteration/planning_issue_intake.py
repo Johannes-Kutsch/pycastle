@@ -2,6 +2,7 @@ import dataclasses
 import re
 from typing import Literal, TypeAlias
 
+from ..agents.output_protocol import PlannerOutput
 from ..config import Config
 from ..issue_readiness import (
     AFKBlockedOutcome,
@@ -101,6 +102,12 @@ def resolve_planner_blocked_intake(
             continue
         resolved_blocked.append(_normalize_blocked_entry(blocked_entry))
     return resolved_blocked
+
+
+def resolve_planner_all_blocked_intake(
+    planner_output: PlannerOutput, prepared_issue_set: "PreparedPlanningIssueSet"
+) -> list[dict]:
+    return resolve_planner_blocked_intake(planner_output.blocked, prepared_issue_set)
 
 
 def _normalize_blocked_entry(blocked_entry: dict) -> dict:

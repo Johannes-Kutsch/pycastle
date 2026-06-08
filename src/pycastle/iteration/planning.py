@@ -22,7 +22,7 @@ from .planning_issue_intake import (
     PreparedPlanningIssueSet,
     planning_blocker_summary,
     prepare_planning_issue_set,
-    resolve_planner_blocked_intake,
+    resolve_planner_all_blocked_intake,
     resolve_planner_issue_intake,
 )
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
@@ -160,7 +160,7 @@ async def planning_phase(
                     f"Planner returned unexpected output type: {type(output).__name__}"
                 )
             if not output.issues:
-                blocked = resolve_planner_blocked_intake(output.blocked, issue_set)
+                blocked = resolve_planner_all_blocked_intake(output, issue_set)
                 blocker_summary = planning_blocker_summary(
                     issue_set.blocker_summary_inputs
                 )
