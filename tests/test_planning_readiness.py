@@ -668,3 +668,72 @@ def test_resolve_planner_blocked_intake_keeps_only_tolerated_fields_for_unknown_
         {"number": 21, "title": "Planner supplied title"},
         {"number": 22},
     ]
+
+
+def test_resolve_planner_all_blocked_intake_uses_canonical_ready_titles():
+    from pycastle.agents.output_protocol import PlannerOutput
+    from pycastle.iteration.planning_issue_intake import (
+        prepare_planning_issue_set,
+        resolve_planner_all_blocked_intake,
+    )
+
+    cfg = Config()
+    ready_issue = {
+        "number": 11,
+        "title": "Canonical ready title",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    prepared = prepare_planning_issue_set([ready_issue], cfg)
+
+    result = resolve_planner_all_blocked_intake(
+        PlannerOutput(
+            issues=[],
+            blocked=[
+                {
+                    "number": 11,
+                    "title": "Planner supplied stale title",
+                    "blocked_by": 3,
+                    "reason": "depends on #3",
+                }
+            ],
+        ),
+        prepared,
+    )
+
+    assert result == [{"number": 11, "title": "Canonical ready title"}]
+
+
+def test_resolve_planner_all_blocked_intake_keeps_tolerated_unknown_fields_only():
+    from pycastle.agents.output_protocol import PlannerOutput
+    from pycastle.iteration.planning_issue_intake import (
+        prepare_planning_issue_set,
+        resolve_planner_all_blocked_intake,
+    )
+
+    cfg = Config()
+    ready_issue = {
+        "number": 11,
+        "title": "Canonical ready title",
+        "body": "Summary\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    prepared = prepare_planning_issue_set([ready_issue], cfg)
+
+    result = resolve_planner_all_blocked_intake(
+        PlannerOutput(
+            issues=[],
+            blocked=[
+                {"number": 21, "title": "Planner supplied title", "note": "waiting"},
+                {"number": 22, "blocked_by": 3, "reason": "depends on #3"},
+            ],
+        ),
+        prepared,
+    )
+
+    assert result == [
+        {"number": 21, "title": "Planner supplied title"},
+        {"number": 22},
+    ]
