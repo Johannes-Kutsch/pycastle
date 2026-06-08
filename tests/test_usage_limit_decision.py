@@ -12,7 +12,7 @@ from pycastle.iteration.usage_limit_decision import (
     decide_usage_limit_continuation,
 )
 from pycastle.services.agent_service import AgentService
-from pycastle.services.service_registry import ServiceRegistry
+from pycastle.services import ServiceRegistry
 
 
 def _now() -> datetime:

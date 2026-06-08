@@ -1,5 +1,5 @@
 from pycastle.config.types import StageOverride
-from pycastle.stage_priority_chain import (
+from pycastle_agent_runtime import (
     chain_entries,
     iter_stage_chain,
     referenced_service_names,

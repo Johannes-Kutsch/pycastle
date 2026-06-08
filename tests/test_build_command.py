@@ -569,7 +569,7 @@ def test_agent_runtime_package_exports_the_runtime_surface():
         UnsupportedTokens,
         UsageLimit,
     )
-    from pycastle.services.service_registry import ServiceRegistry
+    from pycastle.services import ServiceRegistry
 
     assert runtime.AgentRunner is AgentRunner
     assert runtime.AgentRunnerProtocol is AgentRunnerProtocol

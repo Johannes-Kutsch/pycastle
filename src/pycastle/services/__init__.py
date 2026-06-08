@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     )
     from .opencode_service import OpenCodeService
     from .reset_time_parser import ResetTimeSyntaxMode
-    from .service_registry import ServiceRegistry
+    from pycastle_agent_runtime.service_registry import ServiceRegistry
 
 __all__ = [
     "AgentService",
@@ -119,7 +119,7 @@ def __getattr__(name: str):
 
         return getattr(reset_time_parser, name)
     if name == "ServiceRegistry":
-        from .service_registry import ServiceRegistry
+        from pycastle_agent_runtime.service_registry import ServiceRegistry
 
         return ServiceRegistry
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

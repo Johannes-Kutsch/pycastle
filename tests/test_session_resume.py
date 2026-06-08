@@ -19,7 +19,7 @@ from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
-from pycastle.services.service_registry import ServiceRegistry
+from pycastle.services import ServiceRegistry
 from pycastle.session import (
     ProviderFreshFallbackReason,
     ProviderRunState,

@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import platformdirs
+import pycastle_agent_runtime as agent_runtime
 
-from pycastle import stage_priority_chain
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
@@ -192,7 +192,7 @@ def referenced_services(cfg: Config) -> set[str]:
             cfg.preflight_issue_override,
             cfg.improve_override,
         )
-        for service in stage_priority_chain.referenced_service_names(override)
+        for service in agent_runtime.referenced_service_names(override)
     }
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import click
+import pycastle_agent_runtime as agent_runtime
 
 from .config import (
     Config,
@@ -24,11 +25,6 @@ from .errors import (
     DockerServiceError,
 )
 from .display.status_display import PlainStatusDisplay
-from .stage_priority_chain import (
-    chain_entries,
-    render_chain_label,
-    validation_labels,
-)
 
 _KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
 
@@ -57,8 +53,8 @@ def _validate_stage_overrides(
     violations: list[str] = []
     for stage_name, override in _stage_overrides(cfg):
         for stage_label, entry in zip(
-            validation_labels(stage_name, override),
-            chain_entries(override),
+            agent_runtime.validation_labels(stage_name, override),
+            agent_runtime.chain_entries(override),
             strict=True,
         ):
             svc_name = entry.service
@@ -141,16 +137,14 @@ def _configured_service_registry(
 def _validate_locally_configured_stage_overrides(
     cfg: Config, service_registry: dict[str, "AgentService"]
 ) -> list[str]:
-    from .services.service_registry import ServiceRegistry
-
-    registry = ServiceRegistry(service_registry)
+    registry = agent_runtime.ServiceRegistry(service_registry)
     violations: list[str] = []
     for stage_name, override in _stage_overrides(cfg):
         if registry.has_configured_candidate(override):
             continue
         violations.append(
             f"  stage={stage_name!r}: no locally configured service in priority chain "
-            f"{render_chain_label(override)!r}"
+            f"{agent_runtime.render_chain_label(override)!r}"
         )
     return violations
 
@@ -306,7 +300,6 @@ def _do_run(
     from .services.claude_service import ClaudeService
     from .services.codex_service import CodexService
     from .services.opencode_service import OpenCodeService
-    from .services.service_registry import ServiceRegistry
 
     validation_services: dict[str, AgentService] = {
         "claude": ClaudeService(),
@@ -360,7 +353,7 @@ def _do_run(
         effective_improve_mode = improve_mode_flag
     else:
         effective_improve_mode = cfg.improve_mode
-    registry = ServiceRegistry(service_registry)
+    registry = agent_runtime.ServiceRegistry(service_registry)
     asyncio.run(
         run(
             container_env,
