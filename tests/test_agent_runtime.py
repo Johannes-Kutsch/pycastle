@@ -186,6 +186,97 @@ class _PlanRecordingRuntimeService(_RecordingRuntimeService):
         return self._provider_state
 
 
+class _TextSuccessRuntimeService(_PlanRecordingRuntimeService):
+    def __init__(
+        self,
+        name: str,
+        provider_state: ProviderSessionState,
+        *,
+        observed_provider_session_id: str,
+    ) -> None:
+        super().__init__(name, provider_state)
+        self._observed_provider_session_id = observed_provider_session_id
+        self.command_calls: list[tuple[object, RunKind, str | None]] = []
+
+    def build_command(
+        self,
+        role: AgentRole,
+        model: str,
+        effort: str,
+        run_kind: RunKind,
+        session_uuid: str | None,
+        *,
+        tool_policy=None,
+    ) -> str:
+        del role, model, effort
+        self.command_calls.append((tool_policy, run_kind, session_uuid))
+        return f"{self.name} exec"
+
+    def run(
+        self,
+        lines: Iterable[str],
+        on_provider_session_id: Callable[[str], None] | None = None,
+    ) -> Iterator[ParsedTurn]:
+        list(lines)
+        if on_provider_session_id is not None:
+            on_provider_session_id(self._observed_provider_session_id)
+        yield Result(text="exact text from adapter")
+
+
+class _RuntimeSessionStandIn:
+    def __init__(self) -> None:
+        self.exec_simple_calls: list[str] = []
+        self.written_files: list[tuple[str, str]] = []
+        self.stream_commands: list[str] = []
+
+    def __enter__(self) -> "_RuntimeSessionStandIn":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def exec_simple(self, cmd: str) -> str:
+        self.exec_simple_calls.append(cmd)
+        return ""
+
+    def write_file(self, content: str, path: str) -> None:
+        self.written_files.append((content, path))
+
+    def exec_stream(self, cmd: str):
+        self.stream_commands.append(cmd)
+        return iter(())
+
+
+class _RuntimeRunnerStandIn:
+    def __init__(
+        self,
+        *,
+        cfg: Config,
+        git_service: GitService,
+        service: _PlanRecordingRuntimeService,
+        session: _RuntimeSessionStandIn,
+    ) -> None:
+        self._cfg = cfg
+        self._git_service = git_service
+        self._service = service
+        self._session = session
+
+    def _resolve_service(self, service_name: str):
+        assert service_name == self._service.name
+        return self._service
+
+    def _build_session(
+        self,
+        mount_path: Path,
+        service,
+        state_dir_container_path: str | None = None,
+    ) -> _RuntimeSessionStandIn:
+        del mount_path
+        assert service is self._service
+        service.build_env(state_dir_container_path)
+        return self._session
+
+
 def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: Path):
     import pycastle_agent_runtime as runtime
 
@@ -626,19 +717,23 @@ def test_runtime_package_run_prompt_records_provider_session_metadata_for_text_s
 ):
     import pycastle_agent_runtime as runtime
 
-    service = _PlanRecordingRuntimeService("fake", provider_state)
+    service = _TextSuccessRuntimeService(
+        "fake",
+        provider_state,
+        observed_provider_session_id=observed_provider_session_id,
+    )
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
         worktree=tmp_path,
         namespace="main",
         service=service,
     )
-    runner = runtime.AgentRunner(
-        {},
-        _make_cfg(tmp_path),
-        _make_git_service(),
-        docker_client=_make_docker_client([]),
-        service_registry={"fake": service},
+    session = _RuntimeSessionStandIn()
+    runner = _RuntimeRunnerStandIn(
+        cfg=_make_cfg(tmp_path),
+        git_service=_make_git_service(),
+        service=service,
+        session=session,
     )
     registry = runtime.ServiceRegistry({"fake": service})
     request = runtime.PromptRunRequest(
@@ -654,38 +749,21 @@ def test_runtime_package_run_prompt_records_provider_session_metadata_for_text_s
         session_namespace="main",
         run_session_plan=plan,
     )
-    work_calls: list[tuple[str, object, RunKind, str | None]] = []
 
-    async def _fake_work_text(
-        prompt: str,
-        *,
-        role: AgentRole = AgentRole.IMPLEMENTER,
-        tool_policy=None,
-        run_kind: RunKind = RunKind.FRESH,
-        session_uuid: str | None = None,
-        on_provider_session_id=None,
-    ) -> str:
-        del role
-        work_calls.append((prompt, tool_policy, run_kind, session_uuid))
-        assert on_provider_session_id is not None
-        on_provider_session_id(observed_provider_session_id)
-        return "exact text from adapter"
-
-    with patch.object(ContainerRunner, "work_text", side_effect=_fake_work_text):
-        result = asyncio.run(
-            runtime.run_prompt(
-                runner=runner, service_registry=registry, request=request
-            )
-        )
+    result = asyncio.run(
+        runtime.run_prompt(runner=runner, service_registry=registry, request=request)
+    )
 
     assert result == "exact text from adapter"
-    assert work_calls == [
+    assert service.command_calls == [
         (
-            "Return the final answer only.",
             runtime.ToolPolicy.PARTIAL,
             provider_state.run_kind,
             prepared_provider_session_id,
         )
+    ]
+    assert session.written_files == [
+        ("Return the final answer only.", "/tmp/.pycastle_prompt")
     ]
     assert service.build_env_state_dir_args == [
         "/home/agent/workspace/.pycastle-session/implementer/main/fake/"
