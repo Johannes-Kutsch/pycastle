@@ -16,6 +16,8 @@ def main(
     no_cache: bool = False,
     stream: bool = False,
     terse: bool = False,
+    *,
+    options: UniversalImageBuildOptions | None = None,
     docker_service: UniversalImageBuildAdapter | None = None,
     cfg: Config | None = None,
 ) -> None:
@@ -25,15 +27,18 @@ def main(
     if docker_service is None:
         docker_service = DockerService()
 
+    if options is None:
+        options = UniversalImageBuildOptions(
+            no_cache=no_cache,
+            stream=stream,
+            terse=terse,
+        )
+
     build_universal_image(
         docker_service,
         resolve_universal_image_build_request(
             cfg,
             project_root=Path("."),
-            options=UniversalImageBuildOptions(
-                no_cache=no_cache,
-                stream=stream,
-                terse=terse,
-            ),
+            options=options,
         ),
     )

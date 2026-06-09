@@ -24,6 +24,7 @@ from .errors import (
     ConfigValidationError,
     DockerServiceError,
 )
+from ._universal_image_build import UniversalImageBuildOptions
 from .display.status_display import PlainStatusDisplay
 
 _KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
@@ -267,7 +268,7 @@ def build_cmd(no_cache: bool) -> None:
     _print_layer_summary()
     cfg = _load_config_or_exit()
     try:
-        _build(no_cache, cfg=cfg)
+        _build(options=UniversalImageBuildOptions(no_cache=no_cache), cfg=cfg)
     except (ConfigValidationError, DockerServiceError) as exc:
         click.echo(str(exc), err=True)
         sys.exit(1)
@@ -334,7 +335,10 @@ def _do_run(
         sys.exit(1)
 
     try:
-        _build(stream=True, terse=True, cfg=cfg)
+        _build(
+            options=UniversalImageBuildOptions(stream=True, terse=True),
+            cfg=cfg,
+        )
     except (ConfigValidationError, DockerServiceError) as exc:
         click.echo(str(exc), err=True)
         sys.exit(1)
