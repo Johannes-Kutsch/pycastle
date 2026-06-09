@@ -5,10 +5,14 @@ from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 
-from pycastle.services.agent_service import AssistantTurn, CredentialFailure, Result
-from pycastle.services.agent_service import HardError
-from pycastle.services.agent_service import TransientError
-from pycastle.services.agent_service import UsageLimit
+from pycastle_agent_runtime import (
+    AssistantTurn,
+    CredentialFailure,
+    HardError,
+    Result,
+    TransientError,
+    UsageLimit,
+)
 from pycastle.services.provider_session_state import ProviderSessionStateRequest
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.opencode_service import OpenCodeService
