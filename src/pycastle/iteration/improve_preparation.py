@@ -65,7 +65,7 @@ class ImproveStepPreparationRequest:
     send_role_prompt_on_resume: bool
     short_sid: str
     prd_number: int | None
-    fetch_recent_prd_titles: bool
+    fetch_recent_prd_titles: bool = False
 
 
 @dataclass(frozen=True)

@@ -366,6 +366,23 @@ def test_improve_phase_propagates_recent_improve_prd_lookup_failures(tmp_path, g
     assert runner.calls == []
 
 
+def test_improve_phase_propagates_prd_preparation_lookup_failures_after_scan(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.side_effect = [
+        [{"number": 12, "state": "OPEN", "title": "First candidate"}],
+        GithubNetworkError("transport error", cause=RuntimeError("boom")),
+    ]
+    runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    with pytest.raises(GithubNetworkError):
+        _run(deps)
+
+    assert [call.template for call in runner.calls] == [PromptTemplate.IMPROVE_SCAN]
+
+
 def test_improve_phase_threads_prd_number_from_issue_output_to_issues_phase(
     tmp_path, git_svc
 ):

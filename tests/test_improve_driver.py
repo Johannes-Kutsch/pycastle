@@ -271,3 +271,20 @@ def test_prd_number_set_from_phase_02_issue_output(driver_dir: Path) -> None:
     driver.record_outcome(step2, IssueOutput(number=4242, labels=[]))
 
     assert driver.prd_number == 4242
+
+
+def test_phase_02_outcome_does_not_persist_parent_prd_number_to_disk(
+    driver_dir: Path,
+) -> None:
+    """Phase 02 keeps the parent PRD number in memory only."""
+    driver = _make_driver(driver_dir)
+
+    step1 = driver.start()
+    assert step1 is not None
+    driver.record_outcome(step1, CompletionOutput())
+
+    step2 = driver.next()
+    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    driver.record_outcome(step2, IssueOutput(number=4242, labels=[]))
+
+    assert sorted(path.name for path in driver_dir.iterdir()) == ["_phase_progress"]
