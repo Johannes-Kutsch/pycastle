@@ -42,6 +42,13 @@ if TYPE_CHECKING:
         ConfiguredCandidateChain,
         ConfiguredCandidateSelection,
     )
+    from pycastle_agent_runtime.usage_limit_decision import (
+        ContinueNow,
+        SleepUntil,
+        Stop,
+        UsageLimitContinuationDecision,
+        UsageLimitOutcome,
+    )
 
 __all__ = [
     "AgentCredentialFailureError",
@@ -70,13 +77,18 @@ __all__ = [
     "RunKind",
     "RunRequest",
     "ServiceRegistry",
+    "SleepUntil",
+    "Stop",
     "StageOverride",
     "chain_entries",
+    "ContinueNow",
     "configured_candidate_chain",
     "iter_stage_chain",
     "referenced_service_names",
     "render_chain_label",
     "select_configured_candidate_chain",
+    "UsageLimitContinuationDecision",
+    "UsageLimitOutcome",
     "ToolPolicy",
     "TransientError",
     "TransientAgentError",
@@ -85,6 +97,7 @@ __all__ = [
     "UsageLimitError",
     "validation_labels",
     "run",
+    "decide_usage_limit_continuation",
     "run_prompt",
 ]
 
@@ -106,6 +119,17 @@ def __getattr__(name: str):
         from pycastle_agent_runtime.service_registry import ServiceRegistry
 
         return ServiceRegistry
+    if name in {
+        "ContinueNow",
+        "SleepUntil",
+        "Stop",
+        "UsageLimitContinuationDecision",
+        "UsageLimitOutcome",
+        "decide_usage_limit_continuation",
+    }:
+        from pycastle_agent_runtime import usage_limit_decision
+
+        return getattr(usage_limit_decision, name)
     if name in {
         "ChainEntry",
         "ConfiguredCandidateChain",
