@@ -6,8 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
 
-from pycastle import _time as _time_module
-
+from . import _time as _time_module
 from .roles import AgentRole
 from .session import RunKind
 

@@ -20,7 +20,11 @@ from pycastle.agents._work_invocation import (
 )
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole
-from pycastle_agent_runtime.errors import AgentTimeoutError, UsageLimitError
+from pycastle_agent_runtime.errors import (
+    AgentTimeoutError,
+    RuntimeConfigurationError,
+    UsageLimitError,
+)
 from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -184,6 +188,7 @@ def _standalone_runtime_prompt_result(repo_root: Path) -> str:
                 sys.meta_path.insert(0, _BlockPycastle())
 
                 import pycastle_agent_runtime as runtime
+                from pycastle_agent_runtime.work import WorkInvocationDependencies
 
                 class _Service:
                     name = "codex"
@@ -262,7 +267,7 @@ def _standalone_runtime_prompt_result(repo_root: Path) -> str:
                         assert model == "gpt-5.4-mini"
                         assert effort == "low"
                         assert service is self.service
-                        return runtime.WorkInvocationDependencies(
+                        return WorkInvocationDependencies(
                             container_workspace="/tmp/workspace",
                             timeout_retries=0,
                             stage_key_for_role=lambda role: role.value,
@@ -301,7 +306,7 @@ def _standalone_runtime_prompt_result(repo_root: Path) -> str:
     )
     if result.returncode != 0:
         raise AssertionError(result.stderr)
-    return result.stdout.strip()
+    return result.stdout.strip().splitlines()[-1]
 
 
 class _RecordingRuntimeService:
@@ -918,6 +923,41 @@ def test_runtime_package_prompt_entrypoint_runs_standalone_without_pycastle() ->
     result = _standalone_runtime_prompt_result(repo_root)
 
     assert result == "standalone:already rendered prompt"
+
+
+def test_runtime_package_prompt_entrypoint_requires_build_work_dependencies_adapter(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("codex")
+    registry = runtime.ServiceRegistry({"codex": service})
+    request = runtime.PromptRunRequest(
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+    )
+
+    class _MissingBuildWorkDependenciesAdapter:
+        def resolve_service(self, service_name: str = "") -> _RecordingRuntimeService:
+            assert service_name == "codex"
+            return service
+
+    with pytest.raises(
+        RuntimeConfigurationError,
+        match=r"execution adapter with callable `build_work_dependencies\(\)`",
+    ):
+        asyncio.run(
+            runtime.run_prompt(
+                runner=_MissingBuildWorkDependenciesAdapter(),
+                service_registry=registry,
+                request=request,
+            )
+        )
 
 
 def test_runtime_package_import_isolation_guardrail_reports_application_ownership() -> (
