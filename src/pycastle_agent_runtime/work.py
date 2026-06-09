@@ -6,44 +6,291 @@ import inspect
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 from .contracts import AgentService, ToolPolicy
+from .errors import (
+    AgentCredentialFailureError,
+    AgentTimeoutError,
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from .roles import AgentRole
 from .session import RunKind
-
-if TYPE_CHECKING:
-    from pycastle.errors import (
-        AgentTimeoutError,
-        TransientAgentError,
-    )
 
 WorkResultT = TypeVar("WorkResultT")
 
 
-def _default_prepare_session(**kwargs: Any) -> Any:
-    from pycastle.session.run_dispatch import RunSessionRequest, prepare_run_session
+@dataclasses.dataclass(frozen=True)
+class PrepareSessionRequest:
+    mount_path: Path
+    role: AgentRole
+    session_namespace: str
+    service: AgentService
+    container_workspace: str
+    run_session_plan: Any = None
 
-    return prepare_run_session(
-        RunSessionRequest(
-            worktree=kwargs["mount_path"],
-            role=kwargs["role"],
-            session_namespace=kwargs["session_namespace"],
-            service=kwargs["service"],
-            container_workspace=kwargs["container_workspace"],
-            run_session_plan=kwargs["run_session_plan"],
+
+@dataclasses.dataclass(frozen=True)
+class WorkModelDisplayMetadata:
+    service: str
+    model: str
+    effort: str
+
+
+class WorkStatusDisplay(Protocol):
+    def register(
+        self,
+        caller: str,
+        kind: str,
+        startup_message: str = "started",
+        work_body: str = "",
+        initial_phase: str = "Setup",
+        color_key: int | None = None,
+        model_display: WorkModelDisplayMetadata | None = None,
+    ) -> None: ...
+
+    def update_phase(self, name: str, phase: str) -> None: ...
+
+    def reset_idle_timer(self, name: str) -> None: ...
+
+    def update_tokens(self, name: str, current_tokens: int) -> None: ...
+
+    def remove(
+        self,
+        caller: str,
+        shutdown_message: str = "finished",
+        shutdown_style: str = "success",
+    ) -> None: ...
+
+    def print(self, caller: str, message: object, style: str | None = None) -> None: ...
+
+
+class WorkStatusRow(Protocol):
+    def close(
+        self,
+        shutdown_message: str = "finished",
+        *,
+        shutdown_style: str = "success",
+    ) -> None: ...
+
+
+class PreparedProviderRunSession(Protocol):
+    run_kind: RunKind
+    provider_session_id: str | None
+
+    def record_provider_session_id(self, provider_session_id: str) -> None: ...
+
+    def record_successful_run(self) -> None: ...
+
+
+class PreparedSession(Protocol):
+    provider_state_dir_container_path: str | None
+
+    def prepare_for_run(self) -> None: ...
+
+    def initial_provider_run_session(self) -> PreparedProviderRunSession: ...
+
+    def resumable_provider_run_session(self) -> PreparedProviderRunSession: ...
+
+    def protocol_reprompt_provider_run_session(
+        self,
+    ) -> PreparedProviderRunSession | None: ...
+
+
+PrepareSessionAdapter = Callable[..., PreparedSession]
+StatusRowFactory = Callable[..., AbstractAsyncContextManager[Any]]
+SetupFailureTranslator = Callable[[AgentRole, BaseException], BaseException | None]
+ProviderAccountExhaustionHandler = Callable[[AgentService, UsageLimitError], None]
+StatusDisplayFactory = Callable[[], WorkStatusDisplay]
+
+
+class _PlainStatusDisplay:
+    def __init__(self) -> None:
+        self._last_caller: str | None = None
+        self._last_kind: str | None = None
+        self._kinds: dict[str, str] = {}
+
+    def _blank_before(self, caller: str) -> bool:
+        if caller == "":
+            return True
+        if caller == self._last_caller:
+            return False
+        kinds = {self._last_kind, self._kinds.get(caller)}
+        if "agent" in kinds and kinds <= {"phase", "agent"}:
+            return False
+        return True
+
+    def register(
+        self,
+        caller: str,
+        kind: str,
+        startup_message: str = "started",
+        work_body: str = "",
+        initial_phase: str = "Setup",
+        color_key: int | None = None,
+        model_display: WorkModelDisplayMetadata | None = None,
+    ) -> None:
+        del work_body, initial_phase, color_key, model_display
+        if caller != "":
+            self._kinds[caller] = kind
+        self.print(caller, startup_message)
+
+    def update_phase(self, name: str, phase: str) -> None:
+        del name, phase
+
+    def reset_idle_timer(self, name: str) -> None:
+        del name
+
+    def update_tokens(self, name: str, current_tokens: int) -> None:
+        del name, current_tokens
+
+    def remove(
+        self,
+        caller: str,
+        shutdown_message: str = "finished",
+        shutdown_style: str = "success",
+    ) -> None:
+        del shutdown_style
+        self.print(caller, shutdown_message)
+        self._kinds.pop(caller, None)
+
+    def print(self, caller: str, message: object, style: str | None = None) -> None:
+        del style
+        lines = str(message).split("\n")
+        if self._blank_before(caller):
+            print()
+        self._last_caller = caller
+        self._last_kind = self._kinds.get(caller)
+        for line in lines:
+            if caller:
+                print(f"[{caller}] {line}")
+            else:
+                print(line)
+
+
+class _StatusRowHandle:
+    def __init__(self, status_display: WorkStatusDisplay, caller: str) -> None:
+        self._status_display = status_display
+        self._caller = caller
+        self._closed = False
+
+    def close(
+        self,
+        shutdown_message: str = "finished",
+        *,
+        shutdown_style: str = "success",
+    ) -> None:
+        if self._closed:
+            return
+        self._status_display.remove(
+            self._caller,
+            shutdown_message,
+            shutdown_style,
         )
+        self._closed = True
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+
+class _DefaultStatusRow:
+    def __init__(
+        self,
+        status_display: WorkStatusDisplay,
+        caller: str,
+        *,
+        kind: str,
+        must_close: bool,
+        color_key: int | None = None,
+        work_body: str = "",
+        initial_phase: str = "Setup",
+        startup_message: str = "started",
+        model_display: WorkModelDisplayMetadata | None = None,
+    ) -> None:
+        self._status_display = status_display
+        self._caller = caller
+        self._must_close = must_close
+        self._kind = kind
+        self._color_key = color_key
+        self._work_body = work_body
+        self._initial_phase = initial_phase
+        self._startup_message = startup_message
+        self._model_display = model_display
+        self._row = _StatusRowHandle(status_display, caller)
+
+    async def __aenter__(self) -> WorkStatusRow:
+        self._status_display.register(
+            self._caller,
+            self._kind,
+            startup_message=self._startup_message,
+            work_body=self._work_body,
+            initial_phase=self._initial_phase,
+            color_key=self._color_key,
+            model_display=self._model_display,
+        )
+        return self._row
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        del tb
+        if self._row.closed:
+            return False
+        if exc is None:
+            if self._must_close:
+                self._row.close("failed", shutdown_style="error")
+            else:
+                self._row.close()
+            return False
+        if isinstance(exc, UsageLimitError):
+            self._row.close("usage limit reached", shutdown_style="interrupted")
+            return False
+        if isinstance(exc, AgentTimeoutError):
+            self._row.close("timed out", shutdown_style="interrupted")
+            return False
+        self._row.close("failed", shutdown_style="error")
+        return False
+
+
+def _default_status_display_factory() -> WorkStatusDisplay:
+    return _PlainStatusDisplay()
+
+
+def _default_status_row_factory(
+    status_display: WorkStatusDisplay,
+    caller: str,
+    *,
+    kind: str,
+    must_close: bool,
+    color_key: int | None = None,
+    work_body: str = "",
+    initial_phase: str = "Setup",
+    startup_message: str = "started",
+    model_display: WorkModelDisplayMetadata | None = None,
+) -> AbstractAsyncContextManager[WorkStatusRow]:
+    return _DefaultStatusRow(
+        status_display,
+        caller,
+        kind=kind,
+        must_close=must_close,
+        color_key=color_key,
+        work_body=work_body,
+        initial_phase=initial_phase,
+        startup_message=startup_message,
+        model_display=model_display,
     )
 
 
-def _default_status_row_factory(*args: Any, **kwargs: Any) -> Any:
-    from pycastle.iteration._rows import status_row
-
-    return status_row(*args, **kwargs)
+def _default_provider_account_exhaustion_handler(
+    service: AgentService,
+    error: UsageLimitError,
+) -> None:
+    service.mark_exhausted(error.reset_time)
 
 
 def _invoke_prepare_session(
-    prepare_session: Callable[..., Any],
+    prepare_session: PrepareSessionAdapter,
     *,
     mount_path: Path,
     role: AgentRole,
@@ -51,15 +298,15 @@ def _invoke_prepare_session(
     service: AgentService,
     container_workspace: str,
     run_session_plan: Any,
-) -> Any:
-    kwargs = {
-        "mount_path": mount_path,
-        "role": role,
-        "session_namespace": session_namespace,
-        "service": service,
-        "container_workspace": container_workspace,
-        "run_session_plan": run_session_plan,
-    }
+) -> PreparedSession:
+    request = PrepareSessionRequest(
+        mount_path=mount_path,
+        role=role,
+        session_namespace=session_namespace,
+        service=service,
+        container_workspace=container_workspace,
+        run_session_plan=run_session_plan,
+    )
     parameters = tuple(inspect.signature(prepare_session).parameters.values())
     if (
         not any(
@@ -67,19 +314,15 @@ def _invoke_prepare_session(
         )
         and len(parameters) == 1
     ):
-        from pycastle.session.run_dispatch import RunSessionRequest
-
-        return prepare_session(
-            RunSessionRequest(
-                worktree=kwargs["mount_path"],
-                role=kwargs["role"],
-                session_namespace=kwargs["session_namespace"],
-                service=kwargs["service"],
-                container_workspace=kwargs["container_workspace"],
-                run_session_plan=kwargs["run_session_plan"],
-            )
-        )
-    return prepare_session(**kwargs)
+        return prepare_session(request)
+    return prepare_session(
+        mount_path=request.mount_path,
+        role=request.role,
+        session_namespace=request.session_namespace,
+        service=request.service,
+        container_workspace=request.container_workspace,
+        run_session_plan=request.run_session_plan,
+    )
 
 
 @dataclasses.dataclass
@@ -170,17 +413,17 @@ class WorkInvocationDependencies:
     container_workspace: str
     timeout_retries: int
     stage_key_for_role: Callable[[AgentRole], str | None]
+    prepare_session: PrepareSessionAdapter
     build_session: Callable[[Path, AgentService, str | None], Any]
     build_runner: Callable[[Any, Any], WorkExecutionAdapter]
     get_git_identity: Callable[[], tuple[str, str]]
-    prepare_session: Callable[..., Any] = _default_prepare_session
-    status_row_factory: Callable[..., AbstractAsyncContextManager[Any]] = (
-        _default_status_row_factory
+    status_display_factory: StatusDisplayFactory = _default_status_display_factory
+    status_row_factory: StatusRowFactory = _default_status_row_factory
+    translate_setup_failure: SetupFailureTranslator | None = None
+    build_model_display_metadata: Callable[[str, str, str], Any | None] | None = None
+    handle_provider_account_exhaustion: ProviderAccountExhaustionHandler = (
+        _default_provider_account_exhaustion_handler
     )
-    setup_error_types: tuple[type[BaseException], ...] = ()
-    build_setup_phase_error: (
-        Callable[[AgentRole, BaseException], BaseException] | None
-    ) = None
     transient_status_message: Callable[[TransientAgentError], str] | None = None
 
 
@@ -265,11 +508,11 @@ class TextOutputAdapter:
 
 
 def _ensure_timeout_context(
-    error: "AgentTimeoutError",
+    error: AgentTimeoutError,
     *,
     role: AgentRole,
     mount_path: Path,
-) -> "AgentTimeoutError":
+) -> AgentTimeoutError:
     if not error.role_value:
         error.role_value = role.value
         error.worktree_path = mount_path
@@ -279,14 +522,10 @@ def _ensure_timeout_context(
 async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
     status_display = request.status_display
     if status_display is None:
-        from pycastle.display.status_display import PlainStatusDisplay
-
-        status_display = PlainStatusDisplay()
+        status_display = request.dependencies.status_display_factory()
 
     token = request.token if request.token is not None else CancellationToken()
     if token.is_cancelled:
-        from pycastle.errors import UsageLimitError
-
         raise UsageLimitError(
             reset_time=None,
             stage_key=request.dependencies.stage_key_for_role(request.role),
@@ -311,11 +550,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
         must_close=False,
         work_body=request.work_body,
         color_key=request.color_key,
-        model_display=_model_display_metadata(
-            service=request.service.name,
-            model=request.model,
-            effort=request.effort,
-        ),
+        model_display=_build_model_display_metadata(request),
     ) as row:
         session = request.dependencies.build_session(
             request.mount_path,
@@ -324,31 +559,16 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
         )
         runner = request.dependencies.build_runner(session, status_display)
         try:
-            from pycastle.errors import (
-                AgentCredentialFailureError,
-                AgentTimeoutError,
-                HardAgentError,
-                TransientAgentError,
-                UsageLimitError,
-            )
-            from pycastle.services.claude_service import ClaudeService
-
             git_name, git_email = request.dependencies.get_git_identity()
             try:
                 await runner.setup(git_name, git_email, request.work_body)
             except Exception as exc:
-                if request.dependencies.setup_error_types and isinstance(
-                    exc, request.dependencies.setup_error_types
-                ):
-                    if request.dependencies.build_setup_phase_error is not None:
-                        raise request.dependencies.build_setup_phase_error(
-                            request.role, exc
-                        ) from exc
-                if request.dependencies.build_setup_phase_error is None:
-                    from pycastle.errors import DockerError, SetupPhaseError
-
-                    if isinstance(exc, DockerError):
-                        raise SetupPhaseError(request.role.value, str(exc)) from exc
+                if request.dependencies.translate_setup_failure is not None:
+                    translated = request.dependencies.translate_setup_failure(
+                        request.role, exc
+                    )
+                    if translated is not None:
+                        raise translated from exc
                 raise
 
             prepared_session.prepare_for_run()
@@ -411,10 +631,10 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         err.stage_key = request.dependencies.stage_key_for_role(
                             request.role
                         )
-                    if err.is_permanent and isinstance(request.service, ClaudeService):
-                        err.account_label = request.service.mark_permanently_exhausted()
-                    else:
-                        request.service.mark_exhausted(err.reset_time)
+                    request.dependencies.handle_provider_account_exhaustion(
+                        request.service,
+                        err,
+                    )
                     token.cancel()
                     raise
                 except TransientAgentError as err:
@@ -509,16 +729,35 @@ async def _invoke_work_attempt(
     return protocol_error_result, work_run_session
 
 
-def _model_display_metadata(*, service: str, model: str, effort: str) -> Any:
-    from pycastle.display.status_display import ModelDisplayMetadata
-
-    return ModelDisplayMetadata(service=service, model=model, effort=effort)
+def _build_model_display_metadata(
+    request: WorkInvocationRequest[Any],
+) -> WorkModelDisplayMetadata | None:
+    if request.dependencies.build_model_display_metadata is None:
+        return WorkModelDisplayMetadata(
+            service=request.service.name,
+            model=request.model,
+            effort=request.effort,
+        )
+    return request.dependencies.build_model_display_metadata(
+        request.service.name,
+        request.model,
+        request.effort,
+    )
 
 
 __all__ = [
     "CancellationToken",
+    "PrepareSessionRequest",
+    "PreparedProviderRunSession",
+    "PreparedSession",
+    "PrepareSessionAdapter",
+    "ProviderAccountExhaustionHandler",
+    "SetupFailureTranslator",
     "TextOutputAdapter",
+    "WorkModelDisplayMetadata",
     "WorkExecutionAdapter",
+    "WorkStatusDisplay",
+    "WorkStatusRow",
     "WorkInvocationDependencies",
     "WorkInvocationRequest",
     "WorkOutputAdapter",

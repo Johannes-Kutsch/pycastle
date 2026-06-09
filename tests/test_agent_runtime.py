@@ -12,11 +12,15 @@ from unittest.mock import MagicMock
 import pytest
 
 from pycastle.agents._work_invocation import (
+    TextOutputAdapter,
     WorkExecutionAdapter,
     WorkInvocationDependencies,
+    WorkInvocationRequest,
+    invoke_work,
 )
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole
+from pycastle_agent_runtime.errors import AgentTimeoutError, UsageLimitError
 from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -608,6 +612,51 @@ class _PreparedRuntimeSessionStandIn:
         return None
 
 
+class _RecordingStatusDisplay:
+    def __init__(self) -> None:
+        self.remove_calls: list[tuple[str, str, str]] = []
+
+    def register(
+        self,
+        caller: str,
+        kind: str,
+        startup_message: str = "started",
+        work_body: str = "",
+        initial_phase: str = "Setup",
+        color_key: int | None = None,
+        model_display=None,
+    ) -> None:
+        del (
+            caller,
+            kind,
+            startup_message,
+            work_body,
+            initial_phase,
+            color_key,
+            model_display,
+        )
+
+    def update_phase(self, name: str, phase: str) -> None:
+        del name, phase
+
+    def reset_idle_timer(self, name: str) -> None:
+        del name
+
+    def update_tokens(self, name: str, current_tokens: int) -> None:
+        del name, current_tokens
+
+    def remove(
+        self,
+        caller: str,
+        shutdown_message: str = "finished",
+        shutdown_style: str = "success",
+    ) -> None:
+        self.remove_calls.append((caller, shutdown_message, shutdown_style))
+
+    def print(self, caller: str, message: object, style: str | None = None) -> None:
+        del caller, message, style
+
+
 class _PromptRuntimeExecutionAdapterStandIn:
     def __init__(
         self,
@@ -643,7 +692,7 @@ class _PromptRuntimeExecutionAdapterStandIn:
         def _build_runner(*_args: object) -> WorkExecutionAdapter:
             return self.work_runner
 
-        def _prepare_session(**kwargs: object) -> object:
+        def _prepare_session(**kwargs: object) -> _PreparedRuntimeSessionStandIn:
             self.prepare_session_calls.append(dict(kwargs))
             return _PreparedRuntimeSessionStandIn()
 
@@ -1139,6 +1188,122 @@ def test_runtime_package_prompt_entrypoint_preserves_runtime_owned_session_contr
             "container_workspace": "/home/agent/workspace",
             "run_session_plan": run_session_plan,
         }
+    ]
+
+
+def test_runtime_package_default_status_row_preserves_usage_limit_shutdown_message(
+    tmp_path: Path,
+) -> None:
+    status_display = _RecordingStatusDisplay()
+
+    class _UsageLimitRunner(_RuntimeWorkRunnerStandIn):
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: object = "full",
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise UsageLimitError(reset_time=None)
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Runtime Consumer",
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service=_RecordingRuntimeService("codex"),
+                    model="gpt-5.4",
+                    effort="medium",
+                    output_adapter=TextOutputAdapter(prompt="runtime prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda **_kwargs: (
+                            _PreparedRuntimeSessionStandIn()
+                        ),
+                        build_session=lambda *_args: _RuntimeSessionStandIn(),
+                        build_runner=lambda *_args: _UsageLimitRunner(),
+                        get_git_identity=lambda: ("Alice", "alice@example.com"),
+                        status_display_factory=lambda: status_display,
+                    ),
+                )
+            )
+        )
+
+    assert status_display.remove_calls == [
+        ("Runtime Consumer", "usage limit reached", "interrupted")
+    ]
+
+
+def test_runtime_package_default_status_row_preserves_timeout_shutdown_message(
+    tmp_path: Path,
+) -> None:
+    status_display = _RecordingStatusDisplay()
+
+    class _TimeoutRunner(_RuntimeWorkRunnerStandIn):
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: object = "full",
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AgentTimeoutError("timed out")
+
+    with pytest.raises(AgentTimeoutError):
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Runtime Consumer",
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service=_RecordingRuntimeService("codex"),
+                    model="gpt-5.4",
+                    effort="medium",
+                    output_adapter=TextOutputAdapter(prompt="runtime prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda **_kwargs: (
+                            _PreparedRuntimeSessionStandIn()
+                        ),
+                        build_session=lambda *_args: _RuntimeSessionStandIn(),
+                        build_runner=lambda *_args: _TimeoutRunner(),
+                        get_git_identity=lambda: ("Alice", "alice@example.com"),
+                        status_display_factory=lambda: status_display,
+                    ),
+                )
+            )
+        )
+
+    assert status_display.remove_calls == [
+        ("Runtime Consumer", "timed out", "interrupted")
     ]
 
 

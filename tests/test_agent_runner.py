@@ -2329,6 +2329,10 @@ def test_work_invocation_resume_non_typed_retry_raises_agent_failed_error(
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                            initial_run_kind=RunKind.RESUME,
+                            initial_provider_session_id=expected_session_id,
+                        ),
                         build_session=lambda *_args: session,
                         build_runner=lambda *_args: cast(ContainerRunner, runner),
                         get_git_identity=lambda: ("Test User", "test@example.com"),
@@ -2491,11 +2495,20 @@ def test_work_invocation_wraps_setup_docker_error_and_skips_work_adapter(
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                            initial_run_kind=RunKind.FRESH,
+                            initial_provider_session_id=None,
+                        ),
                         build_session=lambda *_args: _FakeSession(),
                         build_runner=lambda *_args: cast(
                             ContainerRunner, _FakeRunner()
                         ),
                         get_git_identity=lambda: ("Test User", "test@example.com"),
+                        translate_setup_failure=lambda role, exc: (
+                            SetupPhaseError(role.value, str(exc))
+                            if isinstance(exc, DockerError)
+                            else None
+                        ),
                     ),
                     status_display=status_display,
                 )
@@ -2638,15 +2651,19 @@ def test_work_invocation_wraps_configured_setup_error_and_skips_work_adapter(
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=_stage_key_for_role,
+                        prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                            initial_run_kind=RunKind.FRESH,
+                            initial_provider_session_id=None,
+                        ),
                         build_session=lambda *_args: _FakeSession(),
                         build_runner=lambda *_args: cast(
                             ContainerRunner, _FakeRunner()
                         ),
                         get_git_identity=lambda: ("Test User", "test@example.com"),
-                        setup_error_types=(_CustomSetupError,),
-                        build_setup_phase_error=lambda role, exc: SetupPhaseError(
-                            role.value,
-                            str(exc),
+                        translate_setup_failure=lambda role, exc: (
+                            SetupPhaseError(role.value, str(exc))
+                            if isinstance(exc, _CustomSetupError)
+                            else None
                         ),
                     ),
                     status_display=status_display,
@@ -2728,9 +2745,20 @@ def test_work_invocation_opens_status_row_with_caller_metadata_before_setup(
                     container_workspace="/home/agent/workspace",
                     timeout_retries=0,
                     stage_key_for_role=lambda role: role.value,
+                    prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                        initial_run_kind=RunKind.FRESH,
+                        initial_provider_session_id=None,
+                    ),
                     build_session=lambda *_args: _FakeSession(),
                     build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
                     get_git_identity=lambda: ("Test User", "test@example.com"),
+                    build_model_display_metadata=lambda service, model, effort: (
+                        ModelDisplayMetadata(
+                            service=service,
+                            model=model,
+                            effort=effort,
+                        )
+                    ),
                 ),
                 status_display=status_display,
                 work_body="implement feature slice",
@@ -2763,9 +2791,12 @@ def test_work_invocation_pre_cancelled_token_raises_usage_limit_before_setup(
             del git_name, git_email, work_body
             observed_calls.append("setup")
 
-    def _prepare_session(_request: object) -> None:
+    def _prepare_session(_request: object) -> _PreparedRunSessionStandIn:
         observed_calls.append("prepare_session")
-        return None
+        return _PreparedRunSessionStandIn(
+            initial_run_kind=RunKind.FRESH,
+            initial_provider_session_id=None,
+        )
 
     def _build_session(*_args: object) -> _FakeSession:
         observed_calls.append("build_session")
@@ -2865,6 +2896,10 @@ def test_work_invocation_sets_missing_stage_key_on_provider_usage_limit(
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=_stage_key_for_role,
+                        prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                            initial_run_kind=RunKind.FRESH,
+                            initial_provider_session_id=None,
+                        ),
                         build_session=lambda *_args: _FakeSession(),
                         build_runner=lambda *_args: cast(
                             ContainerRunner, _FakeRunner()
@@ -2946,6 +2981,16 @@ def test_work_invocation_text_usage_limit_marks_exhaustion_cancels_token_and_ski
                             ContainerRunner, _FakeRunner()
                         ),
                         get_git_identity=lambda: ("Test User", "test@example.com"),
+                        handle_provider_account_exhaustion=lambda service_for_run, err: (
+                            setattr(
+                                err,
+                                "account_label",
+                                service_for_run.mark_permanently_exhausted(),
+                            )
+                            if err.is_permanent
+                            and isinstance(service_for_run, ClaudeService)
+                            else service_for_run.mark_exhausted(err.reset_time)
+                        ),
                     ),
                     token=token,
                 )
@@ -3114,6 +3159,16 @@ def test_work_invocation_text_hard_provider_failure_cancels_token_annotates_cont
                             ContainerRunner, _FakeRunner()
                         ),
                         get_git_identity=lambda: ("Test User", "test@example.com"),
+                        handle_provider_account_exhaustion=lambda service_for_run, err: (
+                            setattr(
+                                err,
+                                "account_label",
+                                service_for_run.mark_permanently_exhausted(),
+                            )
+                            if err.is_permanent
+                            and isinstance(service_for_run, ClaudeService)
+                            else service_for_run.mark_exhausted(err.reset_time)
+                        ),
                     ),
                     token=token,
                 )
@@ -3211,6 +3266,16 @@ def test_work_invocation_permanent_claude_usage_limit_marks_account_and_skips_su
                             ContainerRunner, _FakeRunner()
                         ),
                         get_git_identity=lambda: ("Test User", "test@example.com"),
+                        handle_provider_account_exhaustion=lambda service_for_run, err: (
+                            setattr(
+                                err,
+                                "account_label",
+                                service_for_run.mark_permanently_exhausted(),
+                            )
+                            if err.is_permanent
+                            and isinstance(service_for_run, ClaudeService)
+                            else service_for_run.mark_exhausted(err.reset_time)
+                        ),
                     ),
                     token=token,
                 )
@@ -3333,9 +3398,18 @@ def test_work_invocation_exits_container_session_once_across_work_outcomes(
                 container_workspace="/home/agent/workspace",
                 timeout_retries=0,
                 stage_key_for_role=lambda role: role.value,
+                prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                    initial_run_kind=RunKind.FRESH,
+                    initial_provider_session_id=None,
+                ),
                 build_session=lambda *_args: _FakeSession(),
                 build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
                 get_git_identity=lambda: ("Test User", "test@example.com"),
+                translate_setup_failure=lambda role, exc: (
+                    SetupPhaseError(role.value, str(exc))
+                    if isinstance(exc, DockerError)
+                    else None
+                ),
             ),
             status_display=status_display,
         )
@@ -3445,6 +3519,10 @@ def test_work_invocation_closes_failed_work_rows_consistently_for_typed_and_text
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                            initial_run_kind=RunKind.FRESH,
+                            initial_provider_session_id=None,
+                        ),
                         build_session=lambda *_args: _FakeSession(),
                         build_runner=lambda *_args: cast(
                             ContainerRunner, _FakeRunner(status_display)
@@ -4097,6 +4175,10 @@ def test_work_invocation_timeout_exhaustion_preserves_agent_timeout_context(
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                            initial_run_kind=RunKind.FRESH,
+                            initial_provider_session_id=None,
+                        ),
                         build_session=lambda *_args: _FakeSession(),
                         build_runner=lambda *_args: cast(
                             ContainerRunner, _FakeRunner()

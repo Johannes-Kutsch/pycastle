@@ -2,9 +2,10 @@ import dataclasses
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from pycastle_agent_runtime.work import (
+    WorkModelDisplayMetadata,
     WorkInvocationDependencies,
     WorkInvocationRequest,
 )
@@ -198,6 +199,15 @@ class AgentRunner:
         ) -> AbstractAsyncContextManager[Any]:
             from ..iteration._rows import status_row
 
+            pycastle_model_display = (
+                None
+                if model_display is None
+                else ModelDisplayMetadata(
+                    service=model_display.service,
+                    model=model_display.model,
+                    effort=model_display.effort,
+                )
+            )
             return status_row(
                 status_display,
                 caller,
@@ -207,23 +217,46 @@ class AgentRunner:
                 work_body=work_body,
                 initial_phase=initial_phase,
                 startup_message=startup_message,
-                model_display=model_display,
+                model_display=pycastle_model_display,
             )
+
+        def _prepare_session(**kwargs: object):
+            return prepare_run_session(
+                RunSessionRequest(
+                    worktree=cast(Path, kwargs["mount_path"]),
+                    role=cast(AgentRole, kwargs["role"]),
+                    session_namespace=cast(str, kwargs["session_namespace"]),
+                    service=cast(AgentService, kwargs["service"]),
+                    container_workspace=cast(str, kwargs["container_workspace"]),
+                    run_session_plan=cast(
+                        RunSessionPlan | None,
+                        kwargs["run_session_plan"],
+                    ),
+                )
+            )
+
+        def _translate_setup_failure(
+            role: AgentRole,
+            exc: BaseException,
+        ) -> BaseException | None:
+            if not isinstance(exc, DockerError):
+                return None
+            return SetupPhaseError(role.value, str(exc))
+
+        def _handle_provider_account_exhaustion(
+            service_for_run: AgentService,
+            error,
+        ) -> None:
+            if error.is_permanent and isinstance(service_for_run, ClaudeService):
+                error.account_label = service_for_run.mark_permanently_exhausted()
+                return
+            service_for_run.mark_exhausted(error.reset_time)
 
         return WorkInvocationDependencies(
             container_workspace=_CONTAINER_WORKSPACE,
             timeout_retries=self._cfg.timeout_retries,
             stage_key_for_role=_stage_key_for_role,
-            prepare_session=lambda **kwargs: prepare_run_session(
-                RunSessionRequest(
-                    worktree=kwargs["mount_path"],
-                    role=kwargs["role"],
-                    session_namespace=kwargs["session_namespace"],
-                    service=kwargs["service"],
-                    container_workspace=kwargs["container_workspace"],
-                    run_session_plan=kwargs["run_session_plan"],
-                )
-            ),
+            prepare_session=_prepare_session,
             build_session=self._build_session,
             build_runner=lambda session, status_display: ContainerRunner(
                 name,
@@ -239,11 +272,15 @@ class AgentRunner:
                 self._git_service.get_user_email(),
             ),
             status_row_factory=_status_row_factory,
-            setup_error_types=(DockerError,),
-            build_setup_phase_error=lambda role, exc: SetupPhaseError(
-                role.value,
-                str(exc),
+            translate_setup_failure=_translate_setup_failure,
+            build_model_display_metadata=lambda service_name, model_name, effort_name: (
+                WorkModelDisplayMetadata(
+                    service=service_name,
+                    model=model_name,
+                    effort=effort_name,
+                )
             ),
+            handle_provider_account_exhaustion=_handle_provider_account_exhaustion,
             transient_status_message=format_transient_status_message,
         )
 
