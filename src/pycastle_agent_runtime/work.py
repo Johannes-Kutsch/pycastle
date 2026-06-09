@@ -6,21 +6,17 @@ import inspect
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, Generic, Protocol, TypeVar
-
-from pycastle.display.status_display import ModelDisplayMetadata, PlainStatusDisplay
-from pycastle.errors import (
-    AgentCredentialFailureError,
-    AgentTimeoutError,
-    HardAgentError,
-    TransientAgentError,
-    UsageLimitError,
-)
-from pycastle.services.claude_service import ClaudeService
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 from .contracts import AgentService, ToolPolicy
 from .roles import AgentRole
 from .session import RunKind
+
+if TYPE_CHECKING:
+    from pycastle.errors import (
+        AgentTimeoutError,
+        TransientAgentError,
+    )
 
 WorkResultT = TypeVar("WorkResultT")
 
@@ -269,11 +265,11 @@ class TextOutputAdapter:
 
 
 def _ensure_timeout_context(
-    error: AgentTimeoutError,
+    error: "AgentTimeoutError",
     *,
     role: AgentRole,
     mount_path: Path,
-) -> AgentTimeoutError:
+) -> "AgentTimeoutError":
     if not error.role_value:
         error.role_value = role.value
         error.worktree_path = mount_path
@@ -283,10 +279,14 @@ def _ensure_timeout_context(
 async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
     status_display = request.status_display
     if status_display is None:
+        from pycastle.display.status_display import PlainStatusDisplay
+
         status_display = PlainStatusDisplay()
 
     token = request.token if request.token is not None else CancellationToken()
     if token.is_cancelled:
+        from pycastle.errors import UsageLimitError
+
         raise UsageLimitError(
             reset_time=None,
             stage_key=request.dependencies.stage_key_for_role(request.role),
@@ -311,7 +311,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
         must_close=False,
         work_body=request.work_body,
         color_key=request.color_key,
-        model_display=ModelDisplayMetadata(
+        model_display=_model_display_metadata(
             service=request.service.name,
             model=request.model,
             effort=request.effort,
@@ -324,6 +324,15 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
         )
         runner = request.dependencies.build_runner(session, status_display)
         try:
+            from pycastle.errors import (
+                AgentCredentialFailureError,
+                AgentTimeoutError,
+                HardAgentError,
+                TransientAgentError,
+                UsageLimitError,
+            )
+            from pycastle.services.claude_service import ClaudeService
+
             git_name, git_email = request.dependencies.get_git_identity()
             try:
                 await runner.setup(git_name, git_email, request.work_body)
@@ -498,6 +507,12 @@ async def _invoke_work_attempt(
     row.close("failed", shutdown_style="error")
     assert protocol_error_result is not None
     return protocol_error_result, work_run_session
+
+
+def _model_display_metadata(*, service: str, model: str, effort: str) -> Any:
+    from pycastle.display.status_display import ModelDisplayMetadata
+
+    return ModelDisplayMetadata(service=service, model=model, effort=effort)
 
 
 __all__ = [

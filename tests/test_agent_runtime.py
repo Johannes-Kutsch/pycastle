@@ -113,6 +113,49 @@ def _runtime_imported_application_modules(repo_root: Path) -> list[str]:
     return json.loads(result.stdout)
 
 
+def _runtime_attr_imported_application_modules(
+    repo_root: Path, attr_name: str
+) -> list[str]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                f"""
+                import json
+                import sys
+
+                import pycastle_agent_runtime as runtime
+
+                getattr(runtime, {attr_name!r})
+
+                forbidden_prefixes = (
+                    "pycastle.agents",
+                    "pycastle.infrastructure",
+                    "pycastle.iteration",
+                    "pycastle.prompts",
+                    "pycastle.session",
+                )
+                imported = sorted(
+                    name
+                    for name in sys.modules
+                    if any(
+                        name == prefix or name.startswith(f"{{prefix}}.")
+                        for prefix in forbidden_prefixes
+                    )
+                )
+                print(json.dumps(imported))
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 class _RecordingRuntimeService:
     def __init__(self, name: str, events: Iterable[ParsedTurn] | None = None) -> None:
         self.name = name
@@ -661,6 +704,17 @@ def test_runtime_package_surface_import_keeps_application_ownership_unloaded() -
     repo_root = Path(__file__).resolve().parents[1]
 
     imported = _runtime_imported_application_modules(repo_root)
+
+    assert imported == []
+
+
+@pytest.mark.parametrize("attr_name", ["PromptRunRequest", "run_prompt"])
+def test_runtime_prompt_surface_import_keeps_application_ownership_unloaded(
+    attr_name: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    imported = _runtime_attr_imported_application_modules(repo_root, attr_name)
 
     assert imported == []
 
