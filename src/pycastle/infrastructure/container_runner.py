@@ -14,6 +14,7 @@ from ..errors import (
     UsageLimitError,
 )
 from pycastle_agent_runtime.agent_log import AgentInvocationLog
+from pycastle_agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
 from ..services.flag_profiles import AgentToolPolicyGroup
 from .docker_session import DockerSession
 from ..errors import DockerError
@@ -136,7 +137,9 @@ class ContainerRunner:
         prompt: str,
         *,
         role: AgentRole = AgentRole.IMPLEMENTER,
-        tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+        tool_policy: AgentToolPolicyGroup | RuntimeToolPolicy = (
+            AgentToolPolicyGroup.FULL
+        ),
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
         on_provider_session_id: Callable[[str], None] | None = None,
@@ -157,7 +160,7 @@ class ContainerRunner:
             lambda: self._run_streaming_text(
                 role,
                 prompt,
-                tool_policy,
+                _coerce_tool_policy(tool_policy),
                 on_turn,
                 on_tokens,
                 run_kind,
@@ -333,3 +336,11 @@ def _result_text_from_events(
     if result_text is not None:
         return result_text
     return "\n".join(collected_turns)
+
+
+def _coerce_tool_policy(
+    tool_policy: AgentToolPolicyGroup | RuntimeToolPolicy,
+) -> AgentToolPolicyGroup:
+    if isinstance(tool_policy, AgentToolPolicyGroup):
+        return tool_policy
+    return AgentToolPolicyGroup(tool_policy.value)

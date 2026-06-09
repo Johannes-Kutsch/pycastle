@@ -282,6 +282,9 @@ class AgentRunner:
     ) -> str:
         from pycastle_agent_runtime.runtime import (
             PromptRunRequest,
+            PromptRunSession,
+            ToolPolicy as RuntimeToolPolicy,
+            WorktreeMount,
             run_prompt as run_runtime_prompt,
         )
         from pycastle_agent_runtime.service_registry import ServiceRegistry
@@ -292,14 +295,16 @@ class AgentRunner:
             request=PromptRunRequest(
                 name=name,
                 prompt=prompt,
-                mount_path=mount_path,
+                worktree=WorktreeMount(mount_path),
                 override=StageOverride(service=service, model=model, effort=effort),
-                tool_policy=tool_policy,
+                tool_policy=RuntimeToolPolicy(tool_policy.value),
                 status_display=status_display,
                 work_body=work_body,
                 token=token,
-                session_namespace=session_namespace,
-                run_session_plan=run_session_plan,
+                session=PromptRunSession(
+                    namespace=session_namespace,
+                    plan=run_session_plan,
+                ),
             ),
         )
 

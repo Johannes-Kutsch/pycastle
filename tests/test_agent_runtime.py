@@ -27,7 +27,6 @@ from pycastle.services.agent_service import (
     Result,
     TransientError,
 )
-from pycastle.services.flag_profiles import AgentToolPolicyGroup
 from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -465,7 +464,7 @@ class _RuntimeWorkRunnerStandIn:
         prompt: str,
         *,
         role: AgentRole = AgentRole.IMPLEMENTER,
-        tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+        tool_policy: object = "full",
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
         on_provider_session_id: Callable[[str], None] | None = None,
@@ -536,7 +535,7 @@ def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: P
     registry = runtime.ServiceRegistry({"codex": service})
     request = runtime.PromptRunRequest(
         name="Runtime Consumer",
-        mount_path=tmp_path,
+        worktree=runtime.WorktreeMount(tmp_path),
         prompt="Return the final answer only.",
         override=runtime.StageOverride(
             service="missing",
@@ -556,7 +555,9 @@ def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: P
     )
 
     assert result == "runtime result"
-    assert service.tool_policies == [runtime.ToolPolicy.PARTIAL]
+    assert [getattr(policy, "value", None) for policy in service.tool_policies] == [
+        runtime.ToolPolicy.PARTIAL.value
+    ]
 
 
 def test_runtime_package_surface_import_keeps_application_ownership_unloaded() -> None:
@@ -732,7 +733,7 @@ def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
     )
     registry = runtime.ServiceRegistry({"codex": service})
     request = runtime.PromptRunRequest(
-        mount_path=tmp_path,
+        worktree=runtime.WorktreeMount(tmp_path),
         prompt="Return the final answer only.",
         override=runtime.StageOverride(
             service="codex",
@@ -746,7 +747,9 @@ def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
     )
 
     assert result == "first turn\nsecond turn"
-    assert service.tool_policies == [runtime.ToolPolicy.FULL]
+    assert [getattr(policy, "value", None) for policy in service.tool_policies] == [
+        runtime.ToolPolicy.FULL.value
+    ]
 
 
 def test_runtime_package_prompt_entrypoint_uses_injected_execution_adapter_contract(
@@ -763,7 +766,7 @@ def test_runtime_package_prompt_entrypoint_uses_injected_execution_adapter_contr
     registry = runtime.ServiceRegistry({"codex": service})
     request = runtime.PromptRunRequest(
         name="Runtime Consumer",
-        mount_path=tmp_path,
+        worktree=runtime.WorktreeMount(tmp_path),
         prompt="Return the final answer only.",
         override=runtime.StageOverride(
             service="codex",
@@ -1047,11 +1050,18 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
 
     fallback_service.is_available = _unavailable  # type: ignore[method-assign]
 
-    prompt_runtime = runtime.PromptRuntime(
-        env={},
-        cfg=_make_cfg(tmp_path),
-        git_service=_make_git_service(),
+    execution_adapter = runtime.AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
         docker_client=_make_docker_client([b'{"result":"runtime result"}\n']),
+        service_registry={
+            "codex": requested_service,
+            "claude": fallback_service,
+        },
+    )
+    prompt_runtime = runtime.PromptRuntime(
+        execution_adapter=execution_adapter,
         service_registry={
             "codex": requested_service,
             "claude": fallback_service,
@@ -1059,7 +1069,7 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
     )
     request = runtime.PromptRunRequest(
         name="Runtime Consumer",
-        mount_path=tmp_path,
+        worktree=runtime.WorktreeMount(tmp_path),
         prompt="Return the final answer only.",
         override=runtime.StageOverride(
             service="claude",
@@ -1077,7 +1087,9 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
     result = asyncio.run(prompt_runtime.run_prompt(request))
 
     assert result == "runtime result"
-    assert requested_service.tool_policies == [runtime.ToolPolicy.PARTIAL]
+    assert [
+        getattr(policy, "value", None) for policy in requested_service.tool_policies
+    ] == [runtime.ToolPolicy.PARTIAL.value]
     [state_dir_container_path] = requested_service.state_dir_container_paths
     assert state_dir_container_path is not None
     assert state_dir_container_path.rstrip("/") == (

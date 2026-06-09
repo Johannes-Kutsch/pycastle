@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
@@ -83,6 +84,12 @@ ParsedTurn = (
 )
 
 
+class ToolPolicy(enum.Enum):
+    RESTRICTED = "restricted"
+    PARTIAL = "partial"
+    FULL = "full"
+
+
 class AgentService(Protocol):
     @property
     def name(self) -> str: ...
@@ -137,6 +144,7 @@ __all__ = [
     "ParsedTurn",
     "PromptTokens",
     "Result",
+    "ToolPolicy",
     "TransientError",
     "UnsupportedTokens",
     "UsageLimit",
