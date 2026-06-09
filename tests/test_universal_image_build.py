@@ -295,6 +295,32 @@ def test_resolve_universal_image_build_request_omits_python_version_when_file_is
     assert request.options.python_version is None
 
 
+def test_resolve_universal_image_build_request_keeps_explicit_python_version_option(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    (project_root / "pycastle").mkdir(parents=True)
+    (project_root / ".python-version").write_text("3.12.1\n")
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+        options=UniversalImageBuildOptions(
+            python_version="3.11",
+            no_cache=True,
+            stream=True,
+            terse=True,
+        ),
+    )
+
+    assert request.options == UniversalImageBuildOptions(
+        python_version="3.11",
+        no_cache=True,
+        stream=True,
+        terse=True,
+    )
+
+
 def _mock_proc(output_lines: tuple[str, ...], *, returncode: int = 0) -> MagicMock:
     proc = MagicMock()
     proc.stdout = iter(output_lines)
