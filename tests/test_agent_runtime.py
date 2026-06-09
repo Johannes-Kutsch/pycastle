@@ -1091,6 +1091,7 @@ def test_runtime_provider_state_plan_records_observed_provider_session_id_for_op
 ) -> None:
     from pycastle_agent_runtime.session import RunKind
     from pycastle_agent_runtime.session_planning import (
+        AuthSeedingRequirement,
         ProviderRunStatePlan,
         RecoveredSessionIdPersistence,
         record_observed_provider_session_id,
@@ -1111,7 +1112,7 @@ def test_runtime_provider_state_plan_records_observed_provider_session_id_for_op
         provider_state_dir=service_state_dir,
         provider_state_dir_relpath=".pycastle-session/implementer/opencode/",
         provider_session_id=None,
-        requires_host_codex_auth=False,
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
         recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
         service_state_dir=service_state_dir,
     )
@@ -1174,6 +1175,7 @@ def test_runtime_provider_state_plan_records_successful_run_metadata_through_rol
 ):
     from pycastle_agent_runtime.session import RunKind
     from pycastle_agent_runtime.session_planning import (
+        AuthSeedingRequirement,
         ProviderRunStatePlan,
         RecoveredSessionIdPersistence,
         record_successful_provider_session_metadata,
@@ -1193,7 +1195,7 @@ def test_runtime_provider_state_plan_records_successful_run_metadata_through_rol
         provider_state_dir=None,
         provider_state_dir_relpath=None,
         provider_session_id="thread-runtime",
-        requires_host_codex_auth=False,
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
         recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
     )
 
@@ -1280,6 +1282,7 @@ def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
+        LocalAuthSeedAction,
         ProviderRunStatePlanRequest,
         plan_provider_run_state,
     )
@@ -1294,7 +1297,15 @@ def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_
     )
     service = _PlanRecordingRuntimeService(
         "codex",
-        ProviderSessionState(RunKind.FRESH, None),
+        ProviderSessionState(
+            RunKind.FRESH,
+            None,
+            auth_seeding_requirement=AuthSeedingRequirement.REQUIRED,
+            auth_seed_action=LocalAuthSeedAction(
+                source=Path.home() / ".codex" / "auth.json",
+                destination=state_dir / "auth.json",
+            ),
+        ),
     )
 
     plan = plan_provider_run_state(

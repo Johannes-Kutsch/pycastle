@@ -133,17 +133,11 @@ class ProviderRunStatePlan:
     provider_state_dir: Path | None
     provider_state_dir_relpath: str | None
     provider_session_id: str | None
-    requires_host_codex_auth: bool
+    auth_seeding_requirement: AuthSeedingRequirement
     recovered_session_id_persistence: RecoveredSessionIdPersistence
     service_state_dir: Path | None = None
     exact_transcript_match: bool = False
     auth_seed_action: LocalAuthSeedAction | None = None
-
-    @property
-    def auth_seeding_requirement(self) -> AuthSeedingRequirement:
-        if self.requires_host_codex_auth:
-            return AuthSeedingRequirement.REQUIRED
-        return AuthSeedingRequirement.NOT_REQUIRED
 
     def provider_session_decision(self) -> ProviderSessionDecision:
         return ProviderSessionDecision(
@@ -270,9 +264,9 @@ def plan_provider_run_state(
     selected_provider_state_dir = (
         provider_session_state.state_dir_path or host_state_dir
     )
-    auth_seeding_requirement = codex_auth_seeding_requirement(
-        service_name=request.service.name,
-        provider_state_dir=selected_provider_state_dir,
+    auth_seeding_requirement = (
+        provider_session_state.auth_seeding_requirement
+        or AuthSeedingRequirement.NOT_REQUIRED
     )
     return ProviderRunStatePlan(
         role_session=request.role_session,
@@ -283,49 +277,11 @@ def plan_provider_run_state(
         provider_state_dir_relpath=(
             provider_session_state.state_dir_relpath or state_dir_relpath
         ),
-        requires_host_codex_auth=(
-            auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
-        ),
+        auth_seeding_requirement=auth_seeding_requirement,
         recovered_session_id_persistence=recovered_session_id_persistence,
         service_state_dir=host_state_dir,
         exact_transcript_match=provider_session_state.exact_transcript_match,
-        auth_seed_action=codex_auth_seed_action(
-            service_name=request.service.name,
-            provider_state_dir=selected_provider_state_dir,
-        ),
-    )
-
-
-def codex_auth_seeding_requirement(
-    *,
-    service_name: str,
-    provider_state_dir: Path | None,
-) -> AuthSeedingRequirement:
-    if service_name != "codex":
-        return AuthSeedingRequirement.NOT_REQUIRED
-    if provider_state_dir is None or (provider_state_dir / "auth.json").exists():
-        return AuthSeedingRequirement.NOT_REQUIRED
-    return AuthSeedingRequirement.REQUIRED
-
-
-def codex_auth_seed_action(
-    *,
-    service_name: str,
-    provider_state_dir: Path | None,
-) -> LocalAuthSeedAction | None:
-    if (
-        codex_auth_seeding_requirement(
-            service_name=service_name,
-            provider_state_dir=provider_state_dir,
-        )
-        is AuthSeedingRequirement.NOT_REQUIRED
-    ):
-        return None
-    if provider_state_dir is None:
-        return None
-    return LocalAuthSeedAction(
-        source=Path.home() / ".codex" / "auth.json",
-        destination=provider_state_dir / "auth.json",
+        auth_seed_action=provider_session_state.auth_seed_action,
     )
 
 
@@ -337,8 +293,6 @@ def _host_state_dir(worktree: Path, state_dir_relpath: str | None) -> Path | Non
 
 __all__ = [
     "AuthSeedingRequirement",
-    "codex_auth_seed_action",
-    "codex_auth_seeding_requirement",
     "LocalAuthSeedAction",
     "ProviderRunStatePlan",
     "ProviderRunStatePlanRequest",

@@ -64,9 +64,7 @@ class RunSessionPlan:
                 provider_state_dir=self.host_provider_state_dir,
                 provider_state_dir_relpath=self.provider_state_dir_relpath,
                 provider_session_id=self.provider_session_id,
-                requires_host_codex_auth=(
-                    self.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
-                ),
+                auth_seeding_requirement=self.auth_seeding_requirement,
                 recovered_session_id_persistence=(
                     self.recovered_session_id_persistence
                 ),
