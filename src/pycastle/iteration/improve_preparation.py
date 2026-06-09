@@ -80,14 +80,6 @@ class PreparedImproveStep:
     send_role_prompt_on_resume: bool
     scope_args: dict[str, str]
 
-    @property
-    def prompt_template(self) -> PromptTemplate:
-        return self.template
-
-    @property
-    def display_name(self) -> str:
-        return self.name
-
 
 def prepare_improve_step(
     request_or_step: ImproveStepPreparationRequest | ImprovePreparationStep,
