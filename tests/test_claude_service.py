@@ -321,6 +321,51 @@ def test_provider_session_state_forced_resume_uses_preferred_session_id_without_
     assert provider_session_state.exact_transcript_match is False
 
 
+def test_provider_session_state_fresh_without_preferred_session_id_uses_role_session_uuid(
+    tmp_path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=None,
+            has_resumable_provider_state=False,
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.FRESH
+    assert provider_session_state.provider_session_id == role_session.session_uuid()
+    assert provider_session_state.exact_transcript_match is False
+
+
+def test_provider_session_state_exact_transcript_match_uses_preferred_session_id(
+    tmp_path,
+):
+    service = ClaudeService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+    role_session.save_service_session_metadata("claude", "preferred-id")
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/claude/",
+            require_exact_transcript_match=True,
+            preferred_provider_session_id="preferred-id",
+        )
+    )
+
+    assert provider_session_state.run_kind is RunKind.RESUME
+    assert provider_session_state.provider_session_id == "preferred-id"
+    assert provider_session_state.exact_transcript_match is True
+
+
 # ── ClaudeService.run ─────────────────────────────────────────────────────────
 
 
