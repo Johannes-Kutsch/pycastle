@@ -335,6 +335,41 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     assert github_port.issue_comment_calls == [77]
 
 
+def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_handoff(
+    tmp_path: Path,
+):
+    driver_dir = tmp_path / "improve-issues-resume"
+    driver_dir.mkdir(parents=True, exist_ok=True)
+    (driver_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
+    (driver_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
+    driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
+    step = driver.start()
+
+    assert step is not None and step.prompt_key == "03-issues.md"
+    github_port = _GithubPortStandIn(
+        issue_error=AssertionError("phase 03 resume without parent PRD must not read")
+    )
+
+    prepared = prepare_improve_step(
+        step,
+        short_sid="abcd1234",
+        github_port=github_port,
+    )
+
+    assert prepared.prompt_template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.session_namespace == "issues"
+    assert prepared.scope_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "ISSUE_NUMBER": "",
+        "ISSUE_TITLE": "",
+        "ISSUE_BODY": "",
+        "ISSUE_COMMENTS": "",
+    }
+    assert github_port.recent_prd_calls == 0
+    assert github_port.issue_calls == []
+    assert github_port.issue_comment_calls == []
+
+
 def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
     tmp_path: Path,
 ):
