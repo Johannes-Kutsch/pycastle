@@ -7,8 +7,9 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..agents.output_protocol import AgentRole
-from ..services.provider_session_state import ProviderSessionStateRequest
+from pycastle_agent_runtime.roles import AgentRole
+from pycastle_agent_runtime.session import ProviderSessionStateRequest, RunKind
+
 from .provider_run_state import ProviderFreshFallbackReason, ProviderRunState
 from .provider_session_state import (
     has_exact_provider_transcript_for_service,
@@ -58,11 +59,6 @@ def _normalize_state_dir_relpath(
     if state_dir_relpath == legacy_relpath:
         return provider_state_relpath(role, service_name, namespace)
     return state_dir_relpath
-
-
-class RunKind(Enum):
-    FRESH = "fresh"
-    RESUME = "resume"
 
 
 class ProviderIdentityKind(Enum):

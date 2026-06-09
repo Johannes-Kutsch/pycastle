@@ -1,11 +1,3 @@
-from __future__ import annotations
+from pycastle_agent_runtime.types import StageOverride
 
-import dataclasses
-
-
-@dataclasses.dataclass(frozen=True)
-class StageOverride:
-    model: str = ""
-    effort: str = ""
-    service: str = ""
-    fallback: StageOverride | None = None
+__all__ = ["StageOverride"]

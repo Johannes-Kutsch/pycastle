@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pycastle.config.types import StageOverride
-from pycastle.services.agent_service import (
+from .contracts import (
     AgentService,
     AssistantTurn,
     CredentialFailure,
@@ -15,6 +14,19 @@ from pycastle.services.agent_service import (
     UnsupportedTokens,
     UsageLimit,
 )
+from .errors import (
+    AgentCredentialFailureError,
+    AgentFailedError,
+    AgentTimeoutError,
+    HardAgentError,
+    PycastleError,
+    TransientAgentError,
+    UsageLimitError,
+)
+from .provider_errors import ProviderErrorObservation
+from .roles import AgentRole
+from .session import ProviderSessionState, ProviderSessionStateRequest, RunKind
+from .types import StageOverride
 
 if TYPE_CHECKING:
     from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
@@ -32,20 +44,30 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "AgentCredentialFailureError",
+    "AgentFailedError",
     "AgentRunner",
     "AgentRunnerProtocol",
     "AgentService",
+    "AgentRole",
+    "AgentTimeoutError",
     "AssistantTurn",
     "ChainEntry",
     "ConfiguredCandidateChain",
     "ConfiguredCandidateSelection",
     "CredentialFailure",
     "HardError",
+    "HardAgentError",
     "ParsedTurn",
+    "ProviderErrorObservation",
+    "ProviderSessionState",
+    "ProviderSessionStateRequest",
     "PromptRunRequest",
     "PromptRuntime",
     "PromptTokens",
+    "PycastleError",
     "Result",
+    "RunKind",
     "RunRequest",
     "ServiceRegistry",
     "StageOverride",
@@ -57,8 +79,10 @@ __all__ = [
     "select_configured_candidate_chain",
     "ToolPolicy",
     "TransientError",
+    "TransientAgentError",
     "UnsupportedTokens",
     "UsageLimit",
+    "UsageLimitError",
     "validation_labels",
     "run",
     "run_prompt",

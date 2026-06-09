@@ -12,19 +12,19 @@ from pycastle.agents._work_invocation import (
     format_transient_status_message,
     invoke_work,
 )
-from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import (
     _CONTAINER_WORKSPACE,
     _stage_key_for_role,
     AgentRunner,
 )
-from pycastle.config.types import StageOverride
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.session.agent import RunSessionPlan
 from pycastle.services.flag_profiles import AgentToolPolicyGroup
 
+from .roles import AgentRole
 from .service_registry import ServiceRegistry
+from .types import StageOverride
 
 
 ToolPolicy = AgentToolPolicyGroup

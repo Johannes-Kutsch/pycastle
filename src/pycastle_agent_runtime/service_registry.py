@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pycastle.config.types import StageOverride
-from pycastle.services.agent_service import AgentService
-
+from .contracts import AgentService
 from .stage_priority_chain import (
     configured_candidate_chain,
     select_configured_candidate_chain,
 )
+from .types import StageOverride
 
 
 class ServiceRegistry:

@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import BinaryIO
 
 from pycastle import _time as _time_module
-from pycastle.agents.output_protocol import AgentRole
-from pycastle.session import RunKind
+
+from .roles import AgentRole
+from .session import RunKind
 
 
 class WorkInvocationLog:

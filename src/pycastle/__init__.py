@@ -1,3 +1,3 @@
-from pycastle.config.types import StageOverride
+from pycastle_agent_runtime.types import StageOverride
 
 __all__ = ["StageOverride"]
