@@ -94,10 +94,6 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name == "run":
-        from pycastle_agent_runtime.orchestration import run
-
-        return run
     if name in {
         "PromptRunRequest",
         "PromptRunSession",
