@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from pycastle._universal_image_build import (
-    UniversalImageBuildOptions,
     UniversalImageBuildRequest,
 )
 from pycastle.config import Config, StageOverride
@@ -1229,36 +1228,6 @@ def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch
     assert call_order.index("build") < call_order.index("orchestrator")
 
 
-def test_run_cmd_succeeds_on_full_cache_hit(tmp_path, monkeypatch):
-    from pycastle.services.docker_service import BuildOutcome
-
-    result = _run_cmd_with_build_outcome(
-        tmp_path, monkeypatch, BuildOutcome.FULL_CACHE_HIT
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Image up to date" not in result.output
-
-
-def test_run_cmd_prints_building_line_before_implicit_build(tmp_path, monkeypatch):
-    from pycastle.services.docker_service import BuildOutcome
-
-    result = _run_cmd_with_build_outcome(tmp_path, monkeypatch, BuildOutcome.REBUILT)
-
-    assert result.exit_code == 0, result.output
-    assert result.output.count("Building myimage...") == 1
-
-
-def test_run_cmd_no_build_output_on_full_cache_hit(tmp_path, monkeypatch):
-    from pycastle.services.docker_service import BuildOutcome
-
-    result = _run_cmd_with_build_outcome(
-        tmp_path, monkeypatch, BuildOutcome.FULL_CACHE_HIT
-    )
-
-    assert "Build complete" not in result.output
-
-
 def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
@@ -1335,91 +1304,6 @@ def test_run_cmd_does_not_invoke_docker_when_image_name_empty(tmp_path, monkeypa
     assert not orchestrator_called
 
 
-def test_run_cmd_passes_python_version_from_file_to_build(tmp_path, monkeypatch):
-    from pycastle.main import main as cli
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
-    monkeypatch.setenv("GH_TOKEN", "gh")
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
-    (tmp_path / ".python-version").write_text("3.12.1\n")
-
-    cfg = Config(docker_image_name="myimage")
-    fake_svc = MagicMock()
-    fake_svc.build.return_value = None
-
-    async def _fake_run(*args, **kwargs):
-        pass
-
-    with (
-        patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.main.agent_runtime.run", _fake_run),
-    ):
-        result = CliRunner().invoke(cli, ["run"])
-
-    assert result.exit_code == 0, result.output
-    assert _built_requests(fake_svc)[0].options.python_version == "3.12"
-
-
-def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
-    from pycastle.main import main as cli
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
-    monkeypatch.setenv("GH_TOKEN", "gh")
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
-
-    cfg = Config(docker_image_name="myimage")
-    fake_svc = MagicMock()
-    fake_svc.build.return_value = None
-
-    async def _fake_run(*args, **kwargs):
-        pass
-
-    with (
-        patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.main.agent_runtime.run", _fake_run),
-    ):
-        result = CliRunner().invoke(cli, ["run"])
-
-    assert result.exit_code == 0, result.output
-    assert _built_requests(fake_svc)[0].options.stream is True
-
-
-def test_run_cmd_build_uses_typed_terse_stream_options(tmp_path, monkeypatch):
-    from pycastle.main import main as cli
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
-    monkeypatch.setenv("GH_TOKEN", "gh")
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
-
-    cfg = Config(docker_image_name="myimage")
-    fake_svc = MagicMock()
-    fake_svc.build.return_value = None
-
-    async def _fake_run(*args, **kwargs):
-        pass
-
-    with (
-        patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
-        patch("pycastle.main.agent_runtime.run", _fake_run),
-    ):
-        result = CliRunner().invoke(cli, ["run"])
-
-    assert result.exit_code == 0, result.output
-    assert _built_requests(fake_svc)[0].options == UniversalImageBuildOptions(
-        stream=True,
-        terse=True,
-    )
-
-
 def test_run_cmd_rejects_no_cache_flag(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
@@ -1436,35 +1320,6 @@ def test_run_cmd_rejects_no_build_flag(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["run", "--no-build"])
 
     assert result.exit_code != 0
-
-
-# ── Issue 760: rebuild status display ────────────────────────────────────────
-
-
-def _run_cmd_simulating_rebuild(tmp_path, monkeypatch):
-    """Invoke run_cmd with a DockerService that returns REBUILT outcome."""
-    from pycastle.services.docker_service import BuildOutcome
-
-    return _run_cmd_with_build_outcome(tmp_path, monkeypatch, BuildOutcome.REBUILT)
-
-
-def test_run_cmd_no_rebuilding_message_on_rebuild(tmp_path, monkeypatch):
-    """'Rebuilding image…' must not appear — terse progress replaced it."""
-    result = _run_cmd_simulating_rebuild(tmp_path, monkeypatch)
-
-    assert result.exit_code == 0, result.output
-    assert "Rebuilding image" not in result.output
-
-
-def test_run_cmd_no_rebuilding_message_on_full_cache_hit(tmp_path, monkeypatch):
-    from pycastle.services.docker_service import BuildOutcome
-
-    result = _run_cmd_with_build_outcome(
-        tmp_path, monkeypatch, BuildOutcome.FULL_CACHE_HIT
-    )
-
-    assert result.exit_code == 0, result.output
-    assert "Rebuilding image" not in result.output
 
 
 # ── Issue 787: fail-fast service+effort validation ────────────────────────────

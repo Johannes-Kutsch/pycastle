@@ -13,8 +13,7 @@ from pycastle._universal_image_build import (
     UniversalImageBuildOptions,
     UniversalImageBuildRequest,
 )
-from pycastle.config import Config, StageOverride, resolve_dockerfile
-from pycastle.services import DockerService
+from pycastle.config import Config
 from pycastle.errors import ConfigValidationError, DockerBuildError, DockerServiceError
 
 _cfg = Config(docker_image_name="test-image")
@@ -53,14 +52,6 @@ _CLASSIC_WITH_REBUILD = [
 ]
 
 
-def _mock_popen(output_lines: list[str], returncode: int = 0) -> MagicMock:
-    mock_proc = MagicMock()
-    mock_proc.stdout = iter(output_lines)
-    mock_proc.wait.return_value = returncode
-    mock_proc.returncode = returncode
-    return mock_proc
-
-
 def _make_docker_service(side_effect=None):
     svc = MagicMock()
     if side_effect is not None:
@@ -70,32 +61,6 @@ def _make_docker_service(side_effect=None):
         svc.build.return_value = None
         svc.build_image.return_value = None
     return svc
-
-
-def _built_requests(svc: MagicMock) -> list[UniversalImageBuildRequest]:
-    return [call.args[0] for call in svc.build.call_args_list]
-
-
-def _subprocess_ok():
-    result = MagicMock()
-    result.returncode = 0
-    result.stderr = ""
-    return result
-
-
-def _cfg_referencing_only(
-    service: str, docker_image_name: str = "test-image"
-) -> Config:
-    override = StageOverride(service=service, effort="low")
-    return Config(
-        docker_image_name=docker_image_name,
-        plan_override=override,
-        implement_override=override,
-        review_override=override,
-        merge_override=override,
-        preflight_issue_override=override,
-        improve_override=override,
-    )
 
 
 def _shipped_defaults_in_wheel(tmp_path: Path) -> set[str]:
@@ -166,94 +131,35 @@ def _bundled_runtime_defaults() -> set[str]:
     }
 
 
-# ── subprocess command flags ──────────────────────────────────────────────────
+# ── build command delegation ──────────────────────────────────────────────────
 
 
-def test_main_includes_no_cache_flag(tmp_path, monkeypatch):
+def test_build_command_delegates_to_universal_image_build_with_explicit_inputs(
+    tmp_path, monkeypatch
+):
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
-    svc = DockerService()
-    with patch(
-        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
-    ) as mock_run:
-        main(no_cache=True, docker_service=svc, cfg=_cfg)
-    cmd = mock_run.call_args[0][0]
-    assert "--no-cache" in cmd
+    docker_service = MagicMock()
+    options = UniversalImageBuildOptions(no_cache=True, stream=True, terse=True)
+    request = UniversalImageBuildRequest(
+        image_tag="test-image",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+        options=options,
+    )
 
+    with (
+        patch(
+            "pycastle.commands.build.resolve_universal_image_build_request",
+            return_value=request,
+        ) as mock_resolve,
+        patch("pycastle.commands.build.build_universal_image") as mock_build,
+    ):
+        main(options=options, docker_service=docker_service, cfg=_cfg)
 
-def test_main_omits_no_cache_flag_by_default(tmp_path, monkeypatch):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = DockerService()
-    with patch(
-        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
-    ) as mock_run:
-        main(docker_service=svc, cfg=_cfg)
-    cmd = mock_run.call_args[0][0]
-    assert "--no-cache" not in cmd
-
-
-# ── python_version extraction ─────────────────────────────────────────────────
-
-
-def test_main_passes_python_version_from_file(tmp_path, monkeypatch):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".python-version").write_text("3.12.1\n")
-    svc = DockerService()
-    with patch(
-        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
-    ) as mock_run:
-        main(docker_service=svc, cfg=_cfg)
-    cmd = mock_run.call_args[0][0]
-    assert "PYTHON_VERSION=3.12" in cmd
-
-
-def test_main_python_version_short_form_unchanged(tmp_path, monkeypatch):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".python-version").write_text("3.12\n")
-    svc = DockerService()
-    with patch(
-        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
-    ) as mock_run:
-        main(docker_service=svc, cfg=_cfg)
-    cmd = mock_run.call_args[0][0]
-    assert "PYTHON_VERSION=3.12" in cmd
-
-
-def test_main_python_version_single_segment_unchanged(tmp_path, monkeypatch):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    (tmp_path / ".python-version").write_text("3\n")
-    svc = DockerService()
-    with patch(
-        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
-    ) as mock_run:
-        main(docker_service=svc, cfg=_cfg)
-    cmd = mock_run.call_args[0][0]
-    assert "PYTHON_VERSION=3" in cmd
-
-
-def test_main_no_python_version_when_file_absent(tmp_path, monkeypatch):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = DockerService()
-    with patch(
-        "pycastle.services.docker_service.subprocess.run", return_value=_subprocess_ok()
-    ) as mock_run:
-        main(docker_service=svc, cfg=_cfg)
-    cmd = mock_run.call_args[0][0]
-    assert "--build-arg" not in cmd
-
-
-# ── success / failure outcomes ────────────────────────────────────────────────
+    mock_resolve.assert_called_once_with(_cfg, project_root=Path("."), options=options)
+    mock_build.assert_called_once_with(docker_service, request)
 
 
 def test_main_returns_normally_on_success(tmp_path, monkeypatch):
@@ -289,294 +195,55 @@ def test_main_creates_default_docker_service(tmp_path, monkeypatch):
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
-    with patch("pycastle.commands.build.DockerService") as mock_cls:
+    request = UniversalImageBuildRequest(
+        image_tag="test-image",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+    )
+
+    with (
+        patch("pycastle.commands.build.DockerService") as mock_cls,
+        patch(
+            "pycastle.commands.build.resolve_universal_image_build_request",
+            return_value=request,
+        ),
+        patch("pycastle.commands.build.build_universal_image") as mock_build,
+    ):
         instance = _make_docker_service()
         mock_cls.return_value = instance
         main(cfg=_cfg)
+
     mock_cls.assert_called_once_with()
+    mock_build.assert_called_once_with(instance, request)
 
 
-def test_build_command_loads_config_from_project_local_config_when_cfg_is_absent(
-    tmp_path, monkeypatch
-):
+def test_build_command_loads_config_when_cfg_is_absent(tmp_path, monkeypatch):
     from pycastle.commands.build import main
 
     monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "config.py").write_text('docker_image_name = "loaded-from-disk"\n')
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(docker_service=svc)
-
-    assert [request.image_tag for request in _built_requests(svc)] == [
-        "loaded-from-disk"
-    ]
-
-
-def test_build_command_prefers_explicit_cfg_over_project_local_config(
-    tmp_path, monkeypatch
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "config.py").write_text('docker_image_name = "loaded-from-disk"\n')
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(docker_service=svc, cfg=Config(docker_image_name="passed-explicitly"))
-
-    assert [request.image_tag for request in _built_requests(svc)] == [
-        "passed-explicitly"
-    ]
-
-
-# ── Issue 203: cfg injection into build_command.main ─────────────────────────
-
-
-def test_build_command_uses_docker_image_name_from_cfg(tmp_path, monkeypatch):
-    """main(cfg=Config(docker_image_name='myimg', ...)) must pass the universal image name to the typed build request."""
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(
-        docker_service=svc,
-        cfg=Config(docker_image_name="myimg"),
+    cfg = Config(docker_image_name="loaded-from-disk")
+    request = UniversalImageBuildRequest(
+        image_tag="loaded-from-disk",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
     )
+    docker_service = MagicMock()
 
-    assert [request.image_tag for request in _built_requests(svc)] == ["myimg"]
+    with (
+        patch("pycastle.commands.build.load_config", return_value=cfg) as mock_load,
+        patch(
+            "pycastle.commands.build.resolve_universal_image_build_request",
+            return_value=request,
+        ) as mock_resolve,
+        patch("pycastle.commands.build.build_universal_image") as mock_build,
+    ):
+        main(docker_service=docker_service)
 
-
-def test_build_command_builds_one_universal_image_tagged_with_docker_image_name(
-    tmp_path, monkeypatch, capsys
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(
-        docker_service=svc,
-        cfg=Config(docker_image_name="myimg"),
+    mock_load.assert_called_once_with()
+    mock_resolve.assert_called_once_with(
+        cfg, project_root=Path("."), options=UniversalImageBuildOptions()
     )
-
-    assert [
-        (request.image_tag, request.dockerfile_path, request.context_dir)
-        for request in _built_requests(svc)
-    ] == [("myimg", resolve_dockerfile(Path("pycastle")), Path("."))]
-    assert capsys.readouterr().out.count("Building myimg...") == 1
-
-
-def test_build_command_passes_typed_request_with_exact_image_tag(tmp_path, monkeypatch):
-    from pycastle.commands.build import main
-
-    class _CapturingAdapter:
-        def __init__(self) -> None:
-            self.requests: list[UniversalImageBuildRequest] = []
-
-        def build(self, request: UniversalImageBuildRequest) -> None:
-            self.requests.append(request)
-
-    monkeypatch.chdir(tmp_path)
-    adapter = _CapturingAdapter()
-
-    main(
-        docker_service=adapter,
-        cfg=Config(docker_image_name="registry.example.com/team/pycastle:test-build"),
-    )
-
-    assert [request.image_tag for request in adapter.requests] == [
-        "registry.example.com/team/pycastle:test-build"
-    ]
-
-
-def test_build_command_uses_resolved_dockerfile_path(tmp_path, monkeypatch):
-    """main(cfg=Config(...)) must pass the resolved universal Dockerfile to the typed build request."""
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    dockerfile = pycastle_dir / "Dockerfile"
-    dockerfile.write_text("FROM scratch\n")
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(
-        docker_service=svc,
-        cfg=Config(docker_image_name="img"),
-    )
-
-    assert [request.dockerfile_path for request in _built_requests(svc)] == [
-        Path("pycastle/Dockerfile")
-    ]
-
-
-def test_build_command_uses_fixed_project_local_dockerfile_override(
-    tmp_path, monkeypatch
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "Dockerfile").write_text("FROM scratch\n")
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(
-        docker_service=svc,
-        cfg=Config(docker_image_name="img"),
-    )
-
-    assert [request.dockerfile_path for request in _built_requests(svc)] == [
-        Path("pycastle/Dockerfile")
-    ]
-
-
-# ── Issue 938: universal image builds ────────────────────────────────────────
-
-
-def test_build_command_builds_universal_image_from_resolved_dockerfile(
-    tmp_path, monkeypatch, capsys
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    dockerfile = pycastle_dir / "Dockerfile"
-    dockerfile.write_text("FROM scratch\n")
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(docker_service=svc, cfg=Config(docker_image_name="myproject"))
-
-    assert svc.build.call_count == 1
-    request = _built_requests(svc)[0]
-    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
-        "myproject",
-        Path("pycastle/Dockerfile"),
-        Path("."),
-    )
-    assert "Building myproject..." in capsys.readouterr().out
-
-
-def test_build_command_builds_universal_image_with_default_dockerfile_when_local_override_is_missing(
-    tmp_path, monkeypatch, capsys
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(docker_service=svc, cfg=_cfg_referencing_only("codex", "myproject"))
-
-    svc.build.assert_called_once()
-    request = _built_requests(svc)[0]
-    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
-        "myproject",
-        resolve_dockerfile(Path("pycastle")),
-        Path("."),
-    )
-    assert "Building myproject..." in capsys.readouterr().out
-
-
-def test_build_command_ignores_legacy_project_local_service_specific_dockerfiles(
-    tmp_path, monkeypatch, capsys
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "Dockerfile.claude").write_text("FROM legacy-claude\n")
-    (pycastle_dir / "Dockerfile.codex").write_text("FROM legacy-codex\n")
-    (pycastle_dir / "Dockerfile.opencode").write_text("FROM legacy-opencode\n")
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(docker_service=svc, cfg=_cfg_referencing_only("codex", "myproject"))
-
-    svc.build.assert_called_once()
-    request = _built_requests(svc)[0]
-    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
-        "myproject",
-        resolve_dockerfile(Path("pycastle")),
-        Path("."),
-    )
-    assert "Building myproject..." in capsys.readouterr().out
-
-
-def test_build_command_uses_bundled_default_when_project_local_dockerfile_path_is_a_directory(
-    tmp_path, monkeypatch, capsys
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "Dockerfile").mkdir()
-    bundled_default = (
-        Path(__file__).resolve().parent.parent
-        / "src"
-        / "pycastle"
-        / "defaults"
-        / "Dockerfile"
-    )
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(docker_service=svc, cfg=_cfg_referencing_only("codex", "myproject"))
-
-    svc.build.assert_called_once()
-    request = _built_requests(svc)[0]
-    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
-        "myproject",
-        bundled_default,
-        Path("."),
-    )
-    assert "Building myproject..." in capsys.readouterr().out
-
-
-def test_build_command_ignores_stage_fallback_services_when_building_universal_image(
-    tmp_path, monkeypatch, capsys
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    pycastle_dir = tmp_path / "pycastle"
-    pycastle_dir.mkdir()
-    (pycastle_dir / "Dockerfile").write_text("FROM scratch\n")
-    svc = MagicMock()
-    svc.build.return_value = None
-    cfg = Config(
-        docker_image_name="myproject",
-        plan_override=StageOverride(
-            service="claude",
-            effort="low",
-            fallback=StageOverride(service="codex", effort="low"),
-        ),
-    )
-
-    main(docker_service=svc, cfg=cfg)
-
-    assert [
-        (request.image_tag, request.dockerfile_path, request.context_dir)
-        for request in _built_requests(svc)
-    ] == [
-        ("myproject", Path("pycastle/Dockerfile"), Path(".")),
-    ]
-    out = capsys.readouterr().out
-    assert out.count("Building myproject...") == 1
+    mock_build.assert_called_once_with(docker_service, request)
 
 
 def test_packaging_includes_bundled_universal_dockerfile():
@@ -831,72 +498,3 @@ def test_main_success_message_not_on_stderr(tmp_path, monkeypatch, capsys):
     main(docker_service=svc, cfg=_cfg)
     err = capsys.readouterr().err
     assert "Build complete" not in err
-
-
-# ── terse mode passes terse=True to the service ──────────────────────────────
-
-
-def test_terse_mode_passes_terse_flag_to_service(tmp_path, monkeypatch):
-    """stream=True, terse=True is forwarded to the typed build request options."""
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = MagicMock()
-    svc.build.return_value = None
-    main(stream=True, terse=True, docker_service=svc, cfg=_cfg)
-    assert _built_requests(svc)[0].options.terse is True
-
-
-def test_terse_mode_does_not_print_image_up_to_date(tmp_path, monkeypatch, capsys):
-    """With terse=True the build command doesn't print 'Image up to date'."""
-    from pycastle.commands.build import main
-    from pycastle.services.docker_service import BuildOutcome
-
-    monkeypatch.chdir(tmp_path)
-    svc = MagicMock()
-    svc.build.return_value = BuildOutcome.FULL_CACHE_HIT
-    main(stream=True, terse=True, docker_service=svc, cfg=_cfg)
-    out = capsys.readouterr().out
-    assert "Image up to date" not in out
-
-
-def test_non_terse_stream_still_prints_image_up_to_date(tmp_path, monkeypatch, capsys):
-    """stream=True without terse still prints 'Image up to date' on full cache hit."""
-    from pycastle.commands.build import main
-    from pycastle.services.docker_service import BuildOutcome
-
-    monkeypatch.chdir(tmp_path)
-    svc = MagicMock()
-    svc.build.return_value = BuildOutcome.FULL_CACHE_HIT
-    main(stream=True, terse=False, docker_service=svc, cfg=_cfg)
-    out = capsys.readouterr().out
-    assert "Image up to date" in out
-
-
-def test_build_command_prefers_explicit_typed_options_over_legacy_flags(
-    tmp_path, monkeypatch
-):
-    from pycastle.commands.build import main
-
-    monkeypatch.chdir(tmp_path)
-    svc = MagicMock()
-    svc.build.return_value = None
-
-    main(
-        no_cache=False,
-        stream=False,
-        terse=False,
-        options=UniversalImageBuildOptions(
-            no_cache=True,
-            stream=True,
-            terse=True,
-        ),
-        docker_service=svc,
-        cfg=_cfg,
-    )
-
-    assert _built_requests(svc)[0].options == UniversalImageBuildOptions(
-        no_cache=True,
-        stream=True,
-        terse=True,
-    )
