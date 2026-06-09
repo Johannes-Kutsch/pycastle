@@ -29,11 +29,11 @@ from ..errors import (
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
 from ..session.agent import RunSessionPlan
+from ..session.run_dispatch import RunSessionRequest, prepare_run_session
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
 from ..services.flag_profiles import AgentToolPolicyGroup
-from .session_dispatch import SessionDispatchRequest, prepare_agent_session
 from ..display.status_display import (
     ModelDisplayMetadata,
     PlainStatusDisplay,
@@ -214,8 +214,15 @@ class AgentRunner:
             container_workspace=_CONTAINER_WORKSPACE,
             timeout_retries=self._cfg.timeout_retries,
             stage_key_for_role=_stage_key_for_role,
-            prepare_session=lambda **kwargs: prepare_agent_session(
-                SessionDispatchRequest(**kwargs)
+            prepare_session=lambda **kwargs: prepare_run_session(
+                RunSessionRequest(
+                    worktree=kwargs["mount_path"],
+                    role=kwargs["role"],
+                    session_namespace=kwargs["session_namespace"],
+                    service=kwargs["service"],
+                    container_workspace=kwargs["container_workspace"],
+                    run_session_plan=kwargs["run_session_plan"],
+                )
             ),
             build_session=self._build_session,
             build_runner=lambda session, status_display: ContainerRunner(

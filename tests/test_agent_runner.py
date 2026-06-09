@@ -31,6 +31,10 @@ from pycastle.agents._work_invocation import (
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest, _stage_key_for_role
+from pycastle_agent_runtime.session import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.config import Config
 from pycastle.errors import (
     AgentCredentialFailureError,
@@ -53,10 +57,6 @@ from pycastle.services.agent_service import ParsedTurn, Result
 from pycastle.services import CodexService, GitCommandError, GitService, OpenCodeService
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services.flag_profiles import AgentToolPolicyGroup
-from pycastle.services.provider_session_state import (
-    ProviderSessionState,
-    ProviderSessionStateRequest,
-)
 from pycastle.display.status_display import ModelDisplayMetadata
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
 

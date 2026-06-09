@@ -8,10 +8,14 @@ from typing import cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.agents.session_dispatch import (
-    PreparedAgentSession,
-    SessionDispatchRequest,
-    prepare_agent_session,
+from pycastle_agent_runtime.session import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
+from pycastle.session.run_dispatch import (
+    PreparedRunSession as PreparedAgentSession,
+    RunSessionRequest as SessionDispatchRequest,
+    prepare_run_session as prepare_agent_session,
     record_successful_provider_session_metadata,
 )
 from pycastle.session import RoleSession, RunKind
@@ -36,10 +40,6 @@ from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService, CodexService
 from pycastle.services.agent_service import AgentService
 from pycastle.services.opencode_service import OpenCodeService
-from pycastle.services.provider_session_state import (
-    ProviderSessionState,
-    ProviderSessionStateRequest,
-)
 
 
 @dataclass
@@ -188,7 +188,7 @@ def _request(
     container_workspace: str = "/home/agent/workspace",
 ) -> SessionDispatchRequest:
     return SessionDispatchRequest(
-        mount_path=tmp_path,
+        worktree=tmp_path,
         role=role,
         session_namespace=namespace,
         service=service or ClaudeService(),

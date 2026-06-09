@@ -11,10 +11,6 @@ from .agent_service import (
     UnsupportedTokens,
     UsageLimit,
 )
-from .provider_session_state import (
-    ProviderSessionState,
-    ProviderSessionStateRequest,
-)
 
 if TYPE_CHECKING:
     from .claude_service import ClaudeService
@@ -62,8 +58,6 @@ __all__ = [
     "GithubServiceError",
     "OpenCodeService",
     "ParsedTurn",
-    "ProviderSessionState",
-    "ProviderSessionStateRequest",
     "PromptTokens",
     "ResetTimeSyntaxMode",
     "Result",

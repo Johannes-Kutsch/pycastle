@@ -26,12 +26,18 @@ WorkResultT = TypeVar("WorkResultT")
 
 
 def _default_prepare_session(**kwargs: Any) -> Any:
-    from pycastle.agents.session_dispatch import (
-        SessionDispatchRequest,
-        prepare_agent_session,
-    )
+    from pycastle.session.run_dispatch import RunSessionRequest, prepare_run_session
 
-    return prepare_agent_session(SessionDispatchRequest(**kwargs))
+    return prepare_run_session(
+        RunSessionRequest(
+            worktree=kwargs["mount_path"],
+            role=kwargs["role"],
+            session_namespace=kwargs["session_namespace"],
+            service=kwargs["service"],
+            container_workspace=kwargs["container_workspace"],
+            run_session_plan=kwargs["run_session_plan"],
+        )
+    )
 
 
 def _default_status_row_factory(*args: Any, **kwargs: Any) -> Any:
@@ -65,9 +71,18 @@ def _invoke_prepare_session(
         )
         and len(parameters) == 1
     ):
-        from pycastle.agents.session_dispatch import SessionDispatchRequest
+        from pycastle.session.run_dispatch import RunSessionRequest
 
-        return prepare_session(SessionDispatchRequest(**kwargs))
+        return prepare_session(
+            RunSessionRequest(
+                worktree=kwargs["mount_path"],
+                role=kwargs["role"],
+                session_namespace=kwargs["session_namespace"],
+                service=kwargs["service"],
+                container_workspace=kwargs["container_workspace"],
+                run_session_plan=kwargs["run_session_plan"],
+            )
+        )
     return prepare_session(**kwargs)
 
 

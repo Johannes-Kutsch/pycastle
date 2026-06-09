@@ -7,14 +7,14 @@ from typing import cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle_agent_runtime.session import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
-from pycastle.services.provider_session_state import (
-    ProviderSessionState,
-    ProviderSessionStateRequest,
-)
 from pycastle.session.agent import RunSessionPlanRequest, plan_run_session
 from pycastle.session.run_session import (
     AuthSeedingRequirement,

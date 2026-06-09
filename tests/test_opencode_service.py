@@ -14,7 +14,7 @@ from pycastle_agent_runtime import (
     TransientError,
     UsageLimit,
 )
-from pycastle.services.provider_session_state import ProviderSessionStateRequest
+from pycastle_agent_runtime.session import ProviderSessionStateRequest
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession, RunKind

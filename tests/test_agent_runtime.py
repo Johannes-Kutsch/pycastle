@@ -15,7 +15,12 @@ from pycastle.agents._work_invocation import (
     WorkExecutionAdapter,
     WorkInvocationDependencies,
 )
+from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole
+from pycastle_agent_runtime.session import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.config import Config
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services import GitService
@@ -26,10 +31,6 @@ from pycastle.services.agent_service import (
     ParsedTurn,
     Result,
     TransientError,
-)
-from pycastle.services.provider_session_state import (
-    ProviderSessionState,
-    ProviderSessionStateRequest,
 )
 from pycastle.session import RunKind
 
@@ -621,7 +622,7 @@ def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: P
     import pycastle_agent_runtime as runtime
 
     service = _RecordingRuntimeService("codex")
-    runner = runtime.AgentRunner(
+    runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
         _make_git_service(),
@@ -968,7 +969,7 @@ def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
             AssistantTurn(text="second turn"),
         ),
     )
-    runner = runtime.AgentRunner(
+    runner = AgentRunner(
         {},
         _make_cfg(tmp_path),
         _make_git_service(),
@@ -1339,7 +1340,7 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
 
     fallback_service.is_available = _unavailable  # type: ignore[method-assign]
 
-    execution_adapter = runtime.AgentRunner(
+    execution_adapter = AgentRunner(
         {},
         _make_cfg(tmp_path),
         _make_git_service(),

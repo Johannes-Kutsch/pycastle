@@ -24,6 +24,7 @@ from pycastle_agent_runtime.contracts import (
     UsageLimit as RuntimeUsageLimit,
 )
 from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from pycastle_agent_runtime.session import ProviderSessionStateRequest
 from pycastle.services import ClaudeService
 from pycastle.services.agent_service import (
     AssistantTurn,
@@ -31,7 +32,6 @@ from pycastle.services.agent_service import (
     Result,
     UsageLimit,
 )
-from pycastle.services.provider_session_state import ProviderSessionStateRequest
 from pycastle.session import RoleSession
 from pycastle.session import RunKind
 

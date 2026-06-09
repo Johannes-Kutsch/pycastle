@@ -92,10 +92,6 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name in {"AgentRunner", "AgentRunnerProtocol", "RunRequest"}:
-        from pycastle.agents import runner
-
-        return getattr(runner, name)
     if name == "run":
         from pycastle_agent_runtime.orchestration import run
 

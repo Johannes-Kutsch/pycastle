@@ -12,13 +12,13 @@ from typing import cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.services.agent_service import AgentService
-from pycastle.services.codex_service import CodexService
-from pycastle.services.opencode_service import OpenCodeService
-from pycastle.services.provider_session_state import (
+from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
+from pycastle.services.agent_service import AgentService
+from pycastle.services.codex_service import CodexService
+from pycastle.services.opencode_service import OpenCodeService
 from pycastle.services import ServiceRegistry
 from pycastle.session import (
     ProviderFreshFallbackReason,
