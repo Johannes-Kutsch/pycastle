@@ -10,14 +10,17 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..prompts.pipeline import PromptTemplate, Scope
-from ..prompts.scope_args import build_improve_scope_args
+from ..prompts.pipeline import PromptTemplate
 from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree, sandbox_worktree_identity
 from ._rows import status_row
+from .improve_preparation import (
+    ImproveStepPreparationRequest,
+    prepare_improve_step,
+)
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
@@ -294,47 +297,34 @@ async def improve_phase(
                     return ImproveContinue()
 
             while step is not None:
-                if step.fetch_recent_prd_titles:
-                    scope_args = build_improve_scope_args(
-                        step.cfg.template,
-                        github_svc=deps.github_svc,
+                prepared_step = prepare_improve_step(
+                    ImproveStepPreparationRequest(
+                        prompt_template=step.cfg.template,
+                        session_namespace=step.cfg.namespace,
+                        display_name=step.cfg.display_name,
+                        work_body=step.cfg.display_body,
+                        send_role_prompt_on_resume=step.send_role_prompt_on_resume,
                         short_sid=short_sid,
                         prd_number=driver.prd_number,
-                    )
-                elif step.cfg.template.scope is Scope.IMPROVE_SCAN:
-                    scope_args = build_improve_scope_args(
-                        step.cfg.template,
-                        github_svc=deps.github_svc,
-                        short_sid=short_sid,
-                        recent_prds=[],
-                    )
-                elif step.cfg.template.scope in (
-                    Scope.IMPROVE_ISSUES,
-                    Scope.IMPROVE_SESSION,
-                ):
-                    scope_args = build_improve_scope_args(
-                        step.cfg.template,
-                        github_svc=deps.github_svc,
-                        short_sid=short_sid,
-                        prd_number=driver.prd_number,
-                    )
-                else:
-                    scope_args = {}
+                        fetch_recent_prd_titles=step.fetch_recent_prd_titles,
+                    ),
+                    github_port=deps.github_svc,
+                )
                 output = await deps.agent_runner.run(
                     RunRequest(
-                        name=step.cfg.display_name,
-                        template=step.cfg.template,
+                        name=prepared_step.display_name,
+                        template=prepared_step.prompt_template,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
-                        scope_args=scope_args,
+                        scope_args=prepared_step.scope_args,
                         model=deps.cfg.improve_override.model,
                         effort=deps.cfg.improve_override.effort,
                         service=deps.cfg.improve_override.service,
                         stage="improve-sandbox",
                         status_display=deps.status_display,
-                        work_body=step.cfg.display_body,
-                        send_role_prompt_on_resume=step.send_role_prompt_on_resume,
-                        session_namespace=step.cfg.namespace,
+                        work_body=prepared_step.work_body,
+                        send_role_prompt_on_resume=prepared_step.send_role_prompt_on_resume,
+                        session_namespace=prepared_step.session_namespace,
                     )
                 )
                 driver.record_outcome(step, output)
