@@ -109,4 +109,10 @@ def build_universal_image(
 ) -> BuildOutcome | None:
     if not request.image_tag:
         raise ConfigValidationError(_MISSING_DOCKER_IMAGE_NAME_MESSAGE)
-    return adapter.build(request)
+    print(f"Building {request.image_tag}...")
+    outcome = adapter.build(request)
+    if not request.options.stream:
+        print("Build complete.")
+    elif outcome == BuildOutcome.FULL_CACHE_HIT and not request.options.terse:
+        print("Image up to date.")
+    return outcome

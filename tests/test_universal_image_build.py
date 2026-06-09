@@ -92,6 +92,62 @@ def test_universal_image_build_passes_exact_image_tag_to_adapter(tmp_path):
     assert adapter.requests == [request]
 
 
+def test_universal_image_build_prints_building_line_before_adapter_runs(
+    tmp_path, capsys
+):
+    request = UniversalImageBuildRequest(
+        image_tag="pycastle:test-build",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+    )
+
+    class _ObservingAdapter:
+        def build(self, request: UniversalImageBuildRequest) -> BuildOutcome | None:
+            assert capsys.readouterr().out == "Building pycastle:test-build...\n"
+            return BuildOutcome.REBUILT
+
+    result = build_universal_image(_ObservingAdapter(), request)
+
+    assert result == BuildOutcome.REBUILT
+
+
+def test_universal_image_build_prints_build_complete_for_non_stream_success(
+    tmp_path, capsys
+):
+    request = UniversalImageBuildRequest(
+        image_tag="pycastle:test-build",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+    )
+    adapter = _FakeUniversalImageBuildAdapter(BuildOutcome.REBUILT)
+
+    result = build_universal_image(adapter, request)
+
+    assert result == BuildOutcome.REBUILT
+    assert capsys.readouterr().out == (
+        "Building pycastle:test-build...\nBuild complete.\n"
+    )
+
+
+def test_universal_image_build_prints_image_up_to_date_for_non_terse_stream_cache_hit(
+    tmp_path, capsys
+):
+    request = UniversalImageBuildRequest(
+        image_tag="pycastle:test-build",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+        options=UniversalImageBuildOptions(stream=True, terse=False),
+    )
+    adapter = _FakeUniversalImageBuildAdapter(BuildOutcome.FULL_CACHE_HIT)
+
+    result = build_universal_image(adapter, request)
+
+    assert result == BuildOutcome.FULL_CACHE_HIT
+    assert capsys.readouterr().out == (
+        "Building pycastle:test-build...\nImage up to date.\n"
+    )
+
+
 def test_resolve_universal_image_build_request_uses_local_override_and_project_root(
     tmp_path,
 ):

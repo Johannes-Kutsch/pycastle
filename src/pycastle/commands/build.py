@@ -9,7 +9,6 @@ from .._universal_image_build import (
 )
 from ..config import Config, load_config
 from ..services import DockerService
-from ..services.docker_service import BuildOutcome
 
 
 def main(
@@ -25,8 +24,7 @@ def main(
     if docker_service is None:
         docker_service = DockerService()
 
-    print(f"Building {cfg.docker_image_name}...")
-    outcome = build_universal_image(
+    build_universal_image(
         docker_service,
         resolve_universal_image_build_request(
             cfg,
@@ -38,8 +36,3 @@ def main(
             ),
         ),
     )
-
-    if not stream:
-        print("Build complete.")
-    elif outcome == BuildOutcome.FULL_CACHE_HIT and not terse:
-        print("Image up to date.")
