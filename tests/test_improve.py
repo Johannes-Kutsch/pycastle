@@ -226,35 +226,7 @@ def test_improve_phase_dispatches_scan_prd_and_issues_templates_in_order(
     ]
 
 
-def test_improve_phase_threads_formatted_recent_improve_prd_titles_to_fresh_scan(
-    tmp_path, git_svc
-):
-    github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.return_value = [
-        {"number": 12, "state": "OPEN", "title": "First candidate"},
-        {"number": 11, "state": "CLOSED", "title": "Second candidate"},
-    ]
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    scan_call = next(
-        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
-    )
-    assert scan_call.scope_args == {
-        "RECENT_IMPROVE_PRD_TITLES": (
-            "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
-        )
-    }
-
-
-def test_improve_phase_threads_formatted_recent_improve_prds_to_prd_phase(
-    tmp_path, git_svc
-):
+def test_improve_phase_dispatches_prd_step_with_expected_work_body(tmp_path, git_svc):
     github_svc = MagicMock()
     github_svc.get_recent_improve_prds.return_value = [
         {"number": 12, "state": "OPEN", "title": "First candidate"},
@@ -272,36 +244,7 @@ def test_improve_phase_threads_formatted_recent_improve_prds_to_prd_phase(
     assert prd_call.work_body == "writing PRD"
 
 
-def test_improve_phase_1_resume_does_not_refetch_recent_improve_prd_titles(
-    tmp_path, git_svc
-):
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "_phase_in_flight").write_text("01-scan", encoding="utf-8")
-    github_svc = MagicMock()
-    runner = FakeAgentRunner([NoCandidateOutput()], preflight_responses=[[]])
-    cfg = dataclasses.replace(Config(), diagnose_on_failure=False)
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        cfg=cfg,
-    )
-
-    _run(deps)
-
-    scan_call = next(
-        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
-    )
-    assert scan_call.scope_args == {
-        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."
-    }
-    github_svc.get_recent_improve_prds.assert_not_called()
-
-
-def test_improve_phase_threads_empty_recent_improve_prd_message_to_prd_phase(
+def test_improve_phase_still_dispatches_prd_step_when_recent_prd_history_is_empty(
     tmp_path, git_svc
 ):
     github_svc = MagicMock()
@@ -316,40 +259,6 @@ def test_improve_phase_threads_empty_recent_improve_prd_message_to_prd_phase(
 
     prd_call = next(c for c in runner.calls if c.template == PromptTemplate.IMPROVE_PRD)
     assert prd_call.template == PromptTemplate.IMPROVE_PRD
-
-
-def test_improve_phase_does_not_refetch_recent_improve_prds_for_issues_phase(
-    tmp_path, git_svc
-):
-    github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.side_effect = [
-        [{"number": 12, "state": "OPEN", "title": "First candidate"}],
-        [{"number": 12, "state": "OPEN", "title": "First candidate"}],
-        AssertionError("issues phase should not re-fetch recent improve PRDs"),
-    ]
-    github_svc.get_issue.return_value = {
-        "number": 42,
-        "title": "Improve PRD",
-        "body": "PRD body",
-    }
-    github_svc.get_issue_comments.return_value = []
-    runner = FakeAgentRunner(
-        [
-            CompletionOutput(),
-            IssueOutput(number=42, labels=[]),
-            CompletionOutput(),
-        ],
-        preflight_responses=[[]],
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    issues_call = next(
-        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
-    )
-    assert issues_call.work_body == "filing sub-issues"
-    assert github_svc.get_recent_improve_prds.call_count == 2
 
 
 def test_improve_phase_propagates_recent_improve_prd_lookup_failures(tmp_path, git_svc):
@@ -383,74 +292,6 @@ def test_improve_phase_propagates_prd_preparation_lookup_failures_after_scan(
     assert [call.template for call in runner.calls] == [PromptTemplate.IMPROVE_SCAN]
 
 
-def test_improve_phase_threads_prd_number_from_issue_output_to_issues_phase(
-    tmp_path, git_svc
-):
-    """Phase 02 IssueOutput.number is plumbed into phase 03's issue fetch."""
-    github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"number": 4242, "title": "PRD", "body": "body"}
-    github_svc.get_issue_comments.return_value = []
-    runner = FakeAgentRunner(
-        [
-            CompletionOutput(),  # 01-scan
-            IssueOutput(number=4242, labels=[]),  # 02-prd
-            CompletionOutput(),  # 03-issues
-        ],
-        preflight_responses=[[]],
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-    _run(deps)
-    issues_call = next(
-        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_ISSUES
-    )
-    assert issues_call.template == PromptTemplate.IMPROVE_ISSUES
-    github_svc.get_issue.assert_called_with(4242)
-
-
-def test_improve_phase_assembles_prd_title_and_body_into_issues_scope(
-    tmp_path, git_svc
-):
-    """Phase 03 fetches the PRD record before filing sub-issues."""
-    github_svc = MagicMock()
-    github_svc.get_issue.return_value = {
-        "number": 99,
-        "title": "My PRD Title",
-        "body": "PRD body text",
-    }
-    github_svc.get_issue_comments.return_value = []
-    runner = FakeAgentRunner(
-        [
-            CompletionOutput(),  # 01-scan
-            IssueOutput(number=99, labels=[]),  # 02-prd
-            CompletionOutput(),  # 03-issues
-        ],
-        preflight_responses=[[]],
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-    _run(deps)
-    github_svc.get_issue.assert_called_once_with(99)
-
-
-def test_improve_phase_fetches_prd_comments_for_issues_scope(tmp_path, git_svc):
-    """improve_phase calls gh_svc.get_issue_comments with the PRD number for phase 03."""
-    github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"number": 77, "title": "PRD", "body": ""}
-    github_svc.get_issue_comments.return_value = [
-        {"author": "alice", "created_at": "2026-01-01T00:00:00Z", "body": "looks good"}
-    ]
-    runner = FakeAgentRunner(
-        [
-            CompletionOutput(),  # 01-scan
-            IssueOutput(number=77, labels=[]),  # 02-prd
-            CompletionOutput(),  # 03-issues
-        ],
-        preflight_responses=[[]],
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-    _run(deps)
-    github_svc.get_issue_comments.assert_called_with(77)
-
-
 def test_improve_phase_dispatches_no_candidate_report_after_scan_rejection(
     tmp_path, git_svc
 ):
@@ -462,38 +303,6 @@ def test_improve_phase_dispatches_no_candidate_report_after_scan_rejection(
     report_call = runner.calls[1]
     assert report_call.role == AgentRole.IMPROVE
     assert report_call.template == PromptTemplate.IMPROVE_NO_CANDIDATE
-
-
-def test_improve_phase_prepares_no_candidate_report_with_main_session_scope_args(
-    tmp_path, git_svc
-):
-    github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.return_value = [
-        {"number": 12, "state": "OPEN", "title": "First candidate"},
-        {"number": 11, "state": "CLOSED", "title": "Second candidate"},
-    ]
-    runner = FakeAgentRunner(
-        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    report_call = next(
-        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_NO_CANDIDATE
-    )
-    improve_worktree = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    expected_short_sid = (
-        RoleSession(improve_worktree, AgentRole.IMPROVE, "main")
-        .session_uuid()
-        .split("-")[0]
-    )
-    assert report_call.scope_args == {
-        "IMPROVE_SHORT_SID": expected_short_sid,
-        "RECENT_IMPROVE_PRDS": (
-            "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
-        ),
-    }
 
 
 def test_improve_phase_propagates_no_candidate_report_preparation_lookup_failures(

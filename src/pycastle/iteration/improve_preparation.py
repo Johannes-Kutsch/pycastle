@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from ..prompts.pipeline import PromptTemplate, Scope
-from ..prompts.scope_args import build_improve_scope_args
+from ..prompts.scope_args import (
+    build_issue_scope_args,
+    validated_scope_args_for_template,
+)
 
 
 class ImprovePreparationGithubPort(Protocol):
@@ -140,24 +143,81 @@ def _build_scope_args(
     github_port: ImprovePreparationGithubPort,
 ) -> dict[str, str]:
     if request.fetch_recent_prd_titles:
-        return build_improve_scope_args(
-            request.prompt_template,
-            github_svc=github_port,
-            short_sid=request.short_sid,
-            prd_number=request.prd_number,
-        )
+        return _build_improve_scope_args(request, github_port=github_port)
     if request.prompt_template.scope is Scope.IMPROVE_SCAN:
-        return build_improve_scope_args(
+        return _validated_recent_prd_title_scope_args(
             request.prompt_template,
-            github_svc=github_port,
-            short_sid=request.short_sid,
             recent_prds=[],
         )
     if request.prompt_template.scope in (Scope.IMPROVE_ISSUES, Scope.IMPROVE_SESSION):
-        return build_improve_scope_args(
-            request.prompt_template,
-            github_svc=github_port,
-            short_sid=request.short_sid,
-            prd_number=request.prd_number,
-        )
+        return _build_improve_scope_args(request, github_port=github_port)
     return {}
+
+
+def _build_improve_scope_args(
+    request: ImproveStepPreparationRequest,
+    *,
+    github_port: ImprovePreparationGithubPort,
+) -> dict[str, str]:
+    template = request.prompt_template
+    if template is PromptTemplate.IMPROVE_SCAN:
+        return _validated_recent_prd_title_scope_args(
+            template,
+            recent_prds=github_port.get_recent_improve_prds(),
+        )
+
+    if template in {
+        PromptTemplate.IMPROVE_PRD,
+        PromptTemplate.IMPROVE_NO_CANDIDATE,
+    }:
+        return validated_scope_args_for_template(
+            template,
+            {
+                "IMPROVE_SHORT_SID": request.short_sid,
+                "RECENT_IMPROVE_PRDS": _format_recent_improve_prds(
+                    github_port.get_recent_improve_prds()
+                ),
+            },
+        )
+
+    if template is PromptTemplate.IMPROVE_ISSUES:
+        if request.prd_number is None:
+            issue: dict[str, Any] = {
+                "number": "",
+                "title": "",
+                "body": "",
+                "comments": [],
+            }
+        else:
+            issue = {
+                **github_port.get_issue(request.prd_number),
+                "comments": github_port.get_issue_comments(request.prd_number),
+            }
+        return validated_scope_args_for_template(
+            template,
+            build_issue_scope_args(
+                issue,
+                extra_scope_args={"IMPROVE_SHORT_SID": request.short_sid},
+            ),
+        )
+
+    raise TypeError(f"unsupported Improve template: {template.name}")
+
+
+def _validated_recent_prd_title_scope_args(
+    template: PromptTemplate,
+    *,
+    recent_prds: list[dict[str, Any]],
+) -> dict[str, str]:
+    return validated_scope_args_for_template(
+        template,
+        {"RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds(recent_prds)},
+    )
+
+
+def _format_recent_improve_prds(recent_prds: list[dict[str, Any]]) -> str:
+    if not recent_prds:
+        return "No recent improve PRDs found."
+    return "\n".join(
+        f"#{prd['number']} {prd['state']} - {prd['title']}" for prd in recent_prds
+    )

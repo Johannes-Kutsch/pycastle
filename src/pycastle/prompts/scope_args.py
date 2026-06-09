@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import platform
 from collections.abc import Sequence
-from typing import Any, Protocol
+from typing import Protocol
 
 from .pipeline import PromptRenderError, PromptTemplate, Scope
 from ..session import RunKind
@@ -182,72 +182,6 @@ def build_failure_report_scope_args(failure: FailureReportSource) -> dict[str, s
             "SESSION_DIR": failure.session_dir,
             "FAILURE_CLASS": failure.failure_class,
         },
-    )
-
-
-def _format_recent_improve_prds(recent_prds: list[dict[str, str | int]]) -> str:
-    if not recent_prds:
-        return "No recent improve PRDs found."
-    return "\n".join(
-        f"#{prd['number']} {prd['state']} - {prd['title']}" for prd in recent_prds
-    )
-
-
-def build_improve_scope_args(
-    template: PromptTemplate,
-    *,
-    github_svc: Any,
-    short_sid: str,
-    prd_number: int | None = None,
-    recent_prds: list[dict[str, str | int]] | None = None,
-) -> dict[str, str]:
-    if template is PromptTemplate.IMPROVE_SCAN:
-        recent_improve_prds = (
-            github_svc.get_recent_improve_prds() if recent_prds is None else recent_prds
-        )
-        return validated_scope_args_for_template(
-            template,
-            {
-                "RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds(
-                    recent_improve_prds
-                )
-            },
-        )
-
-    if template in {
-        PromptTemplate.IMPROVE_PRD,
-        PromptTemplate.IMPROVE_NO_CANDIDATE,
-    }:
-        recent_improve_prds = (
-            github_svc.get_recent_improve_prds() if recent_prds is None else recent_prds
-        )
-        return validated_scope_args_for_template(
-            template,
-            {
-                "IMPROVE_SHORT_SID": short_sid,
-                "RECENT_IMPROVE_PRDS": _format_recent_improve_prds(recent_improve_prds),
-            },
-        )
-
-    if template is PromptTemplate.IMPROVE_ISSUES:
-        issue: dict[str, Any]
-        if prd_number is None:
-            issue = {"number": "", "title": "", "body": "", "comments": []}
-        else:
-            issue = {
-                **github_svc.get_issue(prd_number),
-                "comments": github_svc.get_issue_comments(prd_number),
-            }
-        return validated_scope_args_for_template(
-            template,
-            build_issue_scope_args(
-                issue,
-                extra_scope_args={"IMPROVE_SHORT_SID": short_sid},
-            ),
-        )
-
-    raise PromptRenderError(
-        f"build_improve_scope_args only supports Improve templates, got {template.name}"
     )
 
 
