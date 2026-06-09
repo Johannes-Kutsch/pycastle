@@ -148,6 +148,51 @@ def test_universal_image_build_prints_image_up_to_date_for_non_terse_stream_cach
     )
 
 
+def test_universal_image_build_does_not_print_image_up_to_date_for_terse_stream_cache_hit(
+    tmp_path, capsys
+):
+    request = UniversalImageBuildRequest(
+        image_tag="pycastle:test-build",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+        options=UniversalImageBuildOptions(stream=True, terse=True),
+    )
+    adapter = _FakeUniversalImageBuildAdapter(BuildOutcome.FULL_CACHE_HIT)
+
+    result = build_universal_image(adapter, request)
+
+    assert result == BuildOutcome.FULL_CACHE_HIT
+    assert capsys.readouterr().out == "Building pycastle:test-build...\n"
+
+
+@pytest.mark.parametrize(
+    ("options", "expected_output"),
+    [
+        (UniversalImageBuildOptions(), "Building pycastle:test-build...\n"),
+        (
+            UniversalImageBuildOptions(stream=True, terse=False),
+            "Building pycastle:test-build...\n",
+        ),
+    ],
+)
+def test_universal_image_build_does_not_print_success_summary_on_adapter_failure(
+    tmp_path, capsys, options, expected_output
+):
+    request = UniversalImageBuildRequest(
+        image_tag="pycastle:test-build",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+        options=options,
+    )
+    adapter = _FakeUniversalImageBuildAdapter(BuildOutcome.FULL_CACHE_HIT)
+    adapter.build = MagicMock(side_effect=RuntimeError("adapter failed"))
+
+    with pytest.raises(RuntimeError, match="adapter failed"):
+        build_universal_image(adapter, request)
+
+    assert capsys.readouterr().out == expected_output
+
+
 def test_resolve_universal_image_build_request_uses_local_override_and_project_root(
     tmp_path,
 ):

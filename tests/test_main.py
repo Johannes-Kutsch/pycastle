@@ -1237,6 +1237,15 @@ def test_run_cmd_succeeds_on_full_cache_hit(tmp_path, monkeypatch):
     assert "Image up to date" not in result.output
 
 
+def test_run_cmd_prints_building_line_before_implicit_build(tmp_path, monkeypatch):
+    from pycastle.services.docker_service import BuildOutcome
+
+    result = _run_cmd_with_build_outcome(tmp_path, monkeypatch, BuildOutcome.REBUILT)
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Building myimage...") == 1
+
+
 def test_run_cmd_no_build_output_on_full_cache_hit(tmp_path, monkeypatch):
     from pycastle.services.docker_service import BuildOutcome
 
