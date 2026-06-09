@@ -244,6 +244,52 @@ def test_decide_usage_limit_continuation_ignores_available_services_outside_stag
     )
 
 
+def test_decide_usage_limit_continuation_uses_global_fallback_when_stage_priority_chain_is_missing():
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    registry = runtime.ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=primary_wake),
+            "codex": _make_service(available=True),
+        }
+    )
+
+    decision = _decide(
+        runtime.UsageLimitOutcome(),
+        stage_override=None,
+        service_registry=registry,
+        now=_now(),
+    )
+
+    assert decision == runtime.ContinueNow(
+        message="Account exhausted until 16:00, switching to next available.",
+        exhausted_wake_time=primary_wake,
+    )
+
+
+def test_decide_usage_limit_continuation_uses_global_next_wake_when_stage_priority_chain_is_missing():
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
+    registry = runtime.ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=primary_wake),
+            "codex": _make_service(available=False, wake_time=fallback_wake),
+        }
+    )
+
+    decision = _decide(
+        runtime.UsageLimitOutcome(),
+        stage_override=None,
+        service_registry=registry,
+        now=_now(),
+    )
+
+    assert decision == runtime.SleepUntil(
+        wake_time=fallback_wake,
+        message="Usage limit reached. Sleeping until 15:00. Press Ctrl+C to abort.",
+        is_estimated=False,
+    )
+
+
 def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion():
     registry = runtime.ServiceRegistry(
         {"claude": _make_service(available=False, wake_time=_now())}
