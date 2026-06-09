@@ -9,10 +9,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from pycastle_agent_runtime.contracts import (
+    AssistantTurn,
+    CredentialFailure,
+    HardError,
+    ParsedTurn,
+    PromptTokens,
+    TransientError,
+    UsageLimit,
+)
+from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from pycastle_agent_runtime.roles import AgentRole
+from pycastle_agent_runtime.session import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+    RunKind,
+)
+
 from .. import _time as _time_module
-from ..agents.output_protocol import AgentRole
 from ..agents.output_protocol import AgentOutputProtocolError
-from ..session import RoleSession, RunKind
+from ..session import RoleSession
 from ..session._provider_session_decision import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -22,17 +38,6 @@ from ..session.service_resume_identity import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
-from ..provider_errors import ProviderErrorObservation
-from .agent_service import (
-    AssistantTurn,
-    CredentialFailure,
-    HardError,
-    ParsedTurn,
-    PromptTokens,
-    TransientError,
-    UsageLimit,
-)
-from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
 from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
