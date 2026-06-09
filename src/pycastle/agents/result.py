@@ -1,14 +1,3 @@
-import asyncio
-from dataclasses import dataclass, field
+from pycastle_agent_runtime.work import CancellationToken
 
-
-@dataclass
-class CancellationToken:
-    _event: asyncio.Event = field(default_factory=asyncio.Event, init=False)
-
-    @property
-    def is_cancelled(self) -> bool:
-        return self._event.is_set()
-
-    def cancel(self) -> None:
-        self._event.set()
+__all__ = ["CancellationToken"]

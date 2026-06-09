@@ -1,7 +1,8 @@
 import dataclasses
 from collections.abc import Awaitable, Callable, Coroutine
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from ._work_invocation import (
     ProtocolOutputAdapter,
@@ -33,8 +34,12 @@ from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
 from ..services.flag_profiles import AgentToolPolicyGroup
-from .session_dispatch import prepare_agent_session
-from ..display.status_display import PlainStatusDisplay
+from .session_dispatch import SessionDispatchRequest, prepare_agent_session
+from ..display.status_display import (
+    ModelDisplayMetadata,
+    PlainStatusDisplay,
+    StatusDisplay,
+)
 from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailure
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
@@ -175,11 +180,39 @@ class AgentRunner:
         effort: str,
         service: AgentService,
     ) -> WorkInvocationDependencies:
+        def _status_row_factory(
+            status_display: StatusDisplay,
+            caller: str,
+            *,
+            kind: Literal["phase", "agent"],
+            must_close: bool,
+            color_key: int | None = None,
+            work_body: str = "",
+            initial_phase: str = "Setup",
+            startup_message: str = "started",
+            model_display: ModelDisplayMetadata | None = None,
+        ) -> AbstractAsyncContextManager[Any]:
+            from ..iteration._rows import status_row
+
+            return status_row(
+                status_display,
+                caller,
+                kind=kind,
+                must_close=must_close,
+                color_key=color_key,
+                work_body=work_body,
+                initial_phase=initial_phase,
+                startup_message=startup_message,
+                model_display=model_display,
+            )
+
         return WorkInvocationDependencies(
             container_workspace=_CONTAINER_WORKSPACE,
             timeout_retries=self._cfg.timeout_retries,
             stage_key_for_role=_stage_key_for_role,
-            prepare_session=prepare_agent_session,
+            prepare_session=lambda **kwargs: prepare_agent_session(
+                SessionDispatchRequest(**kwargs)
+            ),
             build_session=self._build_session,
             build_runner=lambda session, status_display: ContainerRunner(
                 name,
@@ -193,6 +226,12 @@ class AgentRunner:
             get_git_identity=lambda: (
                 self._git_service.get_user_name(),
                 self._git_service.get_user_email(),
+            ),
+            status_row_factory=_status_row_factory,
+            setup_error_types=(DockerError,),
+            build_setup_phase_error=lambda role, exc: SetupPhaseError(
+                role.value,
+                str(exc),
             ),
             transient_status_message=format_transient_status_message,
         )

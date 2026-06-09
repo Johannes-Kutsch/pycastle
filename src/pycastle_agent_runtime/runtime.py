@@ -5,20 +5,18 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from pycastle import _time as _time_module
-from pycastle.agents._work_invocation import (
-    TextOutputAdapter,
-    WorkInvocationDependencies,
-    WorkInvocationRequest,
-    invoke_work,
-)
-from pycastle.agents.result import CancellationToken
-from pycastle.agents.runner import AgentRunner
-from pycastle.session.agent import RunSessionPlan
 from pycastle.services.agent_service import AgentService
 from pycastle.services.flag_profiles import AgentToolPolicyGroup
 
 from .roles import AgentRole
 from .service_registry import ServiceRegistry
+from .work import (
+    CancellationToken,
+    TextOutputAdapter,
+    WorkInvocationDependencies,
+    WorkInvocationRequest,
+    invoke_work,
+)
 from .types import StageOverride
 
 
@@ -49,7 +47,7 @@ class PromptRunRequest:
     work_body: str = ""
     token: CancellationToken | None = None
     session_namespace: str = ""
-    run_session_plan: RunSessionPlan | None = None
+    run_session_plan: Any = None
 
 
 class PromptRuntime:
@@ -62,6 +60,8 @@ class PromptRuntime:
         docker_client: Any = None,
         service_registry: ServiceRegistry | dict[str, Any] | None = None,
     ) -> None:
+        from pycastle.agents.runner import AgentRunner
+
         registry = (
             service_registry
             if isinstance(service_registry, ServiceRegistry)
