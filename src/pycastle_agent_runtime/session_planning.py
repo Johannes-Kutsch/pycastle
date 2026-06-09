@@ -270,7 +270,7 @@ def plan_provider_run_state(
     selected_provider_state_dir = (
         provider_session_state.state_dir_path or host_state_dir
     )
-    auth_seeding_requirement = _plan_auth_seeding_requirement(
+    auth_seeding_requirement = codex_auth_seeding_requirement(
         service_name=request.service.name,
         provider_state_dir=selected_provider_state_dir,
     )
@@ -289,14 +289,14 @@ def plan_provider_run_state(
         recovered_session_id_persistence=recovered_session_id_persistence,
         service_state_dir=host_state_dir,
         exact_transcript_match=provider_session_state.exact_transcript_match,
-        auth_seed_action=_plan_auth_seed_action(
+        auth_seed_action=codex_auth_seed_action(
             service_name=request.service.name,
             provider_state_dir=selected_provider_state_dir,
         ),
     )
 
 
-def _plan_auth_seeding_requirement(
+def codex_auth_seeding_requirement(
     *,
     service_name: str,
     provider_state_dir: Path | None,
@@ -308,13 +308,13 @@ def _plan_auth_seeding_requirement(
     return AuthSeedingRequirement.REQUIRED
 
 
-def _plan_auth_seed_action(
+def codex_auth_seed_action(
     *,
     service_name: str,
     provider_state_dir: Path | None,
 ) -> LocalAuthSeedAction | None:
     if (
-        _plan_auth_seeding_requirement(
+        codex_auth_seeding_requirement(
             service_name=service_name,
             provider_state_dir=provider_state_dir,
         )
@@ -337,6 +337,8 @@ def _host_state_dir(worktree: Path, state_dir_relpath: str | None) -> Path | Non
 
 __all__ = [
     "AuthSeedingRequirement",
+    "codex_auth_seed_action",
+    "codex_auth_seeding_requirement",
     "LocalAuthSeedAction",
     "ProviderRunStatePlan",
     "ProviderRunStatePlanRequest",
