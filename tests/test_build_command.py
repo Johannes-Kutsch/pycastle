@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tarfile
 import os
+import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
@@ -98,6 +99,40 @@ def _wheel_members(tmp_path: Path) -> set[str]:
             return set(wheel.namelist())
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)
+
+
+def _runtime_package_wheel(tmp_path: Path) -> Path:
+    repo_root = Path(__file__).resolve().parents[1]
+    build_dir = repo_root / "build"
+    runtime_build_dir = repo_root / "src/pycastle_agent_runtime/build"
+    runtime_egg_info_dir = (
+        repo_root / "src/pycastle_agent_runtime/pycastle_agent_runtime.egg-info"
+    )
+    shutil.rmtree(build_dir, ignore_errors=True)
+    shutil.rmtree(runtime_build_dir, ignore_errors=True)
+    shutil.rmtree(runtime_egg_info_dir, ignore_errors=True)
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "wheel",
+                "./src/pycastle_agent_runtime",
+                "--no-deps",
+                "-w",
+                str(tmp_path),
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return next(tmp_path.glob("pycastle_agent_runtime-*.whl"))
+    finally:
+        shutil.rmtree(build_dir, ignore_errors=True)
+        shutil.rmtree(runtime_build_dir, ignore_errors=True)
+        shutil.rmtree(runtime_egg_info_dir, ignore_errors=True)
 
 
 def _shipped_defaults_in_sdist(tmp_path: Path) -> set[str]:
@@ -335,6 +370,21 @@ def test_sdist_ships_agent_runtime_package_scaffold(tmp_path):
     )
 
 
+def test_runtime_package_metadata_declares_standalone_distribution_path() -> None:
+    metadata = tomllib.loads(
+        Path("src/pycastle_agent_runtime/pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert metadata["project"]["name"] == "pycastle-agent-runtime"
+    assert metadata["tool"]["setuptools"]["packages"] == ["pycastle_agent_runtime"]
+    assert metadata["tool"]["setuptools"]["package-dir"] == {
+        "pycastle_agent_runtime": "."
+    }
+    assert metadata["tool"]["setuptools"]["package-data"] == {
+        "pycastle_agent_runtime": ["py.typed", "pyproject.toml"]
+    }
+
+
 def test_agent_runtime_package_exports_the_runtime_surface():
     import pycastle_agent_runtime as runtime
 
@@ -463,6 +513,66 @@ def test_local_distribution_installs_importable_agent_runtime_package(tmp_path):
         ]
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)
+
+
+def test_standalone_runtime_distribution_installs_without_pycastle_package(
+    tmp_path: Path,
+) -> None:
+    wheel_path = _runtime_package_wheel(tmp_path)
+    install_dir = tmp_path / "site-packages"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            str(wheel_path),
+            "--no-deps",
+            "--target",
+            str(install_dir),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            (
+                f"import sys; sys.path.insert(0, {str(install_dir)!r}); "
+                "import importlib.util; "
+                "from importlib.resources import files; "
+                "import pycastle_agent_runtime as runtime; "
+                "runtime.ServiceRegistry; "
+                "runtime.ProviderSessionState; "
+                "runtime.ProviderSessionStateRequest; "
+                "runtime.RunKind; "
+                "runtime.StageOverride; "
+                "runtime.UsageLimitOutcome; "
+                "runtime.decide_usage_limit_continuation; "
+                "runtime.select_configured_candidate_chain; "
+                "print(importlib.util.find_spec('pycastle') is None); "
+                "print(runtime.ServiceRegistry.__module__); "
+                "print(runtime.decide_usage_limit_continuation.__module__); "
+                "print(files('pycastle_agent_runtime').joinpath('pyproject.toml').is_file())"
+            ),
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "True",
+        "pycastle_agent_runtime.service_registry",
+        "pycastle_agent_runtime.usage_limit_decision",
+        "True",
+    ]
 
 
 def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():
