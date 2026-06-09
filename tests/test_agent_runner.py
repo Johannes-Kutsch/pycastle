@@ -4343,6 +4343,153 @@ def test_agent_runner_run_builds_runtime_work_invocation_with_agent_output_proto
     assert work_request.allow_non_typed_resume_retry is True
 
 
+def test_build_work_dependencies_marks_generic_permanent_service_exhaustion(
+    tmp_path: Path,
+) -> None:
+    class _PermanentExhaustionService:
+        name = "fake"
+
+        def __init__(self) -> None:
+            self.mark_exhausted_calls: list[datetime | None] = []
+            self.mark_permanently_exhausted_calls = 0
+
+        def build_command(
+            self, role, model, effort, run_kind, session_uuid, *, tool_policy=None
+        ) -> str:
+            del role, model, effort, run_kind, session_uuid, tool_policy
+            return ""
+
+        def build_env(
+            self, state_dir_container_path=None, token=None
+        ) -> dict[str, str]:
+            del state_dir_container_path, token
+            return {}
+
+        def run(self, lines, on_provider_session_id=None):
+            del lines, on_provider_session_id
+            return iter(())
+
+        def is_available(self, now: datetime | None = None) -> bool:
+            del now
+            return True
+
+        def next_wake_time(self) -> datetime:
+            raise AssertionError("next_wake_time should not be called")
+
+        def mark_exhausted(self, reset_time: datetime | None) -> None:
+            self.mark_exhausted_calls.append(reset_time)
+
+        def mark_permanently_exhausted(self) -> str | None:
+            self.mark_permanently_exhausted_calls += 1
+            return "provider-account"
+
+        def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+            del role, namespace
+            return None
+
+        def is_resumable(self, state_dir: Path) -> bool:
+            del state_dir
+            return False
+
+        def provider_session_state(self, request: ProviderSessionStateRequest):
+            del request
+            return ProviderSessionState(RunKind.FRESH, None)
+
+        def valid_models(self) -> frozenset[str]:
+            return frozenset({"model"})
+
+        def valid_efforts(self) -> frozenset[str]:
+            return frozenset({"medium"})
+
+    service = _PermanentExhaustionService()
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+
+    dependencies = runner.build_work_dependencies(
+        name="Reviewer",
+        model="model",
+        effort="medium",
+        service=cast(Any, service),
+    )
+    error = UsageLimitError(reset_time=None, is_permanent=True)
+
+    dependencies.handle_provider_account_exhaustion(service, error)
+
+    assert error.account_label == "provider-account"
+    assert service.mark_permanently_exhausted_calls == 1
+    assert service.mark_exhausted_calls == []
+
+
+def test_build_work_dependencies_falls_back_to_resettable_service_exhaustion(
+    tmp_path: Path,
+) -> None:
+    class _ResettableService:
+        name = "fake"
+
+        def __init__(self) -> None:
+            self.mark_exhausted_calls: list[datetime | None] = []
+
+        def build_command(
+            self, role, model, effort, run_kind, session_uuid, *, tool_policy=None
+        ) -> str:
+            del role, model, effort, run_kind, session_uuid, tool_policy
+            return ""
+
+        def build_env(
+            self, state_dir_container_path=None, token=None
+        ) -> dict[str, str]:
+            del state_dir_container_path, token
+            return {}
+
+        def run(self, lines, on_provider_session_id=None):
+            del lines, on_provider_session_id
+            return iter(())
+
+        def is_available(self, now: datetime | None = None) -> bool:
+            del now
+            return True
+
+        def next_wake_time(self) -> datetime:
+            raise AssertionError("next_wake_time should not be called")
+
+        def mark_exhausted(self, reset_time: datetime | None) -> None:
+            self.mark_exhausted_calls.append(reset_time)
+
+        def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+            del role, namespace
+            return None
+
+        def is_resumable(self, state_dir: Path) -> bool:
+            del state_dir
+            return False
+
+        def provider_session_state(self, request: ProviderSessionStateRequest):
+            del request
+            return ProviderSessionState(RunKind.FRESH, None)
+
+        def valid_models(self) -> frozenset[str]:
+            return frozenset({"model"})
+
+        def valid_efforts(self) -> frozenset[str]:
+            return frozenset({"medium"})
+
+    service = _ResettableService()
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+    reset_time = datetime(2025, 1, 1, 12, 0, 0)
+
+    dependencies = runner.build_work_dependencies(
+        name="Reviewer",
+        model="model",
+        effort="medium",
+        service=cast(Any, service),
+    )
+    error = UsageLimitError(reset_time=reset_time, is_permanent=True)
+
+    dependencies.handle_provider_account_exhaustion(service, error)
+
+    assert error.account_label is None
+    assert service.mark_exhausted_calls == [reset_time]
+
+
 def test_agent_runner_run_prompt_passes_pycastle_adapter_contract_to_runtime_package(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
