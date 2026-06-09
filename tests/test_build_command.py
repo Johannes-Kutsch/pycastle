@@ -293,6 +293,44 @@ def test_main_creates_default_docker_service(tmp_path, monkeypatch):
     mock_cls.assert_called_once_with()
 
 
+def test_build_command_loads_config_from_project_local_config_when_cfg_is_absent(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "config.py").write_text('docker_image_name = "loaded-from-disk"\n')
+    svc = MagicMock()
+    svc.build.return_value = None
+
+    main(docker_service=svc)
+
+    assert [request.image_tag for request in _built_requests(svc)] == [
+        "loaded-from-disk"
+    ]
+
+
+def test_build_command_prefers_explicit_cfg_over_project_local_config(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / "config.py").write_text('docker_image_name = "loaded-from-disk"\n')
+    svc = MagicMock()
+    svc.build.return_value = None
+
+    main(docker_service=svc, cfg=Config(docker_image_name="passed-explicitly"))
+
+    assert [request.image_tag for request in _built_requests(svc)] == [
+        "passed-explicitly"
+    ]
+
+
 # ── Issue 203: cfg injection into build_command.main ─────────────────────────
 
 

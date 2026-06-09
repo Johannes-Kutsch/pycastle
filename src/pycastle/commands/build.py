@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .._universal_image_build import (
+    UniversalImageBuildAdapter,
     UniversalImageBuildOptions,
     build_universal_image,
     resolve_universal_image_build_request,
@@ -15,7 +16,7 @@ def main(
     no_cache: bool = False,
     stream: bool = False,
     terse: bool = False,
-    docker_service: DockerService | None = None,
+    docker_service: UniversalImageBuildAdapter | None = None,
     cfg: Config | None = None,
 ) -> None:
     if cfg is None:
