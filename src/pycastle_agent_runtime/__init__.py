@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ._import_isolation import assert_runtime_import_isolation
+
 from .contracts import (
     AgentService,
     AssistantTurn,
@@ -146,3 +148,6 @@ def __getattr__(name: str):
 
         return getattr(stage_priority_chain, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+assert_runtime_import_isolation(importer=__name__)
