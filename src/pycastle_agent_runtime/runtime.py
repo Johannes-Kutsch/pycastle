@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 from pycastle import _time as _time_module
-from pycastle.services.agent_service import AgentService
-from pycastle.services.flag_profiles import AgentToolPolicyGroup
 
+from .contracts import AgentService, ToolPolicy
 from .roles import AgentRole
 from .service_registry import ServiceRegistry
 from .work import (
@@ -20,7 +19,15 @@ from .work import (
 from .types import StageOverride
 
 
-ToolPolicy = AgentToolPolicyGroup
+@dataclass(frozen=True)
+class WorktreeMount:
+    host_path: Path
+
+
+@dataclass(frozen=True)
+class PromptRunSession:
+    namespace: str = ""
+    plan: Any = None
 
 
 class PromptRuntimeExecutionAdapter(Protocol):
@@ -39,46 +46,46 @@ class PromptRuntimeExecutionAdapter(Protocol):
 @dataclass(frozen=True)
 class PromptRunRequest:
     prompt: str
-    mount_path: Path
+    worktree: WorktreeMount
     override: StageOverride
     tool_policy: ToolPolicy = ToolPolicy.FULL
     name: str = "Runtime Agent"
     status_display: Any = None
     work_body: str = ""
     token: CancellationToken | None = None
-    session_namespace: str = ""
-    run_session_plan: Any = None
+    session: PromptRunSession = field(default_factory=PromptRunSession)
+
+    @property
+    def mount_path(self) -> Path:
+        return self.worktree.host_path
+
+    @property
+    def session_namespace(self) -> str:
+        return self.session.namespace
+
+    @property
+    def run_session_plan(self) -> Any:
+        return self.session.plan
 
 
 class PromptRuntime:
     def __init__(
         self,
         *,
-        env: dict[str, str],
-        cfg: Any,
-        git_service: Any,
-        docker_client: Any = None,
+        execution_adapter: PromptRuntimeExecutionAdapter,
         service_registry: ServiceRegistry | dict[str, Any] | None = None,
     ) -> None:
-        from pycastle.agents.runner import AgentRunner
-
         registry = (
             service_registry
             if isinstance(service_registry, ServiceRegistry)
             else ServiceRegistry(service_registry or {})
         )
         self._service_registry = registry
-        self._runner = AgentRunner(
-            env,
-            cfg,
-            git_service,
-            docker_client=docker_client,
-            service_registry=registry.services,
-        )
+        self._execution_adapter = execution_adapter
 
     async def run_prompt(self, request: PromptRunRequest) -> str:
         return await run_prompt(
-            runner=self._runner,
+            runner=self._execution_adapter,
             service_registry=self._service_registry,
             request=request,
         )

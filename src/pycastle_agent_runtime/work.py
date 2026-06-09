@@ -17,9 +17,8 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.services.claude_service import ClaudeService
-from pycastle.services.flag_profiles import AgentToolPolicyGroup
 
-from .contracts import AgentService
+from .contracts import AgentService, ToolPolicy
 from .roles import AgentRole
 from .session import RunKind
 
@@ -108,7 +107,7 @@ class WorkExecutionAdapter(Protocol):
         prompt: str,
         *,
         role: AgentRole = AgentRole.IMPLEMENTER,
-        tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+        tool_policy: Any = ToolPolicy.FULL,
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
         on_provider_session_id: Callable[[str], None] | None = None,
@@ -196,7 +195,7 @@ class WorkInvocationRequest(Generic[WorkResultT]):
 @dataclasses.dataclass(frozen=True)
 class TextOutputAdapter:
     prompt: str
-    tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL
+    tool_policy: Any = ToolPolicy.FULL
 
     async def build_prompt(
         self,

@@ -12,6 +12,7 @@ from .contracts import (
     ParsedTurn,
     PromptTokens,
     Result,
+    ToolPolicy,
     TransientError,
     UnsupportedTokens,
     UsageLimit,
@@ -35,8 +36,9 @@ if TYPE_CHECKING:
     from pycastle_agent_runtime.orchestration import run
     from pycastle_agent_runtime.runtime import (
         PromptRunRequest,
+        PromptRunSession,
         PromptRuntime,
-        ToolPolicy,
+        WorktreeMount,
     )
     from pycastle_agent_runtime.service_registry import ServiceRegistry
     from pycastle_agent_runtime.stage_priority_chain import (
@@ -72,6 +74,7 @@ __all__ = [
     "ProviderSessionState",
     "ProviderSessionStateRequest",
     "PromptRunRequest",
+    "PromptRunSession",
     "PromptRuntime",
     "PromptTokens",
     "PycastleError",
@@ -94,6 +97,7 @@ __all__ = [
     "ToolPolicy",
     "TransientError",
     "TransientAgentError",
+    "WorktreeMount",
     "UnsupportedTokens",
     "UsageLimit",
     "UsageLimitError",
@@ -113,7 +117,13 @@ def __getattr__(name: str):
         from pycastle_agent_runtime.orchestration import run
 
         return run
-    if name in {"PromptRunRequest", "PromptRuntime", "ToolPolicy", "run_prompt"}:
+    if name in {
+        "PromptRunRequest",
+        "PromptRunSession",
+        "PromptRuntime",
+        "WorktreeMount",
+        "run_prompt",
+    }:
         from pycastle_agent_runtime import runtime
 
         return getattr(runtime, name)
