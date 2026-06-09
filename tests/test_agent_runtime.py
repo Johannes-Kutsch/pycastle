@@ -235,6 +235,46 @@ class _PlanRecordingRuntimeService(_RecordingRuntimeService):
         return self._provider_state
 
 
+class _RuntimeServiceSessionState:
+    def __init__(
+        self,
+        *,
+        state_dir: Path | None,
+        has_resumable_provider_state: bool,
+        state_dir_relpath: str | None,
+    ) -> None:
+        self.state_dir = state_dir
+        self.has_resumable_provider_state = has_resumable_provider_state
+        self.state_dir_relpath = state_dir_relpath
+
+
+class _RuntimeRoleSessionStandIn:
+    def __init__(self, service_state: _RuntimeServiceSessionState) -> None:
+        self._service_state = service_state
+        self.saved_service_session_ids: list[tuple[str, str]] = []
+        self.recorded_success_metadata: list[tuple[str, str | None]] = []
+
+    def service_session_state(
+        self,
+        service: _RecordingRuntimeService,
+    ) -> _RuntimeServiceSessionState:
+        del service
+        return self._service_state
+
+    def session_uuid(self) -> str:
+        return "runtime-session-uuid"
+
+    def save_service_session_id(self, service_name: str, session_id: str) -> None:
+        self.saved_service_session_ids.append((service_name, session_id))
+
+    def record_successful_provider_session_metadata(
+        self,
+        service_name: str,
+        provider_session_id: str | None,
+    ) -> None:
+        self.recorded_success_metadata.append((service_name, provider_session_id))
+
+
 class _TextSuccessRuntimeService(_PlanRecordingRuntimeService):
     def __init__(
         self,
@@ -549,6 +589,126 @@ def test_runtime_package_import_isolation_guardrail_reports_application_ownershi
         "pycastle.infrastructure.container_runner, pycastle.session.resume. "
         "This violates the pycastle_agent_runtime package boundary."
     )
+
+
+def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
+    from pycastle_agent_runtime.session_planning import (
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
+
+    service = _PlanRecordingRuntimeService(
+        "codex",
+        ProviderSessionState(RunKind.FRESH, None),
+    )
+    legacy_relpath = ".pycastle-session/implementer/codex/"
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=tmp_path / ".pycastle-session" / "implementer" / "codex",
+            has_resumable_provider_state=False,
+            state_dir_relpath=legacy_relpath,
+        )
+    )
+
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="main",
+            service=service,
+            role_session=role_session,
+        )
+    )
+
+    assert (
+        plan.provider_state_dir_relpath == ".pycastle-session/implementer/main/codex/"
+    )
+    assert plan.provider_state_dir == (
+        tmp_path / ".pycastle-session" / "implementer" / "main" / "codex"
+    )
+
+
+def test_runtime_provider_state_plan_records_observed_provider_session_id_for_opencode(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.session import RunKind
+    from pycastle_agent_runtime.session_planning import (
+        ProviderRunStatePlan,
+        RecoveredSessionIdPersistence,
+        record_observed_provider_session_id,
+    )
+
+    service_state_dir = tmp_path / ".pycastle-session" / "implementer" / "opencode"
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=service_state_dir,
+            has_resumable_provider_state=False,
+            state_dir_relpath=".pycastle-session/implementer/opencode/",
+        )
+    )
+    plan = ProviderRunStatePlan(
+        role_session=role_session,
+        service_name="opencode",
+        run_kind=RunKind.FRESH,
+        provider_state_dir=service_state_dir,
+        provider_state_dir_relpath=".pycastle-session/implementer/opencode/",
+        provider_session_id=None,
+        requires_host_codex_auth=False,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+        service_state_dir=service_state_dir,
+    )
+
+    record_observed_provider_session_id(
+        provider_run_state_plan=plan,
+        provider_session_id="sess-runtime-opencode",
+    )
+
+    assert role_session.saved_service_session_ids == [
+        ("opencode", "sess-runtime-opencode")
+    ]
+    assert (service_state_dir / "session_id").read_text(encoding="utf-8") == (
+        "sess-runtime-opencode"
+    )
+
+
+def test_runtime_provider_state_plan_records_successful_run_metadata_through_role_session_interface() -> (
+    None
+):
+    from pycastle_agent_runtime.session import RunKind
+    from pycastle_agent_runtime.session_planning import (
+        ProviderRunStatePlan,
+        RecoveredSessionIdPersistence,
+        record_successful_provider_session_metadata,
+    )
+
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=None,
+            has_resumable_provider_state=False,
+            state_dir_relpath=None,
+        )
+    )
+    plan = ProviderRunStatePlan(
+        role_session=role_session,
+        service_name="codex",
+        run_kind=RunKind.FRESH,
+        provider_state_dir=None,
+        provider_state_dir_relpath=None,
+        provider_session_id="thread-runtime",
+        requires_host_codex_auth=False,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+    )
+
+    record_successful_provider_session_metadata(
+        provider_run_state_plan=plan,
+        provider_session_id="thread-runtime",
+    )
+
+    assert role_session.recorded_success_metadata == [("codex", "thread-runtime")]
 
 
 def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(

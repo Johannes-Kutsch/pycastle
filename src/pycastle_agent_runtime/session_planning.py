@@ -4,7 +4,7 @@ import dataclasses
 import shutil
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Protocol, cast
 
 from .contracts import AgentService
 from .errors import AgentCredentialFailureError
@@ -13,6 +13,7 @@ from .roles import AgentRole
 from .session import (
     ProviderSessionStateRequest,
     RunKind,
+    ServiceResumeIdentityStore,
     normalize_state_dir_relpath,
 )
 
@@ -103,10 +104,16 @@ class ProviderSessionDecision:
         return f"{container_workspace}/{self.state_dir_relpath}"
 
 
-class ServiceSessionStateLike(Protocol):
-    state_dir: Path | None
-    has_resumable_provider_state: bool
-    state_dir_relpath: str | None
+class RoleSessionLike(Protocol):
+    def session_uuid(self) -> str: ...
+
+    def save_service_session_id(self, service_name: str, session_id: str) -> None: ...
+
+    def record_successful_provider_session_metadata(
+        self,
+        service_name: str,
+        provider_session_id: str | None,
+    ) -> None: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -115,12 +122,12 @@ class ProviderRunStatePlanRequest:
     role: AgentRole
     namespace: str
     service: AgentService
-    role_session: Any
+    role_session: RoleSessionLike
 
 
 @dataclasses.dataclass
 class ProviderRunStatePlan:
-    role_session: Any = dataclasses.field(repr=False, compare=False)
+    role_session: RoleSessionLike = dataclasses.field(repr=False, compare=False)
     service_name: str
     run_kind: RunKind
     provider_state_dir: Path | None
@@ -228,10 +235,6 @@ def plan_provider_session(
 def plan_provider_run_state(
     request: ProviderRunStatePlanRequest,
 ) -> ProviderRunStatePlan:
-    service_state = cast(
-        ServiceSessionStateLike,
-        request.role_session.service_session_state(request.service),
-    )
     raw_state_dir_relpath = request.service.state_dir_relpath(
         request.role,
         request.namespace,
@@ -242,15 +245,16 @@ def plan_provider_run_state(
         request.service.name,
         raw_state_dir_relpath,
     )
-    host_state_dir = service_state.state_dir
-    if state_dir_relpath is not None and state_dir_relpath != raw_state_dir_relpath:
-        host_state_dir = request.worktree / state_dir_relpath.rstrip("/")
+    host_state_dir = _host_state_dir(request.worktree, state_dir_relpath)
+    has_resumable_provider_state = (
+        host_state_dir is not None and request.service.is_resumable(host_state_dir)
+    )
 
     provider_session_state = request.service.provider_session_state(
         ProviderSessionStateRequest(
-            role_session=cast(Any, request.role_session),
+            role_session=cast(ServiceResumeIdentityStore, request.role_session),
             provider_state_dir=host_state_dir,
-            has_resumable_provider_state=service_state.has_resumable_provider_state,
+            has_resumable_provider_state=has_resumable_provider_state,
             state_dir_relpath=state_dir_relpath,
             require_exact_transcript_match=True,
             preferred_provider_session_id=(
@@ -283,7 +287,7 @@ def plan_provider_run_state(
             auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
         ),
         recovered_session_id_persistence=recovered_session_id_persistence,
-        service_state_dir=service_state.state_dir,
+        service_state_dir=host_state_dir,
         exact_transcript_match=provider_session_state.exact_transcript_match,
         auth_seed_action=_plan_auth_seed_action(
             service_name=request.service.name,
@@ -323,6 +327,12 @@ def _plan_auth_seed_action(
         source=Path.home() / ".codex" / "auth.json",
         destination=provider_state_dir / "auth.json",
     )
+
+
+def _host_state_dir(worktree: Path, state_dir_relpath: str | None) -> Path | None:
+    if state_dir_relpath is None:
+        return None
+    return worktree / state_dir_relpath.rstrip("/")
 
 
 __all__ = [

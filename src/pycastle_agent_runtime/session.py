@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from .roles import AgentRole
@@ -11,11 +11,21 @@ if TYPE_CHECKING:
         AuthSeedingRequirement,
         LocalAuthSeedAction,
     )
-    from pycastle.session.service_resume_identity import ServiceResumeIdentityStore
 else:
     AuthSeedingRequirement = object
     LocalAuthSeedAction = object
-    ServiceResumeIdentityStore = object
+
+
+class ServiceResumeIdentityStore(Protocol):
+    def session_uuid(self) -> str: ...
+
+    def service_session_id(self, service_name: str) -> str | None: ...
+
+    def save_service_session_id(self, service_name: str, session_id: str) -> None: ...
+
+    def service_session_metadata(self, service_name: str) -> dict[str, str] | None: ...
+
+    def exact_transcript_service_name(self) -> str | None: ...
 
 
 SESSION_DIR_NAME = ".pycastle-session"

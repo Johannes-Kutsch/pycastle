@@ -35,6 +35,49 @@ class ProviderRunStatePlanRequest:
 ProviderSessionPlanRequest = ProviderRunStatePlanRequest
 
 
+def _role_session(
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+) -> RoleSession:
+    return RoleSession(worktree, role, namespace)
+
+
+def _metadata_plan(
+    *,
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+    service_name: str,
+    service_state_dir: Path | None,
+    provider_session_id: str | None,
+) -> ProviderRunStatePlan:
+    role_session = _role_session(worktree, role, namespace)
+    return ProviderRunStatePlan(
+        role_session=role_session,
+        service_name=service_name,
+        run_kind=role_session.run_kind(),
+        provider_state_dir=service_state_dir,
+        provider_state_dir_relpath=None,
+        provider_session_id=provider_session_id,
+        requires_host_codex_auth=False,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+        service_state_dir=service_state_dir,
+    )
+
+
+def _runtime_request(
+    request: ProviderRunStatePlanRequest,
+) -> RuntimeProviderRunStatePlanRequest:
+    return RuntimeProviderRunStatePlanRequest(
+        worktree=request.worktree,
+        role=request.role,
+        namespace=request.namespace,
+        service=request.service,
+        role_session=_role_session(request.worktree, request.role, request.namespace),
+    )
+
+
 def record_observed_provider_session_id(
     *,
     worktree: Path,
@@ -45,16 +88,13 @@ def record_observed_provider_session_id(
     provider_session_id: str,
 ) -> None:
     runtime_record_observed_provider_session_id(
-        provider_run_state_plan=ProviderRunStatePlan(
-            role_session=RoleSession(worktree, role, namespace),
+        provider_run_state_plan=_metadata_plan(
+            worktree=worktree,
+            role=role,
+            namespace=namespace,
             service_name=service_name,
-            run_kind=RoleSession(worktree, role, namespace).run_kind(),
-            provider_state_dir=service_state_dir,
-            provider_state_dir_relpath=None,
-            provider_session_id=None,
-            requires_host_codex_auth=False,
-            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
             service_state_dir=service_state_dir,
+            provider_session_id=None,
         ),
         provider_session_id=provider_session_id,
     )
@@ -88,15 +128,13 @@ def record_successful_provider_session_metadata(
     provider_session_id: str | None,
 ) -> None:
     runtime_record_successful_provider_session_metadata(
-        provider_run_state_plan=ProviderRunStatePlan(
-            role_session=RoleSession(worktree, role, namespace),
+        provider_run_state_plan=_metadata_plan(
+            worktree=worktree,
+            role=role,
+            namespace=namespace,
             service_name=service_name,
-            run_kind=RoleSession(worktree, role, namespace).run_kind(),
-            provider_state_dir=None,
-            provider_state_dir_relpath=None,
+            service_state_dir=None,
             provider_session_id=provider_session_id,
-            requires_host_codex_auth=False,
-            recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
         ),
         provider_session_id=provider_session_id,
     )
@@ -105,29 +143,13 @@ def record_successful_provider_session_metadata(
 def plan_provider_session(
     request: ProviderRunStatePlanRequest,
 ) -> ProviderSessionDecision:
-    return runtime_plan_provider_session(
-        RuntimeProviderRunStatePlanRequest(
-            worktree=request.worktree,
-            role=request.role,
-            namespace=request.namespace,
-            service=request.service,
-            role_session=RoleSession(request.worktree, request.role, request.namespace),
-        )
-    )
+    return runtime_plan_provider_session(_runtime_request(request))
 
 
 def plan_provider_run_state(
     request: ProviderRunStatePlanRequest,
 ) -> ProviderRunStatePlan:
-    return runtime_plan_provider_run_state(
-        RuntimeProviderRunStatePlanRequest(
-            worktree=request.worktree,
-            role=request.role,
-            namespace=request.namespace,
-            service=request.service,
-            role_session=RoleSession(request.worktree, request.role, request.namespace),
-        )
-    )
+    return runtime_plan_provider_run_state(_runtime_request(request))
 
 
 __all__ = [
