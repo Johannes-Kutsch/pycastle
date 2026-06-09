@@ -5,6 +5,8 @@
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **pycastle** | Installable Python package that orchestrates agentic coding work across supported agent services | orchestrator, tool |
+| **pycastle_agent_runtime** | Local package being migrated into the reusable agent-runtime boundary. It should own shared runtime contracts and behavior such as stage priority-chain selection, `AgentService`, provider parsed events, `RunKind`, provider session state, Work invocation, text-output execution, sleep/wake decisions, and agent log lifecycle. Pycastle consumes it through adapters for pycastle-specific prompt rendering, output protocol parsing, issue orchestration, and CLI wiring (ADR 0044) | runtime facade, pycastle runtime |
+| **runtime package ownership migration** | Boundary migration that turns `pycastle_agent_runtime` from a facade over pycastle internals into the owner of reusable runtime behavior. Completion requires package-boundary proof, not just a package name: the runtime package must be importable and testable without pycastle application modules | code move, extraction cleanup |
 | **consuming project** | A project that installs pycastle and customizes it via a local pycastle directory | host project, parent project |
 | **pycastle directory** | Fixed `pycastle/` directory inside a consuming project, holding local config, local overrides, and pycastle-managed scaffold such as `config.py.example` and `setup/`; runtime session state does not live here | config dir, override dir |
 | **defaults** | Files bundled in the package serving as scaffolding templates and runtime fallbacks | base config, starter files |
