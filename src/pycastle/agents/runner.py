@@ -146,6 +146,9 @@ class AgentRunner:
             return service
         raise ValueError(f"Unknown agent service {resolved_name!r}")
 
+    def resolve_service(self, service_name: str = "") -> AgentService:
+        return self._resolve_service(service_name)
+
     def _build_session(
         self,
         mount_path: Path,
@@ -162,6 +165,36 @@ class AgentRunner:
             cfg=self._cfg,
             docker_client=self._docker_client,
             auto_overlay=auto_overlay,
+        )
+
+    def build_work_dependencies(
+        self,
+        *,
+        name: str,
+        model: str,
+        effort: str,
+        service: AgentService,
+    ) -> WorkInvocationDependencies:
+        return WorkInvocationDependencies(
+            container_workspace=_CONTAINER_WORKSPACE,
+            timeout_retries=self._cfg.timeout_retries,
+            stage_key_for_role=_stage_key_for_role,
+            prepare_session=prepare_agent_session,
+            build_session=self._build_session,
+            build_runner=lambda session, status_display: ContainerRunner(
+                name,
+                session,
+                model=model,
+                effort=effort,
+                status_display=status_display,
+                cfg=self._cfg,
+                service=service,
+            ),
+            get_git_identity=lambda: (
+                self._git_service.get_user_name(),
+                self._git_service.get_user_email(),
+            ),
+            transient_status_message=format_transient_status_message,
         )
 
     def _build_preflight_session(self, mount_path: Path) -> DockerSession:
@@ -241,26 +274,11 @@ class AgentRunner:
             if issue_number_str.isdigit():
                 color_key = int(issue_number_str)
 
-        dependencies = WorkInvocationDependencies(
-            container_workspace=_CONTAINER_WORKSPACE,
-            timeout_retries=self._cfg.timeout_retries,
-            stage_key_for_role=_stage_key_for_role,
-            prepare_session=prepare_agent_session,
-            build_session=self._build_session,
-            build_runner=lambda session, status_display: ContainerRunner(
-                request.name,
-                session,
-                model=request.model,
-                effort=request.effort,
-                status_display=status_display,
-                cfg=self._cfg,
-                service=service,
-            ),
-            get_git_identity=lambda: (
-                self._git_service.get_user_name(),
-                self._git_service.get_user_email(),
-            ),
-            transient_status_message=format_transient_status_message,
+        dependencies = self.build_work_dependencies(
+            name=request.name,
+            model=request.model,
+            effort=request.effort,
+            service=service,
         )
 
         async def prompt_factory(
