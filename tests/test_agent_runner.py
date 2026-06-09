@@ -43,6 +43,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.session.agent import RunSessionPlan
 from pycastle.session import ProviderRunState, RoleSession, RunKind
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
@@ -4211,6 +4212,121 @@ def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
     )
 
     assert result == "Result: expanded"
+
+
+def test_agent_runner_run_builds_runtime_work_invocation_with_agent_output_protocol(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
+
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[PlannerOutput],
+    ) -> PlannerOutput:
+        captured["request"] = request
+        return PlannerOutput(issues=[])
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+
+    result = asyncio.run(
+        runner.run(
+            _run_request(
+                name="Planner",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+                model="sonnet",
+                effort="high",
+            )
+        )
+    )
+
+    assert result == PlannerOutput(issues=[])
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[PlannerOutput],
+        captured["request"],
+    )
+    assert work_request.name == "Planner"
+    assert work_request.mount_path == tmp_path
+    assert work_request.role is AgentRole.PLANNER
+    assert work_request.service.name == "claude"
+    assert work_request.model == "sonnet"
+    assert work_request.effort == "high"
+    assert isinstance(work_request.output_adapter, ProtocolOutputAdapter)
+    assert work_request.dependencies.stage_key_for_role(AgentRole.PLANNER) == "plan"
+    assert work_request.allow_non_typed_resume_retry is True
+
+
+def test_agent_runner_run_prompt_passes_pycastle_adapter_contract_to_runtime_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pycastle_agent_runtime as runtime
+    import pycastle_agent_runtime.runtime as prompt_runtime
+
+    codex = CodexService()
+    captured: dict[str, object] = {}
+    run_session_plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="issues",
+        service=codex,
+    )
+
+    async def fake_run_prompt(
+        *,
+        runner,
+        service_registry,
+        request,
+    ) -> str:
+        captured["runner"] = runner
+        captured["service_registry"] = service_registry
+        captured["request"] = request
+        return "runtime result"
+
+    monkeypatch.setattr(prompt_runtime, "run_prompt", fake_run_prompt)
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        service_registry={"codex": codex},
+    )
+
+    result = asyncio.run(
+        runner.run_prompt(
+            name="Runtime Consumer",
+            prompt="Return the final answer only.",
+            mount_path=tmp_path,
+            model="gpt-5.4",
+            effort="medium",
+            service="codex",
+            tool_policy=AgentToolPolicyGroup.PARTIAL,
+            session_namespace="issues",
+            run_session_plan=run_session_plan,
+        )
+    )
+
+    assert result == "runtime result"
+    assert captured["runner"] is runner
+    registry = cast(runtime.ServiceRegistry, captured["service_registry"])
+    assert isinstance(registry, runtime.ServiceRegistry)
+    assert registry["codex"] is codex
+    prompt_request = cast(runtime.PromptRunRequest, captured["request"])
+    assert prompt_request.name == "Runtime Consumer"
+    assert prompt_request.prompt == "Return the final answer only."
+    assert prompt_request.mount_path == tmp_path
+    assert prompt_request.override == runtime.StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+    )
+    assert prompt_request.tool_policy is runtime.ToolPolicy.PARTIAL
+    assert prompt_request.session_namespace == "issues"
+    assert prompt_request.run_session_plan == run_session_plan
 
 
 # ── HardAgentError: runner cancels token and does NOT mark_exhausted ─────────
