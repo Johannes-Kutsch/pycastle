@@ -496,6 +496,23 @@ def test_improve_phase_prepares_no_candidate_report_with_main_session_scope_args
     }
 
 
+def test_improve_phase_propagates_no_candidate_report_preparation_lookup_failures(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.side_effect = [
+        [{"number": 12, "state": "OPEN", "title": "First candidate"}],
+        GithubNetworkError("transport error", cause=RuntimeError("boom")),
+    ]
+    runner = FakeAgentRunner([NoCandidateOutput()], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    with pytest.raises(GithubNetworkError):
+        _run(deps)
+
+    assert [call.template for call in runner.calls] == [PromptTemplate.IMPROVE_SCAN]
+
+
 # ── Cross-teardown resume ─────────────────────────────────────────────────────
 
 
