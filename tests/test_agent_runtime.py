@@ -1,4 +1,8 @@
 import asyncio
+import json
+import subprocess
+import sys
+import textwrap
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
@@ -56,6 +60,45 @@ def _make_docker_client(chunks: list[bytes]) -> MagicMock:
 
     mock_container.exec_run.side_effect = exec_side_effect
     return mock_client
+
+
+def _runtime_imported_application_modules(repo_root: Path) -> list[str]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                """
+                import json
+                import sys
+
+                import pycastle_agent_runtime
+
+                forbidden_prefixes = (
+                    "pycastle.agents",
+                    "pycastle.infrastructure",
+                    "pycastle.iteration",
+                    "pycastle.prompts",
+                    "pycastle.session",
+                )
+                imported = sorted(
+                    name
+                    for name in sys.modules
+                    if any(
+                        name == prefix or name.startswith(f"{prefix}.")
+                        for prefix in forbidden_prefixes
+                    )
+                )
+                print(json.dumps(imported))
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
 
 
 class _RecordingRuntimeService:
@@ -474,6 +517,38 @@ def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: P
 
     assert result == "runtime result"
     assert service.tool_policies == [runtime.ToolPolicy.PARTIAL]
+
+
+def test_runtime_package_surface_import_keeps_application_ownership_unloaded() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    imported = _runtime_imported_application_modules(repo_root)
+
+    assert imported == []
+
+
+def test_runtime_package_import_isolation_guardrail_reports_application_ownership() -> (
+    None
+):
+    from pycastle_agent_runtime._import_isolation import assert_runtime_import_isolation
+
+    with pytest.raises(ImportError) as excinfo:
+        assert_runtime_import_isolation(
+            importer="pycastle_agent_runtime",
+            newly_loaded_modules=[
+                "pycastle.other",
+                "pycastle.session.resume",
+                "pycastle.infrastructure.container_runner",
+                "pycastle.session.resume",
+            ],
+        )
+
+    assert str(excinfo.value) == (
+        "pycastle_agent_runtime imported pycastle application modules during "
+        "runtime package initialization: "
+        "pycastle.infrastructure.container_runner, pycastle.session.resume. "
+        "This violates the pycastle_agent_runtime package boundary."
+    )
 
 
 def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
