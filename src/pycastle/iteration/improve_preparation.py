@@ -47,6 +47,9 @@ class ImprovePreparationStep(Protocol):
     @property
     def fetch_recent_prd_titles(self) -> bool: ...
 
+    @property
+    def prd_number(self) -> int | None: ...
+
 
 @dataclass(frozen=True)
 class ImproveStepPreparationRequest:
@@ -126,7 +129,7 @@ def _coerce_request(
         work_body=step.cfg.display_body,
         send_role_prompt_on_resume=step.send_role_prompt_on_resume,
         short_sid=short_sid,
-        prd_number=prd_number,
+        prd_number=step.prd_number if prd_number is None else prd_number,
         fetch_recent_prd_titles=step.fetch_recent_prd_titles,
     )
 

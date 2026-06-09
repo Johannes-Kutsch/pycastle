@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.agents.output_protocol import CompletionOutput, NoCandidateOutput
+from pycastle.agents.output_protocol import (
+    CompletionOutput,
+    IssueOutput,
+    NoCandidateOutput,
+)
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import (
     ImproveStepPreparationRequest,
@@ -271,6 +275,54 @@ def test_prepare_improve_step_reads_issue_and_comments_for_issues_scope():
         github_port=github_port,
     )
 
+    assert prepared.scope_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "ISSUE_NUMBER": "77",
+        "ISSUE_TITLE": "Improve PRD",
+        "ISSUE_BODY": "PRD body",
+        "ISSUE_COMMENTS": "## Comment by @alice at 2026-01-01T00:00:00Z\n\nlooks good",
+    }
+    assert github_port.recent_prd_calls == 0
+    assert github_port.issue_calls == [77]
+    assert github_port.issue_comment_calls == [77]
+
+
+def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff(
+    tmp_path: Path,
+):
+    driver = ImprovePhaseDriver(tmp_path / "improve-issues", no_candidate_report=True)
+    step1 = driver.start()
+    assert step1 is not None
+    driver.record_outcome(step1, CompletionOutput())
+
+    step2 = driver.next()
+    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    driver.record_outcome(step2, IssueOutput(number=77, labels=[]))
+
+    step3 = driver.next()
+    assert step3 is not None and step3.prompt_key == "03-issues.md"
+    github_port = _GithubPortStandIn(
+        issue={"number": 77, "title": "Improve PRD", "body": "PRD body"},
+        comments=[
+            {
+                "author": "alice",
+                "created_at": "2026-01-01T00:00:00Z",
+                "body": "looks good",
+            }
+        ],
+    )
+
+    prepared = prepare_improve_step(
+        step3,
+        short_sid="abcd1234",
+        github_port=github_port,
+    )
+
+    assert prepared.prompt_template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.session_namespace == "issues"
+    assert prepared.display_name == "Slice Agent"
+    assert prepared.work_body == "filing sub-issues"
+    assert prepared.send_role_prompt_on_resume is True
     assert prepared.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "ISSUE_NUMBER": "77",

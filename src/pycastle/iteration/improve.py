@@ -69,6 +69,7 @@ class Step:
     cfg: _PhaseConfig
     send_role_prompt_on_resume: bool
     fetch_recent_prd_titles: bool
+    prd_number: int | None
 
 
 class ImprovePhaseDriver:
@@ -161,6 +162,7 @@ class ImprovePhaseDriver:
             send_role_prompt_on_resume=send_role_prompt_on_resume,
             fetch_recent_prd_titles=prompt_key == "01-scan.md"
             and not is_mid_phase_retry,
+            prd_number=self._prd_number,
         )
 
     def _write_in_flight(self, prompt_key: str) -> None:
@@ -304,7 +306,6 @@ async def improve_phase(
                     step,
                     github_port=deps.github_svc,
                     short_sid=short_sid,
-                    prd_number=driver.prd_number,
                 )
                 output = await deps.agent_runner.run(
                     RunRequest(
