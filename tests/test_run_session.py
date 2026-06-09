@@ -435,7 +435,7 @@ def test_run_session_plan_preserves_claude_container_state_dir_path_with_namespa
     )
 
 
-def test_claude_provider_session_state_uses_role_session_uuid_even_with_preferred_override(
+def test_claude_provider_session_state_uses_preferred_session_id_from_request_contract(
     tmp_path: Path,
 ) -> None:
     service = ClaudeService()
@@ -450,12 +450,12 @@ def test_claude_provider_session_state_uses_role_session_uuid_even_with_preferre
             provider_state_dir=state_dir,
             has_resumable_provider_state=True,
             state_dir_relpath=".pycastle-session/implementer/claude/",
-            preferred_provider_session_id="wrong-id",
+            preferred_provider_session_id="preferred-id",
         )
     )
 
     assert decision.run_kind is RunKind.RESUME
-    assert decision.provider_session_id == role_session.session_uuid()
+    assert decision.provider_session_id == "preferred-id"
     assert decision.state_dir_relpath == ".pycastle-session/implementer/claude/"
     assert decision.state_dir_path == state_dir
 

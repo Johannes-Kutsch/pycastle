@@ -4,14 +4,15 @@ import dataclasses
 from collections.abc import Callable
 from pathlib import Path
 
+from pycastle_agent_runtime.session import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
+
 from ..agents.output_protocol import AgentRole
 from ..errors import AgentCredentialFailureError
 from ..provider_errors import ProviderErrorObservation
 from ..services.agent_service import AgentService
-from ..services.provider_session_state import (
-    ProviderSessionState,
-    ProviderSessionStateRequest as ServiceProviderSessionStateRequest,
-)
 from .agent import LocalAuthSeedAction, RunSessionPlan, RunSessionPlanRequest
 from .agent import plan_run_session as _plan_run_session
 from .resume import RoleSession, RunKind
@@ -124,7 +125,7 @@ class AgentRunSessionState:
             )
         service_state = self.role_session.service_session_state(self._plan.service)
         return self._plan.service.provider_session_state(
-            ServiceProviderSessionStateRequest(
+            ProviderSessionStateRequest(
                 role_session=self.role_session,
                 provider_state_dir=service_state.state_dir,
                 has_resumable_provider_state=service_state.has_resumable_provider_state,

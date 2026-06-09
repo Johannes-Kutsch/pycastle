@@ -7,9 +7,15 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..agents.output_protocol import AgentRole
+from pycastle_agent_runtime.roles import AgentRole
+from pycastle_agent_runtime.session import (
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+    RunKind,
+    provider_state_relpath,
+)
+
 from .. import _time as _time_module
-from ..session import RoleSession, RunKind
 from ..session.service_resume_identity import is_exact_resumable_service_session
 from pycastle_agent_runtime.contracts import (
     AssistantTurn,
@@ -27,7 +33,6 @@ from .flag_profiles import (
     flag_profile_for,
     flag_profile_for_tool_policy,
 )
-from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
 from .reset_time_parser import parse_claude_reset_time
 
@@ -97,6 +102,10 @@ _SUBSCRIPTION_ACCESS_DENIAL_PHRASE = (
     "disabled Claude subscription access for Claude Code"
 )
 _PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
+
+
+def _provider_session_id_for_request(request: ProviderSessionStateRequest) -> str:
+    return request.preferred_provider_session_id or request.role_session.session_uuid()
 
 
 def _is_subscription_access_denial(
@@ -228,7 +237,7 @@ class ClaudeService:
         return self._pool.mark_permanently_exhausted(self._current_token)
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return RoleSession.provider_state_relpath_for(role, self.name, namespace)
+        return provider_state_relpath(role, self.name, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(f.is_file() for f in state_dir.rglob("*"))
@@ -242,7 +251,7 @@ class ClaudeService:
             if request.force_resume or request.has_resumable_provider_state
             else RunKind.FRESH
         )
-        provider_session_id = request.role_session.session_uuid()
+        provider_session_id = _provider_session_id_for_request(request)
         if (
             request.require_exact_transcript_match
             and request.has_resumable_provider_state
