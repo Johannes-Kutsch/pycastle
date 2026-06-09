@@ -10,7 +10,9 @@ from pycastle._universal_image_build import (
     UniversalImageBuildOptions,
     UniversalImageBuildRequest,
     build_universal_image,
+    resolve_universal_image_build_request,
 )
+from pycastle.config import Config
 from pycastle.errors import ConfigValidationError
 from pycastle.services._docker_build_output import BuildOutcome, FINAL_OUTCOME_EXAMPLES
 from pycastle.services.docker_service import DockerService
@@ -86,6 +88,27 @@ def test_universal_image_build_passes_exact_image_tag_to_adapter(tmp_path):
 
     assert result == BuildOutcome.FULL_CACHE_HIT
     assert adapter.requests == [request]
+
+
+def test_resolve_universal_image_build_request_uses_local_override_and_project_root(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    pycastle_dir = project_root / "pycastle"
+    pycastle_dir.mkdir(parents=True)
+    dockerfile = pycastle_dir / "Dockerfile"
+    dockerfile.write_text("FROM scratch\n")
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+    )
+
+    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
+        "myproject",
+        dockerfile,
+        project_root,
+    )
 
 
 def _mock_proc(output_lines: tuple[str, ...], *, returncode: int = 0) -> MagicMock:

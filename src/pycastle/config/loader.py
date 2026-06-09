@@ -12,6 +12,7 @@ from typing import Any, Literal
 import platformdirs
 import pycastle_agent_runtime as agent_runtime
 
+from pycastle._universal_image_build import resolve_universal_dockerfile
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
@@ -197,19 +198,9 @@ def referenced_services(cfg: Config) -> set[str]:
 
 
 def resolve_dockerfile(pycastle_dir: Path | str) -> Path:
-    if isinstance(pycastle_dir, str):
-        pycastle_dir = Path(pycastle_dir)
-    elif not isinstance(pycastle_dir, Path):
-        raise TypeError("resolve_dockerfile() expects only a pycastle_dir Path")
-    local = pycastle_dir / "Dockerfile"
-    if local.is_file():
-        return local
-    bundled = _DEFAULTS_DIR / "Dockerfile"
-    if bundled.is_file():
-        return bundled
-    raise ConfigValidationError(
-        "No bundled universal Dockerfile default exists",
-        invalid_value=str(pycastle_dir),
+    return resolve_universal_dockerfile(
+        pycastle_dir,
+        bundled_defaults_dir=_DEFAULTS_DIR,
     )
 
 

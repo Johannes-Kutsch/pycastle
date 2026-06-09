@@ -4,10 +4,10 @@ from pathlib import Path
 
 from .._universal_image_build import (
     UniversalImageBuildOptions,
-    UniversalImageBuildRequest,
     build_universal_image,
+    resolve_universal_image_build_request,
 )
-from ..config import Config, load_config, resolve_dockerfile
+from ..config import Config, load_config
 from ..services import DockerService
 from ..services.docker_service import BuildOutcome
 
@@ -35,10 +35,9 @@ def main(
     print(f"Building {cfg.docker_image_name}...")
     outcome = build_universal_image(
         docker_service,
-        UniversalImageBuildRequest(
-            image_tag=cfg.docker_image_name,
-            dockerfile_path=resolve_dockerfile(Path("pycastle")),
-            context_dir=Path("."),
+        resolve_universal_image_build_request(
+            cfg,
+            project_root=Path("."),
             options=UniversalImageBuildOptions(
                 no_cache=no_cache,
                 stream=stream,
