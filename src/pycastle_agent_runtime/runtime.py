@@ -2,24 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pycastle import _time as _time_module
 from pycastle.agents._work_invocation import (
     TextOutputAdapter,
     WorkInvocationDependencies,
     WorkInvocationRequest,
-    format_transient_status_message,
     invoke_work,
 )
 from pycastle.agents.result import CancellationToken
-from pycastle.agents.runner import (
-    _CONTAINER_WORKSPACE,
-    _stage_key_for_role,
-    AgentRunner,
-)
-from pycastle.infrastructure.container_runner import ContainerRunner
+from pycastle.agents.runner import AgentRunner
 from pycastle.session.agent import RunSessionPlan
+from pycastle.services.agent_service import AgentService
 from pycastle.services.flag_profiles import AgentToolPolicyGroup
 
 from .roles import AgentRole
@@ -28,6 +23,19 @@ from .types import StageOverride
 
 
 ToolPolicy = AgentToolPolicyGroup
+
+
+class PromptRuntimeExecutionAdapter(Protocol):
+    def resolve_service(self, service_name: str = "") -> AgentService: ...
+
+    def build_work_dependencies(
+        self,
+        *,
+        name: str,
+        model: str,
+        effort: str,
+        service: AgentService,
+    ) -> WorkInvocationDependencies: ...
 
 
 @dataclass(frozen=True)
@@ -78,7 +86,7 @@ class PromptRuntime:
 
 async def run_prompt(
     *,
-    runner: AgentRunner,
+    runner: PromptRuntimeExecutionAdapter,
     service_registry: ServiceRegistry,
     request: PromptRunRequest,
 ) -> str:
@@ -87,26 +95,12 @@ async def run_prompt(
         _time_module.now_local(),
     )
     role = AgentRole.IMPLEMENTER
-    resolved_service = runner._resolve_service(resolved_override.service)
-    dependencies = WorkInvocationDependencies(
-        container_workspace=_CONTAINER_WORKSPACE,
-        timeout_retries=runner._cfg.timeout_retries,
-        stage_key_for_role=_stage_key_for_role,
-        build_session=runner._build_session,
-        build_runner=lambda session, status_display: ContainerRunner(
-            request.name,
-            session,
-            model=resolved_override.model,
-            effort=resolved_override.effort,
-            status_display=status_display,
-            cfg=runner._cfg,
-            service=resolved_service,
-        ),
-        get_git_identity=lambda: (
-            runner._git_service.get_user_name(),
-            runner._git_service.get_user_email(),
-        ),
-        transient_status_message=format_transient_status_message,
+    resolved_service = runner.resolve_service(resolved_override.service)
+    dependencies = runner.build_work_dependencies(
+        name=request.name,
+        model=resolved_override.model,
+        effort=resolved_override.effort,
+        service=resolved_service,
     )
 
     return await invoke_work(

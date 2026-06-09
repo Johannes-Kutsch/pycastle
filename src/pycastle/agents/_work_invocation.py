@@ -17,7 +17,6 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from ..infrastructure.container_runner import ContainerRunner
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
 from ..services.flag_profiles import AgentToolPolicyGroup
@@ -56,7 +55,7 @@ class WorkOutputAdapter(Protocol[WorkResultT]):
     async def invoke(
         self,
         *,
-        runner: ContainerRunner,
+        runner: "WorkExecutionAdapter",
         role: AgentRole,
         prompt: str,
         run_kind: RunKind,
@@ -83,13 +82,40 @@ class WorkOutputAdapter(Protocol[WorkResultT]):
     ) -> WorkResultT: ...
 
 
+class WorkExecutionAdapter(Protocol):
+    async def setup(
+        self, git_name: str, git_email: str, work_body: str = ""
+    ) -> None: ...
+
+    async def work(
+        self,
+        role: AgentRole,
+        prompt: str,
+        *,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
+    ) -> AgentOutput: ...
+
+    async def work_text(
+        self,
+        prompt: str,
+        *,
+        role: AgentRole = AgentRole.IMPLEMENTER,
+        tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
+    ) -> str: ...
+
+
 @dataclasses.dataclass(frozen=True)
 class WorkInvocationDependencies:
     container_workspace: str
     timeout_retries: int
     stage_key_for_role: Callable[[AgentRole], str | None]
     build_session: Callable[[Path, AgentService, str | None], Any]
-    build_runner: Callable[[Any, Any], ContainerRunner]
+    build_runner: Callable[[Any, Any], WorkExecutionAdapter]
     get_git_identity: Callable[[], tuple[str, str]]
     prepare_session: Callable[[SessionDispatchRequest], Any] = _DEFAULT_PREPARE_SESSION
     transient_status_message: Callable[[TransientAgentError], str] | None = None
@@ -133,7 +159,7 @@ class ProtocolOutputAdapter:
     async def invoke(
         self,
         *,
-        runner: ContainerRunner,
+        runner: WorkExecutionAdapter,
         role: AgentRole,
         prompt: str,
         run_kind: RunKind,
@@ -197,7 +223,7 @@ class TextOutputAdapter:
     async def invoke(
         self,
         *,
-        runner: ContainerRunner,
+        runner: WorkExecutionAdapter,
         role: AgentRole,
         prompt: str,
         run_kind: RunKind,
@@ -429,7 +455,7 @@ async def _invoke_work_attempt(
     request: WorkInvocationRequest[WorkResultT],
     row: Any,
     prepared_session: Any,
-    runner: ContainerRunner,
+    runner: WorkExecutionAdapter,
     prompt: str,
     provider_run_session: Any,
 ) -> tuple[WorkResultT, Any]:
