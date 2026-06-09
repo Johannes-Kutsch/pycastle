@@ -10,6 +10,10 @@ class PycastleError(RuntimeError):
     pass
 
 
+class RuntimeConfigurationError(PycastleError):
+    pass
+
+
 class AgentTimeoutError(PycastleError, TimeoutError):
     def __init__(
         self,
@@ -117,6 +121,7 @@ __all__ = [
     "AgentTimeoutError",
     "HardAgentError",
     "PycastleError",
+    "RuntimeConfigurationError",
     "TransientAgentError",
     "UsageLimitError",
 ]

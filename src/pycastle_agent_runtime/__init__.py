@@ -23,6 +23,7 @@ from .errors import (
     AgentTimeoutError,
     HardAgentError,
     PycastleError,
+    RuntimeConfigurationError,
     TransientAgentError,
     UsageLimitError,
 )
@@ -66,6 +67,7 @@ __all__ = [
     "PromptTokens",
     "PycastleError",
     "Result",
+    "RuntimeConfigurationError",
     "RunKind",
     "ServiceRegistry",
     "SleepUntil",

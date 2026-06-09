@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from pycastle import _time as _time_module
-
+from . import _time as _time_module
 from .contracts import AgentService, ToolPolicy
+from .errors import RuntimeConfigurationError
 from .roles import AgentRole
 from .service_registry import ServiceRegistry
 from .work import (
@@ -41,6 +41,18 @@ class PromptRuntimeExecutionAdapter(Protocol):
         effort: str,
         service: AgentService,
     ) -> WorkInvocationDependencies: ...
+
+
+def _require_execution_adapter_method(
+    adapter: PromptRuntimeExecutionAdapter,
+    method_name: str,
+) -> Any:
+    method = getattr(adapter, method_name, None)
+    if callable(method):
+        return method
+    raise RuntimeConfigurationError(
+        f"Prompt runtime requires an execution adapter with callable `{method_name}()`."
+    )
 
 
 @dataclass(frozen=True)
@@ -102,8 +114,13 @@ async def run_prompt(
         _time_module.now_local(),
     )
     role = AgentRole.IMPLEMENTER
-    resolved_service = runner.resolve_service(resolved_override.service)
-    dependencies = runner.build_work_dependencies(
+    resolve_service = _require_execution_adapter_method(runner, "resolve_service")
+    build_work_dependencies = _require_execution_adapter_method(
+        runner,
+        "build_work_dependencies",
+    )
+    resolved_service = resolve_service(resolved_override.service)
+    dependencies = build_work_dependencies(
         name=request.name,
         model=resolved_override.model,
         effort=resolved_override.effort,

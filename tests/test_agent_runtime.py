@@ -20,7 +20,11 @@ from pycastle.agents._work_invocation import (
 )
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole
-from pycastle_agent_runtime.errors import AgentTimeoutError, UsageLimitError
+from pycastle_agent_runtime.errors import (
+    AgentTimeoutError,
+    RuntimeConfigurationError,
+    UsageLimitError,
+)
 from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -158,6 +162,151 @@ def _runtime_attr_imported_application_modules(
         text=True,
     )
     return json.loads(result.stdout)
+
+
+def _standalone_runtime_prompt_result(repo_root: Path) -> str:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                """
+                import asyncio
+                import importlib.abc
+                import sys
+                from pathlib import Path
+
+                class _BlockPycastle(importlib.abc.MetaPathFinder):
+                    def find_spec(self, fullname, path=None, target=None):
+                        del path, target
+                        if fullname == "pycastle" or fullname.startswith("pycastle."):
+                            raise ModuleNotFoundError(
+                                f"blocked test import: {fullname}"
+                            )
+                        return None
+
+                sys.meta_path.insert(0, _BlockPycastle())
+
+                import pycastle_agent_runtime as runtime
+                from pycastle_agent_runtime.work import WorkInvocationDependencies
+
+                class _Service:
+                    name = "codex"
+
+                    def is_available(self, now=None):
+                        del now
+                        return True
+
+                    def next_wake_time(self):
+                        raise AssertionError("unexpected fallback selection")
+
+                    def mark_exhausted(self, reset_time):
+                        del reset_time
+
+                class _PreparedRunSession:
+                    run_kind = runtime.RunKind.FRESH
+                    provider_session_id = None
+
+                    def record_provider_session_id(self, provider_session_id):
+                        self.provider_session_id = provider_session_id
+
+                    def record_successful_run(self):
+                        return None
+
+                class _PreparedSession:
+                    provider_state_dir_container_path = None
+
+                    def prepare_for_run(self):
+                        return None
+
+                    def initial_provider_run_session(self):
+                        return _PreparedRunSession()
+
+                    def resumable_provider_run_session(self):
+                        return _PreparedRunSession()
+
+                    def protocol_reprompt_provider_run_session(self):
+                        return None
+
+                class _Session:
+                    def exec_simple(self, cmd):
+                        raise AssertionError(f"unexpected container exec: {cmd}")
+
+                    def __exit__(self, exc_type, exc, tb):
+                        return None
+
+                class _Runner:
+                    async def setup(self, git_name, git_email, work_body=""):
+                        del git_name, git_email, work_body
+
+                    async def work_text(
+                        self,
+                        prompt,
+                        *,
+                        role=runtime.AgentRole.IMPLEMENTER,
+                        tool_policy=runtime.ToolPolicy.FULL,
+                        run_kind=runtime.RunKind.FRESH,
+                        session_uuid=None,
+                        on_provider_session_id=None,
+                    ):
+                        del role, tool_policy, run_kind, session_uuid
+                        if on_provider_session_id is not None:
+                            on_provider_session_id("provider-session")
+                        return f"standalone:{prompt}"
+
+                class _ExecutionAdapter:
+                    def __init__(self):
+                        self.service = _Service()
+
+                    def resolve_service(self, service_name=""):
+                        assert service_name == "codex"
+                        return self.service
+
+                    def build_work_dependencies(self, *, name, model, effort, service):
+                        assert name == "Standalone Runtime"
+                        assert model == "gpt-5.4-mini"
+                        assert effort == "low"
+                        assert service is self.service
+                        return WorkInvocationDependencies(
+                            container_workspace="/tmp/workspace",
+                            timeout_retries=0,
+                            stage_key_for_role=lambda role: role.value,
+                            prepare_session=lambda **_kwargs: _PreparedSession(),
+                            build_session=lambda *_args: _Session(),
+                            build_runner=lambda *_args: _Runner(),
+                            get_git_identity=lambda: ("Test User", "test@example.com"),
+                        )
+
+                request = runtime.PromptRunRequest(
+                    name="Standalone Runtime",
+                    prompt="already rendered prompt",
+                    worktree=runtime.WorktreeMount(Path(".")),
+                    override=runtime.StageOverride(
+                        service="codex",
+                        model="gpt-5.4-mini",
+                        effort="low",
+                    ),
+                )
+                result = asyncio.run(
+                    runtime.run_prompt(
+                        runner=_ExecutionAdapter(),
+                        service_registry=runtime.ServiceRegistry(
+                            {"codex": _ExecutionAdapter().service}
+                        ),
+                        request=request,
+                    )
+                )
+                print(result)
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr)
+    return result.stdout.strip().splitlines()[-1]
 
 
 class _RecordingRuntimeService:
@@ -766,6 +915,49 @@ def test_runtime_prompt_surface_import_keeps_application_ownership_unloaded(
     imported = _runtime_attr_imported_application_modules(repo_root, attr_name)
 
     assert imported == []
+
+
+def test_runtime_package_prompt_entrypoint_runs_standalone_without_pycastle() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = _standalone_runtime_prompt_result(repo_root)
+
+    assert result == "standalone:already rendered prompt"
+
+
+def test_runtime_package_prompt_entrypoint_requires_build_work_dependencies_adapter(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("codex")
+    registry = runtime.ServiceRegistry({"codex": service})
+    request = runtime.PromptRunRequest(
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+    )
+
+    class _MissingBuildWorkDependenciesAdapter:
+        def resolve_service(self, service_name: str = "") -> _RecordingRuntimeService:
+            assert service_name == "codex"
+            return service
+
+    with pytest.raises(
+        RuntimeConfigurationError,
+        match=r"execution adapter with callable `build_work_dependencies\(\)`",
+    ):
+        asyncio.run(
+            runtime.run_prompt(
+                runner=_MissingBuildWorkDependenciesAdapter(),
+                service_registry=registry,
+                request=request,
+            )
+        )
 
 
 def test_runtime_package_import_isolation_guardrail_reports_application_ownership() -> (
