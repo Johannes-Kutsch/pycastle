@@ -164,6 +164,56 @@ def _runtime_attr_imported_application_modules(
     return json.loads(result.stdout)
 
 
+def _standalone_runtime_attr_access_result(
+    repo_root: Path, attr_name: str
+) -> dict[str, str]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                f"""
+                import importlib.abc
+                import json
+                import sys
+
+                class _BlockPycastle(importlib.abc.MetaPathFinder):
+                    def find_spec(self, fullname, path=None, target=None):
+                        del path, target
+                        if fullname == "pycastle" or fullname.startswith("pycastle."):
+                            raise ModuleNotFoundError(
+                                f"blocked test import: {{fullname}}"
+                            )
+                        return None
+
+                sys.meta_path.insert(0, _BlockPycastle())
+
+                import pycastle_agent_runtime as runtime
+
+                try:
+                    getattr(runtime, {attr_name!r})
+                except Exception as exc:  # pragma: no cover - subprocess assertion surface
+                    print(
+                        json.dumps(
+                            {{
+                                "type": type(exc).__name__,
+                                "message": str(exc),
+                            }}
+                        )
+                    )
+                else:
+                    print(json.dumps({{"type": "ok", "message": ""}}))
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def _standalone_runtime_prompt_result(repo_root: Path) -> str:
     result = subprocess.run(
         [
@@ -915,6 +965,17 @@ def test_runtime_prompt_surface_import_keeps_application_ownership_unloaded(
     imported = _runtime_attr_imported_application_modules(repo_root, attr_name)
 
     assert imported == []
+
+
+def test_runtime_orchestration_surface_is_not_exported_in_standalone_runtime() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = _standalone_runtime_attr_access_result(repo_root, "run")
+
+    assert result == {
+        "type": "AttributeError",
+        "message": "module 'pycastle_agent_runtime' has no attribute 'run'",
+    }
 
 
 def test_runtime_package_prompt_entrypoint_runs_standalone_without_pycastle() -> None:
