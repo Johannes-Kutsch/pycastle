@@ -4,13 +4,12 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from ._work_invocation import (
-    ProtocolOutputAdapter,
+from pycastle_agent_runtime.work import (
     WorkInvocationDependencies,
     WorkInvocationRequest,
-    format_transient_status_message,
-    invoke_work,
 )
+
+from ._work_invocation import ProtocolOutputAdapter, format_transient_status_message
 from .output_protocol import (
     AgentOutput,
     AgentRole,
@@ -154,6 +153,11 @@ class AgentRunner:
     def resolve_service(self, service_name: str = "") -> AgentService:
         return self._resolve_service(service_name)
 
+    def _runtime_service_registry(self):
+        from pycastle_agent_runtime.service_registry import ServiceRegistry
+
+        return ServiceRegistry(self._service_registry)
+
     def _build_session(
         self,
         mount_path: Path,
@@ -287,11 +291,10 @@ class AgentRunner:
             WorktreeMount,
             run_prompt as run_runtime_prompt,
         )
-        from pycastle_agent_runtime.service_registry import ServiceRegistry
 
         return await run_runtime_prompt(
             runner=self,
-            service_registry=ServiceRegistry(self._service_registry),
+            service_registry=self._runtime_service_registry(),
             request=PromptRunRequest(
                 name=name,
                 prompt=prompt,
@@ -337,6 +340,8 @@ class AgentRunner:
                 run_kind=run_kind,
                 send_role_prompt_on_resume=request.send_role_prompt_on_resume,
             )
+
+        from pycastle_agent_runtime.work import invoke_work
 
         return await invoke_work(
             WorkInvocationRequest(
