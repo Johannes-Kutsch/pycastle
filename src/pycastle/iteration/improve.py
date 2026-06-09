@@ -18,7 +18,6 @@ from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import managed_worktree, sandbox_worktree_identity
 from ._rows import status_row
 from .improve_preparation import (
-    ImproveStepPreparationRequest,
     prepare_improve_step,
 )
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
@@ -298,17 +297,10 @@ async def improve_phase(
 
             while step is not None:
                 prepared_step = prepare_improve_step(
-                    ImproveStepPreparationRequest(
-                        prompt_template=step.cfg.template,
-                        session_namespace=step.cfg.namespace,
-                        display_name=step.cfg.display_name,
-                        work_body=step.cfg.display_body,
-                        send_role_prompt_on_resume=step.send_role_prompt_on_resume,
-                        short_sid=short_sid,
-                        prd_number=driver.prd_number,
-                        fetch_recent_prd_titles=step.fetch_recent_prd_titles,
-                    ),
+                    step,
                     github_port=deps.github_svc,
+                    short_sid=short_sid,
+                    prd_number=driver.prd_number,
                 )
                 output = await deps.agent_runner.run(
                     RunRequest(

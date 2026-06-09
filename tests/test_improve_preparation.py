@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
+from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import (
     ImproveStepPreparationRequest,
     prepare_improve_step,
@@ -40,22 +42,18 @@ class _GithubPortStandIn:
         return self.comments
 
 
-def test_prepare_improve_step_builds_exact_scan_payload():
+def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
+    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
+    step = driver.start()
+    assert step is not None
     github_port = _GithubPortStandIn(
         recent_prds=[{"number": 12, "state": "OPEN", "title": "First candidate"}]
     )
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SCAN,
-            session_namespace="main",
-            display_name="Scan Agent",
-            work_body="picking an improvement",
-            send_role_prompt_on_resume=False,
-            short_sid="abcd1234",
-            prd_number=None,
-            fetch_recent_prd_titles=True,
-        ),
+        step,
+        short_sid="abcd1234",
+        prd_number=None,
         github_port=github_port,
     )
 
@@ -99,6 +97,38 @@ def test_prepare_improve_step_uses_empty_issue_placeholders_without_prd_number()
     assert github_port.issue_comment_calls == []
 
 
+def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
+    tmp_path: Path,
+):
+    driver_dir = tmp_path / "improve"
+    driver_dir.mkdir(parents=True, exist_ok=True)
+    (driver_dir / "_phase_in_flight").write_text("01-scan", encoding="utf-8")
+    driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
+    step = driver.start()
+
+    assert step is not None
+    github_port = _GithubPortStandIn(
+        recent_prd_error=AssertionError("mid-phase scan retries must not refetch PRDs")
+    )
+
+    prepared = prepare_improve_step(
+        step,
+        short_sid="abcd1234",
+        prd_number=None,
+        github_port=github_port,
+    )
+
+    assert prepared.prompt_template == PromptTemplate.IMPROVE_SCAN
+    assert prepared.session_namespace == "main"
+    assert prepared.display_name == "Scan Agent"
+    assert prepared.work_body == "picking an improvement"
+    assert prepared.send_role_prompt_on_resume is False
+    assert prepared.scope_args == {
+        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."
+    }
+    assert github_port.recent_prd_calls == 0
+
+
 def test_prepare_improve_step_reads_issue_and_comments_for_issues_scope():
     github_port = _GithubPortStandIn(
         issue={"number": 77, "title": "Improve PRD", "body": "PRD body"},
@@ -137,22 +167,20 @@ def test_prepare_improve_step_reads_issue_and_comments_for_issues_scope():
     assert github_port.issue_comment_calls == [77]
 
 
-def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures():
+def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
+    tmp_path: Path,
+):
     error = GithubNetworkError("transport error", cause=RuntimeError("boom"))
+    driver = ImprovePhaseDriver(tmp_path / "improve-error", no_candidate_report=True)
+    step = driver.start()
+    assert step is not None
     github_port = _GithubPortStandIn(recent_prd_error=error)
 
     with pytest.raises(GithubNetworkError) as exc_info:
         prepare_improve_step(
-            ImproveStepPreparationRequest(
-                prompt_template=PromptTemplate.IMPROVE_SCAN,
-                session_namespace="main",
-                display_name="Scan Agent",
-                work_body="picking an improvement",
-                send_role_prompt_on_resume=False,
-                short_sid="abcd1234",
-                prd_number=None,
-                fetch_recent_prd_titles=True,
-            ),
+            step,
+            short_sid="abcd1234",
+            prd_number=None,
             github_port=github_port,
         )
 
