@@ -309,8 +309,8 @@ async def improve_phase(
                 )
                 output = await deps.agent_runner.run(
                     RunRequest(
-                        name=prepared_step.display_name,
-                        template=prepared_step.prompt_template,
+                        name=prepared_step.name,
+                        template=prepared_step.template,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
                         scope_args=prepared_step.scope_args,

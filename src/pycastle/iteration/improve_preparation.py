@@ -73,12 +73,20 @@ class ImproveStepPreparationRequest:
 
 @dataclass(frozen=True)
 class PreparedImproveStep:
-    prompt_template: PromptTemplate
+    template: PromptTemplate
     session_namespace: str
-    display_name: str
+    name: str
     work_body: str
     send_role_prompt_on_resume: bool
     scope_args: dict[str, str]
+
+    @property
+    def prompt_template(self) -> PromptTemplate:
+        return self.template
+
+    @property
+    def display_name(self) -> str:
+        return self.name
 
 
 def prepare_improve_step(
@@ -101,9 +109,9 @@ def prepare_improve_step(
     )
     scope_args = _build_scope_args(request, github_port=github_port)
     return PreparedImproveStep(
-        prompt_template=request.prompt_template,
+        template=request.prompt_template,
         session_namespace=request.session_namespace,
-        display_name=request.display_name,
+        name=request.display_name,
         work_body=request.work_body,
         send_role_prompt_on_resume=request.send_role_prompt_on_resume,
         scope_args=scope_args,
