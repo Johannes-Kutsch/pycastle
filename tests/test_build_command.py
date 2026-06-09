@@ -246,6 +246,37 @@ def test_build_command_loads_config_when_cfg_is_absent(tmp_path, monkeypatch):
     mock_build.assert_called_once_with(docker_service, request)
 
 
+def test_build_command_prefers_explicit_cfg_without_loading_config(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    cfg = Config(docker_image_name="passed-explicitly")
+    request = UniversalImageBuildRequest(
+        image_tag="passed-explicitly",
+        dockerfile_path=tmp_path / "Dockerfile",
+        context_dir=tmp_path,
+    )
+    docker_service = MagicMock()
+
+    with (
+        patch("pycastle.commands.build.load_config") as mock_load,
+        patch(
+            "pycastle.commands.build.resolve_universal_image_build_request",
+            return_value=request,
+        ) as mock_resolve,
+        patch("pycastle.commands.build.build_universal_image") as mock_build,
+    ):
+        main(docker_service=docker_service, cfg=cfg)
+
+    mock_load.assert_not_called()
+    mock_resolve.assert_called_once_with(
+        cfg, project_root=Path("."), options=UniversalImageBuildOptions()
+    )
+    mock_build.assert_called_once_with(docker_service, request)
+
+
 def test_packaging_includes_bundled_universal_dockerfile():
     package_data = Path("pyproject.toml").read_text(encoding="utf-8")
 

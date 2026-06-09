@@ -1209,15 +1209,15 @@ def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch
     cfg = Config(docker_image_name="myimage")
     call_order: list[str] = []
 
-    fake_svc = MagicMock()
-    fake_svc.build.side_effect = lambda *a, **kw: call_order.append("build")
-
     async def _fake_run(*args, **kwargs):
         call_order.append("orchestrator")
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch(
+            "pycastle.commands.build.main",
+            side_effect=lambda **kwargs: call_order.append("build"),
+        ),
         patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
@@ -1238,9 +1238,6 @@ def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
 
     cfg = Config(docker_image_name="myimage")
-    fake_svc = MagicMock()
-    fake_svc.build.side_effect = DockerBuildError("build failed: exit 1")
-
     orchestrator_called = []
 
     async def _fake_run(*args, **kwargs):
@@ -1248,7 +1245,10 @@ def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
 
     with (
         patch("pycastle.main.load_config", return_value=cfg),
-        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch(
+            "pycastle.commands.build.main",
+            side_effect=DockerBuildError("build failed: exit 1"),
+        ),
         patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
         result = CliRunner().invoke(cli, ["run"])
