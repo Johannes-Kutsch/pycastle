@@ -9,15 +9,9 @@ from pathlib import Path
 
 from ..agents.output_protocol import AgentRole
 from .. import _time as _time_module
-from ..provider_errors import ProviderErrorObservation
 from ..session import RoleSession, RunKind
 from ..session.service_resume_identity import is_exact_resumable_service_session
-from .flag_profiles import (
-    AgentToolPolicyGroup,
-    flag_profile_for,
-    flag_profile_for_tool_policy,
-)
-from .agent_service import (
+from pycastle_agent_runtime.contracts import (
     AssistantTurn,
     CredentialFailure,
     HardError,
@@ -26,6 +20,12 @@ from .agent_service import (
     Result,
     TransientError,
     UsageLimit,
+)
+from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from .flag_profiles import (
+    AgentToolPolicyGroup,
+    flag_profile_for,
+    flag_profile_for_tool_policy,
 )
 from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time

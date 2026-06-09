@@ -14,6 +14,16 @@ from pycastle.errors import (
     ClaudeTimeoutError,
     PycastleError,
 )
+from pycastle_agent_runtime.contracts import (
+    AssistantTurn as RuntimeAssistantTurn,
+    CredentialFailure as RuntimeCredentialFailure,
+    HardError as RuntimeHardError,
+    PromptTokens as RuntimePromptTokens,
+    Result as RuntimeResult,
+    TransientError as RuntimeTransientError,
+    UsageLimit as RuntimeUsageLimit,
+)
+from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
 from pycastle.services import ClaudeService
 from pycastle.services.agent_service import (
     AssistantTurn,
@@ -373,6 +383,20 @@ def test_run_yields_usage_limit_for_429_line():
     assert any(isinstance(e, UsageLimit) for e in events)
 
 
+def test_run_uses_runtime_owned_provider_event_contracts():
+    events = list(
+        ClaudeService().run(
+            [_assistant_with_usage_line("hi", 1000), _result_line("done")]
+        )
+    )
+
+    assert events == [
+        RuntimePromptTokens(count=1000),
+        RuntimeAssistantTurn(text="hi"),
+        RuntimeResult(text="done"),
+    ]
+
+
 def test_run_accepts_provider_session_callback_without_emitting_session_id():
     captured: list[str] = []
 
@@ -397,6 +421,66 @@ def test_run_stops_after_usage_limit():
     lines = [_usage_limit_line(), _assistant_line("after")]
     events = list(ClaudeService().run(lines))
     assert not any(isinstance(e, AssistantTurn) for e in events)
+
+
+def test_run_stops_after_transient_error():
+    lines = [
+        json.dumps({"type": "result", "is_error": True, "api_error_status": 503}),
+        _assistant_line("after"),
+    ]
+
+    events = list(ClaudeService().run(lines))
+
+    assert events == [RuntimeTransientError(status_code=503, raw_message=lines[0])]
+
+
+def test_run_stops_after_hard_error():
+    lines = [
+        json.dumps({"type": "result", "is_error": True, "api_error_status": 400}),
+        _assistant_line("after"),
+    ]
+
+    events = list(ClaudeService().run(lines))
+
+    assert events == [RuntimeHardError(status_code=400, raw_message=lines[0])]
+
+
+def test_run_stops_after_credential_failure():
+    lines = [
+        json.dumps(
+            {
+                "type": "result",
+                "is_error": True,
+                "api_error_status": 403,
+                "result": (
+                    "Your account has disabled Claude subscription access for "
+                    "Claude Code."
+                ),
+            }
+        ),
+        _assistant_line("after"),
+    ]
+
+    events = list(ClaudeService().run(lines))
+
+    assert events == [
+        RuntimeCredentialFailure(
+            raw_message=lines[0],
+            service_name="claude",
+            source_observations=(
+                ProviderErrorObservation(
+                    service_name="claude",
+                    raw_provider_text=(
+                        "Your account has disabled Claude subscription access for "
+                        "Claude Code."
+                    ),
+                    source_stream="json_event.result",
+                    status_code=403,
+                ),
+            ),
+            status_code=403,
+        )
+    ]
 
 
 def test_run_skips_non_json_lines_silently():
@@ -433,6 +517,30 @@ def test_run_usage_limit_has_no_raw_message_when_reset_time_parsed_successfully(
     limit = next(e for e in events if isinstance(e, UsageLimit))
     assert limit.reset_time is not None
     assert limit.raw_message is None
+
+
+def test_run_usage_limit_uses_runtime_owned_contract():
+    line = json.dumps({"api_error_status": 429, "result": "rate limit exceeded"})
+
+    events = list(ClaudeService().run([line]))
+
+    assert events == [RuntimeUsageLimit(reset_time=None, raw_message="".join([line]))]
+
+
+def test_run_transient_error_uses_runtime_owned_contract_when_status_missing():
+    line = json.dumps({"type": "result", "is_error": True, "result": "temporary"})
+
+    events = list(ClaudeService().run([line]))
+
+    assert events == [RuntimeTransientError(status_code=None, raw_message=line)]
+
+
+def test_run_hard_error_uses_runtime_owned_contract():
+    line = json.dumps({"type": "result", "is_error": True, "api_error_status": 401})
+
+    events = list(ClaudeService().run([line]))
+
+    assert events == [RuntimeHardError(status_code=401, raw_message=line)]
 
 
 def test_run_usage_limit_uses_local_timezone_from_now_local(monkeypatch):
