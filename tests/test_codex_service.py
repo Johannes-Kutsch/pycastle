@@ -4,6 +4,15 @@ import json
 from datetime import datetime, timezone
 
 import pytest
+from pycastle_agent_runtime.contracts import (
+    AssistantTurn as RuntimeAssistantTurn,
+    HardError as RuntimeHardError,
+    UsageLimit as RuntimeUsageLimit,
+)
+from pycastle_agent_runtime.session import (
+    ProviderSessionState as RuntimeProviderSessionState,
+    ProviderSessionStateRequest,
+)
 
 from pycastle import _time as _time_module
 from pycastle.agents.output_protocol import (
@@ -23,7 +32,6 @@ from pycastle.services.agent_service import (
     TransientError,
     UsageLimit,
 )
-from pycastle.services.provider_session_state import ProviderSessionStateRequest
 from pycastle.session import RoleSession, RunKind
 from pycastle.session.service_resume_identity import (
     select_resumable_provider_session_id,
@@ -343,6 +351,21 @@ def test_provider_session_state_is_fresh_without_resumable_provider_state(tmp_pa
     assert provider_session_state.persist_provider_session_id is False
 
 
+def test_provider_session_state_returns_runtime_owned_contract(tmp_path):
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+
+    provider_session_state = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=role_session,
+            provider_state_dir=None,
+            has_resumable_provider_state=False,
+        )
+    )
+
+    assert type(provider_session_state) is RuntimeProviderSessionState
+
+
 def test_select_resumable_provider_session_id_does_not_recover_codex_rollout_thread_id_without_sidecar(
     tmp_path,
 ):
@@ -611,6 +634,18 @@ def test_run_yields_assistant_turn_from_current_agent_message_text_field():
     )
 
 
+def test_run_yields_runtime_owned_assistant_turn_for_agent_message():
+    lines = [
+        _thread_started(),
+        _item_completed("agent_message", "Hello world"),
+        _turn_completed(),
+    ]
+
+    events = list(CodexService().run(lines))
+
+    assert any(type(event) is RuntimeAssistantTurn for event in events)
+
+
 def test_run_ignores_turn_completed_usage_without_exact_live_prompt_tokens():
     lines = [
         _thread_started(),
@@ -791,6 +826,15 @@ def test_run_yields_usage_limit_on_turn_failed(monkeypatch):
     assert any(isinstance(e, UsageLimit) for e in events)
 
 
+def test_run_yields_runtime_owned_usage_limit_on_turn_failed(monkeypatch):
+    frozen = datetime(2026, 5, 27, 14, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
+
+    events = list(CodexService().run([_turn_failed(_SAME_DAY_LIMIT_MSG)]))
+
+    assert any(type(event) is RuntimeUsageLimit for event in events)
+
+
 def test_run_yields_usage_limit_on_error_event(monkeypatch):
     frozen = datetime(2026, 5, 27, 14, 0, tzinfo=timezone.utc)
     monkeypatch.setattr(_time_module, "now_local", lambda: frozen)
@@ -868,6 +912,17 @@ def test_run_error_event_unauthorized_yields_hard_error():
     )
     events = list(CodexService().run([_error_line(message)]))
     assert events == [HardError(status_code=401, raw_message=message)]
+
+
+def test_run_error_event_unauthorized_yields_runtime_owned_hard_error():
+    message = (
+        "Reconnecting... 2/5 (unexpected status 401 Unauthorized: "
+        "Missing bearer or basic authentication in header)"
+    )
+
+    events = list(CodexService().run([_error_line(message)]))
+
+    assert events == [RuntimeHardError(status_code=401, raw_message=message)]
 
 
 def test_run_error_event_invalid_grant_yields_hard_error():
