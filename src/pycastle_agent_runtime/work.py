@@ -60,9 +60,12 @@ def _invoke_prepare_session(
         "run_session_plan": run_session_plan,
     }
     parameters = tuple(inspect.signature(prepare_session).parameters.values())
-    if not any(
-        parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters
-    ) and len(parameters) == 1:
+    if (
+        not any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters
+        )
+        and len(parameters) == 1
+    ):
         from pycastle.agents.session_dispatch import SessionDispatchRequest
 
         return prepare_session(SessionDispatchRequest(**kwargs))

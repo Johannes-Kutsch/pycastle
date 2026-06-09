@@ -2508,6 +2508,157 @@ def test_work_invocation_wraps_setup_docker_error_and_skips_work_adapter(
     assert ("remove", "Planner", "failed", "error") in status_display.calls
 
 
+def test_work_invocation_accepts_keyword_prepare_session_adapter_contract(
+    tmp_path: Path,
+):
+    prepared_session = _PreparedRunSessionStandIn(
+        initial_run_kind=RunKind.FRESH,
+        initial_provider_session_id="provider-fresh",
+        provider_state_dir_container_path="/workspace/provider-state",
+    )
+    observed_kwargs: dict[str, object] = {}
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id=None,
+        ) -> str:
+            del role, tool_policy, run_kind, session_uuid, on_provider_session_id
+            return prompt
+
+    def _prepare_session(**kwargs: object) -> _PreparedRunSessionStandIn:
+        observed_kwargs.update(kwargs)
+        return prepared_session
+
+    result = asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Runtime Consumer",
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                service=ClaudeService(),
+                model="sonnet",
+                effort="high",
+                output_adapter=TextOutputAdapter(prompt="already-rendered prompt"),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=0,
+                    stage_key_for_role=_stage_key_for_role,
+                    prepare_session=_prepare_session,
+                    build_session=lambda *_args: _FakeSession(),
+                    build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+            )
+        )
+    )
+
+    assert result == "already-rendered prompt"
+    assert observed_kwargs["mount_path"] == tmp_path
+    assert observed_kwargs["role"] is AgentRole.IMPLEMENTER
+    assert observed_kwargs["session_namespace"] == ""
+    assert observed_kwargs["container_workspace"] == "/home/agent/workspace"
+    assert observed_kwargs["run_session_plan"] is None
+    assert isinstance(observed_kwargs["service"], ClaudeService)
+
+
+def test_work_invocation_wraps_configured_setup_error_and_skips_work_adapter(
+    tmp_path: Path,
+):
+    status_display = RecordingStatusDisplay()
+    adapter_calls: list[str] = []
+
+    class _CustomSetupError(RuntimeError):
+        pass
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+            raise _CustomSetupError("custom setup failed")
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id=None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            adapter_calls.append("work_text")
+            return "unexpected"
+
+    setup_error = SetupPhaseError(AgentRole.IMPLEMENTER.value, "custom setup failed")
+
+    with pytest.raises(SetupPhaseError) as exc_info:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Runtime Consumer",
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service=ClaudeService(),
+                    model="sonnet",
+                    effort="high",
+                    output_adapter=TextOutputAdapter(prompt="already-rendered prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=_stage_key_for_role,
+                        build_session=lambda *_args: _FakeSession(),
+                        build_runner=lambda *_args: cast(
+                            ContainerRunner, _FakeRunner()
+                        ),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                        setup_error_types=(_CustomSetupError,),
+                        build_setup_phase_error=lambda role, exc: SetupPhaseError(
+                            role.value,
+                            str(exc),
+                        ),
+                    ),
+                    status_display=status_display,
+                )
+            )
+        )
+
+    assert exc_info.value.phase == setup_error.phase
+    assert str(exc_info.value) == str(setup_error)
+    assert adapter_calls == []
+    assert ("remove", "Runtime Consumer", "failed", "error") in status_display.calls
+
+
 def test_work_invocation_opens_status_row_with_caller_metadata_before_setup(
     tmp_path: Path,
 ):
