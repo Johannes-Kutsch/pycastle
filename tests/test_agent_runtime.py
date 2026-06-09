@@ -643,7 +643,7 @@ class _PromptRuntimeExecutionAdapterStandIn:
         def _build_runner(*_args: object) -> WorkExecutionAdapter:
             return self.work_runner
 
-        def _prepare_session(**kwargs: object) -> object:
+        def _prepare_session(**kwargs: object) -> _PreparedRuntimeSessionStandIn:
             self.prepare_session_calls.append(dict(kwargs))
             return _PreparedRuntimeSessionStandIn()
 
