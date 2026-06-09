@@ -275,6 +275,39 @@ class _RuntimeRoleSessionStandIn:
         self.recorded_success_metadata.append((service_name, provider_session_id))
 
 
+class _RuntimeSessionIdentityStoreStandIn:
+    def __init__(
+        self,
+        *,
+        service_session_ids: dict[str, str] | None = None,
+        service_metadata: dict[str, dict[str, str]] | None = None,
+        exact_transcript_service_name: str | None = None,
+    ) -> None:
+        self._service_session_ids = dict(service_session_ids or {})
+        self._service_metadata = dict(service_metadata or {})
+        self._exact_transcript_service_name = exact_transcript_service_name
+        self.saved_service_session_ids: list[tuple[str, str]] = []
+
+    def session_uuid(self) -> str:
+        return "runtime-session-uuid"
+
+    def service_session_id(self, service_name: str) -> str | None:
+        return self._service_session_ids.get(service_name)
+
+    def save_service_session_id(self, service_name: str, session_id: str) -> None:
+        self._service_session_ids[service_name] = session_id
+        self.saved_service_session_ids.append((service_name, session_id))
+
+    def service_session_metadata(
+        self,
+        service_name: str,
+    ) -> dict[str, str] | None:
+        return self._service_metadata.get(service_name)
+
+    def exact_transcript_service_name(self) -> str | None:
+        return self._exact_transcript_service_name
+
+
 class _TextSuccessRuntimeService(_PlanRecordingRuntimeService):
     def __init__(
         self,
@@ -709,6 +742,114 @@ def test_runtime_provider_state_plan_records_successful_run_metadata_through_rol
     )
 
     assert role_session.recorded_success_metadata == [("codex", "thread-runtime")]
+
+
+def test_runtime_session_select_resumable_provider_session_id_persists_state_dir_sidecar_identity(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.session import (
+        select_resumable_provider_session_id,
+    )
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    state_dir.mkdir(parents=True)
+    (state_dir / "thread_id").write_text("thread-from-sidecar\n", encoding="utf-8")
+    role_session = _RuntimeSessionIdentityStoreStandIn()
+
+    selection = select_resumable_provider_session_id(
+        role_session,
+        "codex",
+        provider_state_dir=state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert selection.provider_session_id == "thread-from-sidecar"
+    assert selection.persist_provider_session_id is True
+    assert role_session.saved_service_session_ids == [("codex", "thread-from-sidecar")]
+
+
+def test_runtime_session_exact_codex_resume_requires_matching_rollout_identity(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.session import (
+        is_exact_resumable_service_session,
+    )
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    rollout_dir = state_dir / "sessions" / "2026" / "06" / "09"
+    rollout_dir.mkdir(parents=True)
+    (rollout_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-exact"}\n',
+        encoding="utf-8",
+    )
+    role_session = _RuntimeSessionIdentityStoreStandIn(
+        service_metadata={
+            "codex": {
+                "service": "codex",
+                "provider_session_id": "thread-exact",
+            }
+        },
+        exact_transcript_service_name="codex",
+    )
+
+    assert (
+        is_exact_resumable_service_session(
+            role_session,
+            "codex",
+            provider_session_id="thread-exact",
+            provider_state_dir=state_dir,
+        )
+        is True
+    )
+    assert (
+        is_exact_resumable_service_session(
+            role_session,
+            "codex",
+            provider_session_id="thread-other",
+            provider_state_dir=state_dir,
+        )
+        is False
+    )
+
+
+def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_auth_json(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
+    from pycastle_agent_runtime.session_planning import (
+        AuthSeedingRequirement,
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=state_dir,
+            has_resumable_provider_state=False,
+            state_dir_relpath=".pycastle-session/implementer/codex/",
+        )
+    )
+    service = _PlanRecordingRuntimeService(
+        "codex",
+        ProviderSessionState(RunKind.FRESH, None),
+    )
+
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="",
+            service=service,
+            role_session=role_session,
+        )
+    )
+
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+    assert plan.auth_seed_action is not None
+    assert plan.auth_seed_action.source == Path.home() / ".codex" / "auth.json"
+    assert plan.auth_seed_action.destination == state_dir / "auth.json"
 
 
 def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
