@@ -39,6 +39,12 @@ class RunKind(Enum):
 
 
 @dataclasses.dataclass(frozen=True)
+class ProviderSessionSelection:
+    provider_session_id: str | None
+    persist_provider_session_id: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
 class ProviderSessionStateRequest:
     role_session: ServiceResumeIdentityStore
     provider_state_dir: Path | None
@@ -60,12 +66,6 @@ class ProviderSessionState:
     auth_seeding_requirement: AuthSeedingRequirement | None = None
     auth_seed_action: LocalAuthSeedAction | None = None
     allow_protocol_reprompt: bool = True
-
-
-@dataclasses.dataclass(frozen=True)
-class ProviderSessionSelection:
-    provider_session_id: str | None
-    persist_provider_session_id: bool = False
 
 
 def provider_state_relpath(
@@ -141,9 +141,9 @@ def select_resumable_provider_session_id(
     if provider_session_id is not None:
         return ProviderSessionSelection(provider_session_id=provider_session_id)
 
-    provider_session_id = _provider_session_id_from_state_dir(
-        service_name,
+    provider_session_id = load_state_dir_provider_session_id(
         provider_state_dir,
+        service_name,
     )
     if provider_session_id is None:
         return ProviderSessionSelection(provider_session_id=None)
@@ -173,13 +173,6 @@ def is_exact_resumable_service_session(
             provider_state_dir,
         )
     )
-
-
-def _provider_session_id_from_state_dir(
-    service_name: str,
-    state_dir: Path | None,
-) -> str | None:
-    return load_state_dir_provider_session_id(state_dir, service_name)
 
 
 def _is_exact_resumable_provider_session(
@@ -226,17 +219,17 @@ def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
 
 
 __all__ = [
+    "ProviderSessionSelection",
     "ProviderSessionState",
     "ProviderSessionStateRequest",
-    "ProviderSessionSelection",
     "RunKind",
     "SESSION_DIR_NAME",
     "is_exact_resumable_service_session",
     "load_provider_state_session_id",
     "load_state_dir_provider_session_id",
     "normalize_state_dir_relpath",
-    "provider_state_relpath",
     "provider_state_session_id_path",
+    "provider_state_relpath",
     "recover_state_dir_provider_session_id",
     "select_resumable_provider_session_id",
 ]

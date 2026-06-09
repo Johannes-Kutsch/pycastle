@@ -250,6 +250,7 @@ class _RuntimeServiceSessionState:
 class _RuntimeRoleSessionStandIn:
     def __init__(self, service_state: _RuntimeServiceSessionState) -> None:
         self._service_state = service_state
+        self._service_session_ids: dict[str, str] = {}
         self.saved_service_session_ids: list[tuple[str, str]] = []
         self.recorded_success_metadata: list[tuple[str, str | None]] = []
 
@@ -263,7 +264,11 @@ class _RuntimeRoleSessionStandIn:
     def session_uuid(self) -> str:
         return "runtime-session-uuid"
 
+    def service_session_id(self, service_name: str) -> str | None:
+        return self._service_session_ids.get(service_name)
+
     def save_service_session_id(self, service_name: str, session_id: str) -> None:
+        self._service_session_ids[service_name] = session_id
         self.saved_service_session_ids.append((service_name, session_id))
 
     def record_successful_provider_session_metadata(
@@ -272,6 +277,13 @@ class _RuntimeRoleSessionStandIn:
         provider_session_id: str | None,
     ) -> None:
         self.recorded_success_metadata.append((service_name, provider_session_id))
+
+    def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
+        del service_name
+        return None
+
+    def exact_transcript_service_name(self) -> str | None:
+        return None
 
 
 class _RuntimeSessionIdentityStoreStandIn:
@@ -746,6 +758,46 @@ def test_runtime_provider_state_plan_records_observed_provider_session_id_for_op
     assert (service_state_dir / "session_id").read_text(encoding="utf-8") == (
         "sess-runtime-opencode"
     )
+
+
+def test_runtime_session_helpers_recover_and_persist_opencode_session_id(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.session import (
+        load_state_dir_provider_session_id,
+        provider_state_session_id_path,
+        select_resumable_provider_session_id,
+    )
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "opencode"
+    state_dir.mkdir(parents=True)
+    provider_state_session_id_path(state_dir, "opencode").write_text(
+        "sess-runtime-opencode\n",
+        encoding="utf-8",
+    )
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/opencode/",
+        )
+    )
+
+    selection = select_resumable_provider_session_id(
+        role_session,
+        "opencode",
+        provider_state_dir=state_dir,
+        has_resumable_provider_state=True,
+    )
+
+    assert load_state_dir_provider_session_id(state_dir, "opencode") == (
+        "sess-runtime-opencode"
+    )
+    assert selection.provider_session_id == "sess-runtime-opencode"
+    assert selection.persist_provider_session_id is True
+    assert role_session.saved_service_session_ids == [
+        ("opencode", "sess-runtime-opencode")
+    ]
 
 
 def test_runtime_provider_state_plan_records_successful_run_metadata_through_role_session_interface() -> (
