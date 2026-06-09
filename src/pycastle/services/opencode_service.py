@@ -16,15 +16,15 @@ from pycastle_agent_runtime import (
     UsageLimit,
 )
 from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from pycastle_agent_runtime.session import (
+    load_state_dir_provider_session_id,
+    provider_state_relpath,
+    select_resumable_provider_session_id,
+)
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
-from ..session import RoleSession, RunKind
-from ..session.provider_session_state import load_state_dir_provider_session_id
-from ..session.service_resume_identity import (
-    is_exact_resumable_service_session,
-    select_resumable_provider_session_id,
-)
+from ..session import RunKind
 from .provider_session_state import ProviderSessionState, ProviderSessionStateRequest
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
@@ -63,6 +63,18 @@ _OPENCODE_POLICY_MAPPINGS = {
     AgentToolPolicyGroup.PARTIAL: _OpenCodePolicyMapping(),
     AgentToolPolicyGroup.FULL: _OpenCodePolicyMapping(),
 }
+
+
+def _has_exact_service_session_metadata(
+    request: ProviderSessionStateRequest,
+    provider_session_id: str,
+) -> bool:
+    metadata = request.role_session.service_session_metadata("opencode")
+    return (
+        request.role_session.exact_transcript_service_name() == "opencode"
+        and metadata is not None
+        and metadata["provider_session_id"] == provider_session_id
+    )
 
 
 def _opencode_go_model_ref(model: str) -> str:
@@ -263,12 +275,7 @@ class OpenCodeService:
         if request.require_exact_transcript_match:
             exact_transcript_match = (
                 state_dir_session_id == provider_session_id
-                and is_exact_resumable_service_session(
-                    request.role_session,
-                    self.name,
-                    provider_session_id=provider_session_id,
-                    provider_state_dir=request.provider_state_dir,
-                )
+                and _has_exact_service_session_metadata(request, provider_session_id)
             )
         return ProviderSessionState(
             RunKind.RESUME,
@@ -368,7 +375,7 @@ class OpenCodeService:
         self._exhausted_until = wake
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return RoleSession.provider_state_relpath_for(role, self.name, namespace)
+        return provider_state_relpath(role, self.name, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "resume.jsonl").is_file() or (
