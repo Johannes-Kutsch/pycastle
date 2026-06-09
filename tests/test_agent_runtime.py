@@ -474,6 +474,39 @@ class _RuntimeWorkRunnerStandIn:
         return self._result
 
 
+class _PreparedProviderRunSessionStandIn:
+    def __init__(self) -> None:
+        self.run_kind = RunKind.FRESH
+        self.provider_session_id: str | None = None
+        self.recorded_provider_session_ids: list[str] = []
+        self.successful_run_calls = 0
+
+    def record_provider_session_id(self, provider_session_id: str) -> None:
+        self.recorded_provider_session_ids.append(provider_session_id)
+        self.provider_session_id = provider_session_id
+
+    def record_successful_run(self) -> None:
+        self.successful_run_calls += 1
+
+
+class _PreparedRuntimeSessionStandIn:
+    def __init__(self) -> None:
+        self.provider_state_dir_container_path: str | None = None
+        self.initial_session = _PreparedProviderRunSessionStandIn()
+
+    def prepare_for_run(self) -> None:
+        return None
+
+    def initial_provider_run_session(self) -> _PreparedProviderRunSessionStandIn:
+        return self.initial_session
+
+    def resumable_provider_run_session(self) -> _PreparedProviderRunSessionStandIn:
+        raise AssertionError("runtime prompt test should not require a resumable run")
+
+    def protocol_reprompt_provider_run_session(self) -> None:
+        return None
+
+
 class _PromptRuntimeExecutionAdapterStandIn:
     def __init__(
         self,
@@ -489,6 +522,7 @@ class _PromptRuntimeExecutionAdapterStandIn:
         self.work_runner = runner or _RuntimeWorkRunnerStandIn()
         self.resolve_service_calls: list[str] = []
         self.build_work_dependency_calls: list[tuple[str, str, str, object]] = []
+        self.prepare_session_calls: list[dict[str, object]] = []
 
     def resolve_service(self, service_name: str = "") -> _RecordingRuntimeService:
         self.resolve_service_calls.append(service_name)
@@ -508,6 +542,10 @@ class _PromptRuntimeExecutionAdapterStandIn:
         def _build_runner(*_args: object) -> WorkExecutionAdapter:
             return self.work_runner
 
+        def _prepare_session(**kwargs: object) -> object:
+            self.prepare_session_calls.append(dict(kwargs))
+            return _PreparedRuntimeSessionStandIn()
+
         return WorkInvocationDependencies(
             container_workspace="/home/agent/workspace",
             timeout_retries=0,
@@ -518,6 +556,7 @@ class _PromptRuntimeExecutionAdapterStandIn:
                 self._git_service.get_user_name(),
                 self._git_service.get_user_email(),
             ),
+            prepare_session=_prepare_session,
         )
 
 
@@ -796,6 +835,51 @@ def test_runtime_package_prompt_entrypoint_uses_injected_execution_adapter_contr
     ]
     assert not hasattr(adapter, "_resolve_service")
     assert not hasattr(adapter, "_build_session")
+
+
+def test_runtime_package_prompt_entrypoint_preserves_runtime_owned_session_contract(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("codex")
+    adapter = _PromptRuntimeExecutionAdapterStandIn(
+        git_service=_make_git_service(),
+        service=service,
+        session=_RuntimeSessionStandIn(),
+    )
+    registry = runtime.ServiceRegistry({"codex": service})
+    run_session_plan = {"resume": "provider-123"}
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        session=runtime.PromptRunSession(
+            namespace="issues",
+            plan=run_session_plan,
+        ),
+    )
+
+    result = asyncio.run(
+        runtime.run_prompt(runner=adapter, service_registry=registry, request=request)
+    )
+
+    assert result == "adapter result"
+    assert adapter.prepare_session_calls == [
+        {
+            "mount_path": tmp_path,
+            "role": AgentRole.IMPLEMENTER,
+            "session_namespace": "issues",
+            "service": service,
+            "container_workspace": "/home/agent/workspace",
+            "run_session_plan": run_session_plan,
+        }
+    ]
 
 
 def test_runtime_package_owns_service_selection_contract() -> None:

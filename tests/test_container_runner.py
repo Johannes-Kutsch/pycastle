@@ -404,6 +404,34 @@ def test_work_text_reuses_runner_logical_session_after_work(tmp_path):
     assert '"prompt": "Second prompt"' in log_text
 
 
+def test_work_text_preserves_tool_policy_behavior_for_runtime_contract(tmp_path):
+    from pycastle_agent_runtime.contracts import ToolPolicy
+    from pycastle.services.flag_profiles import AgentToolPolicyGroup
+
+    session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])
+    service = FakeService(events=[Result("plain text result")])
+    runner = ContainerRunner(
+        "agent",
+        cast(DockerSession, session),
+        cfg=Config(logs_dir=tmp_path),
+        service=cast(ClaudeService, service),
+    )
+
+    result = asyncio.run(runner.work_text("prompt", tool_policy=ToolPolicy.PARTIAL))
+
+    assert result == "plain text result"
+    assert service.build_command_calls == [
+        {
+            "role": AgentRole.IMPLEMENTER,
+            "model": "",
+            "effort": "",
+            "run_kind": RunKind.FRESH,
+            "session_uuid": None,
+            "tool_policy": AgentToolPolicyGroup.PARTIAL,
+        }
+    ]
+
+
 def test_container_runners_keep_logical_sessions_in_separate_agent_logs(tmp_path):
     first_runner, _ = _make_runner(name="agent", tmp_path=tmp_path)
     second_runner, _ = _make_runner(name="agent", tmp_path=tmp_path)
