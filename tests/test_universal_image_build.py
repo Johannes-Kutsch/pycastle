@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -13,6 +14,7 @@ from pycastle._universal_image_build import (
     resolve_universal_image_build_request,
 )
 from pycastle.config import Config
+from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 from pycastle.services._docker_build_output import BuildOutcome, FINAL_OUTCOME_EXAMPLES
 from pycastle.services.docker_service import DockerService
@@ -103,6 +105,128 @@ def test_resolve_universal_image_build_request_uses_local_override_and_project_r
         Config(docker_image_name="myproject"),
         project_root=project_root,
     )
+
+    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
+        "myproject",
+        dockerfile,
+        project_root,
+    )
+
+
+def test_resolve_universal_image_build_request_uses_bundled_default_when_local_override_is_missing(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    (project_root / "pycastle").mkdir(parents=True)
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile"
+    )
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+    )
+
+    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
+        "myproject",
+        bundled_default,
+        project_root,
+    )
+
+
+def test_resolve_universal_image_build_request_falls_back_when_project_local_dockerfile_path_is_a_directory(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    pycastle_dir = project_root / "pycastle"
+    pycastle_dir.mkdir(parents=True)
+    (pycastle_dir / "Dockerfile").mkdir()
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile"
+    )
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+    )
+
+    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
+        "myproject",
+        bundled_default,
+        project_root,
+    )
+
+
+def test_resolve_universal_image_build_request_ignores_legacy_per_service_dockerfiles(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    pycastle_dir = project_root / "pycastle"
+    pycastle_dir.mkdir(parents=True)
+    (pycastle_dir / "Dockerfile.claude").write_text("FROM legacy-claude\n")
+    (pycastle_dir / "Dockerfile.codex").write_text("FROM legacy-codex\n")
+    (pycastle_dir / "Dockerfile.opencode").write_text("FROM legacy-opencode\n")
+    bundled_default = (
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "pycastle"
+        / "defaults"
+        / "Dockerfile"
+    )
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+    )
+
+    assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
+        "myproject",
+        bundled_default,
+        project_root,
+    )
+
+
+def test_resolve_universal_image_build_request_ignores_stage_priority_chain_when_selecting_build_inputs(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    pycastle_dir = project_root / "pycastle"
+    pycastle_dir.mkdir(parents=True)
+    dockerfile = pycastle_dir / "Dockerfile"
+    dockerfile.write_text("FROM scratch\n")
+    cfg = Config(
+        docker_image_name="myproject",
+        plan_override=StageOverride(
+            service="claude",
+            model="haiku",
+            effort="low",
+            fallback=StageOverride(
+                service="codex",
+                model="gpt-5.4-mini",
+                effort="low",
+                fallback=StageOverride(
+                    service="opencode",
+                    model="deepseek-v4-flash",
+                    effort="medium",
+                ),
+            ),
+        ),
+        implement_override=StageOverride(
+            service="opencode",
+            model="deepseek-v4-flash",
+            effort="medium",
+        ),
+    )
+
+    request = resolve_universal_image_build_request(cfg, project_root=project_root)
 
     assert (request.image_tag, request.dockerfile_path, request.context_dir) == (
         "myproject",
