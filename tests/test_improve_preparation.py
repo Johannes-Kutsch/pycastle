@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.agents.output_protocol import CompletionOutput
+from pycastle.agents.output_protocol import CompletionOutput, NoCandidateOutput
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import (
     ImproveStepPreparationRequest,
@@ -96,6 +96,47 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
     assert prepared.session_namespace == "main"
     assert prepared.display_name == "PRD Agent"
     assert prepared.work_body == "writing PRD"
+    assert prepared.send_role_prompt_on_resume is True
+    assert prepared.scope_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "RECENT_IMPROVE_PRDS": (
+            "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
+        ),
+    }
+    assert github_port.recent_prd_calls == 1
+    assert github_port.issue_calls == []
+    assert github_port.issue_comment_calls == []
+
+
+def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driver_step(
+    tmp_path: Path,
+):
+    driver = ImprovePhaseDriver(
+        tmp_path / "improve-no-candidate", no_candidate_report=True
+    )
+    step1 = driver.start()
+    assert step1 is not None
+    driver.record_outcome(step1, NoCandidateOutput())
+    step2 = driver.next()
+    assert step2 is not None
+    github_port = _GithubPortStandIn(
+        recent_prds=[
+            {"number": 12, "state": "OPEN", "title": "First candidate"},
+            {"number": 11, "state": "CLOSED", "title": "Second candidate"},
+        ]
+    )
+
+    prepared = prepare_improve_step(
+        step2,
+        short_sid="abcd1234",
+        prd_number=None,
+        github_port=github_port,
+    )
+
+    assert prepared.prompt_template == PromptTemplate.IMPROVE_NO_CANDIDATE
+    assert prepared.session_namespace == "main"
+    assert prepared.display_name == "Rejection Report Agent"
+    assert prepared.work_body == "filing no-candidate report"
     assert prepared.send_role_prompt_on_resume is True
     assert prepared.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",

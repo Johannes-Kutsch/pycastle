@@ -464,6 +464,38 @@ def test_improve_phase_dispatches_no_candidate_report_after_scan_rejection(
     assert report_call.template == PromptTemplate.IMPROVE_NO_CANDIDATE
 
 
+def test_improve_phase_prepares_no_candidate_report_with_main_session_scope_args(
+    tmp_path, git_svc
+):
+    github_svc = MagicMock()
+    github_svc.get_recent_improve_prds.return_value = [
+        {"number": 12, "state": "OPEN", "title": "First candidate"},
+        {"number": 11, "state": "CLOSED", "title": "Second candidate"},
+    ]
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    report_call = next(
+        c for c in runner.calls if c.template == PromptTemplate.IMPROVE_NO_CANDIDATE
+    )
+    improve_worktree = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    expected_short_sid = (
+        RoleSession(improve_worktree, AgentRole.IMPROVE, "main")
+        .session_uuid()
+        .split("-")[0]
+    )
+    assert report_call.scope_args == {
+        "IMPROVE_SHORT_SID": expected_short_sid,
+        "RECENT_IMPROVE_PRDS": (
+            "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
+        ),
+    }
+
+
 # ── Cross-teardown resume ─────────────────────────────────────────────────────
 
 

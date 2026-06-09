@@ -261,7 +261,11 @@ async def improve_phase(
             deps=deps,
         ) as sandbox_path:
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
-            short_sid = role_session.session_uuid().split("-")[0]
+            short_sid = (
+                RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
+                .session_uuid()
+                .split("-")[0]
+            )
             role_session_dir = role_session.path
             driver = ImprovePhaseDriver(role_session_dir, deps.cfg.diagnose_on_failure)
 
