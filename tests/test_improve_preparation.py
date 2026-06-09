@@ -188,6 +188,38 @@ def test_prepare_improve_step_builds_exact_prd_payload_without_lookup_policy_fla
     assert github_port.recent_prd_calls == 1
 
 
+@pytest.mark.parametrize(
+    ("template", "display_name"),
+    [
+        (PromptTemplate.IMPROVE_PRD, "PRD Agent"),
+        (PromptTemplate.IMPROVE_NO_CANDIDATE, "Rejection Report Agent"),
+    ],
+)
+def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_session_templates(
+    template: PromptTemplate, display_name: str
+):
+    github_port = _GithubPortStandIn(recent_prds=[])
+
+    prepared = prepare_improve_step(
+        ImproveStepPreparationRequest(
+            prompt_template=template,
+            session_namespace="main",
+            display_name=display_name,
+            work_body="body",
+            send_role_prompt_on_resume=True,
+            short_sid="abcd1234",
+            prd_number=None,
+        ),
+        github_port=github_port,
+    )
+
+    assert prepared.scope_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+    }
+    assert github_port.recent_prd_calls == 1
+
+
 def test_prepare_improve_step_uses_empty_issue_placeholders_without_prd_number():
     github_port = _GithubPortStandIn()
 
