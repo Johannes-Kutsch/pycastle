@@ -25,13 +25,6 @@ def main(
     if docker_service is None:
         docker_service = DockerService()
 
-    python_version: str | None = None
-    python_version_file = Path(".python-version")
-    if python_version_file.exists():
-        version = python_version_file.read_text().strip()
-        parts = version.split(".")
-        python_version = ".".join(parts[:2]) if len(parts) >= 2 else version
-
     print(f"Building {cfg.docker_image_name}...")
     outcome = build_universal_image(
         docker_service,
@@ -42,7 +35,6 @@ def main(
                 no_cache=no_cache,
                 stream=stream,
                 terse=terse,
-                python_version=python_version,
             ),
         ),
     )

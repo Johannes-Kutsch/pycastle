@@ -40,6 +40,19 @@ class UniversalImageBuildAdapter(Protocol):
     def build(self, request: UniversalImageBuildRequest) -> BuildOutcome | None: ...
 
 
+def _normalize_python_version(version: str) -> str:
+    stripped_version = version.strip()
+    parts = stripped_version.split(".")
+    return ".".join(parts[:2]) if len(parts) >= 2 else stripped_version
+
+
+def _resolve_python_version(project_root: Path) -> str | None:
+    python_version_file = project_root / ".python-version"
+    if not python_version_file.is_file():
+        return None
+    return _normalize_python_version(python_version_file.read_text())
+
+
 def resolve_universal_dockerfile(
     pycastle_dir: Path | str,
     *,
@@ -74,11 +87,19 @@ def resolve_universal_image_build_request(
     options: UniversalImageBuildOptions = UniversalImageBuildOptions(),
 ) -> UniversalImageBuildRequest:
     pycastle_dir = project_root / "pycastle"
+    python_version = options.python_version
+    if python_version is None:
+        python_version = _resolve_python_version(project_root)
     return UniversalImageBuildRequest(
         image_tag=cfg.docker_image_name,
         dockerfile_path=resolve_universal_dockerfile(pycastle_dir),
         context_dir=project_root,
-        options=options,
+        options=UniversalImageBuildOptions(
+            python_version=python_version,
+            no_cache=options.no_cache,
+            stream=options.stream,
+            terse=options.terse,
+        ),
     )
 
 

@@ -235,6 +235,66 @@ def test_resolve_universal_image_build_request_ignores_stage_priority_chain_when
     )
 
 
+def test_resolve_universal_image_build_request_reads_python_version_from_project_root_and_normalizes_patch_level(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    (project_root / "pycastle").mkdir(parents=True)
+    (project_root / ".python-version").write_text(" 3.12.1 \n")
+    (tmp_path / ".python-version").write_text("9.9.9\n")
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+    )
+
+    assert request.options.python_version == "3.12"
+
+
+def test_resolve_universal_image_build_request_keeps_major_minor_python_version(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    (project_root / "pycastle").mkdir(parents=True)
+    (project_root / ".python-version").write_text("3.12\n")
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+    )
+
+    assert request.options.python_version == "3.12"
+
+
+def test_resolve_universal_image_build_request_keeps_single_segment_python_version(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    (project_root / "pycastle").mkdir(parents=True)
+    (project_root / ".python-version").write_text("3\n")
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+    )
+
+    assert request.options.python_version == "3"
+
+
+def test_resolve_universal_image_build_request_omits_python_version_when_file_is_absent(
+    tmp_path,
+):
+    project_root = tmp_path / "project"
+    (project_root / "pycastle").mkdir(parents=True)
+
+    request = resolve_universal_image_build_request(
+        Config(docker_image_name="myproject"),
+        project_root=project_root,
+    )
+
+    assert request.options.python_version is None
+
+
 def _mock_proc(output_lines: tuple[str, ...], *, returncode: int = 0) -> MagicMock:
     proc = MagicMock()
     proc.stdout = iter(output_lines)
