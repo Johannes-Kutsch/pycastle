@@ -7,7 +7,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.agents.output_protocol import AgentRole
+from pycastle.agents._work_invocation import (
+    WorkExecutionAdapter,
+    WorkInvocationDependencies,
+)
+from pycastle.agents.output_protocol import AgentOutput, AgentRole
 from pycastle.config import Config
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services import GitService
@@ -19,6 +23,7 @@ from pycastle.services.agent_service import (
     Result,
     TransientError,
 )
+from pycastle.services.flag_profiles import AgentToolPolicyGroup
 from pycastle.services.provider_session_state import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -350,34 +355,88 @@ class _RuntimeSessionStandIn:
         return iter(())
 
 
-class _RuntimeRunnerStandIn:
+class _RuntimeWorkRunnerStandIn:
+    def __init__(self, result: str = "adapter result") -> None:
+        self._result = result
+        self.work_text_calls: list[
+            tuple[AgentRole, object, RunKind, str | None, str]
+        ] = []
+
+    async def setup(self, git_name: str, git_email: str, work_body: str = "") -> None:
+        del git_name, git_email, work_body
+
+    async def work(
+        self,
+        role: AgentRole,
+        prompt: str,
+        *,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
+    ) -> AgentOutput:
+        del role, prompt, run_kind, session_uuid, on_provider_session_id
+        raise AssertionError("runtime text invocation should use work_text")
+
+    async def work_text(
+        self,
+        prompt: str,
+        *,
+        role: AgentRole = AgentRole.IMPLEMENTER,
+        tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+        run_kind: RunKind = RunKind.FRESH,
+        session_uuid: str | None = None,
+        on_provider_session_id: Callable[[str], None] | None = None,
+    ) -> str:
+        del on_provider_session_id
+        self.work_text_calls.append((role, tool_policy, run_kind, session_uuid, prompt))
+        return self._result
+
+
+class _PromptRuntimeExecutionAdapterStandIn:
     def __init__(
         self,
         *,
-        cfg: Config,
         git_service: GitService,
-        service: _PlanRecordingRuntimeService,
+        service: _RecordingRuntimeService,
         session: _RuntimeSessionStandIn,
+        runner: _RuntimeWorkRunnerStandIn | None = None,
     ) -> None:
-        self._cfg = cfg
         self._git_service = git_service
         self._service = service
         self._session = session
+        self.work_runner = runner or _RuntimeWorkRunnerStandIn()
+        self.resolve_service_calls: list[str] = []
+        self.build_work_dependency_calls: list[tuple[str, str, str, object]] = []
 
-    def _resolve_service(self, service_name: str):
+    def resolve_service(self, service_name: str = "") -> _RecordingRuntimeService:
+        self.resolve_service_calls.append(service_name)
         assert service_name == self._service.name
         return self._service
 
-    def _build_session(
+    def build_work_dependencies(
         self,
-        mount_path: Path,
-        service,
-        state_dir_container_path: str | None = None,
-    ) -> _RuntimeSessionStandIn:
-        del mount_path
-        assert service is self._service
-        service.build_env(state_dir_container_path)
-        return self._session
+        *,
+        name: str,
+        model: str,
+        effort: str,
+        service: _RecordingRuntimeService,
+    ) -> WorkInvocationDependencies:
+        self.build_work_dependency_calls.append((name, model, effort, service))
+
+        def _build_runner(*_args: object) -> WorkExecutionAdapter:
+            return self.work_runner
+
+        return WorkInvocationDependencies(
+            container_workspace="/home/agent/workspace",
+            timeout_retries=0,
+            stage_key_for_role=lambda role: role.value,
+            build_session=lambda *_args: self._session,
+            build_runner=_build_runner,
+            get_git_identity=lambda: (
+                self._git_service.get_user_name(),
+                self._git_service.get_user_email(),
+            ),
+        )
 
 
 def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: Path):
@@ -453,6 +512,52 @@ def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
 
     assert result == "first turn\nsecond turn"
     assert service.tool_policies == [runtime.ToolPolicy.FULL]
+
+
+def test_runtime_package_prompt_entrypoint_uses_injected_execution_adapter_contract(
+    tmp_path: Path,
+):
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("codex")
+    adapter = _PromptRuntimeExecutionAdapterStandIn(
+        git_service=_make_git_service(),
+        service=service,
+        session=_RuntimeSessionStandIn(),
+    )
+    registry = runtime.ServiceRegistry({"codex": service})
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        mount_path=tmp_path,
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        tool_policy=runtime.ToolPolicy.PARTIAL,
+    )
+
+    result = asyncio.run(
+        runtime.run_prompt(runner=adapter, service_registry=registry, request=request)
+    )
+
+    assert result == "adapter result"
+    assert adapter.resolve_service_calls == ["codex"]
+    assert adapter.build_work_dependency_calls == [
+        ("Runtime Consumer", "gpt-5.4", "medium", service)
+    ]
+    assert adapter.work_runner.work_text_calls == [
+        (
+            AgentRole.IMPLEMENTER,
+            runtime.ToolPolicy.PARTIAL,
+            RunKind.FRESH,
+            None,
+            "Return the final answer only.",
+        )
+    ]
+    assert not hasattr(adapter, "_resolve_service")
+    assert not hasattr(adapter, "_build_session")
 
 
 def test_runtime_package_owns_service_selection_contract() -> None:
