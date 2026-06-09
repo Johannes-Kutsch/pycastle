@@ -60,7 +60,7 @@ def _metadata_plan(
         provider_state_dir=service_state_dir,
         provider_state_dir_relpath=None,
         provider_session_id=provider_session_id,
-        requires_host_codex_auth=False,
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
         recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
         service_state_dir=service_state_dir,
     )

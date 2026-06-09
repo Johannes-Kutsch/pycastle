@@ -247,8 +247,13 @@ class AgentRunner:
             service_for_run: AgentService,
             error,
         ) -> None:
-            if error.is_permanent and isinstance(service_for_run, ClaudeService):
-                error.account_label = service_for_run.mark_permanently_exhausted()
+            mark_permanently_exhausted = getattr(
+                service_for_run,
+                "mark_permanently_exhausted",
+                None,
+            )
+            if error.is_permanent and callable(mark_permanently_exhausted):
+                error.account_label = mark_permanently_exhausted()
                 return
             service_for_run.mark_exhausted(error.reset_time)
 

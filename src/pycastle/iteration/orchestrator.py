@@ -39,6 +39,7 @@ from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import prune_orphan_worktrees
 from ..log_maintenance import maintain_logs
 from .. import _time as _time_module
+from ._service_summary import render_service_summary_line
 from .usage_limit_decision import (
     ContinueNow,
     SleepUntil,
@@ -182,7 +183,7 @@ async def run(
     status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 
     if service_registry:
-        for line in service_registry.summary_lines():
+        for line in service_registry.summary_lines(render_service_summary_line):
             status_display.print("", line)  # type: ignore[union-attr]
 
     slept_once = False

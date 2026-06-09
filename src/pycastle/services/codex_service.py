@@ -32,8 +32,6 @@ from pycastle_agent_runtime.session import (
 from pycastle_agent_runtime.session_planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
-    codex_auth_seed_action,
-    codex_auth_seeding_requirement,
 )
 
 from .. import _time as _time_module
@@ -476,16 +474,21 @@ class CodexService:
 def _codex_auth_seeding_requirement(
     provider_state_dir: Path | None,
 ) -> AuthSeedingRequirement:
-    return codex_auth_seeding_requirement(
-        service_name="codex",
-        provider_state_dir=provider_state_dir,
-    )
+    if provider_state_dir is None or (provider_state_dir / "auth.json").exists():
+        return AuthSeedingRequirement.NOT_REQUIRED
+    return AuthSeedingRequirement.REQUIRED
 
 
 def _codex_auth_seed_action(
     provider_state_dir: Path | None,
 ) -> LocalAuthSeedAction | None:
-    return codex_auth_seed_action(
-        service_name="codex",
-        provider_state_dir=provider_state_dir,
+    if _codex_auth_seeding_requirement(provider_state_dir) is (
+        AuthSeedingRequirement.NOT_REQUIRED
+    ):
+        return None
+    if provider_state_dir is None:
+        return None
+    return LocalAuthSeedAction(
+        source=Path.home() / ".codex" / "auth.json",
+        destination=provider_state_dir / "auth.json",
     )

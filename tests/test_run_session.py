@@ -857,7 +857,7 @@ def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_jso
     assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
 
 
-def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_service_auth_policy(
+def test_run_session_plan_does_not_require_auth_seeding_for_fresh_codex_without_service_auth_policy(
     tmp_path: Path,
 ):
     service = cast(AgentService, _CodexWithoutAuthPolicyService("custom/codex-state"))
@@ -870,11 +870,8 @@ def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_service_
     )
 
     assert plan.run_kind is RunKind.FRESH
-    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
-    assert plan.auth_seed_action is not None
-    assert plan.auth_seed_action.destination == (
-        tmp_path / "custom" / "codex-state" / "auth.json"
-    )
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
+    assert plan.auth_seed_action is None
 
 
 def test_run_session_plan_exposes_auth_seed_action_for_fresh_codex_without_auth_json(
@@ -1075,7 +1072,7 @@ def test_run_session_plan_exposes_auth_seed_action_for_resume_codex_without_auth
     assert action.destination == state_dir / "auth.json"
 
 
-def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_service_auth_policy(
+def test_run_session_plan_does_not_require_auth_seeding_for_resume_codex_without_service_auth_policy(
     tmp_path: Path,
 ):
     state_dir = tmp_path / "custom" / "codex-state"
@@ -1098,9 +1095,8 @@ def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_service
 
     assert plan.run_kind is RunKind.RESUME
     assert plan.provider_session_id == "thread-resume"
-    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
-    assert plan.auth_seed_action is not None
-    assert plan.auth_seed_action.destination == state_dir / "auth.json"
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
+    assert plan.auth_seed_action is None
 
 
 def test_run_session_plan_skips_auth_seeding_for_resume_codex_with_auth_json(

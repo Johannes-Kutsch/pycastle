@@ -160,9 +160,7 @@ def _run_session_plan_for_request(
                 provider_state_dir=decision.state_dir_path,
                 provider_state_dir_relpath=decision.state_dir_relpath,
                 provider_session_id=decision.provider_session_id,
-                requires_host_codex_auth=(
-                    decision.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
-                ),
+                auth_seeding_requirement=decision.auth_seeding_requirement,
                 recovered_session_id_persistence=(
                     decision.recovered_session_id_persistence
                 ),

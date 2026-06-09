@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 
 from .contracts import AgentService
@@ -8,6 +9,8 @@ from .stage_priority_chain import (
     select_configured_candidate_chain,
 )
 from .types import StageOverride
+
+ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
 
 
 class ServiceRegistry:
@@ -96,23 +99,14 @@ class ServiceRegistry:
     def __getitem__(self, key: str) -> AgentService | None:
         return self._services.get(key)
 
-    def summary_lines(self) -> list[str]:
+    def summary_lines(
+        self,
+        render_summary_line: ServiceSummaryRenderer,
+    ) -> list[str]:
         lines = []
         for name, svc in self._services.items():
-            if name == "codex":
-                lines.append("Codex auth: local auth available")
+            line = render_summary_line(name, svc)
+            if line is None:
                 continue
-            if name == "opencode":
-                lines.append("OpenCode auth: API key configured")
-                continue
-            if not hasattr(svc, "account_names"):
-                continue
-            names: list[str] = svc.account_names()  # type: ignore[attr-defined]
-            if not names:
-                continue
-            if len(names) == 1:
-                lines.append(f"Claude accounts: {names[0]} (active)")
-            else:
-                parts = [f"{names[0]} (active)"] + [f"{n} (standby)" for n in names[1:]]
-                lines.append("Claude accounts: " + ", ".join(parts))
+            lines.append(line)
         return lines
