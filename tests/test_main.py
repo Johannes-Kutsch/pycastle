@@ -3,7 +3,10 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from pycastle._universal_image_build import UniversalImageBuildRequest
+from pycastle._universal_image_build import (
+    UniversalImageBuildOptions,
+    UniversalImageBuildRequest,
+)
 from pycastle.config import Config, StageOverride
 from pycastle.errors import (
     ClaudeCliNotFoundError,
@@ -1385,6 +1388,36 @@ def test_run_cmd_build_uses_streaming_mode(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert _built_requests(fake_svc)[0].options.stream is True
+
+
+def test_run_cmd_build_uses_typed_terse_stream_options(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(docker_image_name="myimage")
+    fake_svc = MagicMock()
+    fake_svc.build.return_value = None
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    assert _built_requests(fake_svc)[0].options == UniversalImageBuildOptions(
+        stream=True,
+        terse=True,
+    )
 
 
 def test_run_cmd_rejects_no_cache_flag(tmp_path, monkeypatch):

@@ -9,7 +9,10 @@ from zipfile import ZipFile
 
 import pytest
 
-from pycastle._universal_image_build import UniversalImageBuildRequest
+from pycastle._universal_image_build import (
+    UniversalImageBuildOptions,
+    UniversalImageBuildRequest,
+)
 from pycastle.config import Config, StageOverride, resolve_dockerfile
 from pycastle.services import DockerService
 from pycastle.errors import ConfigValidationError, DockerBuildError, DockerServiceError
@@ -868,3 +871,32 @@ def test_non_terse_stream_still_prints_image_up_to_date(tmp_path, monkeypatch, c
     main(stream=True, terse=False, docker_service=svc, cfg=_cfg)
     out = capsys.readouterr().out
     assert "Image up to date" in out
+
+
+def test_build_command_prefers_explicit_typed_options_over_legacy_flags(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands.build import main
+
+    monkeypatch.chdir(tmp_path)
+    svc = MagicMock()
+    svc.build.return_value = None
+
+    main(
+        no_cache=False,
+        stream=False,
+        terse=False,
+        options=UniversalImageBuildOptions(
+            no_cache=True,
+            stream=True,
+            terse=True,
+        ),
+        docker_service=svc,
+        cfg=_cfg,
+    )
+
+    assert _built_requests(svc)[0].options == UniversalImageBuildOptions(
+        no_cache=True,
+        stream=True,
+        terse=True,
+    )
