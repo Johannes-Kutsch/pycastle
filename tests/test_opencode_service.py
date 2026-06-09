@@ -9,6 +9,7 @@ from pycastle_agent_runtime import (
     AssistantTurn,
     CredentialFailure,
     HardError,
+    ProviderErrorObservation,
     Result,
     TransientError,
     UsageLimit,
@@ -247,9 +248,17 @@ def test_opencode_service_routes_structured_invalid_api_key_through_shared_crede
         CredentialFailure(
             raw_message="invalid api key",
             service_name="opencode",
-            classification="operator_actionable_agent_credential_failure",
-            source_observations=(),
+            source_observations=(
+                ProviderErrorObservation(
+                    service_name="opencode",
+                    raw_provider_text="invalid api key",
+                    source_stream="json_event.error",
+                    status_code=401,
+                    error_name="AuthenticationError",
+                ),
+            ),
             status_code=401,
+            classification="operator_actionable_agent_credential_failure",
         )
     ]
 
