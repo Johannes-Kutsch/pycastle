@@ -71,7 +71,19 @@ def _runtime_imported_application_modules(repo_root: Path) -> list[str]:
                 import json
                 import sys
 
-                import pycastle_agent_runtime
+                import pycastle_agent_runtime as runtime
+
+                runtime.ChainEntry
+                runtime.ContinueNow
+                runtime.ServiceRegistry
+                runtime.ProviderSessionState
+                runtime.ProviderSessionStateRequest
+                runtime.RunKind
+                runtime.StageOverride
+                runtime.Stop
+                runtime.UsageLimitOutcome
+                runtime.decide_usage_limit_continuation
+                runtime.select_configured_candidate_chain
 
                 forbidden_prefixes = (
                     "pycastle.agents",
@@ -1380,7 +1392,9 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
     assert '"result":"runtime result"' in log_text
 
 
-def test_runtime_package_exports_orchestration_entrypoint() -> None:
-    import pycastle_agent_runtime as runtime
+def test_runtime_package_ships_standalone_distribution_metadata() -> None:
+    from importlib.resources import files
 
-    assert runtime.run.__module__ == "pycastle_agent_runtime.orchestration"
+    metadata_path = files("pycastle_agent_runtime").joinpath("pyproject.toml")
+
+    assert metadata_path.is_file() is True

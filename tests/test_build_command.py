@@ -312,6 +312,7 @@ def test_wheel_ships_agent_runtime_package_scaffold(tmp_path):
     assert "pycastle_agent_runtime/__init__.py" in wheel_members
     assert "pycastle_agent_runtime/orchestration.py" in wheel_members
     assert "pycastle_agent_runtime/py.typed" in wheel_members
+    assert "pycastle_agent_runtime/pyproject.toml" in wheel_members
 
 
 def test_sdist_ships_agent_runtime_package_scaffold(tmp_path):
@@ -328,14 +329,16 @@ def test_sdist_ships_agent_runtime_package_scaffold(tmp_path):
     assert any(
         name.endswith("/src/pycastle_agent_runtime/py.typed") for name in sdist_members
     )
+    assert any(
+        name.endswith("/src/pycastle_agent_runtime/pyproject.toml")
+        for name in sdist_members
+    )
 
 
 def test_agent_runtime_package_exports_the_runtime_surface():
     import pycastle_agent_runtime as runtime
 
-    from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
-    from pycastle.config.types import StageOverride
-    from pycastle.services.agent_service import (
+    from pycastle_agent_runtime.contracts import (
         AgentService,
         AssistantTurn,
         CredentialFailure,
@@ -347,23 +350,60 @@ def test_agent_runtime_package_exports_the_runtime_surface():
         UnsupportedTokens,
         UsageLimit,
     )
-    from pycastle.services import ServiceRegistry
+    from pycastle_agent_runtime.service_registry import ServiceRegistry
+    from pycastle_agent_runtime.session import (
+        ProviderSessionState,
+        ProviderSessionStateRequest,
+        RunKind,
+    )
+    from pycastle_agent_runtime.stage_priority_chain import (
+        ChainEntry,
+        ConfiguredCandidateSelection,
+        iter_stage_chain,
+    )
+    from pycastle_agent_runtime.types import StageOverride
+    from pycastle_agent_runtime.usage_limit_decision import (
+        ContinueNow,
+        SleepUntil,
+        Stop,
+        UsageLimitContinuationDecision,
+        UsageLimitOutcome,
+        decide_usage_limit_continuation,
+    )
 
-    assert runtime.AgentRunner is AgentRunner
-    assert runtime.AgentRunnerProtocol is AgentRunnerProtocol
     assert runtime.AgentService is AgentService
     assert runtime.AssistantTurn is AssistantTurn
+    assert runtime.ChainEntry is ChainEntry
+    assert runtime.ConfiguredCandidateSelection is ConfiguredCandidateSelection
+    assert runtime.ContinueNow is ContinueNow
     assert runtime.CredentialFailure is CredentialFailure
     assert runtime.HardError is HardError
+    assert runtime.iter_stage_chain is iter_stage_chain
     assert runtime.ParsedTurn == ParsedTurn
     assert runtime.PromptTokens is PromptTokens
+    assert runtime.ProviderSessionState is ProviderSessionState
+    assert runtime.ProviderSessionStateRequest is ProviderSessionStateRequest
     assert runtime.Result is Result
-    assert runtime.RunRequest is RunRequest
+    assert runtime.RunKind is RunKind
     assert runtime.ServiceRegistry is ServiceRegistry
+    assert runtime.SleepUntil is SleepUntil
+    assert runtime.Stop is Stop
     assert runtime.StageOverride is StageOverride
     assert runtime.TransientError is TransientError
     assert runtime.UnsupportedTokens is UnsupportedTokens
+    assert runtime.UsageLimitContinuationDecision is UsageLimitContinuationDecision
+    assert runtime.UsageLimitOutcome is UsageLimitOutcome
     assert runtime.UsageLimit is UsageLimit
+    assert "AgentRunner" not in runtime.__all__
+    assert "AgentRunnerProtocol" not in runtime.__all__
+    assert "PromptRunRequest" not in runtime.__all__
+    assert "PromptRunSession" not in runtime.__all__
+    assert "PromptRuntime" not in runtime.__all__
+    assert "RunRequest" not in runtime.__all__
+    assert "WorktreeMount" not in runtime.__all__
+    assert "run" not in runtime.__all__
+    assert "run_prompt" not in runtime.__all__
+    assert runtime.decide_usage_limit_continuation is decide_usage_limit_continuation
 
 
 def test_local_distribution_installs_importable_agent_runtime_package(tmp_path):
@@ -401,9 +441,11 @@ def test_local_distribution_installs_importable_agent_runtime_package(tmp_path):
                 "-c",
                 (
                     "import pycastle_agent_runtime as runtime; "
-                    "print(runtime.AgentRunner.__name__); "
+                    "from importlib.resources import files; "
+                    "print(runtime.ServiceRegistry.__module__); "
                     "print(runtime.ServiceRegistry.__name__); "
-                    "print(runtime.run.__module__)"
+                    "print(runtime.decide_usage_limit_continuation.__module__); "
+                    "print(files('pycastle_agent_runtime').joinpath('pyproject.toml').is_file())"
                 ),
             ],
             cwd=repo_root,
@@ -414,9 +456,10 @@ def test_local_distribution_installs_importable_agent_runtime_package(tmp_path):
         )
 
         assert result.stdout.splitlines() == [
-            "AgentRunner",
+            "pycastle_agent_runtime.service_registry",
             "ServiceRegistry",
-            "pycastle_agent_runtime.orchestration",
+            "pycastle_agent_runtime.usage_limit_decision",
+            "True",
         ]
     finally:
         shutil.rmtree(build_dir, ignore_errors=True)

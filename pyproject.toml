@@ -45,6 +45,7 @@ fallback_version = "0.0.0"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["pycastle", "pycastle.*", "pycastle_agent_runtime", "pycastle_agent_runtime.*"]
 
 [tool.setuptools.package-data]
 pycastle = [
@@ -79,6 +80,7 @@ pycastle = [
 ]
 pycastle_agent_runtime = [
     "py.typed",
+    "pyproject.toml",
 ]
 
 [tool.pytest.ini_options]

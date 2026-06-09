@@ -32,14 +32,6 @@ from .session import ProviderSessionState, ProviderSessionStateRequest, RunKind
 from .types import StageOverride
 
 if TYPE_CHECKING:
-    from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol, RunRequest
-    from pycastle_agent_runtime.orchestration import run
-    from pycastle_agent_runtime.runtime import (
-        PromptRunRequest,
-        PromptRunSession,
-        PromptRuntime,
-        WorktreeMount,
-    )
     from pycastle_agent_runtime.service_registry import ServiceRegistry
     from pycastle_agent_runtime.stage_priority_chain import (
         ChainEntry,
@@ -57,8 +49,6 @@ if TYPE_CHECKING:
 __all__ = [
     "AgentCredentialFailureError",
     "AgentFailedError",
-    "AgentRunner",
-    "AgentRunnerProtocol",
     "AgentService",
     "AgentRole",
     "AgentTimeoutError",
@@ -73,14 +63,10 @@ __all__ = [
     "ProviderErrorObservation",
     "ProviderSessionState",
     "ProviderSessionStateRequest",
-    "PromptRunRequest",
-    "PromptRunSession",
-    "PromptRuntime",
     "PromptTokens",
     "PycastleError",
     "Result",
     "RunKind",
-    "RunRequest",
     "ServiceRegistry",
     "SleepUntil",
     "Stop",
@@ -97,14 +83,11 @@ __all__ = [
     "ToolPolicy",
     "TransientError",
     "TransientAgentError",
-    "WorktreeMount",
     "UnsupportedTokens",
     "UsageLimit",
     "UsageLimitError",
     "validation_labels",
-    "run",
     "decide_usage_limit_continuation",
-    "run_prompt",
 ]
 
 
