@@ -245,7 +245,11 @@ def test_improve_phase_threads_formatted_recent_improve_prd_titles_to_fresh_scan
     scan_call = next(
         c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
     )
-    assert scan_call.work_body == "picking an improvement"
+    assert scan_call.scope_args == {
+        "RECENT_IMPROVE_PRD_TITLES": (
+            "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
+        )
+    }
 
 
 def test_improve_phase_threads_formatted_recent_improve_prds_to_prd_phase(
@@ -291,7 +295,9 @@ def test_improve_phase_1_resume_does_not_refetch_recent_improve_prd_titles(
     scan_call = next(
         c for c in runner.calls if c.template == PromptTemplate.IMPROVE_SCAN
     )
-    assert scan_call.template == PromptTemplate.IMPROVE_SCAN
+    assert scan_call.scope_args == {
+        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."
+    }
     github_svc.get_recent_improve_prds.assert_not_called()
 
 
