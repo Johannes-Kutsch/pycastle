@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pycastle.session._provider_session_decision import (
+    from .roles import AgentRole
+    from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,
     )
@@ -15,6 +16,9 @@ else:
     AuthSeedingRequirement = object
     LocalAuthSeedAction = object
     ServiceResumeIdentityStore = object
+
+
+SESSION_DIR_NAME = ".pycastle-session"
 
 
 class RunKind(Enum):
@@ -46,8 +50,35 @@ class ProviderSessionState:
     allow_protocol_reprompt: bool = True
 
 
+def provider_state_relpath(
+    role: "AgentRole",
+    provider_name: str,
+    namespace: str = "",
+) -> str:
+    if namespace:
+        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
+    return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+
+
+def normalize_state_dir_relpath(
+    role: "AgentRole",
+    namespace: str,
+    service_name: str,
+    state_dir_relpath: str | None,
+) -> str | None:
+    if state_dir_relpath is None or not namespace:
+        return state_dir_relpath
+    legacy_relpath = provider_state_relpath(role, service_name)
+    if state_dir_relpath == legacy_relpath:
+        return provider_state_relpath(role, service_name, namespace)
+    return state_dir_relpath
+
+
 __all__ = [
     "ProviderSessionState",
     "ProviderSessionStateRequest",
     "RunKind",
+    "SESSION_DIR_NAME",
+    "normalize_state_dir_relpath",
+    "provider_state_relpath",
 ]

@@ -8,10 +8,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pycastle_agent_runtime.roles import AgentRole
-from pycastle_agent_runtime.session import ProviderSessionStateRequest, RunKind
+from pycastle_agent_runtime.session import (
+    ProviderSessionStateRequest,
+    RunKind,
+    SESSION_DIR_NAME,
+    normalize_state_dir_relpath,
+    provider_state_relpath as runtime_provider_state_relpath,
+)
 
 from .provider_run_state import ProviderFreshFallbackReason, ProviderRunState
 from .provider_session_state import (
+    clear_service_session_metadata,
     has_exact_provider_transcript_for_service,
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
@@ -31,8 +38,6 @@ if TYPE_CHECKING:
 
 _NAMESPACE = uuid.NAMESPACE_DNS
 
-SESSION_DIR_NAME = ".pycastle-session"
-
 
 def _force_remove_readonly(func, path, _exc_info):
     os.chmod(path, stat.S_IWRITE)
@@ -44,7 +49,7 @@ def provider_state_relpath(
     provider_name: str,
     namespace: str = "",
 ) -> str:
-    return RoleSession.provider_state_relpath_for(role, provider_name, namespace)
+    return runtime_provider_state_relpath(role, provider_name, namespace)
 
 
 def _normalize_state_dir_relpath(
@@ -53,12 +58,12 @@ def _normalize_state_dir_relpath(
     service_name: str,
     state_dir_relpath: str | None,
 ) -> str | None:
-    if state_dir_relpath is None or not namespace:
-        return state_dir_relpath
-    legacy_relpath = provider_state_relpath(role, service_name)
-    if state_dir_relpath == legacy_relpath:
-        return provider_state_relpath(role, service_name, namespace)
-    return state_dir_relpath
+    return normalize_state_dir_relpath(
+        role,
+        namespace,
+        service_name,
+        state_dir_relpath,
+    )
 
 
 class ProviderIdentityKind(Enum):
@@ -159,9 +164,7 @@ class RoleSession:
         provider_name: str,
         namespace: str = "",
     ) -> str:
-        if namespace:
-            return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
-        return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+        return runtime_provider_state_relpath(role, provider_name, namespace)
 
     def provider_state_relpath(self, provider_name: str) -> str:
         return self.provider_state_relpath_for(
@@ -276,6 +279,16 @@ class RoleSession:
 
     def save_service_session_metadata(self, service_name: str, session_id: str) -> None:
         save_service_session_metadata(self.path, service_name, session_id)
+
+    def record_successful_provider_session_metadata(
+        self,
+        service_name: str,
+        provider_session_id: str | None,
+    ) -> None:
+        if provider_session_id is None:
+            clear_service_session_metadata(self.path, service_name)
+            return
+        save_service_session_metadata(self.path, service_name, provider_session_id)
 
     def has_exact_provider_transcript_for_service(
         self,
