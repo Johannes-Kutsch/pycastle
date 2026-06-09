@@ -4,6 +4,13 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pycastle_agent_runtime.session import (
+    load_provider_state_session_id,
+    load_state_dir_provider_session_id,
+    provider_state_session_id_path,
+    recover_state_dir_provider_session_id,
+)
+
 from ..agents.output_protocol import AgentRole
 from ._provider_session_decision import (
     AuthSeedingRequirement,
@@ -16,14 +23,7 @@ if TYPE_CHECKING:
     from ..services import ServiceRegistry
     from ..services.agent_service import AgentService
 
-
-_SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
 _SERVICE_SESSION_METADATA_FILENAME = "_service_session_metadata.json"
-
-
-def provider_state_session_id_path(state_dir: Path, service_name: str) -> Path:
-    filename = _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
-    return state_dir / filename
 
 
 def service_session_id_path(role_session_path: Path, service_name: str) -> Path:
@@ -50,63 +50,6 @@ def save_service_session_id(
     path = service_session_id_path(role_session_path, service_name)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(session_id, encoding="utf-8")
-
-
-def load_state_dir_provider_session_id(
-    state_dir: Path | None,
-    service_name: str,
-) -> str | None:
-    if state_dir is None:
-        return None
-    return load_provider_state_session_id(
-        provider_state_session_id_path(state_dir, service_name)
-    )
-
-
-def recover_state_dir_provider_session_id(
-    state_dir: Path | None,
-    service_name: str,
-) -> str | None:
-    if service_name != "codex":
-        return None
-    return _recover_codex_rollout_thread_id(state_dir)
-
-
-def load_provider_state_session_id(path: Path) -> str | None:
-    if not path.is_file():
-        return None
-    try:
-        value = path.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeDecodeError):
-        return None
-    return value or None
-
-
-def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
-    if state_dir is None:
-        return None
-    sessions_dir = state_dir / "sessions"
-    if not sessions_dir.is_dir():
-        return None
-
-    found: set[str] = set()
-    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
-        try:
-            lines = rollout.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-        for line in lines:
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(obj, dict) or obj.get("type") != "thread.started":
-                continue
-            thread_id = obj.get("thread_id")
-            if isinstance(thread_id, str) and thread_id.strip():
-                found.add(thread_id.strip())
-
-    return next(iter(found)) if len(found) == 1 else None
 
 
 def load_service_session_metadata(
