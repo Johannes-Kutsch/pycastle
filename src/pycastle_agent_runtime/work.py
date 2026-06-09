@@ -182,6 +182,8 @@ class _StatusRowHandle:
         *,
         shutdown_style: str = "success",
     ) -> None:
+        if self._closed:
+            return
         self._status_display.remove(
             self._caller,
             shutdown_message,
@@ -241,8 +243,11 @@ class _DefaultStatusRow:
             else:
                 self._row.close()
             return False
-        if isinstance(exc, (UsageLimitError, AgentTimeoutError)):
-            self._row.close("interrupted", shutdown_style="warning")
+        if isinstance(exc, UsageLimitError):
+            self._row.close("usage limit reached", shutdown_style="interrupted")
+            return False
+        if isinstance(exc, AgentTimeoutError):
+            self._row.close("timed out", shutdown_style="interrupted")
             return False
         self._row.close("failed", shutdown_style="error")
         return False
