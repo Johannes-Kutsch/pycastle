@@ -1,32 +1,16 @@
 import asyncio
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import pytest
 
+from pycastle.config import Config
 from pycastle.prompts.dispatch import (
     PromptInvocation,
     build_prompt_invocation,
     render_prompt_invocation,
 )
-from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate
+from pycastle.prompts.pipeline import PromptRenderError, PromptRenderer, PromptTemplate
 from pycastle.session import RunKind
-
-
-class _RecordingRenderer:
-    def __init__(self) -> None:
-        self.calls: list[
-            tuple[PromptTemplate, dict[str, str], Callable[[str], Awaitable[str]]]
-        ] = []
-
-    async def render(
-        self,
-        template: PromptTemplate,
-        scope_args: dict[str, str],
-        exec_fn: Callable[[str], Awaitable[str]],
-    ) -> str:
-        self.calls.append((template, scope_args, exec_fn))
-        return f"{template.name}:{sorted(scope_args.items())}"
 
 
 async def _noop_exec(cmd: str) -> str:
@@ -34,9 +18,21 @@ async def _noop_exec(cmd: str) -> str:
     return ""
 
 
+async def _echo_exec(cmd: str) -> str:
+    return f"exec:{cmd}"
+
+
 @pytest.fixture(autouse=True)
 def _project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture
+def prompts_dir(tmp_path: Path) -> Path:
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "coordination").mkdir(parents=True)
+    (prompts_dir / "shared").mkdir()
+    return prompts_dir
 
 
 def test_prompt_invocation_rejects_missing_and_extra_role_scope_args() -> None:
@@ -81,39 +77,18 @@ def test_build_prompt_invocation_reuses_template_scope_validation() -> None:
         )
 
 
-def test_render_prompt_invocation_uses_resume_template_when_resume_skips_role_prompt() -> (
-    None
-):
-    renderer = _RecordingRenderer()
+def test_fresh_prompt_dispatch_renders_role_prompt_with_validated_scope_args(
+    prompts_dir: Path,
+) -> None:
+    (prompts_dir / "coordination" / "plan.md").write_text(
+        "Open={{ALL_OPEN_ISSUES_JSON}}\nReady={{READY_FOR_AGENT_ISSUES_JSON}}\n"
+    )
+    renderer = PromptRenderer(Config())
     invocation = PromptInvocation(
         template=PromptTemplate.PLAN,
         scope_args={
-            "ALL_OPEN_ISSUES_JSON": "[]",
-            "READY_FOR_AGENT_ISSUES_JSON": "[]",
-        },
-        send_role_prompt_on_resume=False,
-    )
-
-    result = asyncio.run(
-        render_prompt_invocation(
-            invocation,
-            renderer=renderer,
-            run_kind=RunKind.RESUME,
-            exec_fn=_noop_exec,
-        )
-    )
-
-    assert result == "RESUME:[]"
-    assert renderer.calls == [(PromptTemplate.RESUME, {}, _noop_exec)]
-
-
-def test_render_prompt_invocation_delegates_role_rendering_for_fresh_runs() -> None:
-    renderer = _RecordingRenderer()
-    invocation = PromptInvocation(
-        template=PromptTemplate.PLAN,
-        scope_args={
-            "ALL_OPEN_ISSUES_JSON": "[]",
-            "READY_FOR_AGENT_ISSUES_JSON": "[]",
+            "ALL_OPEN_ISSUES_JSON": '[{"number": 1}]',
+            "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 1}]',
         },
         send_role_prompt_on_resume=False,
     )
@@ -127,16 +102,89 @@ def test_render_prompt_invocation_delegates_role_rendering_for_fresh_runs() -> N
         )
     )
 
-    assert result == (
-        "PLAN:[('ALL_OPEN_ISSUES_JSON', '[]'), ('READY_FOR_AGENT_ISSUES_JSON', '[]')]"
+    assert result == ('Open=[{"number": 1}]\nReady=[{"number": 1}]\n')
+
+
+def test_resume_prompt_dispatch_uses_resume_template_when_role_prompt_is_disabled(
+    prompts_dir: Path,
+) -> None:
+    (prompts_dir / "coordination" / "plan.md").write_text(
+        "role={{ALL_OPEN_ISSUES_JSON}}"
     )
-    assert renderer.calls == [
-        (
-            PromptTemplate.PLAN,
-            {
-                "ALL_OPEN_ISSUES_JSON": "[]",
-                "READY_FOR_AGENT_ISSUES_JSON": "[]",
-            },
-            _noop_exec,
+    (prompts_dir / "shared" / "resume.md").write_text("resume prompt")
+    renderer = PromptRenderer(Config())
+    invocation = PromptInvocation(
+        template=PromptTemplate.PLAN,
+        scope_args={
+            "ALL_OPEN_ISSUES_JSON": '[{"number": 1}]',
+            "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 1}]',
+        },
+        send_role_prompt_on_resume=False,
+    )
+
+    result = asyncio.run(
+        render_prompt_invocation(
+            invocation,
+            renderer=renderer,
+            run_kind=RunKind.RESUME,
+            exec_fn=_noop_exec,
         )
-    ]
+    )
+
+    assert result == "resume prompt"
+
+
+def test_resume_prompt_dispatch_renders_role_prompt_when_role_prompt_is_enabled(
+    prompts_dir: Path,
+) -> None:
+    (prompts_dir / "coordination" / "plan.md").write_text(
+        "role={{ALL_OPEN_ISSUES_JSON}}"
+    )
+    (prompts_dir / "shared" / "resume.md").write_text("resume prompt")
+    renderer = PromptRenderer(Config())
+    invocation = PromptInvocation(
+        template=PromptTemplate.PLAN,
+        scope_args={
+            "ALL_OPEN_ISSUES_JSON": '[{"number": 1}]',
+            "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 2}]',
+        },
+        send_role_prompt_on_resume=True,
+    )
+
+    result = asyncio.run(
+        render_prompt_invocation(
+            invocation,
+            renderer=renderer,
+            run_kind=RunKind.RESUME,
+            exec_fn=_noop_exec,
+        )
+    )
+
+    assert result == 'role=[{"number": 1}]'
+
+
+def test_prompt_dispatch_runs_shell_expression_through_supplied_executor(
+    prompts_dir: Path,
+) -> None:
+    (prompts_dir / "coordination" / "plan.md").write_text(
+        "shell=!`printf prompt-dispatch`\nReady={{READY_FOR_AGENT_ISSUES_JSON}}"
+    )
+    renderer = PromptRenderer(Config())
+    invocation = PromptInvocation(
+        template=PromptTemplate.PLAN,
+        scope_args={
+            "ALL_OPEN_ISSUES_JSON": "[]",
+            "READY_FOR_AGENT_ISSUES_JSON": "[ready]",
+        },
+    )
+
+    result = asyncio.run(
+        render_prompt_invocation(
+            invocation,
+            renderer=renderer,
+            run_kind=RunKind.FRESH,
+            exec_fn=_echo_exec,
+        )
+    )
+
+    assert result == "shell=exec:printf prompt-dispatch\nReady=[ready]"

@@ -24,6 +24,13 @@ class PromptInvocation:
     scope_args: dict[str, str]
     send_role_prompt_on_resume: bool = False
 
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "scope_args",
+            validated_scope_args_for_template(self.template, self.scope_args),
+        )
+
 
 def build_prompt_invocation(
     template: PromptTemplate,
