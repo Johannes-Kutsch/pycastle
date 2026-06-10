@@ -28,10 +28,10 @@ from ..errors import (
     SetupPhaseError,
 )
 from ..prompts.dispatch import (
-    build_prompt_invocation,
+    PromptInvocation,
     render_prompt_invocation,
 )
-from ..prompts.pipeline import PromptRenderer, PromptTemplate
+from ..prompts.pipeline import PromptRenderer
 from ..session import RunKind
 from ..session.agent import RunSessionPlan
 from ..session.resume import provider_state_relpath
@@ -72,10 +72,9 @@ def _stage_key_for_role(role: AgentRole) -> str | None:
 @dataclasses.dataclass
 class RunRequest:
     name: str
-    template: PromptTemplate
+    prompt: PromptInvocation
     mount_path: Path
     role: AgentRole = AgentRole.IMPLEMENTER
-    scope_args: dict[str, str] | None = None
     model: str = ""
     effort: str = ""
     service: str = ""
@@ -84,7 +83,6 @@ class RunRequest:
     status_display: Any = None
     issue_title: str = ""
     work_body: str = ""
-    send_role_prompt_on_resume: bool = False
     session_namespace: str = ""
     run_session_plan: RunSessionPlan | None = None
 
@@ -357,11 +355,7 @@ class AgentRunner:
         )
 
     async def _run(self, request: RunRequest) -> AgentOutput:
-        invocation = build_prompt_invocation(
-            request.template,
-            request.scope_args or {},
-            send_role_prompt_on_resume=request.send_role_prompt_on_resume,
-        )
+        invocation = request.prompt
         service = self._resolve_service(request.service)
         color_key: int | None = None
         if request.role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):

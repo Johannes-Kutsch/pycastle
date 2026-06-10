@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
+from ..prompts.dispatch import PromptInvocation, build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate, Scope
 from ..prompts.scope_args import (
     build_issue_scope_args,
@@ -76,12 +77,10 @@ class ImproveStepPreparationRequest:
 
 @dataclass(frozen=True)
 class PreparedImproveStep:
-    template: PromptTemplate
+    prompt: PromptInvocation
     session_namespace: str
     name: str
     work_body: str
-    send_role_prompt_on_resume: bool
-    scope_args: dict[str, str]
 
 
 def prepare_improve_step(
@@ -104,12 +103,14 @@ def prepare_improve_step(
     )
     scope_args = _build_scope_args(request, github_port=github_port)
     return PreparedImproveStep(
-        template=request.prompt_template,
+        prompt=build_prompt_invocation(
+            request.prompt_template,
+            scope_args,
+            send_role_prompt_on_resume=request.send_role_prompt_on_resume,
+        ),
         session_namespace=request.session_namespace,
         name=request.display_name,
         work_body=request.work_body,
-        send_role_prompt_on_resume=request.send_role_prompt_on_resume,
-        scope_args=scope_args,
     )
 
 

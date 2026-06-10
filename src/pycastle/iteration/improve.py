@@ -310,17 +310,15 @@ async def improve_phase(
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name=prepared_step.name,
-                        template=prepared_step.template,
+                        prompt=prepared_step.prompt,
                         mount_path=sandbox_path,
                         role=AgentRole.IMPROVE,
-                        scope_args=prepared_step.scope_args,
                         model=deps.cfg.improve_override.model,
                         effort=deps.cfg.improve_override.effort,
                         service=deps.cfg.improve_override.service,
                         stage="improve-sandbox",
                         status_display=deps.status_display,
                         work_body=prepared_step.work_body,
-                        send_role_prompt_on_resume=prepared_step.send_role_prompt_on_resume,
                         session_namespace=prepared_step.session_namespace,
                     )
                 )

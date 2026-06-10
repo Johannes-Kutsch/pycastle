@@ -535,7 +535,7 @@ def test_get_safe_sha_routes_first_ordinary_preflight_failure_decision_through_p
     result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightHITL)
-    assert fake.calls[0].scope_args == {
+    assert fake.calls[0].prompt.scope_args == {
         "CHECK_NAME": "lint",
         "COMMAND": "python -X dev -m ruff check .",
         "OUTPUT": "src/demo.py:1:1: F401 `os` imported but unused",
@@ -918,7 +918,7 @@ def test_get_safe_sha_dispatches_divergence_resolver_for_current_branch(
     result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightReady)
-    assert fake.calls[0].template == PromptTemplate.DIVERGENCE_RESOLVE
+    assert fake.calls[0].prompt.template == PromptTemplate.DIVERGENCE_RESOLVE
     assert fake.calls[0].role == AgentRole.DIVERGENCE_RESOLVER
     assert fake.calls[0].work_body == "Resolving divergence"
     git_svc.get_current_branch.assert_called_once_with(tmp_path)

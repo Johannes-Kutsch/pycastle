@@ -291,7 +291,7 @@ def test_run_does_not_crash_when_planner_omits_branch_field(tmp_path):
                 ]
             )
         if "Implement Agent" in request.name:
-            dispatched.append((request.scope_args or {}).get("BRANCH", ""))
+            dispatched.append((request.prompt.scope_args or {}).get("BRANCH", ""))
             return CompletionOutput()
         return CompletionOutput()
 
@@ -326,7 +326,9 @@ def test_run_computes_branch_from_issue_number_not_planner_slug(tmp_path):
                 ]
             )
         if "Implement Agent" in request.name:
-            captured_branches.append((request.scope_args or {}).get("BRANCH", ""))
+            captured_branches.append(
+                (request.prompt.scope_args or {}).get("BRANCH", "")
+            )
             return CompletionOutput()
         return CompletionOutput()
 
@@ -966,7 +968,7 @@ def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": request.name, "scope_args": (request.scope_args or {})}
+            {"name": request.name, "scope_args": (request.prompt.scope_args or {})}
         )
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -1072,7 +1074,7 @@ def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": request.name, "scope_args": (request.scope_args or {})}
+            {"name": request.name, "scope_args": (request.prompt.scope_args or {})}
         )
         if "Implement Agent" in request.name:
             return CompletionOutput()
@@ -1144,7 +1146,7 @@ def test_preflight_issue_receives_correct_command_and_output(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         captured.append(
-            {"name": request.name, "scope_args": (request.scope_args or {})}
+            {"name": request.name, "scope_args": (request.prompt.scope_args or {})}
         )
         if "Pre-Flight Reporter" in request.name:
             return IssueOutput(number=70, labels=["ready-for-human"])
@@ -1519,7 +1521,7 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
     async def _fake_run_agent(request: RunRequest):
         if "Pre-Flight Reporter" in request.name:
             preflight_issue_calls.append(
-                {"name": request.name, "scope_args": request.scope_args or {}}
+                {"name": request.name, "scope_args": request.prompt.scope_args or {}}
             )
             return IssueOutput(number=10, labels=["ready-for-human"])
         return CompletionOutput()
@@ -1821,7 +1823,7 @@ def test_planner_receives_ready_for_agent_issues_json_not_issue_label(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
-            captured_planner_args.update(request.scope_args or {})
+            captured_planner_args.update(request.prompt.scope_args or {})
             return _plan_output(
                 [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )

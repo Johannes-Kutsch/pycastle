@@ -13,6 +13,7 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import build_merge_scope_args
 from ..services import GitCommandError, GitService, GithubService
@@ -308,13 +309,15 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                         result = await deps.agent_runner.run(
                             RunRequest(
                                 name="Merge Agent",
-                                template=PromptTemplate.MERGE,
+                                prompt=build_prompt_invocation(
+                                    PromptTemplate.MERGE,
+                                    build_merge_scope_args(
+                                        conflict_issues=conflict_issues,
+                                        active_issue=active_issue,
+                                    ),
+                                ),
                                 mount_path=sandbox_path,
                                 role=AgentRole.MERGER,
-                                scope_args=build_merge_scope_args(
-                                    conflict_issues=conflict_issues,
-                                    active_issue=active_issue,
-                                ),
                                 model=deps.cfg.merge_override.model,
                                 status_display=deps.status_display,
                                 effort=deps.cfg.merge_override.effort,

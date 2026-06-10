@@ -46,7 +46,7 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from pycastle.prompts.dispatch import PromptInvocation
+from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import ProviderRunState, RoleSession, RunKind
@@ -160,7 +160,21 @@ def _make_cfg(tmp_path: Path, **kwargs) -> Config:
 
 
 def _run_request(*, service: str = "claude", **kwargs) -> RunRequest:
-    return RunRequest(service=service, **kwargs)
+    template = kwargs.pop("template")
+    scope_args = kwargs.pop(
+        "scope_args",
+        {placeholder: "" for placeholder in template.scope.placeholders},
+    )
+    send_role_prompt_on_resume = kwargs.pop("send_role_prompt_on_resume", False)
+    return RunRequest(
+        service=service,
+        prompt=build_prompt_invocation(
+            template,
+            scope_args,
+            send_role_prompt_on_resume=send_role_prompt_on_resume,
+        ),
+        **kwargs,
+    )
 
 
 _PLAN_TEMPLATE = PromptTemplate.PLAN
@@ -333,9 +347,9 @@ def test_fake_agent_runner_records_call_kwargs():
 
     call = fake.calls[0]
     assert call.name == "Planner"
-    assert call.template == PromptTemplate.PLAN
+    assert call.prompt.template == PromptTemplate.PLAN
     assert call.mount_path == mount
-    assert call.scope_args == {
+    assert call.prompt.scope_args == {
         "ALL_OPEN_ISSUES_JSON": "[]",
         "READY_FOR_AGENT_ISSUES_JSON": "[]",
     }
@@ -732,11 +746,12 @@ def test_agent_runner_requires_explicit_resolved_service_for_dispatch(tmp_path):
     with pytest.raises(ValueError, match="resolved service"):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
+                    service="",
                 )
             )
         )
@@ -761,7 +776,7 @@ def test_agent_runner_requires_explicit_resolved_service_for_whitespace_only_ser
     with pytest.raises(ValueError, match="resolved service"):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
@@ -789,11 +804,12 @@ def test_agent_runner_fails_when_no_explicit_service_even_if_default_service_is_
     with pytest.raises(ValueError, match="resolved service"):
         asyncio.run(
             runner.run(
-                RunRequest(
+                _run_request(
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
                     mount_path=tmp_path,
+                    service="",
                 )
             )
         )
@@ -1703,10 +1719,13 @@ def test_run_request_stores_required_fields():
         mount_path=Path("/workspace"),
     )
     assert req.name == "Agent"
-    assert req.template == PromptTemplate.PLAN
+    assert req.prompt.template == PromptTemplate.PLAN
     assert req.mount_path == Path("/workspace")
     assert req.role == AgentRole.IMPLEMENTER
-    assert req.scope_args is None
+    assert req.prompt.scope_args == {
+        "ALL_OPEN_ISSUES_JSON": "",
+        "READY_FOR_AGENT_ISSUES_JSON": "",
+    }
     assert req.model == ""
     assert req.effort == ""
     assert req.stage == ""

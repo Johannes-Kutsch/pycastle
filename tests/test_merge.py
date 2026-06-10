@@ -161,7 +161,7 @@ def test_conflict_spawns_merger_with_active_conflict_branch_first(
     _run(issues, deps)
 
     merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
-    assert [(call.role, call.template, call.stage) for call in merger_calls] == [
+    assert [(call.role, call.prompt.template, call.stage) for call in merger_calls] == [
         (AgentRole.MERGER, PromptTemplate.MERGE, "pre-merge"),
         (AgentRole.MERGER, PromptTemplate.MERGE, "pre-merge"),
         (AgentRole.MERGER, PromptTemplate.MERGE, "pre-merge"),
@@ -552,7 +552,7 @@ def test_merger_dispatch_uses_merge_template_and_role(deps, git_svc, agent_runne
     _run(issues, deps)
     merger_calls = [c for c in agent_runner.calls if c.name == "Merge Agent"]
     assert len(merger_calls) == 1
-    assert merger_calls[0].template == PromptTemplate.MERGE
+    assert merger_calls[0].prompt.template == PromptTemplate.MERGE
     assert merger_calls[0].role == AgentRole.MERGER
     assert merger_calls[0].stage == "pre-merge"
     assert merger_calls[0].work_body == "Merging branch pycastle/issue-3"

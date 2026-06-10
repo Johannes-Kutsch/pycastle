@@ -171,7 +171,7 @@ def test_run_host_check_command_builds_default_issue_filing_deps_when_host_check
     assert runner_requests[0].service == cfg.preflight_issue_override.service
     assert runner_requests[0].model == cfg.preflight_issue_override.model
     assert runner_requests[0].effort == cfg.preflight_issue_override.effort
-    assert runner_requests[0].template == PromptTemplate.HOST_CHECK_ISSUE
+    assert runner_requests[0].prompt.template == PromptTemplate.HOST_CHECK_ISSUE
     assert runner_requests[0].role == AgentRole.PREFLIGHT_ISSUE
     assert runner_requests[0].work_body == f"reporting {check_name} host-check issue"
 
@@ -395,7 +395,7 @@ def test_run_host_check_command_preserves_raw_failed_command_diagnostic_payload(
         ),
         issue_numbers=(41,),
     )
-    assert runner_requests[0].scope_args["OUTPUT"] == raw_output
+    assert runner_requests[0].prompt.scope_args["OUTPUT"] == raw_output
 
 
 def test_run_host_check_command_uses_in_memory_reporter_adapters_with_exact_host_check_scope_args(
@@ -485,7 +485,7 @@ def test_run_host_check_command_uses_in_memory_reporter_adapters_with_exact_host
         issue_numbers=(41,),
     )
     assert len(agent_runner.calls) == 1
-    assert agent_runner.calls[0].template == PromptTemplate.HOST_CHECK_ISSUE
+    assert agent_runner.calls[0].prompt.template == PromptTemplate.HOST_CHECK_ISSUE
     assert agent_runner.calls[0].role == AgentRole.PREFLIGHT_ISSUE
     assert captured_scope_kwargs == [
         {
@@ -497,7 +497,7 @@ def test_run_host_check_command_uses_in_memory_reporter_adapters_with_exact_host
             "host_platform": "HostOS-1.0",
         }
     ]
-    assert agent_runner.calls[0].scope_args == {
+    assert agent_runner.calls[0].prompt.scope_args == {
         "HOST_OS": "HostOS",
         "HOST_PLATFORM": "HostOS-1.0",
         "CHECKED_SHA": "checked-sha",
@@ -1090,7 +1090,7 @@ def test_run_host_check_run_files_and_validates_one_issue_per_failed_check_in_or
         ),
         issue_numbers=(41, 42),
     )
-    assert [call.template for call in agent_runner.calls] == [
+    assert [call.prompt.template for call in agent_runner.calls] == [
         PromptTemplate.HOST_CHECK_ISSUE,
         PromptTemplate.HOST_CHECK_ISSUE,
     ]

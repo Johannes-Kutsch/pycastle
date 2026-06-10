@@ -62,12 +62,12 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
         github_port=github_port,
     )
 
-    assert prepared.template == PromptTemplate.IMPROVE_SCAN
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
     assert prepared.session_namespace == "main"
     assert prepared.name == "Scan Agent"
     assert prepared.work_body == "picking an improvement"
-    assert prepared.send_role_prompt_on_resume is False
-    assert prepared.scope_args == {
+    assert prepared.prompt.send_role_prompt_on_resume is False
+    assert prepared.prompt.scope_args == {
         "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate"
     }
     assert github_port.recent_prd_calls == 1
@@ -96,12 +96,12 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
         github_port=github_port,
     )
 
-    assert prepared.template == PromptTemplate.IMPROVE_PRD
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_PRD
     assert prepared.session_namespace == "main"
     assert prepared.name == "PRD Agent"
     assert prepared.work_body == "writing PRD"
-    assert prepared.send_role_prompt_on_resume is True
-    assert prepared.scope_args == {
+    assert prepared.prompt.send_role_prompt_on_resume is True
+    assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "RECENT_IMPROVE_PRDS": (
             "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
@@ -137,12 +137,12 @@ def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driv
         github_port=github_port,
     )
 
-    assert prepared.template == PromptTemplate.IMPROVE_NO_CANDIDATE
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_NO_CANDIDATE
     assert prepared.session_namespace == "main"
     assert prepared.name == "Rejection Report Agent"
     assert prepared.work_body == "filing no-candidate report"
-    assert prepared.send_role_prompt_on_resume is True
-    assert prepared.scope_args == {
+    assert prepared.prompt.send_role_prompt_on_resume is True
+    assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "RECENT_IMPROVE_PRDS": (
             "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
@@ -174,12 +174,12 @@ def test_prepare_improve_step_builds_exact_prd_payload_without_lookup_policy_fla
         github_port=github_port,
     )
 
-    assert prepared.template == PromptTemplate.IMPROVE_PRD
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_PRD
     assert prepared.session_namespace == "main"
     assert prepared.name == "PRD Agent"
     assert prepared.work_body == "writing PRD"
-    assert prepared.send_role_prompt_on_resume is True
-    assert prepared.scope_args == {
+    assert prepared.prompt.send_role_prompt_on_resume is True
+    assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "RECENT_IMPROVE_PRDS": (
             "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
@@ -213,7 +213,7 @@ def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_session_te
         github_port=github_port,
     )
 
-    assert prepared.scope_args == {
+    assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
     }
@@ -237,7 +237,7 @@ def test_prepare_improve_step_uses_empty_issue_placeholders_without_prd_number()
         github_port=github_port,
     )
 
-    assert prepared.scope_args == {
+    assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "ISSUE_NUMBER": "",
         "ISSUE_TITLE": "",
@@ -270,12 +270,12 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
         github_port=github_port,
     )
 
-    assert prepared.template == PromptTemplate.IMPROVE_SCAN
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
     assert prepared.session_namespace == "main"
     assert prepared.name == "Scan Agent"
     assert prepared.work_body == "picking an improvement"
-    assert prepared.send_role_prompt_on_resume is False
-    assert prepared.scope_args == {
+    assert prepared.prompt.send_role_prompt_on_resume is False
+    assert prepared.prompt.scope_args == {
         "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."
     }
     assert github_port.recent_prd_calls == 0
@@ -307,7 +307,7 @@ def test_prepare_improve_step_reads_issue_and_comments_for_issues_scope():
         github_port=github_port,
     )
 
-    assert prepared.scope_args == {
+    assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "ISSUE_NUMBER": "77",
         "ISSUE_TITLE": "Improve PRD",
@@ -350,12 +350,12 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
         github_port=github_port,
     )
 
-    assert prepared.template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
     assert prepared.session_namespace == "issues"
     assert prepared.name == "Slice Agent"
     assert prepared.work_body == "filing sub-issues"
-    assert prepared.send_role_prompt_on_resume is True
-    assert prepared.scope_args == {
+    assert prepared.prompt.send_role_prompt_on_resume is True
+    assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "ISSUE_NUMBER": "77",
         "ISSUE_TITLE": "Improve PRD",
@@ -388,9 +388,9 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
         github_port=github_port,
     )
 
-    assert prepared.template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
     assert prepared.session_namespace == "issues"
-    assert prepared.scope_args == {
+    assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "ISSUE_NUMBER": "",
         "ISSUE_TITLE": "",

@@ -2682,7 +2682,7 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
-    assert failure_req.template == PromptTemplate.FAILURE_REPORT
+    assert failure_req.prompt.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.service == "codex"
     expected_wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     assert failure_req.mount_path == expected_wt
@@ -2875,7 +2875,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
-    assert failure_req.template == PromptTemplate.FAILURE_REPORT
+    assert failure_req.prompt.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.mount_path == expected_path
     assert expected_path.exists()
 
@@ -2934,7 +2934,7 @@ def test_run_iteration_failure_report_dispatches_after_opencode_planner_failure(
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
-    assert failure_req.template == PromptTemplate.FAILURE_REPORT
+    assert failure_req.prompt.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.service == "codex"
     assert failure_req.mount_path == expected_path
 
@@ -2984,7 +2984,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_implementer_agent_fail
     assert len(calls) == 2
     failure_req = calls[1]
     assert failure_req.role == AgentRole.FAILURE_REPORT
-    assert failure_req.template == PromptTemplate.FAILURE_REPORT
+    assert failure_req.prompt.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.mount_path == tmp_path / "pycastle" / ".worktrees" / "issue-1"
 
 
@@ -3034,7 +3034,7 @@ def test_run_iteration_returns_aborted_agent_failure_when_reviewer_agent_fails(
     assert len(calls) == 3
     failure_req = calls[2]
     assert failure_req.role == AgentRole.FAILURE_REPORT
-    assert failure_req.template == PromptTemplate.FAILURE_REPORT
+    assert failure_req.prompt.template == PromptTemplate.FAILURE_REPORT
     assert failure_req.mount_path == tmp_path / "pycastle" / ".worktrees" / "issue-1"
 
 

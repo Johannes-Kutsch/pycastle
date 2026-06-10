@@ -17,6 +17,7 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import (
     build_per_issue_scope_args,
@@ -154,10 +155,11 @@ async def run_issue(
                 result = await _bounded_run_agent(
                     RunRequest(
                         name=f"Implement Agent #{issue['number']}",
-                        template=_impl_template,
+                        prompt=build_prompt_invocation(
+                            _impl_template, _impl_scope_args
+                        ),
                         mount_path=impl_mount_path,
                         role=AgentRole.IMPLEMENTER,
-                        scope_args=_impl_scope_args,
                         model=deps.cfg.implement_override.model,
                         effort=deps.cfg.implement_override.effort,
                         service=deps.cfg.implement_override.service,
@@ -191,10 +193,12 @@ async def run_issue(
             review_result = await _bounded_run_agent(
                 RunRequest(
                     name=f"Review Agent #{issue['number']}",
-                    template=PromptTemplate.REVIEW,
+                    prompt=build_prompt_invocation(
+                        PromptTemplate.REVIEW,
+                        _review_scope_args,
+                    ),
                     mount_path=review_mount_path,
                     role=AgentRole.REVIEWER,
-                    scope_args=_review_scope_args,
                     model=deps.cfg.review_override.model,
                     effort=deps.cfg.review_override.effort,
                     service=deps.cfg.review_override.service,

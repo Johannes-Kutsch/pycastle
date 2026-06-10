@@ -488,7 +488,7 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     implementer_call = next(c for c in fake.calls if "Implement Agent" in c.name)
-    assert implementer_call.template == PromptTemplate.IMPLEMENT_BEHAVIOR
+    assert implementer_call.prompt.template == PromptTemplate.IMPLEMENT_BEHAVIOR
     assert implementer_call.role == AgentRole.IMPLEMENTER
     assert implementer_call.stage == "pre-implementation"
     branch_arg = deps.git_svc.create_worktree.call_args_list[0][0][2]
@@ -668,7 +668,7 @@ def test_run_issue_dispatches_implementer_then_reviewer_with_expected_stages(tmp
     }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
-    assert [(call.role, call.template, call.stage) for call in fake.calls] == [
+    assert [(call.role, call.prompt.template, call.stage) for call in fake.calls] == [
         (
             AgentRole.IMPLEMENTER,
             PromptTemplate.IMPLEMENT_BEHAVIOR,
@@ -747,7 +747,7 @@ def test_run_issue_uses_carried_ready_outcome_for_template_and_work_bodies(tmp_p
 
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
-    assert fake.calls[0].template == PromptTemplate.IMPLEMENT_DOCS
+    assert fake.calls[0].prompt.template == PromptTemplate.IMPLEMENT_DOCS
     assert fake.calls[0].work_body == 'implementing docs "Update ADR"'
     assert fake.calls[1].work_body == 'reviewing docs "Update ADR"'
 

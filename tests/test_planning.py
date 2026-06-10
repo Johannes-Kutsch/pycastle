@@ -373,7 +373,7 @@ def test_planning_phase_dispatches_plan_template_to_planner(tmp_path, git_svc):
     deps = _make_deps(tmp_path, fake, git_svc=git_svc)
     asyncio.run(planning_phase(deps, issues, []))
 
-    assert fake.calls[0].template == PromptTemplate.PLAN
+    assert fake.calls[0].prompt.template == PromptTemplate.PLAN
     assert fake.calls[0].role == AgentRole.PLANNER
     assert fake.calls[0].stage == "plan-sandbox"
 

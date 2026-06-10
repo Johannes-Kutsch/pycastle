@@ -27,6 +27,7 @@ from ..errors import SetupPhaseError
 from ..infrastructure.worktree import transient_worktree
 from ..issue_readiness import issue_readiness_error_for_issue, resolve_issue_readiness
 from ..main import _configured_service_registry
+from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts import scope_args as prompt_scope_args
 from ..services import GitService, GithubService, ServiceRegistry
@@ -199,17 +200,19 @@ async def _file_host_check_issue(
     agent_result = await agent_runner.run(
         RunRequest(
             name="Host-Check Reporter",
-            template=PromptTemplate.HOST_CHECK_ISSUE,
+            prompt=build_prompt_invocation(
+                PromptTemplate.HOST_CHECK_ISSUE,
+                prompt_scope_args.build_host_check_scope_args(
+                    checked_sha=payload.checked_sha,
+                    check_name=payload.check_name,
+                    command=payload.command,
+                    output=payload.output,
+                    host_os=payload.host_os,
+                    host_platform=payload.host_platform,
+                ),
+            ),
             mount_path=mount_path,
             role=AgentRole.PREFLIGHT_ISSUE,
-            scope_args=prompt_scope_args.build_host_check_scope_args(
-                checked_sha=payload.checked_sha,
-                check_name=payload.check_name,
-                command=payload.command,
-                output=payload.output,
-                host_os=payload.host_os,
-                host_platform=payload.host_platform,
-            ),
             model=override.model,
             effort=override.effort,
             service=override.service,

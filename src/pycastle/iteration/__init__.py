@@ -26,6 +26,7 @@ from ..errors import (
     UsageLimitError,
 )
 from ..services import OperatorActionableGitError
+from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import build_failure_report_scope_args
 from ._deps import Deps
@@ -305,10 +306,12 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 result = await deps.agent_runner.run(
                     RunRequest(
                         name="Failure Report Agent",
-                        template=PromptTemplate.FAILURE_REPORT,
+                        prompt=build_prompt_invocation(
+                            PromptTemplate.FAILURE_REPORT,
+                            build_failure_report_scope_args(err),
+                        ),
                         mount_path=err.worktree_path,
                         role=AgentRole.FAILURE_REPORT,
-                        scope_args=build_failure_report_scope_args(err),
                         service=deps.cfg.preflight_issue_override.service,
                         status_display=deps.status_display,
                     )

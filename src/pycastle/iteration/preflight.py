@@ -10,6 +10,7 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import (
     build_divergence_scope_args,
@@ -171,10 +172,12 @@ class BranchRefreshBoundary:
                     await deps.agent_runner.run(
                         RunRequest(
                             name="Divergence Resolver",
-                            template=PromptTemplate.DIVERGENCE_RESOLVE,
+                            prompt=build_prompt_invocation(
+                                PromptTemplate.DIVERGENCE_RESOLVE,
+                                build_divergence_scope_args(branch=branch),
+                            ),
                             mount_path=sandbox_path,
                             role=AgentRole.DIVERGENCE_RESOLVER,
-                            scope_args=build_divergence_scope_args(branch=branch),
                             service=deps.cfg.merge_override.service,
                             status_display=deps.status_display,
                             work_body="Resolving divergence",
@@ -218,14 +221,16 @@ class PreflightCache:
         agent_result = await deps.agent_runner.run(
             RunRequest(
                 name="Pre-Flight Reporter",
-                template=PromptTemplate.PREFLIGHT_ISSUE,
+                prompt=build_prompt_invocation(
+                    PromptTemplate.PREFLIGHT_ISSUE,
+                    build_preflight_scope_args(
+                        check_name=failure.check_name,
+                        command=failure.command,
+                        output=failure.output,
+                    ),
+                ),
                 mount_path=mount_path,
                 role=AgentRole.PREFLIGHT_ISSUE,
-                scope_args=build_preflight_scope_args(
-                    check_name=failure.check_name,
-                    command=failure.command,
-                    output=failure.output,
-                ),
                 model=override.model,
                 effort=override.effort,
                 service=override.service,

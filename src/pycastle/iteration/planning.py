@@ -9,6 +9,7 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import build_plan_scope_args
 from ..services import GitService
@@ -133,13 +134,15 @@ async def planning_phase(
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name="Plan Agent",
-                        template=PromptTemplate.PLAN,
+                        prompt=build_prompt_invocation(
+                            PromptTemplate.PLAN,
+                            build_plan_scope_args(
+                                all_open_issues=all_open_issues,
+                                ready_for_agent_issues=well_formed,
+                            ),
+                        ),
                         mount_path=wt,
                         role=AgentRole.PLANNER,
-                        scope_args=build_plan_scope_args(
-                            all_open_issues=all_open_issues,
-                            ready_for_agent_issues=well_formed,
-                        ),
                         model=deps.cfg.plan_override.model,
                         effort=deps.cfg.plan_override.effort,
                         service=deps.cfg.plan_override.service,
