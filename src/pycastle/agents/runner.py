@@ -28,7 +28,6 @@ from ..errors import (
     SetupPhaseError,
 )
 from ..prompts.dispatch import (
-    PromptInvocation,
     build_prompt_invocation,
     render_prompt_invocation,
 )
@@ -311,19 +310,6 @@ class AgentRunner:
             auto_overlay=auto_overlay,
         )
 
-    async def _build_prompt(
-        self,
-        invocation: PromptInvocation,
-        container_exec: Callable[[str], Awaitable[str]],
-        run_kind: RunKind,
-    ) -> str:
-        return await render_prompt_invocation(
-            invocation,
-            renderer=self._renderer,
-            run_kind=run_kind,
-            exec_fn=container_exec,
-        )
-
     async def run(self, request: RunRequest) -> AgentSuccessOutput:
         return await translate_run_outcome(self._run(request), request)
 
@@ -395,10 +381,11 @@ class AgentRunner:
             run_kind: RunKind,
             container_exec: Callable[[str], Awaitable[str]],
         ) -> str:
-            return await self._build_prompt(
+            return await render_prompt_invocation(
                 invocation,
-                container_exec,
+                renderer=self._renderer,
                 run_kind=run_kind,
+                exec_fn=container_exec,
             )
 
         from pycastle_agent_runtime.work import invoke_work
