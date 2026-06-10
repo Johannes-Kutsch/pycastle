@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 import pytest
 
@@ -31,6 +32,22 @@ class _RecordingRenderer:
 async def _noop_exec(cmd: str) -> str:
     del cmd
     return ""
+
+
+@pytest.fixture(autouse=True)
+def _project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+
+def test_prompt_invocation_rejects_missing_and_extra_role_scope_args() -> None:
+    with pytest.raises(
+        PromptRenderError,
+        match="scope_args mismatch for template PLAN: missing:",
+    ):
+        PromptInvocation(
+            template=PromptTemplate.PLAN,
+            scope_args={"ALL_OPEN_ISSUES_JSON": "[]", "EXTRA_KEY": "oops"},
+        )
 
 
 def test_build_prompt_invocation_carries_validated_scope_args_and_resume_flag() -> None:
