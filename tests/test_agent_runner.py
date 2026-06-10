@@ -46,7 +46,6 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import ProviderRunState, RoleSession, RunKind
@@ -4214,91 +4213,186 @@ def _make_build_prompt_cfg(tmp_path: Path) -> Config:
     return Config(logs_dir=tmp_path)
 
 
-def test_build_prompt_uses_resume_template_on_resume_without_role_flag(tmp_path):
-    """On a Resume run without send_role_prompt_on_resume, _build_prompt uses the RESUME template."""
-    cfg = _make_build_prompt_cfg(tmp_path)
-    runner = AgentRunner({}, cfg, _make_git_service())
+def test_agent_runner_run_uses_resume_template_on_resume_without_role_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
 
-    result = asyncio.run(
-        runner._build_prompt(
-            build_prompt_invocation(
-                _PLAN_TEMPLATE,
-                _PLAN_SCOPE_ARGS,
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[PlannerOutput],
+    ) -> PlannerOutput:
+        captured["request"] = request
+        return PlannerOutput(issues=[])
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_build_prompt_cfg(tmp_path), _make_git_service())
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Planner",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
                 send_role_prompt_on_resume=False,
-            ),
-            _noop_exec,
+            )
+        )
+    )
+
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[PlannerOutput],
+        captured["request"],
+    )
+    result = asyncio.run(
+        work_request.output_adapter.build_prompt(
             run_kind=RunKind.RESUME,
+            container_exec=_noop_exec,
         )
     )
 
     assert result == "resume-content"
 
 
-def test_build_prompt_uses_role_template_on_resume_with_send_role_prompt(tmp_path):
-    """On a Resume run with send_role_prompt_on_resume=True, _build_prompt uses the role template."""
-    cfg = _make_build_prompt_cfg(tmp_path)
-    runner = AgentRunner({}, cfg, _make_git_service())
+def test_agent_runner_run_uses_role_template_on_resume_with_send_role_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
 
-    result = asyncio.run(
-        runner._build_prompt(
-            build_prompt_invocation(
-                _PLAN_TEMPLATE,
-                _PLAN_SCOPE_ARGS,
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[PlannerOutput],
+    ) -> PlannerOutput:
+        captured["request"] = request
+        return PlannerOutput(issues=[])
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_build_prompt_cfg(tmp_path), _make_git_service())
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Planner",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
                 send_role_prompt_on_resume=True,
-            ),
-            _noop_exec,
-            run_kind=RunKind.RESUME,
+            )
         )
     )
 
-    assert result == "[] []"
-
-
-def test_build_prompt_uses_role_template_on_fresh_run(tmp_path):
-    """On a Fresh run, _build_prompt renders the role template."""
-    cfg = _make_build_prompt_cfg(tmp_path)
-    runner = AgentRunner({}, cfg, _make_git_service())
-
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[PlannerOutput],
+        captured["request"],
+    )
     result = asyncio.run(
-        runner._build_prompt(
-            build_prompt_invocation(
-                _PLAN_TEMPLATE,
-                _PLAN_SCOPE_ARGS,
-                send_role_prompt_on_resume=False,
-            ),
-            _noop_exec,
-            run_kind=RunKind.FRESH,
+        work_request.output_adapter.build_prompt(
+            run_kind=RunKind.RESUME,
+            container_exec=_noop_exec,
         )
     )
 
     assert result == "[] []"
 
 
-def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
-    """_build_prompt passes container_exec to the renderer for shell expression expansion."""
+def test_agent_runner_run_uses_role_template_on_fresh_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
+
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[PlannerOutput],
+    ) -> PlannerOutput:
+        captured["request"] = request
+        return PlannerOutput(issues=[])
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_build_prompt_cfg(tmp_path), _make_git_service())
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Planner",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
+            )
+        )
+    )
+
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[PlannerOutput],
+        captured["request"],
+    )
+    result = asyncio.run(
+        work_request.output_adapter.build_prompt(
+            run_kind=RunKind.FRESH,
+            container_exec=_noop_exec,
+        )
+    )
+
+    assert result == "[] []"
+
+
+def test_agent_runner_run_expands_shell_expressions_via_container_exec(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Work prompt builder passes container_exec through to prompt rendering."""
+    import pycastle_agent_runtime.work as runtime_work
+
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[PlannerOutput],
+    ) -> PlannerOutput:
+        captured["request"] = request
+        return PlannerOutput(issues=[])
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
     prompts_dir = tmp_path / "pycastle" / "prompts"
     prompts_dir.mkdir(parents=True, exist_ok=True)
     (prompts_dir / "shared").mkdir(exist_ok=True)
     (prompts_dir / "shared/resume.md").write_text(
         "Result: !`echo hi`", encoding="utf-8"
     )
-    cfg = Config(logs_dir=tmp_path)
-    runner = AgentRunner({}, cfg, _make_git_service())
+    runner = AgentRunner({}, Config(logs_dir=tmp_path), _make_git_service())
 
     async def fake_exec(cmd: str) -> str:
         if "echo hi" in cmd:
             return "expanded\n"
         return ""
 
-    result = asyncio.run(
-        runner._build_prompt(
-            build_prompt_invocation(
-                PromptTemplate.RESUME,
-                {},
-                send_role_prompt_on_resume=False,
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Planner",
+                template=PromptTemplate.RESUME,
+                scope_args={},
+                mount_path=tmp_path,
+                role=AgentRole.PLANNER,
             ),
-            fake_exec,
+        )
+    )
+
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[PlannerOutput],
+        captured["request"],
+    )
+    result = asyncio.run(
+        work_request.output_adapter.build_prompt(
             run_kind=RunKind.RESUME,
+            container_exec=fake_exec,
         )
     )
 
