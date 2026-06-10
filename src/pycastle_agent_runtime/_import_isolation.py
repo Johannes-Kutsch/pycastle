@@ -10,6 +10,7 @@ _FORBIDDEN_PREFIXES = (
     "pycastle.infrastructure",
     "pycastle.iteration",
     "pycastle.prompts",
+    "pycastle.services",
     "pycastle.session",
 )
 

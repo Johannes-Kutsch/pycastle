@@ -99,6 +99,7 @@ def _runtime_imported_application_modules(repo_root: Path) -> list[str]:
                     "pycastle.infrastructure",
                     "pycastle.iteration",
                     "pycastle.prompts",
+                    "pycastle.services",
                     "pycastle.session",
                 )
                 imported = sorted(
@@ -142,6 +143,7 @@ def _runtime_attr_imported_application_modules(
                     "pycastle.infrastructure",
                     "pycastle.iteration",
                     "pycastle.prompts",
+                    "pycastle.services",
                     "pycastle.session",
                 )
                 imported = sorted(
@@ -203,6 +205,56 @@ def _standalone_runtime_attr_access_result(
                     )
                 else:
                     print(json.dumps({{"type": "ok", "message": ""}}))
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
+def _standalone_runtime_attr_access_results(
+    repo_root: Path, attr_names: list[str]
+) -> dict[str, dict[str, str]]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                f"""
+                import importlib.abc
+                import json
+                import sys
+
+                class _BlockPycastle(importlib.abc.MetaPathFinder):
+                    def find_spec(self, fullname, path=None, target=None):
+                        del path, target
+                        if fullname == "pycastle" or fullname.startswith("pycastle."):
+                            raise ModuleNotFoundError(
+                                f"blocked test import: {{fullname}}"
+                            )
+                        return None
+
+                sys.meta_path.insert(0, _BlockPycastle())
+
+                import pycastle_agent_runtime as runtime
+
+                results = {{}}
+                for attr_name in {attr_names!r}:
+                    try:
+                        getattr(runtime, attr_name)
+                    except Exception as exc:  # pragma: no cover - subprocess surface
+                        results[attr_name] = {{
+                            "type": type(exc).__name__,
+                            "message": str(exc),
+                        }}
+                    else:
+                        results[attr_name] = {{"type": "ok", "message": ""}}
+
+                print(json.dumps(results, sort_keys=True))
                 """
             ),
         ],
@@ -1052,6 +1104,50 @@ def test_runtime_package_prompt_entrypoint_runs_standalone_without_pycastle() ->
     assert result == "standalone:already rendered prompt"
 
 
+def test_runtime_top_level_surface_is_accessible_standalone_without_pycastle() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    results = _standalone_runtime_attr_access_results(
+        repo_root,
+        [
+            "PromptRunRequest",
+            "PromptRunSession",
+            "PromptRuntime",
+            "WorktreeMount",
+            "run_prompt",
+            "CancellationToken",
+            "TextOutputAdapter",
+            "WorkInvocationDependencies",
+            "WorkInvocationRequest",
+            "invoke_work",
+            "ServiceRegistry",
+            "ChainEntry",
+            "select_configured_candidate_chain",
+            "ProviderSessionState",
+            "ProviderSessionStateRequest",
+            "RunKind",
+            "ProviderRunStatePlan",
+            "ProviderRunStatePlanRequest",
+            "plan_provider_run_state",
+            "ContinueNow",
+            "SleepUntil",
+            "Stop",
+            "decide_usage_limit_continuation",
+            "AgentRuntimeError",
+            "RuntimeConfigurationError",
+            "UsageLimitError",
+            "AgentFailedError",
+            "AgentInvocationLog",
+            "LogicalAgentInvocationLog",
+            "WorkInvocationLog",
+        ],
+    )
+
+    assert results == {
+        attr_name: {"type": "ok", "message": ""} for attr_name in results
+    }
+
+
 def test_runtime_agent_log_lifecycle_runs_standalone_without_pycastle(
     tmp_path: Path,
 ) -> None:
@@ -1127,6 +1223,26 @@ def test_runtime_package_import_isolation_guardrail_reports_application_ownershi
         "pycastle_agent_runtime imported pycastle application modules during "
         "runtime package initialization: "
         "pycastle.infrastructure.container_runner, pycastle.session.resume. "
+        "This violates the pycastle_agent_runtime package boundary."
+    )
+
+
+def test_runtime_package_import_isolation_guardrail_rejects_pycastle_services() -> None:
+    from pycastle_agent_runtime._import_isolation import assert_runtime_import_isolation
+
+    with pytest.raises(ImportError) as excinfo:
+        assert_runtime_import_isolation(
+            importer="pycastle_agent_runtime",
+            newly_loaded_modules=[
+                "pycastle.services",
+                "pycastle.services.agent_service",
+            ],
+        )
+
+    assert str(excinfo.value) == (
+        "pycastle_agent_runtime imported pycastle application modules during "
+        "runtime package initialization: "
+        "pycastle.services, pycastle.services.agent_service. "
         "This violates the pycastle_agent_runtime package boundary."
     )
 

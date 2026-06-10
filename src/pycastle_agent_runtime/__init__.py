@@ -35,6 +35,11 @@ from .session import ProviderSessionState, ProviderSessionStateRequest, RunKind
 from .types import StageOverride
 
 if TYPE_CHECKING:
+    from pycastle_agent_runtime.session_planning import (
+        ProviderRunStatePlan,
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
     from pycastle_agent_runtime.service_registry import ServiceRegistry
     from pycastle_agent_runtime.stage_priority_chain import (
         ChainEntry,
@@ -48,6 +53,13 @@ if TYPE_CHECKING:
         UsageLimitContinuationDecision,
         UsageLimitOutcome,
     )
+    from pycastle_agent_runtime.work import (
+        CancellationToken,
+        TextOutputAdapter,
+        WorkInvocationDependencies,
+        WorkInvocationRequest,
+        invoke_work,
+    )
 
 __all__ = [
     "AgentCredentialFailureError",
@@ -58,6 +70,7 @@ __all__ = [
     "AgentRole",
     "AgentTimeoutError",
     "AssistantTurn",
+    "CancellationToken",
     "ChainEntry",
     "ConfiguredCandidateChain",
     "ConfiguredCandidateSelection",
@@ -74,14 +87,19 @@ __all__ = [
     "Result",
     "RuntimeConfigurationError",
     "RunKind",
+    "ProviderRunStatePlan",
+    "ProviderRunStatePlanRequest",
     "ServiceRegistry",
     "SleepUntil",
     "Stop",
     "StageOverride",
+    "TextOutputAdapter",
     "chain_entries",
     "ContinueNow",
     "configured_candidate_chain",
+    "invoke_work",
     "iter_stage_chain",
+    "plan_provider_run_state",
     "referenced_service_names",
     "render_chain_label",
     "select_configured_candidate_chain",
@@ -95,6 +113,8 @@ __all__ = [
     "UsageLimitError",
     "validation_labels",
     "decide_usage_limit_continuation",
+    "WorkInvocationDependencies",
+    "WorkInvocationRequest",
     "WorkInvocationLog",
 ]
 
@@ -114,6 +134,24 @@ def __getattr__(name: str):
         from pycastle_agent_runtime.service_registry import ServiceRegistry
 
         return ServiceRegistry
+    if name in {
+        "CancellationToken",
+        "TextOutputAdapter",
+        "WorkInvocationDependencies",
+        "WorkInvocationRequest",
+        "invoke_work",
+    }:
+        from pycastle_agent_runtime import work
+
+        return getattr(work, name)
+    if name in {
+        "ProviderRunStatePlan",
+        "ProviderRunStatePlanRequest",
+        "plan_provider_run_state",
+    }:
+        from pycastle_agent_runtime import session_planning
+
+        return getattr(session_planning, name)
     if name in {
         "ContinueNow",
         "SleepUntil",
