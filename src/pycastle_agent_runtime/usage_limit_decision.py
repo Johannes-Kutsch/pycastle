@@ -62,8 +62,19 @@ def _permanent_exhaustion_message(outcome: UsageLimitOutcome) -> str:
         "on the next run."
     )
     if outcome.raw_message:
-        message += f" Claude said: {outcome.raw_message}"
+        message += (
+            f" {_provider_message_label(provider_label)} said: {outcome.raw_message}"
+        )
     return message
+
+
+def _provider_message_label(provider_label: str) -> str:
+    known_labels = {
+        "claude": "Claude",
+        "codex": "Codex",
+        "opencode": "OpenCode",
+    }
+    return known_labels.get(provider_label, provider_label)
 
 
 def decide_usage_limit_continuation(

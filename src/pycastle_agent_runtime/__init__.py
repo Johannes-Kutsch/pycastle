@@ -21,6 +21,7 @@ from .contracts import (
 from .errors import (
     AgentCredentialFailureError,
     AgentFailedError,
+    AgentRuntimeError,
     AgentTimeoutError,
     HardAgentError,
     PycastleError,
@@ -52,6 +53,7 @@ __all__ = [
     "AgentCredentialFailureError",
     "AgentInvocationLog",
     "AgentFailedError",
+    "AgentRuntimeError",
     "AgentService",
     "AgentRole",
     "AgentTimeoutError",

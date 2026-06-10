@@ -6,15 +6,19 @@ from pathlib import Path
 from .provider_errors import ProviderErrorObservation
 
 
-class PycastleError(RuntimeError):
+class AgentRuntimeError(RuntimeError):
     pass
 
 
-class RuntimeConfigurationError(PycastleError):
+# Compatibility alias for existing pycastle callers during the runtime migration.
+PycastleError = AgentRuntimeError
+
+
+class RuntimeConfigurationError(AgentRuntimeError):
     pass
 
 
-class AgentTimeoutError(PycastleError, TimeoutError):
+class AgentTimeoutError(AgentRuntimeError, TimeoutError):
     def __init__(
         self,
         message: str = "",
@@ -26,7 +30,7 @@ class AgentTimeoutError(PycastleError, TimeoutError):
         super().__init__(message)
 
 
-class UsageLimitError(PycastleError):
+class UsageLimitError(AgentRuntimeError):
     def __init__(
         self,
         reset_time: datetime | None = None,
@@ -48,13 +52,13 @@ class UsageLimitError(PycastleError):
         )
 
 
-class TransientAgentError(PycastleError):
+class TransientAgentError(AgentRuntimeError):
     def __init__(self, message: str = "", status_code: int | None = None) -> None:
         self.status_code = status_code
         super().__init__(message)
 
 
-class HardAgentError(PycastleError):
+class HardAgentError(AgentRuntimeError):
     def __init__(
         self,
         message: str = "",
@@ -91,7 +95,7 @@ class AgentCredentialFailureError(HardAgentError):
         )
 
 
-class AgentFailedError(PycastleError):
+class AgentFailedError(AgentRuntimeError):
     def __init__(
         self,
         role_value: str,
@@ -99,6 +103,8 @@ class AgentFailedError(PycastleError):
         namespace: str = "",
         failure_class: str = "",
         service_name: str = "claude",
+        provider_session_path: str | None = None,
+        session_root: str = ".pycastle-session",
     ) -> None:
         super().__init__(f"Agent {role_value!r} failed irrecoverably")
         self.role_value = role_value
@@ -106,10 +112,14 @@ class AgentFailedError(PycastleError):
         self.namespace = namespace
         self.failure_class = failure_class
         self.service_name = service_name or "claude"
+        self.provider_session_path = provider_session_path
+        self.session_root = session_root
 
     @property
     def session_dir(self) -> str:
-        base = f".pycastle-session/{self.role_value}"
+        if self.provider_session_path is not None:
+            return self.provider_session_path
+        base = f"{self.session_root}/{self.role_value}"
         if self.namespace:
             base = f"{base}/{self.namespace}"
         return f"{base}/{self.service_name}"
@@ -118,6 +128,7 @@ class AgentFailedError(PycastleError):
 __all__ = [
     "AgentCredentialFailureError",
     "AgentFailedError",
+    "AgentRuntimeError",
     "AgentTimeoutError",
     "HardAgentError",
     "PycastleError",

@@ -29,7 +29,7 @@ class ServiceResumeIdentityStore(Protocol):
     def exact_transcript_service_name(self) -> str | None: ...
 
 
-SESSION_DIR_NAME = ".pycastle-session"
+_PYCASTLE_COMPAT_SESSION_ROOT = ".pycastle-session"
 _SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
 
 
@@ -72,10 +72,12 @@ def provider_state_relpath(
     role: "AgentRole",
     provider_name: str,
     namespace: str = "",
+    *,
+    session_root: str = _PYCASTLE_COMPAT_SESSION_ROOT,
 ) -> str:
     if namespace:
-        return f"{SESSION_DIR_NAME}/{role.value}/{namespace}/{provider_name}/"
-    return f"{SESSION_DIR_NAME}/{role.value}/{provider_name}/"
+        return f"{session_root}/{role.value}/{namespace}/{provider_name}/"
+    return f"{session_root}/{role.value}/{provider_name}/"
 
 
 def normalize_state_dir_relpath(
@@ -83,13 +85,31 @@ def normalize_state_dir_relpath(
     namespace: str,
     service_name: str,
     state_dir_relpath: str | None,
+    *,
+    session_root: str | None = None,
 ) -> str | None:
     if state_dir_relpath is None or not namespace:
         return state_dir_relpath
-    legacy_relpath = provider_state_relpath(role, service_name)
+    session_root = session_root or _session_root_for_relpath(state_dir_relpath)
+    legacy_relpath = provider_state_relpath(
+        role, service_name, session_root=session_root
+    )
     if state_dir_relpath == legacy_relpath:
-        return provider_state_relpath(role, service_name, namespace)
+        return provider_state_relpath(
+            role,
+            service_name,
+            namespace,
+            session_root=session_root,
+        )
     return state_dir_relpath
+
+
+def _session_root_for_relpath(state_dir_relpath: str) -> str:
+    stripped = state_dir_relpath.strip("/")
+    parts = stripped.split("/")
+    if len(parts) >= 3:
+        return parts[0]
+    return _PYCASTLE_COMPAT_SESSION_ROOT
 
 
 def provider_state_session_id_path(state_dir: Path, service_name: str) -> Path:
@@ -223,7 +243,6 @@ __all__ = [
     "ProviderSessionState",
     "ProviderSessionStateRequest",
     "RunKind",
-    "SESSION_DIR_NAME",
     "is_exact_resumable_service_session",
     "load_provider_state_session_id",
     "load_state_dir_provider_session_id",

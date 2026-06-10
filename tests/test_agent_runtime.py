@@ -1131,6 +1131,17 @@ def test_runtime_package_import_isolation_guardrail_reports_application_ownershi
     )
 
 
+def test_runtime_public_errors_use_agent_runtime_error_with_pycastle_alias_shim():
+    import pycastle_agent_runtime as runtime
+
+    assert runtime.PycastleError is runtime.AgentRuntimeError
+    assert issubclass(runtime.RuntimeConfigurationError, runtime.AgentRuntimeError)
+    assert issubclass(runtime.UsageLimitError, runtime.AgentRuntimeError)
+    assert issubclass(runtime.TransientAgentError, runtime.AgentRuntimeError)
+    assert issubclass(runtime.HardAgentError, runtime.AgentRuntimeError)
+    assert issubclass(runtime.AgentFailedError, runtime.AgentRuntimeError)
+
+
 def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
     tmp_path: Path,
 ) -> None:
@@ -1170,6 +1181,50 @@ def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
     assert plan.provider_state_dir == (
         tmp_path / ".pycastle-session" / "implementer" / "main" / "codex"
     )
+
+
+def test_runtime_session_helpers_use_caller_supplied_session_root_and_provider_path(
+    tmp_path: Path,
+):
+    from pycastle_agent_runtime.errors import AgentFailedError
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import (
+        normalize_state_dir_relpath,
+        provider_state_relpath,
+    )
+
+    session_root = ".runtime-session"
+
+    assert (
+        provider_state_relpath(
+            RuntimeAgentRole.IMPLEMENTER,
+            "codex",
+            "main",
+            session_root=session_root,
+        )
+        == ".runtime-session/implementer/main/codex/"
+    )
+    assert (
+        normalize_state_dir_relpath(
+            RuntimeAgentRole.IMPLEMENTER,
+            "main",
+            "codex",
+            ".runtime-session/implementer/codex/",
+            session_root=session_root,
+        )
+        == ".runtime-session/implementer/main/codex/"
+    )
+
+    failure = AgentFailedError(
+        role_value="reviewer",
+        worktree_path=tmp_path,
+        namespace="main",
+        failure_class="protocol_error",
+        service_name="codex",
+        provider_session_path=".runtime-session/reviewer/main/codex",
+    )
+
+    assert failure.session_dir == ".runtime-session/reviewer/main/codex"
 
 
 def test_runtime_provider_state_plan_records_observed_provider_session_id_for_opencode(

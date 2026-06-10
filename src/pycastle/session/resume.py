@@ -11,7 +11,6 @@ from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import (
     ProviderSessionStateRequest,
     RunKind,
-    SESSION_DIR_NAME,
     is_exact_resumable_service_session,
     load_provider_state_session_id,
     normalize_state_dir_relpath,
@@ -35,6 +34,7 @@ if TYPE_CHECKING:
     from ..services.agent_service import AgentService
 
 _NAMESPACE = uuid.NAMESPACE_DNS
+SESSION_DIR_NAME = ".pycastle-session"
 
 
 def _force_remove_readonly(func, path, _exc_info):
@@ -47,7 +47,12 @@ def provider_state_relpath(
     provider_name: str,
     namespace: str = "",
 ) -> str:
-    return runtime_provider_state_relpath(role, provider_name, namespace)
+    return runtime_provider_state_relpath(
+        role,
+        provider_name,
+        namespace,
+        session_root=SESSION_DIR_NAME,
+    )
 
 
 def _normalize_state_dir_relpath(
@@ -162,7 +167,12 @@ class RoleSession:
         provider_name: str,
         namespace: str = "",
     ) -> str:
-        return runtime_provider_state_relpath(role, provider_name, namespace)
+        return runtime_provider_state_relpath(
+            role,
+            provider_name,
+            namespace,
+            session_root=SESSION_DIR_NAME,
+        )
 
     def provider_state_relpath(self, provider_name: str) -> str:
         return self.provider_state_relpath_for(

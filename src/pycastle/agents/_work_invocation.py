@@ -19,6 +19,7 @@ from pycastle_agent_runtime.work import (
 )
 
 from ..errors import TransientAgentError
+from ..session.resume import provider_state_relpath
 from .output_protocol import (
     AgentOutput,
     AgentOutputProtocolError,
@@ -100,6 +101,9 @@ class ProtocolOutputAdapter:
                 namespace=session_namespace,
                 failure_class=result.failure_class,
                 service_name=service_name,
+                provider_session_path=provider_state_relpath(
+                    role, service_name, session_namespace
+                ).rstrip("/"),
             )
         return result
 

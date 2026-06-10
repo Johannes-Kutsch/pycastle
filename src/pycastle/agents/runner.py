@@ -30,6 +30,7 @@ from ..errors import (
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
 from ..session.agent import RunSessionPlan
+from ..session.resume import provider_state_relpath
 from ..session.run_dispatch import RunSessionRequest, prepare_run_session
 from ..services import GitService
 from ..services.agent_service import AgentService
@@ -96,6 +97,11 @@ async def translate_run_outcome(
                 namespace=request.session_namespace,
                 failure_class=output.failure_class,
                 service_name=request.service,
+                provider_session_path=provider_state_relpath(
+                    request.role,
+                    request.service,
+                    request.session_namespace,
+                ).rstrip("/"),
             )
         return output
     except AgentTimeoutError as err:

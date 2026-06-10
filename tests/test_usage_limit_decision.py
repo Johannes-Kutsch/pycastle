@@ -372,6 +372,31 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_without_c
     )
 
 
+def test_decide_usage_limit_continuation_uses_observed_provider_label_for_non_claude_permanent_message():
+    registry = runtime.ServiceRegistry(
+        {"opencode": _make_service(available=False, wake_time=_now())}
+    )
+
+    decision = _decide(
+        runtime.UsageLimitOutcome(
+            provider="OpenCode",
+            account_label="primary",
+            raw_message="usage limit reached for this account",
+            is_permanent=True,
+        ),
+        stage_override=runtime.StageOverride(service="opencode"),
+        service_registry=registry,
+        now=_now(),
+    )
+
+    assert decision == runtime.Stop(
+        message=(
+            "OpenCode primary account retired for this run and will be retried on "
+            "the next run. OpenCode said: usage limit reached for this account"
+        )
+    )
+
+
 def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
     now = _now()
 
