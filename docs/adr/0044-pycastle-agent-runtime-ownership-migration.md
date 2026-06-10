@@ -14,6 +14,8 @@ The package must not depend on pycastle application modules such as `pycastle.ag
 
 The first stable surface remains narrow and shared. We are not designing a general SDK for unknown consumers. The target consumers are pycastle first and application-pipeline later.
 
+Compatibility names that still carry pycastle vocabulary follow ADR 0045: `PycastleError`, `.pycastle-session`, and `pycastle_input` may be retained only as compatibility shims. Runtime-owned public errors, session-path handling, and agent log record vocabulary use runtime-neutral names and caller-supplied paths.
+
 ## Consequences
 
 - Import ownership becomes a release criterion: `pycastle_agent_runtime` must be importable and testable without importing pycastle application modules.

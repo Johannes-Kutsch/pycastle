@@ -95,7 +95,7 @@ If `config.py.example` exists in pycastle home already, both `pycastle init` and
 
 ## Runtime Session State
 
-`.pycastle-session/` is runtime-only state rooted at the mounted worktree, not inside `pycastle/`, and it is not created by `pycastle init`. Pycastle uses it for per-role resume state and provider-specific session data while runs are in progress.
+`.pycastle-session/` is runtime-only state rooted at the mounted worktree, not inside `pycastle/`, and it is not created by `pycastle init`. Pycastle uses it for per-role resume state and provider-specific session data while runs are in progress. The name is retained as pycastle's compatibility session root; reusable runtime package APIs receive session paths from their caller rather than treating this name as generic runtime vocabulary.
 
 Codex authentication is seeded at runtime only: when a fresh Codex role state dir is missing `auth.json`, pycastle copies the host's `~/.codex/auth.json` into that role's `.pycastle-session/.../codex/` directory before launch.
 
@@ -109,7 +109,7 @@ Runtime configuration lives in `config.py`, loaded from pycastle home first and 
 | `max_parallel` | `1` | Maximum concurrent implementer agents |
 | `issue_label` | `ready-for-agent` | Label the planner filters on |
 | `hitl_label` | `ready-for-human` | Label that triggers a human-intervention exit |
-| `logs_dir` | `pycastle/logs` | Log directory. In global config this is a parent directory and the effective project log directory is `<logs_dir>/<sanitised project name>/`; in local config the configured path is used directly as the effective log directory. Agent logs, `errors.log`, and cron wrapper output all go to that effective project log directory |
+| `logs_dir` | `pycastle/logs` | Log directory. In global config this is a parent directory and the effective project log directory is `<logs_dir>/<sanitised project name>/`; in local config the configured path is used directly as the effective log directory. Agent logs, `errors.log`, and cron wrapper output all go to that effective project log directory; runtime log APIs receive this resolved path from pycastle rather than resolving config themselves |
 | `preflight_checks` | ruff, mypy, pytest | Commands run before planning |
 | `host_checks` | pytest host suite | Commands run by `pycastle check` on the current OS in a temporary local worktree |
 | `implement_checks` | ruff fix, mypy, pytest | Commands the implementer must pass |
