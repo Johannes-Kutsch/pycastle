@@ -29,7 +29,6 @@ class ServiceResumeIdentityStore(Protocol):
     def exact_transcript_service_name(self) -> str | None: ...
 
 
-_PYCASTLE_COMPAT_SESSION_ROOT = ".pycastle-session"
 _SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
 
 
@@ -73,11 +72,12 @@ def provider_state_relpath(
     provider_name: str,
     namespace: str = "",
     *,
-    session_root: str = _PYCASTLE_COMPAT_SESSION_ROOT,
+    session_root: str = "",
 ) -> str:
+    base = f"{role.value}/{provider_name}/"
     if namespace:
-        return f"{session_root}/{role.value}/{namespace}/{provider_name}/"
-    return f"{session_root}/{role.value}/{provider_name}/"
+        base = f"{role.value}/{namespace}/{provider_name}/"
+    return f"{session_root}/{base}" if session_root else base
 
 
 def normalize_state_dir_relpath(
@@ -109,7 +109,7 @@ def _session_root_for_relpath(state_dir_relpath: str) -> str:
     parts = stripped.split("/")
     if len(parts) >= 3:
         return parts[0]
-    return _PYCASTLE_COMPAT_SESSION_ROOT
+    return ""
 
 
 def provider_state_session_id_path(state_dir: Path, service_name: str) -> Path:

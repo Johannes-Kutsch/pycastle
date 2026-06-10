@@ -1227,6 +1227,32 @@ def test_runtime_session_helpers_use_caller_supplied_session_root_and_provider_p
     assert failure.session_dir == ".runtime-session/reviewer/main/codex"
 
 
+def test_runtime_session_helpers_default_to_provider_neutral_relpaths():
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import (
+        normalize_state_dir_relpath,
+        provider_state_relpath,
+    )
+
+    assert (
+        provider_state_relpath(
+            RuntimeAgentRole.IMPLEMENTER,
+            "codex",
+            "main",
+        )
+        == "implementer/main/codex/"
+    )
+    assert (
+        normalize_state_dir_relpath(
+            RuntimeAgentRole.IMPLEMENTER,
+            "main",
+            "codex",
+            "implementer/codex/",
+        )
+        == "implementer/main/codex/"
+    )
+
+
 def test_runtime_provider_state_plan_records_observed_provider_session_id_for_opencode(
     tmp_path: Path,
 ) -> None:

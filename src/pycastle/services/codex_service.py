@@ -25,7 +25,6 @@ from pycastle_agent_runtime.session import (
     ProviderSessionStateRequest,
     RunKind,
     is_exact_resumable_service_session,
-    provider_state_relpath,
     recover_state_dir_provider_session_id,
     select_resumable_provider_session_id,
 )
@@ -36,6 +35,7 @@ from pycastle_agent_runtime.session_planning import (
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentOutputProtocolError
+from ..session.resume import provider_state_relpath
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
 from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time

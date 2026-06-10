@@ -20,12 +20,12 @@ from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
     load_state_dir_provider_session_id,
-    provider_state_relpath,
     select_resumable_provider_session_id,
 )
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
+from ..session.resume import provider_state_relpath
 from ..session import RunKind
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
