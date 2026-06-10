@@ -347,6 +347,30 @@ def test_work_forwards_provider_session_callback_to_service_run(tmp_path):
     assert service.run_lines == ['{"type":"ignored"}']
 
 
+def test_work_logs_provider_session_id_observed_from_service_run(tmp_path):
+    session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])
+    service = FakeService()
+    runner = ContainerRunner(
+        "agent",
+        cast(DockerSession, session),
+        cfg=Config(logs_dir=tmp_path),
+        service=cast(ClaudeService, service),
+    )
+
+    asyncio.run(
+        runner.work(_ROLE, "prompt", run_kind=RunKind.RESUME, session_uuid="s1")
+    )
+
+    first_line = runner.log_path.read_text(encoding="utf-8").splitlines()[0]
+    assert json.loads(first_line) == {
+        "type": "agent_invocation",
+        "role": "implementer",
+        "run_kind": "resume",
+        "provider_session_id": "provider-session-123",
+        "prompt": "prompt",
+    }
+
+
 def test_work_called_twice_writes_each_prompt(tmp_path):
     """Calling work() twice with different prompts must write each prompt to the container."""
     chunk_lists = [[_COMPLETE_LINE], [_COMPLETE_LINE]]

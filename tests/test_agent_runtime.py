@@ -6,7 +6,7 @@ import textwrap
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import TypedDict
+from typing import TypedDict, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -357,6 +357,72 @@ def _standalone_runtime_prompt_result(repo_root: Path) -> str:
     if result.returncode != 0:
         raise AssertionError(result.stderr)
     return result.stdout.strip().splitlines()[-1]
+
+
+def _standalone_runtime_agent_log_result(
+    repo_root: Path, effective_logs_dir: Path
+) -> dict[str, object]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                f"""
+                import importlib.abc
+                import json
+                import sys
+                from datetime import datetime, timezone
+                from pathlib import Path
+
+                class _BlockPycastle(importlib.abc.MetaPathFinder):
+                    def find_spec(self, fullname, path=None, target=None):
+                        del path, target
+                        if fullname == "pycastle" or fullname.startswith("pycastle."):
+                            raise ModuleNotFoundError(
+                                f"blocked test import: {{fullname}}"
+                            )
+                        return None
+
+                sys.meta_path.insert(0, _BlockPycastle())
+
+                from pycastle_agent_runtime import AgentInvocationLog, AgentRole, RunKind
+
+                logs_dir = Path({str(effective_logs_dir)!r})
+                log = AgentInvocationLog(
+                    now_local=lambda: datetime(
+                        2026, 5, 17, 14, 30, tzinfo=timezone.utc
+                    ).astimezone()
+                )
+                log_path = log.reserve(
+                    agent_name="Standalone Runtime",
+                    effective_logs_dir=logs_dir,
+                )
+                log.append_work_invocation(
+                    log_path=log_path,
+                    role=AgentRole.IMPLEMENTER,
+                    run_kind=RunKind.FRESH,
+                    session_uuid="provider-session-123",
+                    prompt="already rendered prompt",
+                    provider_bytes=b'{{"type":"result","result":"done"}}\\n',
+                )
+                print(
+                    json.dumps(
+                        {{
+                            "log_path": str(log_path),
+                            "log_lines": log_path.read_text(encoding="utf-8").splitlines(),
+                        }}
+                    )
+                )
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stderr)
+    return json.loads(result.stdout.strip().splitlines()[-1])
 
 
 class _RecordingRuntimeService:
@@ -984,6 +1050,26 @@ def test_runtime_package_prompt_entrypoint_runs_standalone_without_pycastle() ->
     result = _standalone_runtime_prompt_result(repo_root)
 
     assert result == "standalone:already rendered prompt"
+
+
+def test_runtime_agent_log_lifecycle_runs_standalone_without_pycastle(
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = _standalone_runtime_agent_log_result(repo_root, tmp_path / "runtime-logs")
+
+    assert Path(cast(str, result["log_path"])) == tmp_path / "runtime-logs" / (
+        "standalone-runtime-20260517T1430.log"
+    )
+    assert result["log_lines"] == [
+        (
+            '{"type": "agent_invocation", "role": "implementer", '
+            '"run_kind": "fresh", "provider_session_id": "provider-session-123", '
+            '"prompt": "already rendered prompt"}'
+        ),
+        '{"type":"result","result":"done"}',
+    ]
 
 
 def test_runtime_package_prompt_entrypoint_requires_build_work_dependencies_adapter(

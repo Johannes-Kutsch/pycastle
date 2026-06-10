@@ -69,6 +69,18 @@ def stream_logged_lines(
         )
 
 
+def pycastle_input_compatibility_record(
+    *,
+    prompt: str,
+    **extra_fields: object,
+) -> dict[str, object]:
+    return {
+        "type": "pycastle_input",
+        "prompt": prompt,
+        **extra_fields,
+    }
+
+
 def _stream_logged_lines_to_open_log(
     chunks: Iterable[bytes],
     *,

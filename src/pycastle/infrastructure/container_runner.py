@@ -190,6 +190,13 @@ class ContainerRunner:
             run_kind=run_kind,
             session_uuid=session_uuid,
         )
+        observed_provider_session_id: list[str | None] = [session_uuid]
+
+        def _record_provider_session_id(provider_session_id: str) -> None:
+            observed_provider_session_id[0] = provider_session_id
+            if on_provider_session_id is not None:
+                on_provider_session_id(provider_session_id)
+
         logged_lines = stream_logged_work_lines(
             self._session.exec_stream(command),
             logical_session=self._logical_session,
@@ -202,7 +209,7 @@ class ContainerRunner:
         )
         parsed_events = service.run(
             logged_lines,
-            on_provider_session_id=on_provider_session_id,
+            on_provider_session_id=_record_provider_session_id,
         )
 
         try:
@@ -214,6 +221,9 @@ class ContainerRunner:
                 provider=service.name,
             )
         finally:
+            self._logical_session.record_provider_session_id(
+                observed_provider_session_id[0]
+            )
             try:
                 self._session.exec_simple("rm -f /tmp/.pycastle_prompt")
             except Exception:
@@ -242,6 +252,13 @@ class ContainerRunner:
             session_uuid=session_uuid,
             tool_policy=tool_policy,
         )
+        observed_provider_session_id: list[str | None] = [session_uuid]
+
+        def _record_provider_session_id(provider_session_id: str) -> None:
+            observed_provider_session_id[0] = provider_session_id
+            if on_provider_session_id is not None:
+                on_provider_session_id(provider_session_id)
+
         logged_lines = stream_logged_work_lines(
             self._session.exec_stream(command),
             logical_session=self._logical_session,
@@ -254,7 +271,7 @@ class ContainerRunner:
         )
         parsed_events = service.run(
             logged_lines,
-            on_provider_session_id=on_provider_session_id,
+            on_provider_session_id=_record_provider_session_id,
         )
 
         try:
@@ -265,6 +282,9 @@ class ContainerRunner:
                 provider=service.name,
             )
         finally:
+            self._logical_session.record_provider_session_id(
+                observed_provider_session_id[0]
+            )
             try:
                 self._session.exec_simple("rm -f /tmp/.pycastle_prompt")
             except Exception:

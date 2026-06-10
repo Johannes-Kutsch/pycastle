@@ -8,6 +8,7 @@ from pycastle.errors import AgentTimeoutError
 from pycastle.agents.output_protocol import AgentRole
 from pycastle_agent_runtime.agent_log import AgentInvocationLog
 from pycastle.infrastructure._logged_line_stream import (
+    pycastle_input_compatibility_record,
     stream_logged_lines,
     stream_logged_work_lines,
 )
@@ -23,10 +24,7 @@ def _collect_stream(
             chunks,
             log_path=log_path,
             input_record=input_record
-            or {
-                "type": "pycastle_input",
-                "prompt": "prompt",
-            },
+            or pycastle_input_compatibility_record(prompt="prompt"),
             idle_timeout=idle_timeout,
             on_chunk=lambda: on_chunk_calls.append("chunk"),
         )
@@ -57,8 +55,8 @@ def test_stream_logged_work_lines_handles_one_complete_invocation(tmp_path):
     assert lines == ['{"type":"result","result":"done"}']
     assert on_chunk_calls == ["chunk"]
     assert logical_session.log_path.read_bytes() == (
-        b'{"type": "pycastle_input", "role": "implementer", "run_kind": "fresh", '
-        b'"session_uuid": null, "prompt": "prompt"}\n'
+        b'{"type": "agent_invocation", "role": "implementer", '
+        b'"run_kind": "fresh", "provider_session_id": null, "prompt": "prompt"}\n'
         b'{"type":"result","result":"done"}\n'
     )
 
@@ -100,19 +98,19 @@ def test_stream_logged_work_lines_repeated_invocations_insert_one_blank_line_sep
     log_lines = logical_session.log_path.read_text(encoding="utf-8").splitlines()
 
     assert json.loads(log_lines[0]) == {
-        "type": "pycastle_input",
+        "type": "agent_invocation",
         "role": "implementer",
         "run_kind": "fresh",
-        "session_uuid": "session-1",
+        "provider_session_id": "session-1",
         "prompt": "first prompt",
     }
     assert log_lines[1] == '{"type":"result","result":"first"}'
     assert log_lines[2] == ""
     assert json.loads(log_lines[3]) == {
-        "type": "pycastle_input",
+        "type": "agent_invocation",
         "role": "reviewer",
         "run_kind": "resume",
-        "session_uuid": "session-2",
+        "provider_session_id": "session-2",
         "prompt": "second prompt",
     }
     assert log_lines[4] == '{"type":"result","result":"second"}'
@@ -134,6 +132,28 @@ def test_stream_logged_lines_logs_input_record_and_chunk_bytes(tmp_path):
     assert rest == b"".join(chunks)
 
 
+def test_stream_logged_lines_writes_pycastle_input_only_via_compatibility_record(
+    tmp_path,
+):
+    log_path = tmp_path / "agent.log"
+
+    lines = list(
+        stream_logged_lines(
+            [b"done\n"],
+            log_path=log_path,
+            input_record=pycastle_input_compatibility_record(prompt="compat prompt"),
+            idle_timeout=1.0,
+            on_chunk=lambda: None,
+        )
+    )
+
+    assert lines == ["done"]
+    assert json.loads(log_path.read_text(encoding="utf-8").splitlines()[0]) == {
+        "type": "pycastle_input",
+        "prompt": "compat prompt",
+    }
+
+
 def test_stream_logged_lines_reports_each_provider_chunk_to_progress_callback(
     tmp_path,
 ):
@@ -145,10 +165,7 @@ def test_stream_logged_lines_reports_each_provider_chunk_to_progress_callback(
         stream_logged_lines(
             chunks,
             log_path=log_path,
-            input_record={
-                "type": "pycastle_input",
-                "prompt": "prompt",
-            },
+            input_record=pycastle_input_compatibility_record(prompt="prompt"),
             idle_timeout=1.0,
             on_chunk=lambda chunk: reported_chunks.append(chunk),
         )
@@ -168,10 +185,7 @@ def test_stream_logged_lines_preserves_no_arg_progress_callback_without_signatur
         stream_logged_lines(
             [b"done\n"],
             log_path=log_path,
-            input_record={
-                "type": "pycastle_input",
-                "prompt": "prompt",
-            },
+            input_record=pycastle_input_compatibility_record(prompt="prompt"),
             idle_timeout=1.0,
             on_chunk=progress_state.clear,
         )
@@ -260,7 +274,7 @@ def test_stream_logged_lines_raises_agent_timeout_error_after_idle_timeout(tmp_p
             stream_logged_lines(
                 chunks,
                 log_path=log_path,
-                input_record={"type": "pycastle_input", "prompt": "stalled"},
+                input_record=pycastle_input_compatibility_record(prompt="stalled"),
                 idle_timeout=0.05,
                 on_chunk=lambda: None,
             )
@@ -281,7 +295,7 @@ def test_stream_logged_lines_does_not_report_progress_for_stream_completion(tmp_
         stream_logged_lines(
             [],
             log_path=log_path,
-            input_record={"type": "pycastle_input", "prompt": "done"},
+            input_record=pycastle_input_compatibility_record(prompt="done"),
             idle_timeout=1.0,
             on_chunk=lambda: on_chunk_calls.append("chunk"),
         )
@@ -307,7 +321,7 @@ def test_stream_logged_lines_resets_idle_wait_after_each_provider_chunk(tmp_path
             stream_logged_lines(
                 delayed_chunks(),
                 log_path=log_path,
-                input_record={"type": "pycastle_input", "prompt": "prompt"},
+                input_record=pycastle_input_compatibility_record(prompt="prompt"),
                 idle_timeout=0.05,
                 on_chunk=lambda: on_chunk_calls.append("chunk"),
             )

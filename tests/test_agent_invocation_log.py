@@ -35,19 +35,19 @@ def test_logical_session_reuses_one_reserved_log_for_multiple_work_invocations(
 
     log_lines = session.log_path.read_text(encoding="utf-8").splitlines()
     assert json.loads(log_lines[0]) == {
-        "type": "pycastle_input",
+        "type": "agent_invocation",
         "role": "implementer",
         "run_kind": "fresh",
-        "session_uuid": "session-1",
+        "provider_session_id": "session-1",
         "prompt": "first prompt",
     }
     assert log_lines[1] == '{"type":"result","result":"first"}'
     assert log_lines[2] == ""
     assert json.loads(log_lines[3]) == {
-        "type": "pycastle_input",
+        "type": "agent_invocation",
         "role": "reviewer",
         "run_kind": "resume",
-        "session_uuid": "session-2",
+        "provider_session_id": "session-2",
         "prompt": "second prompt",
     }
     assert log_lines[4] == '{"type":"result","result":"second"}'
@@ -153,7 +153,7 @@ def test_reserve_uses_container_runner_slug_rules_in_missing_effective_logs_dir(
     assert log_path.read_text() == ""
 
 
-def test_first_invocation_appends_pycastle_input_header_then_raw_bytes(tmp_path):
+def test_first_invocation_appends_agent_invocation_header_then_raw_bytes(tmp_path):
     log = AgentInvocationLog()
     log_path = log.reserve(agent_name="implementer", effective_logs_dir=tmp_path)
     raw_bytes = b'{"type":"result","result":"done"}\n'
@@ -162,23 +162,23 @@ def test_first_invocation_appends_pycastle_input_header_then_raw_bytes(tmp_path)
         log_path=log_path,
         role=AgentRole.IMPLEMENTER,
         run_kind=RunKind.FRESH,
-        session_uuid="session-123",
+        session_uuid="provider-session-123",
         prompt="solve issue",
         provider_bytes=raw_bytes,
     )
 
     header, rest = log_path.read_bytes().split(b"\n", 1)
     assert json.loads(header) == {
-        "type": "pycastle_input",
+        "type": "agent_invocation",
         "role": "implementer",
         "run_kind": "fresh",
-        "session_uuid": "session-123",
+        "provider_session_id": "provider-session-123",
         "prompt": "solve issue",
     }
     assert rest == raw_bytes
 
 
-def test_second_invocation_adds_one_blank_line_before_next_pycastle_input_header(
+def test_second_invocation_adds_one_blank_line_before_next_agent_invocation_header(
     tmp_path,
 ):
     log = AgentInvocationLog()
@@ -204,19 +204,19 @@ def test_second_invocation_adds_one_blank_line_before_next_pycastle_input_header
     log_lines = log_path.read_text(encoding="utf-8").splitlines()
 
     assert json.loads(log_lines[0]) == {
-        "type": "pycastle_input",
+        "type": "agent_invocation",
         "role": "implementer",
         "run_kind": "fresh",
-        "session_uuid": "session-1",
+        "provider_session_id": "session-1",
         "prompt": "first prompt",
     }
     assert log_lines[1] == '{"type":"result","result":"first"}'
     assert log_lines[2] == ""
     assert json.loads(log_lines[3]) == {
-        "type": "pycastle_input",
+        "type": "agent_invocation",
         "role": "reviewer",
         "run_kind": "resume",
-        "session_uuid": "session-2",
+        "provider_session_id": "session-2",
         "prompt": "second prompt",
     }
     assert log_lines[4] == '{"type":"result","result":"second"}'

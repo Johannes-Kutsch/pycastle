@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from ._import_isolation import assert_runtime_import_isolation
 
+from .agent_log import AgentInvocationLog, LogicalAgentInvocationLog, WorkInvocationLog
 from .contracts import (
     AgentService,
     AssistantTurn,
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "AgentCredentialFailureError",
+    "AgentInvocationLog",
     "AgentFailedError",
     "AgentService",
     "AgentRole",
@@ -60,6 +62,7 @@ __all__ = [
     "CredentialFailure",
     "HardError",
     "HardAgentError",
+    "LogicalAgentInvocationLog",
     "ParsedTurn",
     "ProviderErrorObservation",
     "ProviderSessionState",
@@ -90,6 +93,7 @@ __all__ = [
     "UsageLimitError",
     "validation_labels",
     "decide_usage_limit_continuation",
+    "WorkInvocationLog",
 ]
 
 
