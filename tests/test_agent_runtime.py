@@ -266,6 +266,178 @@ def _standalone_runtime_attr_access_results(
     return json.loads(result.stdout)
 
 
+def _standalone_runtime_surface_behavior_result(
+    repo_root: Path,
+) -> dict[str, object]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                """
+                import importlib.abc
+                import json
+                import sys
+                from datetime import datetime, timezone
+                from pathlib import Path
+
+                class _BlockPycastle(importlib.abc.MetaPathFinder):
+                    def find_spec(self, fullname, path=None, target=None):
+                        del path, target
+                        if fullname == "pycastle" or fullname.startswith("pycastle."):
+                            raise ModuleNotFoundError(
+                                f"blocked test import: {fullname}"
+                            )
+                        return None
+
+                sys.meta_path.insert(0, _BlockPycastle())
+
+                import pycastle_agent_runtime as runtime
+
+                class _Service:
+                    name = "codex"
+
+                    def is_available(self, now=None):
+                        del now
+                        return True
+
+                    def next_wake_time(self):
+                        return datetime(2026, 5, 17, 12, 0, tzinfo=timezone.utc)
+
+                    def mark_exhausted(self, reset_time):
+                        del reset_time
+
+                    def state_dir_relpath(self, role, namespace=""):
+                        if namespace:
+                            return f"{role.value}/{namespace}/{self.name}/"
+                        return f"{role.value}/{self.name}/"
+
+                    def is_resumable(self, state_dir):
+                        del state_dir
+                        return False
+
+                    def provider_session_state(self, request):
+                        return runtime.ProviderSessionState(
+                            runtime.RunKind.FRESH,
+                            None,
+                            state_dir_relpath=request.state_dir_relpath,
+                            state_dir_path=request.provider_state_dir,
+                        )
+
+                    def valid_efforts(self):
+                        return frozenset({"medium"})
+
+                    def valid_models(self):
+                        return frozenset({"gpt-5.4"})
+
+                class _RoleSession:
+                    def session_uuid(self):
+                        return "role-session"
+
+                    def service_session_id(self, service_name):
+                        del service_name
+                        return None
+
+                    def save_service_session_id(self, service_name, session_id):
+                        del service_name, session_id
+
+                    def service_session_metadata(self, service_name):
+                        del service_name
+                        return None
+
+                    def exact_transcript_service_name(self):
+                        return None
+
+                    def record_successful_provider_session_metadata(
+                        self,
+                        service_name,
+                        provider_session_id,
+                    ):
+                        del service_name, provider_session_id
+
+                service = _Service()
+                registry = runtime.ServiceRegistry({"codex": service})
+                override = runtime.StageOverride(
+                    service="missing",
+                    model="ignored",
+                    effort="medium",
+                    fallback=runtime.StageOverride(
+                        service="codex",
+                        model="gpt-5.4",
+                        effort="medium",
+                    ),
+                )
+                resolved = registry.resolve(
+                    override,
+                    datetime(2026, 5, 17, 11, 0, tzinfo=timezone.utc),
+                )
+                selection = runtime.select_configured_candidate_chain(
+                    override,
+                    configured_service_names=("codex",),
+                    available_service_names=("codex",),
+                )
+                provider_request = runtime.ProviderSessionStateRequest(
+                    role_session=_RoleSession(),
+                    provider_state_dir=None,
+                    has_resumable_provider_state=False,
+                )
+                provider_state = service.provider_session_state(provider_request)
+                plan = runtime.plan_provider_run_state(
+                    runtime.ProviderRunStatePlanRequest(
+                        worktree=Path("."),
+                        role=runtime.AgentRole.IMPLEMENTER,
+                        namespace="main",
+                        service=service,
+                        role_session=_RoleSession(),
+                    )
+                )
+                decision = runtime.decide_usage_limit_continuation(
+                    runtime.UsageLimitOutcome(),
+                    stage_override=resolved,
+                    service_registry=registry,
+                    now=datetime(2026, 5, 17, 11, 0, tzinfo=timezone.utc),
+                    compute_wake_time=lambda reset_time, now: (
+                        now,
+                        reset_time is None,
+                    ),
+                )
+                failure = runtime.AgentFailedError(
+                    role_value="implementer",
+                    worktree_path=Path("."),
+                    namespace="main",
+                    service_name="codex",
+                )
+                print(
+                    json.dumps(
+                        {
+                            "resolved_service": resolved.service,
+                            "selected_chain": (
+                                None
+                                if selection.selected_chain is None
+                                else runtime.render_chain_label(
+                                    selection.selected_chain
+                                )
+                            ),
+                            "provider_run_kind": provider_state.run_kind.value,
+                            "planned_run_kind": plan.run_kind.value,
+                            "planned_relpath": plan.provider_state_dir_relpath,
+                            "usage_decision_type": type(decision).__name__,
+                            "failure_session_dir": failure.session_dir,
+                        },
+                        sort_keys=True,
+                    )
+                )
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def _standalone_runtime_prompt_result(repo_root: Path) -> str:
     result = subprocess.run(
         [
@@ -1145,6 +1317,22 @@ def test_runtime_top_level_surface_is_accessible_standalone_without_pycastle() -
 
     assert results == {
         attr_name: {"type": "ok", "message": ""} for attr_name in results
+    }
+
+
+def test_runtime_surface_behaviors_run_standalone_without_pycastle() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = _standalone_runtime_surface_behavior_result(repo_root)
+
+    assert result == {
+        "failure_session_dir": ".pycastle-session/implementer/main/codex",
+        "planned_relpath": "implementer/main/codex/",
+        "planned_run_kind": "fresh",
+        "provider_run_kind": "fresh",
+        "resolved_service": "codex",
+        "selected_chain": "codex",
+        "usage_decision_type": "ContinueNow",
     }
 
 
