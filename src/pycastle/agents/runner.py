@@ -27,6 +27,11 @@ from ..errors import (
     DockerError,
     SetupPhaseError,
 )
+from ..prompts.dispatch import (
+    PromptInvocation,
+    build_prompt_invocation,
+    render_prompt_invocation,
+)
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
 from ..session.agent import RunSessionPlan
@@ -308,17 +313,16 @@ class AgentRunner:
 
     async def _build_prompt(
         self,
-        template: PromptTemplate,
-        scope_args: dict[str, str],
+        invocation: PromptInvocation,
         container_exec: Callable[[str], Awaitable[str]],
         run_kind: RunKind,
-        send_role_prompt_on_resume: bool,
     ) -> str:
-        if run_kind == RunKind.RESUME and not send_role_prompt_on_resume:
-            return await self._renderer.render(
-                PromptTemplate.RESUME, {}, container_exec
-            )
-        return await self._renderer.render(template, scope_args, container_exec)
+        return await render_prompt_invocation(
+            invocation,
+            renderer=self._renderer,
+            run_kind=run_kind,
+            exec_fn=container_exec,
+        )
 
     async def run(self, request: RunRequest) -> AgentSuccessOutput:
         return await translate_run_outcome(self._run(request), request)
@@ -367,12 +371,15 @@ class AgentRunner:
         )
 
     async def _run(self, request: RunRequest) -> AgentOutput:
-        template = request.template
-        scope_args = request.scope_args or {}
+        invocation = build_prompt_invocation(
+            request.template,
+            request.scope_args or {},
+            send_role_prompt_on_resume=request.send_role_prompt_on_resume,
+        )
         service = self._resolve_service(request.service)
         color_key: int | None = None
         if request.role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
-            issue_number_str = scope_args.get("ISSUE_NUMBER", "")
+            issue_number_str = invocation.scope_args.get("ISSUE_NUMBER", "")
             if issue_number_str.isdigit():
                 color_key = int(issue_number_str)
 
@@ -389,11 +396,9 @@ class AgentRunner:
             container_exec: Callable[[str], Awaitable[str]],
         ) -> str:
             return await self._build_prompt(
-                template,
-                scope_args,
+                invocation,
                 container_exec,
                 run_kind=run_kind,
-                send_role_prompt_on_resume=request.send_role_prompt_on_resume,
             )
 
         from pycastle_agent_runtime.work import invoke_work

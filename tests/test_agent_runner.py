@@ -46,6 +46,7 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import ProviderRunState, RoleSession, RunKind
@@ -4220,11 +4221,13 @@ def test_build_prompt_uses_resume_template_on_resume_without_role_flag(tmp_path)
 
     result = asyncio.run(
         runner._build_prompt(
-            _PLAN_TEMPLATE,
-            _PLAN_SCOPE_ARGS,
+            build_prompt_invocation(
+                _PLAN_TEMPLATE,
+                _PLAN_SCOPE_ARGS,
+                send_role_prompt_on_resume=False,
+            ),
             _noop_exec,
             run_kind=RunKind.RESUME,
-            send_role_prompt_on_resume=False,
         )
     )
 
@@ -4238,11 +4241,13 @@ def test_build_prompt_uses_role_template_on_resume_with_send_role_prompt(tmp_pat
 
     result = asyncio.run(
         runner._build_prompt(
-            _PLAN_TEMPLATE,
-            _PLAN_SCOPE_ARGS,
+            build_prompt_invocation(
+                _PLAN_TEMPLATE,
+                _PLAN_SCOPE_ARGS,
+                send_role_prompt_on_resume=True,
+            ),
             _noop_exec,
             run_kind=RunKind.RESUME,
-            send_role_prompt_on_resume=True,
         )
     )
 
@@ -4256,11 +4261,13 @@ def test_build_prompt_uses_role_template_on_fresh_run(tmp_path):
 
     result = asyncio.run(
         runner._build_prompt(
-            _PLAN_TEMPLATE,
-            _PLAN_SCOPE_ARGS,
+            build_prompt_invocation(
+                _PLAN_TEMPLATE,
+                _PLAN_SCOPE_ARGS,
+                send_role_prompt_on_resume=False,
+            ),
             _noop_exec,
             run_kind=RunKind.FRESH,
-            send_role_prompt_on_resume=False,
         )
     )
 
@@ -4285,11 +4292,13 @@ def test_build_prompt_expands_shell_expressions_via_container_exec(tmp_path):
 
     result = asyncio.run(
         runner._build_prompt(
-            PromptTemplate.RESUME,
-            {},
+            build_prompt_invocation(
+                PromptTemplate.RESUME,
+                {},
+                send_role_prompt_on_resume=False,
+            ),
             fake_exec,
             run_kind=RunKind.RESUME,
-            send_role_prompt_on_resume=False,
         )
     )
 
