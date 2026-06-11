@@ -38,6 +38,7 @@ def test_resolve_layout_pycastle_home_precedence_prefers_explicit_over_env(
     )
 
     assert layout.pycastle_home == explicit_pycastle_home
+    assert layout.cron_lock_path == explicit_pycastle_home / ".cron.lock"
 
 
 def test_resolve_layout_pycastle_home_precedence_falls_back_to_env(
@@ -51,6 +52,22 @@ def test_resolve_layout_pycastle_home_precedence_falls_back_to_env(
     )
 
     assert layout.pycastle_home == env_pycastle_home
+    assert layout.cron_lock_path == env_pycastle_home / ".cron.lock"
+
+
+def test_resolve_layout_pycastle_home_precedence_falls_back_to_platform_default(
+    tmp_path: Path, monkeypatch
+) -> None:
+    platform_default_pycastle_home = tmp_path / "platform-default"
+    monkeypatch.setattr(
+        "platformdirs.user_config_dir",
+        lambda appname: str(platform_default_pycastle_home),
+    )
+
+    layout = resolve_layout(repo_root=tmp_path, env={})
+
+    assert layout.pycastle_home == platform_default_pycastle_home
+    assert layout.cron_lock_path == platform_default_pycastle_home / ".cron.lock"
 
 
 def test_layout_describe_config_layers_shortens_pycastle_home_to_tilde(
