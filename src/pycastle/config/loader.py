@@ -5,16 +5,19 @@ import importlib.util
 import os
 import re
 import types
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
-import platformdirs
 import pycastle_agent_runtime as agent_runtime
 
 from pycastle._universal_image_build import resolve_universal_dockerfile
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
+from pycastle.layout import (
+    describe_config_layers as _describe_config_layers,
+    resolve_global_dir,
+    resolve_layout,
+)
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
 
 __all__ = [
@@ -57,15 +60,13 @@ _GLOBAL_FORBIDDEN_FIELDS = frozenset(
 )
 
 
-@dataclasses.dataclass(frozen=True)
-class _ResolvedPycastlePaths:
-    repo_root: Path
-    pycastle_dir: Path
-    global_dir: Path
-    global_config_file: Path
-    local_config_file: Path
-    global_env_file: Path
-    local_env_file: Path
+def describe_config_layers(
+    repo_root: Path | None = None,
+    global_dir: Path | None = None,
+) -> str:
+    return _describe_config_layers(
+        repo_root=repo_root, global_dir=global_dir, os_name=os.name
+    )
 
 
 def derive_docker_image_name(name: str) -> str:
@@ -204,64 +205,6 @@ def resolve_dockerfile(pycastle_dir: Path | str) -> Path:
     )
 
 
-def resolve_global_dir(explicit: Path | None, env: Mapping[str, str]) -> Path:
-    if explicit is not None:
-        return explicit
-    env_val = env.get("PYCASTLE_HOME")
-    if env_val:
-        return Path(env_val)
-    return Path(platformdirs.user_config_dir("pycastle"))
-
-
-def _resolve_pycastle_paths(
-    repo_root: Path | None,
-    global_dir: Path | None,
-    env: Mapping[str, str],
-) -> _ResolvedPycastlePaths:
-    resolved_repo_root = repo_root if repo_root is not None else Path.cwd()
-    resolved_pycastle_dir = resolved_repo_root / "pycastle"
-    resolved_global_dir = resolve_global_dir(global_dir, env)
-    return _ResolvedPycastlePaths(
-        repo_root=resolved_repo_root,
-        pycastle_dir=resolved_pycastle_dir,
-        global_dir=resolved_global_dir,
-        global_config_file=resolved_global_dir / "config.py",
-        local_config_file=resolved_pycastle_dir / "config.py",
-        global_env_file=resolved_global_dir / ".env",
-        local_env_file=resolved_pycastle_dir / ".env",
-    )
-
-
-def _display_global_path(path: Path) -> str:
-    if os.name == "nt":
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            try:
-                rel = path.relative_to(appdata)
-                return "%APPDATA%\\" + str(rel).replace("/", "\\")
-            except ValueError:
-                pass
-    home = Path.home()
-    try:
-        rel = path.relative_to(home)
-        return "~/" + rel.as_posix()
-    except ValueError:
-        return path.as_posix()
-
-
-def describe_config_layers(
-    repo_root: Path | None = None,
-    global_dir: Path | None = None,
-) -> str:
-    parts = ["defaults"]
-    paths = _resolve_pycastle_paths(repo_root, global_dir, os.environ)
-    if paths.global_config_file.exists():
-        parts.append(_display_global_path(paths.global_config_file))
-    if paths.local_config_file.exists():
-        parts.append("pycastle/config.py")
-    return "Config: " + " + ".join(parts)
-
-
 def resolve_logs_dir(cfg: Config) -> Path:
     logs_dir = cfg.logs_dir
     if not logs_dir.is_absolute():
@@ -289,11 +232,11 @@ def load_config(
     kwargs: dict[str, Any] = {}
     valid_fields = {f.name for f in dataclasses.fields(Config) if f.init}
     global_logs_dir_set = False
-    paths = _resolve_pycastle_paths(repo_root, global_dir, os.environ)
+    layout = resolve_layout(repo_root=repo_root, pycastle_home=global_dir)
 
-    if paths.global_config_file.exists():
+    if layout.global_config_file.exists():
         global_kwargs = _read_config_file(
-            paths.global_config_file, "_pycastle_global_config", valid_fields
+            layout.global_config_file, "_pycastle_global_config", valid_fields
         )
         forbidden = sorted(_GLOBAL_FORBIDDEN_FIELDS & global_kwargs.keys())
         if forbidden:
@@ -306,9 +249,9 @@ def load_config(
         kwargs.update(global_kwargs)
 
     local_logs_dir_set = False
-    if paths.local_config_file.exists():
+    if layout.local_config_file.exists():
         local_kwargs = _read_config_file(
-            paths.local_config_file, "_pycastle_local_config", valid_fields
+            layout.local_config_file, "_pycastle_local_config", valid_fields
         )
         local_logs_dir_set = "logs_dir" in local_kwargs
         kwargs.update(local_kwargs)
@@ -322,12 +265,12 @@ def load_config(
     cfg = Config(**kwargs)
     if cfg.docker_image_name == "":
         cfg = dataclasses.replace(
-            cfg, docker_image_name=derive_docker_image_name(paths.repo_root.name)
+            cfg, docker_image_name=derive_docker_image_name(layout.repo_root.name)
         )
     _validate_bug_report_repo(cfg)
     _validate_improve_max(cfg)
     _validate_improve_mode(cfg)
-    object.__setattr__(cfg, "repo_root", paths.repo_root)
+    object.__setattr__(cfg, "repo_root", layout.repo_root)
     object.__setattr__(
         cfg,
         "_global_logs_dir_parent",

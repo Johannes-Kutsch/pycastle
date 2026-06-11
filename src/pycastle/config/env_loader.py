@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from dotenv import dotenv_values
-from pycastle.config.loader import _resolve_pycastle_paths
+from pycastle.layout import resolve_layout
 
 __all__ = [
     "DEFAULT_ENV_FILE",
@@ -37,11 +37,11 @@ def load_env(
 ) -> dict[str, str]:
     del local_env_file
     resolved_process_env = os.environ if process_env is None else process_env
-    paths = _resolve_pycastle_paths(repo_root, global_dir, os.environ)
+    layout = resolve_layout(repo_root=repo_root, pycastle_home=global_dir)
     merged: dict[str, str] = {}
 
-    merged.update(_read_env_file(paths.global_env_file))
-    merged.update(_read_env_file(paths.local_env_file))
+    merged.update(_read_env_file(layout.global_env_file))
+    merged.update(_read_env_file(layout.local_env_file))
     merged.update(resolved_process_env)
     return merged
 

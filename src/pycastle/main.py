@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import asyncio
 import difflib
-import os
 import sys
 import types
 from pathlib import Path
@@ -17,14 +16,14 @@ from .config import (
     load_config,
     load_credential_env,
     resolve_logs_dir,
-    resolve_global_dir,
 )
-from .config.loader import describe_config_layers, referenced_services
+from .config.loader import referenced_services
 from .errors import (
     ClaudeCliNotFoundError,
     ConfigValidationError,
     DockerServiceError,
 )
+from .layout import describe_config_layers, resolve_layout
 from ._universal_image_build import UniversalImageBuildOptions
 from .display.status_display import PlainStatusDisplay
 
@@ -445,13 +444,12 @@ def cron_cmd(no_improve: bool) -> None:
     from .commands.init import refresh as _refresh
     from .log_maintenance import maintain_logs
 
-    home = resolve_global_dir(None, os.environ)
-    lock_path = home / ".cron.lock"
-    home.mkdir(parents=True, exist_ok=True)
+    layout = resolve_layout()
+    layout.pycastle_home.mkdir(parents=True, exist_ok=True)
 
     _LOCK_TIMEOUT_SECS = 6 * 3600
 
-    with open(lock_path, "w") as lock_file:
+    with open(layout.cron_lock_path, "w") as lock_file:
         if sys.platform == "win32":
             import msvcrt
 
