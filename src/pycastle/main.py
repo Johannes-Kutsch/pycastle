@@ -445,7 +445,7 @@ def cron_cmd(no_improve: bool) -> None:
     from .log_maintenance import maintain_logs
 
     layout = resolve_layout()
-    layout.pycastle_home.mkdir(parents=True, exist_ok=True)
+    layout.cron_lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     _LOCK_TIMEOUT_SECS = 6 * 3600
 
