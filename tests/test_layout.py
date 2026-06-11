@@ -84,6 +84,19 @@ def test_layout_describe_config_layers_shortens_pycastle_home_to_tilde(
     assert summary == "Config: defaults + ~/.config/pycastle/config.py"
 
 
+def test_resolve_layout_exposes_home_relative_display_paths(
+    tmp_path: Path, monkeypatch
+) -> None:
+    fake_home = tmp_path / "home"
+    global_dir = fake_home / ".config" / "pycastle"
+    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
+
+    layout = resolve_layout(repo_root=tmp_path, pycastle_home=global_dir, env={})
+
+    assert layout.global_config_display_path == "~/.config/pycastle/config.py"
+    assert layout.local_config_display_path == "pycastle/config.py"
+
+
 def test_layout_describe_config_layers_uses_appdata_form_on_windows(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -100,6 +113,23 @@ def test_layout_describe_config_layers_uses_appdata_form_on_windows(
     )
 
     assert summary == r"Config: defaults + %APPDATA%\pycastle\config.py"
+
+
+def test_resolve_layout_exposes_appdata_display_path_on_windows(
+    tmp_path: Path,
+) -> None:
+    appdata = tmp_path / "appdata"
+    global_dir = appdata / "pycastle"
+
+    layout = resolve_layout(
+        repo_root=tmp_path,
+        pycastle_home=global_dir,
+        env={"APPDATA": str(appdata)},
+        os_name="nt",
+    )
+
+    assert layout.global_config_display_path == r"%APPDATA%\pycastle\config.py"
+    assert layout.local_config_display_path == "pycastle/config.py"
 
 
 def test_resolve_global_dir_prefers_explicit_arg_over_env(
