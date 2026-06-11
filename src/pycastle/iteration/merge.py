@@ -24,6 +24,7 @@ from ..infrastructure.worktree import (
     teardown_worktree,
     worktree_identity,
 )
+from ._merge_reporting import MergeProgressReporter, build_merge_close_message
 from ._rows import status_row
 from ._utils import _wait_for_clean_working_tree
 from .implement import branch_for
@@ -110,36 +111,6 @@ async def _delete_merged_branches(
     return [s for s in slots if s is not None]
 
 
-def _build_close_message(
-    deleted: list[str],
-    *,
-    completed_conflicts: list[dict] | None = None,
-    pending_conflicts: list[dict] | None = None,
-) -> str:
-    if not deleted:
-        message = "Execution complete, 0 branch(es) merged and deleted"
-    else:
-        header = f"Execution complete, {len(deleted)} branch(es) merged and deleted:"
-        lines = "\n".join(f"  Deleted merged branch: {b}" for b in deleted)
-        message = f"{header}\n{lines}"
-
-    completed_conflicts = completed_conflicts or []
-    pending_conflicts = pending_conflicts or []
-    if completed_conflicts:
-        completed_lines = "\n".join(
-            f"  Completed conflict branch: {branch_for(issue['number'])}"
-            for issue in completed_conflicts
-        )
-        message = f"{message}\nCompleted conflict branches:\n{completed_lines}"
-    if pending_conflicts:
-        pending_lines = "\n".join(
-            f"  Pending conflict branch: {branch_for(issue['number'])}"
-            for issue in pending_conflicts
-        )
-        message = f"{message}\nPending conflict branches:\n{pending_lines}"
-    return message
-
-
 async def _close_issues_parallel(
     issues: list[dict],
     github_svc: GithubService,
@@ -198,21 +169,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             else:
                 conflict_issues.append(issue)
 
-        merge_done = len(clean_issues)
-        close_done = 0
-        remove_done: int | None = None
-
-        def _render_phase_status() -> None:
-            message = f"merging {merge_done}/{completed_total} branches"
-            if close_done or remove_done is not None:
-                message = f"{message}, closing {close_done}/{completed_total} issues"
-            if remove_done is not None:
-                message = (
-                    f"{message}, removing {remove_done}/{completed_total} worktrees"
-                )
-            deps.status_display.update_phase("Merge", message)
-
-        _render_phase_status()
+        progress = MergeProgressReporter(
+            status_display=deps.status_display,
+            completed_total=completed_total,
+            merge_done=len(clean_issues),
+        )
+        progress.render()
 
         def _on_close_error(issue_number: int, exc: BaseException) -> None:
             deps.status_display.print(
@@ -226,32 +188,25 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             deps.status_display.print("Merge", summary, "success")
 
         async def _close_issues(issues: list[dict]) -> None:
-            nonlocal close_done
-            batch_start = close_done
+            batch_start = progress.close_done
 
             def _on_progress(done: int, total: int) -> None:
-                nonlocal close_done
-                close_done = batch_start + done
-                _render_phase_status()
+                progress.update_close_done(batch_start + done)
 
             await _close_issues_parallel(
                 issues, deps.github_svc, _on_progress, _on_close_error
             )
 
         async def _delete_branches(branches: list[str]) -> list[str]:
-            nonlocal remove_done
-            batch_start = remove_done or 0
+            batch_start = progress.remove_done or 0
 
             def _on_teardown_progress(done: int, total: int) -> None:
-                nonlocal remove_done
-                remove_done = batch_start + done
-                _render_phase_status()
+                progress.update_remove_done(batch_start + done)
 
             deleted = await _delete_merged_branches(
                 branches, deps, _on_teardown_progress
             )
-            remove_done = None
-            _render_phase_status()
+            progress.update_remove_done(None)
             return deleted
 
         if clean_issues:
@@ -263,7 +218,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         )
 
         if not conflict_issues:
-            _close_merge_row(_build_close_message(clean_deleted))
+            _close_merge_row(build_merge_close_message(clean_deleted))
         else:
             verdict = await deps.preflight_cache.get_safe_sha(deps)
             if isinstance(verdict, (PreflightHITL, PreflightAFK)):
@@ -272,7 +227,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     "Merge-time preflight failed; skipping conflict branch merge. "
                     "Conflict issues remain open for recovery in the next iteration.",
                 )
-                _close_merge_row(_build_close_message(clean_deleted))
+                _close_merge_row(build_merge_close_message(clean_deleted))
                 if deps.cfg.auto_push and clean_issues:
                     await deps.git_svc.push(
                         deps.repo_root,
@@ -342,8 +297,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                             [active_issue], deps.repo_root, deps
                         )
                         RoleSession(sandbox_path, AgentRole.MERGER).discard()
-                        merge_done += 1
-                        _render_phase_status()
+                        progress.update_merge_done(progress.merge_done + 1)
                 except (
                     AgentTimeoutError,
                     UsageLimitError,
@@ -367,7 +321,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             if completed_conflicts:
                 deps.github_svc.close_completed_parent_issues()
             _close_merge_row(
-                _build_close_message(
+                build_merge_close_message(
                     clean_deleted + conflict_deleted,
                     completed_conflicts=completed_conflicts,
                     pending_conflicts=pending_conflicts,
