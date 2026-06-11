@@ -183,6 +183,33 @@ def test_load_config_and_credential_env_share_pycastle_home_resolution(
     assert env == {"GH_TOKEN": "from-global"}
 
 
+def test_load_config_and_credential_env_share_process_env_pycastle_home_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = tmp_path / "workspace"
+    repo_root.mkdir()
+    (repo_root / "pycastle").mkdir()
+
+    pycastle_home = tmp_path / "pycastle-home"
+    pycastle_home.mkdir()
+    (pycastle_home / "config.py").write_text("max_parallel = 8\n")
+    (pycastle_home / ".env").write_text("GH_TOKEN=from-global\n")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(pycastle_home))
+
+    cfg = load_config(repo_root=repo_root)
+    monkeypatch.delenv("PYCASTLE_HOME")
+    env = load_credential_env(
+        repo_root=repo_root,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={"PYCASTLE_HOME": str(pycastle_home)},
+    )
+
+    assert cfg.max_parallel == 8
+    assert env == {"GH_TOKEN": "from-global"}
+
+
 # ── load_credential_env tests ──────────────────────────────────────────────────
 
 
