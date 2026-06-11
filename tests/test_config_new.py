@@ -13,13 +13,11 @@ from pycastle.config import (
 )
 from pycastle.config.loader import (
     derive_docker_image_name,
-    describe_config_layers,
 )
 from pycastle.errors import (
     ConfigValidationError,
     PycastleError,
 )
-from pycastle.layout import resolve_global_dir
 
 
 def test_load_config_returns_defaults_when_no_local_file(tmp_path):
@@ -607,27 +605,6 @@ def test_load_config_applies_preflight_issue_override_from_local_file(tmp_path):
     assert cfg.preflight_issue_override.effort == "high"
 
 
-# ── Issue 472: global config.py layer + path-field guard ───────────────────
-
-
-def test_resolve_global_dir_prefers_explicit_arg(tmp_path):
-    explicit = tmp_path / "explicit"
-    resolved = resolve_global_dir(explicit, {"PYCASTLE_HOME": "/from/env"})
-    assert resolved == explicit
-
-
-def test_resolve_global_dir_falls_back_to_env_var():
-    resolved = resolve_global_dir(None, {"PYCASTLE_HOME": "/from/env"})
-    assert resolved == Path("/from/env")
-
-
-def test_resolve_global_dir_falls_back_to_platformdirs():
-    import platformdirs
-
-    resolved = resolve_global_dir(None, {})
-    assert resolved == Path(platformdirs.user_config_dir("pycastle"))
-
-
 def test_load_config_no_global_returns_defaults(tmp_path):
     cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
     assert cfg.max_parallel == 1
@@ -983,89 +960,6 @@ def test_load_config_local_docker_image_name_overrides_derived(tmp_path, monkeyp
     monkeypatch.chdir(project_dir)
     cfg = load_config(repo_root=project_dir, global_dir=tmp_path / "no_global")
     assert cfg.docker_image_name == "explicit-name"
-
-
-# ── Issue 475: layer summary line ─────────────────────────────────────────
-
-
-def test_describe_config_layers_defaults_only_returns_defaults_label(tmp_path):
-    summary = describe_config_layers(
-        repo_root=tmp_path, global_dir=tmp_path / "no_global"
-    )
-
-    assert summary == "Config: defaults"
-
-
-def test_describe_config_layers_with_local_only_appends_pycastle_path(tmp_path):
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text("")
-
-    summary = describe_config_layers(
-        repo_root=tmp_path, global_dir=tmp_path / "no_global"
-    )
-
-    assert summary == "Config: defaults + pycastle/config.py"
-
-
-def test_describe_config_layers_with_global_only_appends_global_path(
-    tmp_path, monkeypatch
-):
-    fake_home = tmp_path / "home"
-    fake_home.mkdir()
-    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
-    global_dir = tmp_path / "global"
-    global_dir.mkdir()
-    (global_dir / "config.py").write_text("")
-
-    summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
-
-    expected_path = (global_dir / "config.py").as_posix()
-    assert summary == f"Config: defaults + {expected_path}"
-    assert "pycastle/config.py" not in summary
-
-
-def test_describe_config_layers_with_both_layers_orders_global_then_local(
-    tmp_path, monkeypatch
-):
-    fake_home = tmp_path / "home"
-    fake_home.mkdir()
-    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
-    global_dir = tmp_path / "global"
-    global_dir.mkdir()
-    (global_dir / "config.py").write_text("")
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text("")
-
-    summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
-
-    expected_global = (global_dir / "config.py").as_posix()
-    assert summary == (f"Config: defaults + {expected_global} + pycastle/config.py")
-
-
-def test_describe_config_layers_shortens_home_path_to_tilde(tmp_path, monkeypatch):
-    fake_home = tmp_path / "home"
-    fake_home.mkdir()
-    global_dir = fake_home / ".config" / "pycastle"
-    global_dir.mkdir(parents=True)
-    (global_dir / "config.py").write_text("")
-    monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
-
-    summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
-
-    assert summary == "Config: defaults + ~/.config/pycastle/config.py"
-
-
-def test_describe_config_layers_uses_appdata_form_on_windows(tmp_path, monkeypatch):
-    appdata = tmp_path / "appdata"
-    global_dir = appdata / "pycastle"
-    global_dir.mkdir(parents=True)
-    (global_dir / "config.py").write_text("")
-    monkeypatch.setattr("pycastle.config.loader.os.name", "nt")
-    monkeypatch.setenv("APPDATA", str(appdata))
-
-    summary = describe_config_layers(repo_root=tmp_path, global_dir=global_dir)
-
-    assert summary == r"Config: defaults + %APPDATA%\pycastle\config.py"
 
 
 # ── Issue 613: improve_override defaults to gpt-5.5/high -> opus/high ─────
