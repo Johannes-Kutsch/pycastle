@@ -14,12 +14,12 @@ from pycastle.config import (
 from pycastle.config.loader import (
     derive_docker_image_name,
     describe_config_layers,
-    resolve_global_dir,
 )
 from pycastle.errors import (
     ConfigValidationError,
     PycastleError,
 )
+from pycastle.layout import resolve_global_dir
 
 
 def test_load_config_returns_defaults_when_no_local_file(tmp_path):

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pycastle.config import resolve_global_dir as resolve_global_dir_from_config
-from pycastle.config.loader import resolve_global_dir as resolve_global_dir_from_loader
-from pycastle.layout import describe_config_layers, resolve_layout
+from pycastle.layout import describe_config_layers, resolve_global_dir, resolve_layout
 
 
 def test_resolve_layout_returns_fixed_pycastle_paths_and_cron_lock_path(
@@ -85,19 +83,13 @@ def test_layout_describe_config_layers_uses_appdata_form_on_windows(
     assert summary == r"Config: defaults + %APPDATA%\pycastle\config.py"
 
 
-def test_resolve_global_dir_remains_available_via_config_public_imports(
+def test_resolve_global_dir_prefers_explicit_arg_over_env(
     tmp_path: Path,
 ) -> None:
     explicit_pycastle_home = tmp_path / "explicit"
 
     assert (
-        resolve_global_dir_from_loader(
-            explicit_pycastle_home, {"PYCASTLE_HOME": str(tmp_path / "ignored")}
-        )
-        == explicit_pycastle_home
-    )
-    assert (
-        resolve_global_dir_from_config(
+        resolve_global_dir(
             explicit_pycastle_home, {"PYCASTLE_HOME": str(tmp_path / "ignored")}
         )
         == explicit_pycastle_home

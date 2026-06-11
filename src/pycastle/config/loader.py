@@ -15,7 +15,6 @@ from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
 from pycastle.layout import (
     describe_config_layers as _describe_config_layers,
-    resolve_global_dir,
     resolve_layout,
 )
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
@@ -28,7 +27,6 @@ __all__ = [
     "replace_config_runtime_fields",
     "resolve_logs_dir",
     "resolve_dockerfile",
-    "resolve_global_dir",
 ]
 
 _BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")

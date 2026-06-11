@@ -9,10 +9,8 @@ from typing import Literal
 
 import click
 
-from ..config.loader import (
-    derive_docker_image_name,
-    resolve_global_dir,
-)
+from ..config.loader import derive_docker_image_name
+from ..layout import resolve_global_dir
 from ..scaffold import InitScaffold
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
