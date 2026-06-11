@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import sys
 from importlib.resources import files
@@ -9,10 +8,8 @@ from typing import Literal
 
 import click
 
-from ..config.loader import (
-    derive_docker_image_name,
-    resolve_global_dir,
-)
+from ..config.loader import derive_docker_image_name
+from ..layout import resolve_layout
 from ..scaffold import InitScaffold
 
 _ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
@@ -151,12 +148,11 @@ def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> s
 
 
 def refresh() -> None:
-    project_dir = Path("pycastle")
+    layout = resolve_layout()
     pkg = files("pycastle").joinpath("defaults")
-    pycastle_home = resolve_global_dir(None, os.environ)
     scaffold = InitScaffold(
-        pycastle_dir=project_dir,
-        pycastle_home=pycastle_home,
+        pycastle_dir=layout.pycastle_dir,
+        pycastle_home=layout.pycastle_home,
         defaults=pkg,
     )
 
@@ -174,11 +170,11 @@ def refresh() -> None:
 
 
 def main(scope: Literal["global", "local"] | None = None) -> None:
-    project_dir = Path("pycastle")
+    layout = resolve_layout()
     pkg = files("pycastle").joinpath("defaults")
     scaffold = InitScaffold(
-        pycastle_dir=project_dir,
-        pycastle_home=resolve_global_dir(None, os.environ),
+        pycastle_dir=layout.pycastle_dir,
+        pycastle_home=layout.pycastle_home,
         defaults=pkg,
     )
 
@@ -198,8 +194,8 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         scope = "global" if use_global else "local"
 
     pycastle_home = scaffold.pycastle_home
-    scoped_dir = pycastle_home if scope == "global" else project_dir
-    local_env_file = project_dir / ".env"
+    scoped_dir = pycastle_home if scope == "global" else layout.pycastle_dir
+    local_env_file = layout.local_env_file
     manage_env_file = True
 
     if scope == "global" and local_env_file.exists():
