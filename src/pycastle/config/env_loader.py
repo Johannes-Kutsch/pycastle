@@ -32,8 +32,9 @@ def _read_env_file(path: Path) -> dict[str, str]:
 def _resolve_env_files(
     global_dir: Path | None,
     repo_root: Path | None,
+    env: Mapping[str, str],
 ) -> tuple[Path, Path]:
-    layout = resolve_layout(repo_root=repo_root, pycastle_home=global_dir)
+    layout = resolve_layout(repo_root=repo_root, pycastle_home=global_dir, env=env)
     return layout.global_env_file, layout.local_env_file
 
 
@@ -45,7 +46,10 @@ def load_env(
 ) -> dict[str, str]:
     del local_env_file
     resolved_process_env = os.environ if process_env is None else process_env
-    global_env_file, local_env_file = _resolve_env_files(global_dir, repo_root)
+    layout_env = os.environ if process_env is None else {**os.environ, **process_env}
+    global_env_file, local_env_file = _resolve_env_files(
+        global_dir, repo_root, layout_env
+    )
     merged: dict[str, str] = {}
 
     merged.update(_read_env_file(global_env_file))
