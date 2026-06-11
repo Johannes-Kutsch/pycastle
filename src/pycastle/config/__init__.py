@@ -15,6 +15,7 @@ from pycastle.config.loader import (
     resolve_logs_dir,
     resolve_dockerfile,
 )
+from pycastle.layout import resolve_global_dir
 
 __all__ = [
     "Config",
@@ -28,4 +29,5 @@ __all__ = [
     "replace_config_runtime_fields",
     "resolve_logs_dir",
     "resolve_dockerfile",
+    "resolve_global_dir",
 ]

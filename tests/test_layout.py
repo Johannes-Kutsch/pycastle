@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pycastle.config import resolve_global_dir as resolve_global_dir_from_config
+from pycastle.config.loader import resolve_global_dir as resolve_global_dir_from_loader
 from pycastle.layout import describe_config_layers, resolve_global_dir, resolve_layout
 
 
@@ -90,6 +92,18 @@ def test_resolve_global_dir_prefers_explicit_arg_over_env(
 
     assert (
         resolve_global_dir(
+            explicit_pycastle_home, {"PYCASTLE_HOME": str(tmp_path / "ignored")}
+        )
+        == explicit_pycastle_home
+    )
+    assert (
+        resolve_global_dir_from_loader(
+            explicit_pycastle_home, {"PYCASTLE_HOME": str(tmp_path / "ignored")}
+        )
+        == explicit_pycastle_home
+    )
+    assert (
+        resolve_global_dir_from_config(
             explicit_pycastle_home, {"PYCASTLE_HOME": str(tmp_path / "ignored")}
         )
         == explicit_pycastle_home
