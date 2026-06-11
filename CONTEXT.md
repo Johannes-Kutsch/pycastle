@@ -21,11 +21,12 @@
 | **auto-discovery** | Runtime lookup: pycastle directory in CWD → `pycastle home` → defaults; project marker = `pycastle/` exists in CWD | — |
 | **pycastle home** | User-scope global directory holding optional `config.py` and `.env`; resolved via `platformdirs` and overridable via `PYCASTLE_HOME`; only `config.py` and `.env` are globalizable (ADR 0003) | global config dir, user config dir |
 | **PYCASTLE_HOME** | Env var overriding `platformdirs` default; resolution: explicit `global_dir` arg → `PYCASTLE_HOME` → `platformdirs` | — |
+| **pycastle layout interface** | In-process module seam that resolves repository-local and user-scope layout facts together: `repo_root`, fixed local `pycastle/` paths, `pycastle home`, config-file paths, `.env` file paths, cron lock path, and config layer-summary display paths. Config loading, env loading, init, and CLI wiring consume this seam instead of recomposing path rules or importing private helpers. It preserves ADR 0003 `PYCASTLE_HOME` precedence and ADR 0038 fixed project-local paths; it is not a provider adapter or remote/filesystem abstraction. | layout adapter, path helper |
 | **layered config merge** | Precedence stack: `defaults module → pycastle home/config.py → pycastle dir/config.py`, applied field-by-field; `.env` extends to `defaults → global .env → local .env → process env`, per-key (ADR 0003) | config layering, config precedence |
 | **fixed project-local layout** | Project-local files always live under fixed CWD-relative paths for local config, `.env`, prompt overrides, worktrees, setup scaffold, and optional Dockerfile override; `logs_dir` remains configurable | configurable path fields, custom project dirs |
 | **global-forbidden fields** | `Config` fields that may not be set globally (raise `ConfigValidationError` at load): `docker_image_name` | global-forbidden path fields, path field guard |
 | **scope flag** | `--global` / `--local` mutually-exclusive flag pair on `pycastle init`; selects where `config.py` and `.env` live; absent flag triggers interactive prompt | global/local flag |
-| **layer summary** | One-line startup message listing which config layers were found, routed via `StatusDisplay.print("", ...)` | config layer line |
+| **layer summary** | One-line startup message listing which config layers were found, formatted from the pycastle layout interface and routed via `StatusDisplay.print("", ...)` | config layer line |
 
 ## Configuration
 
