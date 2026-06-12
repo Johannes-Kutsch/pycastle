@@ -11,9 +11,18 @@ import pytest
 from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config, load_config
 from pycastle.session import RunKind
-from pycastle.services.agent_service import AssistantTurn, Result
+from pycastle.services.agent_service import (
+    AssistantTurn,
+    PromptTokens,
+    Result,
+    UnsupportedTokens,
+)
 from pycastle.services.claude_service import ClaudeService
-from pycastle.errors import AgentTimeoutError, DockerError, UsageLimitError
+from pycastle.errors import (
+    AgentTimeoutError,
+    DockerError,
+    UsageLimitError,
+)
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession
 from pycastle.infrastructure.preflight_failure_interpreter import (
@@ -454,6 +463,56 @@ def test_work_text_preserves_tool_policy_behavior_for_runtime_contract(tmp_path)
             "tool_policy": AgentToolPolicyGroup.PARTIAL,
         }
     ]
+
+
+def test_work_text_returns_joined_assistant_turns_and_updates_status_tokens(tmp_path):
+    display = RecordingStatusDisplay()
+    session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])
+    service = FakeService(
+        events=[
+            PromptTokens(count=42_000),
+            AssistantTurn("first turn"),
+            AssistantTurn("second turn"),
+        ]
+    )
+    runner = ContainerRunner(
+        "agent",
+        cast(DockerSession, session),
+        status_display=display,
+        cfg=Config(logs_dir=tmp_path),
+        service=cast(ClaudeService, service),
+    )
+
+    result = asyncio.run(runner.work_text("prompt"))
+
+    assert result == "first turn\nsecond turn"
+    assert ("update_tokens", "agent", 42_000) in display.calls
+    assert ("print", "agent", "first turn", None) in display.calls
+    assert ("print", "agent", "second turn", None) in display.calls
+
+
+def test_work_text_ignores_unsupported_tokens_without_interrupting_execution(tmp_path):
+    display = RecordingStatusDisplay()
+    session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])
+    service = FakeService(
+        events=[
+            UnsupportedTokens(count=42_000, source="codex.turn.completed.usage"),
+            AssistantTurn("assistant turn"),
+        ]
+    )
+    runner = ContainerRunner(
+        "agent",
+        cast(DockerSession, session),
+        status_display=display,
+        cfg=Config(logs_dir=tmp_path),
+        service=cast(ClaudeService, service),
+    )
+
+    result = asyncio.run(runner.work_text("prompt"))
+
+    assert result == "assistant turn"
+    assert ("print", "agent", "assistant turn", None) in display.calls
+    assert not any(call[0] == "update_tokens" for call in display.calls)
 
 
 def test_container_runners_keep_logical_sessions_in_separate_agent_logs(tmp_path):
