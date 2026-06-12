@@ -135,6 +135,18 @@ def _runtime_package_wheel(tmp_path: Path) -> Path:
         shutil.rmtree(runtime_egg_info_dir, ignore_errors=True)
 
 
+def _runtime_python_modules_in_wheel(wheel_path: Path) -> set[str]:
+    with ZipFile(wheel_path) as wheel:
+        modules = {
+            "pycastle_agent_runtime"
+            if name == "pycastle_agent_runtime/__init__.py"
+            else f"pycastle_agent_runtime.{name.removeprefix('pycastle_agent_runtime/').removesuffix('.py').replace('/', '.')}"
+            for name in wheel.namelist()
+            if name.startswith("pycastle_agent_runtime/") and name.endswith(".py")
+        }
+    return modules
+
+
 def _shipped_defaults_in_sdist(tmp_path: Path) -> set[str]:
     sdist_members = _sdist_members(tmp_path)
     return {
@@ -345,7 +357,7 @@ def test_wheel_ships_agent_runtime_package_scaffold(tmp_path):
     wheel_members = _wheel_members(tmp_path)
 
     assert "pycastle_agent_runtime/__init__.py" in wheel_members
-    assert "pycastle_agent_runtime/orchestration.py" in wheel_members
+    assert "pycastle_agent_runtime/orchestration.py" not in wheel_members
     assert "pycastle_agent_runtime/py.typed" in wheel_members
     assert "pycastle_agent_runtime/pyproject.toml" in wheel_members
 
@@ -357,7 +369,7 @@ def test_sdist_ships_agent_runtime_package_scaffold(tmp_path):
         name.endswith("/src/pycastle_agent_runtime/__init__.py")
         for name in sdist_members
     )
-    assert any(
+    assert not any(
         name.endswith("/src/pycastle_agent_runtime/orchestration.py")
         for name in sdist_members
     )
@@ -519,6 +531,7 @@ def test_standalone_runtime_distribution_installs_without_pycastle_package(
     tmp_path: Path,
 ) -> None:
     wheel_path = _runtime_package_wheel(tmp_path)
+    shipped_runtime_modules = _runtime_python_modules_in_wheel(wheel_path)
     install_dir = tmp_path / "site-packages"
 
     subprocess.run(
@@ -544,6 +557,7 @@ def test_standalone_runtime_distribution_installs_without_pycastle_package(
             "-c",
             (
                 f"import sys; sys.path.insert(0, {str(install_dir)!r}); "
+                "import importlib; "
                 "import importlib.util; "
                 "from importlib.resources import files; "
                 "import pycastle_agent_runtime as runtime; "
@@ -558,7 +572,9 @@ def test_standalone_runtime_distribution_installs_without_pycastle_package(
                 "print(importlib.util.find_spec('pycastle') is None); "
                 "print(runtime.ServiceRegistry.__module__); "
                 "print(runtime.decide_usage_limit_continuation.__module__); "
-                "print(files('pycastle_agent_runtime').joinpath('pyproject.toml').is_file())"
+                "print(files('pycastle_agent_runtime').joinpath('pyproject.toml').is_file()); "
+                f"modules = {sorted(shipped_runtime_modules)!r}; "
+                "[print(importlib.import_module(name).__name__) for name in modules]"
             ),
         ],
         cwd=tmp_path,
@@ -567,12 +583,15 @@ def test_standalone_runtime_distribution_installs_without_pycastle_package(
         text=True,
     )
 
-    assert result.stdout.splitlines() == [
+    stdout_lines = result.stdout.splitlines()
+
+    assert stdout_lines[:4] == [
         "True",
         "pycastle_agent_runtime.service_registry",
         "pycastle_agent_runtime.usage_limit_decision",
         "True",
     ]
+    assert set(stdout_lines[4:]) == shipped_runtime_modules
 
 
 def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():

@@ -2,7 +2,6 @@
 import asyncio
 import difflib
 import sys
-import types
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -24,22 +23,30 @@ from .errors import (
     DockerServiceError,
 )
 from .layout import describe_config_layers, resolve_layout
+from . import orchestration as pycastle_orchestration
 from ._universal_image_build import UniversalImageBuildOptions
 from .display.status_display import PlainStatusDisplay
 
 _KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
 
 if TYPE_CHECKING:
-    from .iteration._deps import ImproveMode
     from .services.agent_service import AgentService
 
 
-agent_runtime: Any = types.SimpleNamespace(
-    ServiceRegistry=runtime_package.ServiceRegistry,
-    chain_entries=runtime_package.chain_entries,
-    render_chain_label=runtime_package.render_chain_label,
-    validation_labels=runtime_package.validation_labels,
-)
+class _AgentRuntimeAdapter:
+    def __init__(self) -> None:
+        self.ServiceRegistry = runtime_package.ServiceRegistry
+        self.chain_entries = runtime_package.chain_entries
+        self.render_chain_label = runtime_package.render_chain_label
+        self.validation_labels = runtime_package.validation_labels
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "run":
+            return pycastle_orchestration.run
+        raise AttributeError(name)
+
+
+agent_runtime: Any = _AgentRuntimeAdapter()
 
 
 def _stage_overrides(cfg: Config) -> list[tuple[str, StageOverride]]:
@@ -374,26 +381,6 @@ def _do_run(
             improve_mode=cast(ImproveMode, effective_improve_mode),
         )
     )
-
-
-async def _run_orchestration(
-    env: dict[str, str],
-    repo_root: Path,
-    *,
-    service_registry: runtime_package.ServiceRegistry,
-    improve_mode: "ImproveMode",
-) -> None:
-    from .iteration.orchestrator import run as run_orchestrator
-
-    await run_orchestrator(
-        env,
-        repo_root,
-        service_registry=service_registry,
-        improve_mode=improve_mode,
-    )
-
-
-agent_runtime.run = _run_orchestration
 
 
 @main.command("run")

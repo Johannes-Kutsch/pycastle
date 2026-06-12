@@ -115,6 +115,37 @@ def test_run_cmd_uses_remaining_known_services_when_oauth_token_missing(
     assert "CLAUDE_CODE_OAUTH_TOKEN" not in result.output
 
 
+def test_run_cmd_dispatches_via_pycastle_owned_orchestration_adapter(
+    tmp_path, monkeypatch
+):
+    from pycastle import orchestration
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+    captured: dict[str, object] = {}
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["env"] = env
+        captured["repo_root"] = repo_root
+        captured["service_registry"] = kwargs.get("service_registry")
+        captured["improve_mode"] = kwargs.get("improve_mode")
+
+    with (
+        patch("pycastle.commands.build.main"),
+        patch.object(orchestration, "run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    assert captured["repo_root"] == tmp_path
+    assert captured["service_registry"] is not None
+    assert captured["improve_mode"] is None
+
+
 def test_run_cmd_skips_unconfigured_opencode_when_claude_fallback_available(
     tmp_path, monkeypatch
 ):
