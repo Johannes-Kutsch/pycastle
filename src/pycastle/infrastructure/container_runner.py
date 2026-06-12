@@ -7,14 +7,9 @@ from typing import Any, cast
 from ..agents.output_protocol import AgentOutput, AgentRole, process_stream_from_events
 from ..config import Config, resolve_logs_dir
 from ..display.status_display import PlainStatusDisplay
-from ..errors import (
-    AgentCredentialFailureError,
-    HardAgentError,
-    TransientAgentError,
-    UsageLimitError,
-)
 from pycastle_agent_runtime.agent_log import AgentInvocationLog
 from pycastle_agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
+from pycastle_agent_runtime.work import reduce_text_output_events
 from ..services.flag_profiles import AgentToolPolicyGroup
 from .docker_session import DockerSession
 from ..errors import DockerError
@@ -275,7 +270,7 @@ class ContainerRunner:
         )
 
         try:
-            return _result_text_from_events(
+            return reduce_text_output_events(
                 parsed_events,
                 on_turn,
                 on_tokens,
@@ -289,73 +284,6 @@ class ContainerRunner:
                 self._session.exec_simple("rm -f /tmp/.pycastle_prompt")
             except Exception:
                 pass
-
-
-def _result_text_from_events(
-    events,
-    on_turn: Callable[[str], None],
-    on_tokens: Callable[[int], None] | None = None,
-    *,
-    provider: str,
-) -> str:
-    from ..services.agent_service import (
-        AssistantTurn,
-        CredentialFailure,
-        HardError,
-        PromptTokens,
-        Result,
-        TransientError,
-        UnsupportedTokens,
-        UsageLimit,
-    )
-
-    result_text: str | None = None
-    collected_turns: list[str] = []
-    for event in events:
-        if isinstance(event, UsageLimit):
-            raise UsageLimitError(
-                reset_time=event.reset_time,
-                raw_message=event.raw_message,
-                provider=provider,
-                is_permanent=event.is_permanent,
-            )
-        if isinstance(event, TransientError):
-            raise TransientAgentError(
-                message=event.raw_message,
-                status_code=event.status_code,
-            )
-        if isinstance(event, HardError):
-            raise HardAgentError(
-                message=event.raw_message,
-                status_code=event.status_code,
-                service_name=provider,
-                classification=event.classification,
-                observations=event.observations,
-            )
-        if isinstance(event, CredentialFailure):
-            raise AgentCredentialFailureError(
-                message=event.raw_message,
-                status_code=event.status_code,
-                service_name=event.service_name,
-                classification=event.classification,
-                observations=event.source_observations,
-            )
-        if isinstance(event, PromptTokens):
-            if on_tokens is not None:
-                on_tokens(event.count)
-            continue
-        if isinstance(event, UnsupportedTokens):
-            continue
-        if isinstance(event, AssistantTurn):
-            on_turn(event.text)
-            collected_turns.append(event.text)
-            continue
-        if isinstance(event, Result):
-            result_text = event.text
-            break
-    if result_text is not None:
-        return result_text
-    return "\n".join(collected_turns)
 
 
 def _coerce_tool_policy(
