@@ -11,6 +11,7 @@ from .errors import AgentCredentialFailureError
 from .provider_errors import ProviderErrorObservation
 from .roles import AgentRole
 from .session import (
+    ProviderSessionPreferencesRequest,
     ProviderSessionStateRequest,
     RunKind,
     ServiceResumeIdentityStore,
@@ -243,6 +244,14 @@ def plan_provider_run_state(
     has_resumable_provider_state = (
         host_state_dir is not None and request.service.is_resumable(host_state_dir)
     )
+    provider_session_preferences = request.service.provider_session_preferences(
+        ProviderSessionPreferencesRequest(
+            role_session=cast(ServiceResumeIdentityStore, request.role_session),
+            provider_state_dir=host_state_dir,
+            has_resumable_provider_state=has_resumable_provider_state,
+            state_dir_relpath=state_dir_relpath,
+        )
+    )
 
     provider_session_state = request.service.provider_session_state(
         ProviderSessionStateRequest(
@@ -252,9 +261,7 @@ def plan_provider_run_state(
             state_dir_relpath=state_dir_relpath,
             require_exact_transcript_match=True,
             preferred_provider_session_id=(
-                request.role_session.session_uuid()
-                if request.service.name == "claude"
-                else None
+                provider_session_preferences.preferred_provider_session_id
             ),
         )
     )

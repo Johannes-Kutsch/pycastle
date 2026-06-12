@@ -17,6 +17,8 @@ from pycastle_agent_runtime import (
 )
 from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
 from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
     load_state_dir_provider_session_id,
@@ -234,6 +236,12 @@ class OpenCodeService:
             env["OPENCODE_GO_API_KEY"] = self.api_key
             env["OPENCODE_CONFIG_CONTENT"] = _opencode_go_config_content()
         return env
+
+    def provider_session_preferences(
+        self, request: ProviderSessionPreferencesRequest
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
 
     def provider_session_state(
         self, request: ProviderSessionStateRequest

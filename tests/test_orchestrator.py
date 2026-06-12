@@ -14,6 +14,12 @@ from pycastle.agents.output_protocol import (
     PromiseParseError,
 )
 from pycastle.agents.runner import RunRequest
+from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.config import StageOverride
 from pycastle.errors import AgentTimeoutError, SetupPhaseError, UsageLimitError
 from pycastle.infrastructure.preflight_failure_interpreter import (
@@ -36,6 +42,7 @@ from pycastle.iteration.orchestrator import (
     run,
 )
 from pycastle.iteration import AbortedAgentCredentialFailure
+from pycastle.session import RunKind
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -193,6 +200,32 @@ class _FakeService:
 
     def run(self, lines):
         return iter([])
+
+    def state_dir_relpath(self, role, namespace=""):
+        del role, namespace
+        return None
+
+    def is_resumable(self, state_dir):
+        del state_dir
+        return False
+
+    def provider_session_preferences(
+        self, request: ProviderSessionPreferencesRequest
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
+
+    def provider_session_state(
+        self, request: ProviderSessionStateRequest
+    ) -> ProviderSessionState:
+        del request
+        return ProviderSessionState(RunKind.FRESH, None)
+
+    def valid_efforts(self) -> frozenset[str]:
+        return frozenset({"medium"})
+
+    def valid_models(self) -> frozenset[str]:
+        return frozenset({"fake"})
 
 
 class _SequencedAvailabilityService(_FakeService):

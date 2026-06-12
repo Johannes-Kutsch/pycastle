@@ -31,7 +31,13 @@ from .errors import (
 )
 from .provider_errors import ProviderErrorObservation
 from .roles import AgentRole
-from .session import ProviderSessionState, ProviderSessionStateRequest, RunKind
+from .session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+    RunKind,
+)
 from .types import StageOverride
 
 if TYPE_CHECKING:
@@ -80,6 +86,8 @@ __all__ = [
     "LogicalAgentInvocationLog",
     "ParsedTurn",
     "ProviderErrorObservation",
+    "ProviderSessionPreferences",
+    "ProviderSessionPreferencesRequest",
     "ProviderSessionState",
     "ProviderSessionStateRequest",
     "PromptTokens",

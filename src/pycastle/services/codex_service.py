@@ -21,6 +21,8 @@ from pycastle_agent_runtime.contracts import (
 from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
 from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
@@ -227,6 +229,12 @@ class CodexService:
         if not sessions_dir.is_dir():
             return False
         return any(sessions_dir.rglob("rollout-*.jsonl"))
+
+    def provider_session_preferences(
+        self, request: ProviderSessionPreferencesRequest
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
 
     def provider_session_state(
         self, request: ProviderSessionStateRequest

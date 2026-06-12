@@ -44,6 +44,20 @@ class ProviderSessionSelection:
 
 
 @dataclasses.dataclass(frozen=True)
+class ProviderSessionPreferencesRequest:
+    role_session: ServiceResumeIdentityStore
+    provider_state_dir: Path | None
+    has_resumable_provider_state: bool
+    state_dir_relpath: str | None = None
+    force_resume: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class ProviderSessionPreferences:
+    preferred_provider_session_id: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
 class ProviderSessionStateRequest:
     role_session: ServiceResumeIdentityStore
     provider_state_dir: Path | None
@@ -239,6 +253,8 @@ def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
 
 
 __all__ = [
+    "ProviderSessionPreferences",
+    "ProviderSessionPreferencesRequest",
     "ProviderSessionSelection",
     "ProviderSessionState",
     "ProviderSessionStateRequest",

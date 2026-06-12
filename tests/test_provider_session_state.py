@@ -6,6 +6,10 @@ from typing import Any, cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
+)
 from pycastle.services import ServiceRegistry
 from pycastle.services.codex_service import CodexService
 from pycastle.session.provider_session_state import (
@@ -28,6 +32,13 @@ class _FakeService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return self.resumable
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
 
 
 def _write_codex_rollout(state_dir: Path, *thread_ids: str) -> None:

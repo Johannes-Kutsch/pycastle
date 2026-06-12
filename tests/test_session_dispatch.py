@@ -9,6 +9,8 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
@@ -53,6 +55,17 @@ class _LegacyStateDirService:
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(state_dir.rglob("*"))
 
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        if self.name == "claude":
+            return ProviderSessionPreferences(
+                preferred_provider_session_id="claude-session-id"
+            )
+        return ProviderSessionPreferences()
+
     def provider_session_state(
         self,
         request: ProviderSessionStateRequest,
@@ -82,6 +95,13 @@ class _CustomOpenCodeStateDirService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "session_id").is_file()
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
 
     def provider_session_state(
         self,
@@ -138,6 +158,13 @@ class _CustomCodexStateDirService:
     def is_resumable(self, state_dir: Path) -> bool:
         return CodexService().is_resumable(state_dir)
 
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
+
     def provider_session_state(
         self,
         request: ProviderSessionStateRequest,
@@ -157,6 +184,14 @@ class _ClaudeFilesystemStandIn:
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(
             path.is_file() for path in state_dir.rglob("*")
+        )
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        return ProviderSessionPreferences(
+            preferred_provider_session_id=request.role_session.session_uuid()
         )
 
     def provider_session_state(

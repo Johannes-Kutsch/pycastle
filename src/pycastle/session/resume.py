@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import (
+    ProviderSessionPreferencesRequest,
     ProviderSessionStateRequest,
     RunKind,
     is_exact_resumable_service_session,
@@ -353,6 +354,14 @@ class RoleSession:
         service: "AgentService",
     ) -> ProviderRunState:
         state = self.service_session_state(service)
+        provider_session_preferences = service.provider_session_preferences(
+            ProviderSessionPreferencesRequest(
+                role_session=self,
+                provider_state_dir=state.state_dir,
+                has_resumable_provider_state=state.has_resumable_provider_state,
+                state_dir_relpath=state.state_dir_relpath,
+            )
+        )
         provider_session_state = service.provider_session_state(
             ProviderSessionStateRequest(
                 role_session=self,
@@ -360,7 +369,7 @@ class RoleSession:
                 has_resumable_provider_state=state.has_resumable_provider_state,
                 state_dir_relpath=state.state_dir_relpath,
                 preferred_provider_session_id=(
-                    self.session_uuid() if service.name == "claude" else None
+                    provider_session_preferences.preferred_provider_session_id
                 ),
             )
         )
@@ -405,6 +414,14 @@ class RoleSession:
         self, service: "AgentService"
     ) -> ExactTranscriptHandoff:
         state = self.service_session_state(service)
+        provider_session_preferences = service.provider_session_preferences(
+            ProviderSessionPreferencesRequest(
+                role_session=self,
+                provider_state_dir=state.state_dir,
+                has_resumable_provider_state=state.has_resumable_provider_state,
+                state_dir_relpath=state.state_dir_relpath,
+            )
+        )
         provider_session_state = service.provider_session_state(
             ProviderSessionStateRequest(
                 role_session=self,
@@ -413,7 +430,7 @@ class RoleSession:
                 state_dir_relpath=state.state_dir_relpath,
                 require_exact_transcript_match=True,
                 preferred_provider_session_id=(
-                    self.session_uuid() if service.name == "claude" else None
+                    provider_session_preferences.preferred_provider_session_id
                 ),
             )
         )
