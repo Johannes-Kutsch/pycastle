@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.session_state import (
     AgentRunSessionStateRequest,
     prepare_agent_run_session_state,
     record_observed_provider_session_id,
 )
+from pycastle.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService, CodexService, OpenCodeService
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import RoleSession, RunKind
@@ -151,6 +154,30 @@ def test_prepare_agent_run_session_state_fresh_codex_without_persisted_or_recove
     assert state.provider_session_id is None
     assert state.service_state_dir_path == state_dir
     assert state.provider_state_dir_relpath == ".pycastle-session/implementer/codex/"
+
+
+def test_prepare_agent_run_session_state_missing_codex_host_auth_raises_operator_actionable_credential_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
+        prepare_agent_run_session_state(
+            AgentRunSessionStateRequest(
+                worktree=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                session_namespace="",
+                service=CodexService(),
+            )
+        )
+
+    assert exc_info.value.service_name == "codex"
+    assert exc_info.value.status_code == 401
+    assert len(exc_info.value.observations) == 1
+    observation = exc_info.value.observations[0]
+    assert observation.service_name == "codex"
+    assert observation.source_stream == "pre-dispatch host check"
 
 
 def test_prepare_agent_run_session_state_resume_opencode_uses_persisted_session_id(

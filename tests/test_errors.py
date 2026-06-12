@@ -1,14 +1,17 @@
 import subprocess
 import threading
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from pycastle.errors import (
+    AgentFailedError,
     AgentTimeoutError,
     BranchCollisionError,
     DockerError,
     DockerTimeoutError,
+    HardAgentError,
     PycastleError,
     WorktreeError,
     WorktreeTimeoutError,
@@ -77,6 +80,18 @@ def test_usage_limit_error_reset_time_defaults_to_none():
 
     err = UsageLimitError()
     assert err.reset_time is None
+
+
+def test_pycastle_error_shims_preserve_legacy_service_and_session_defaults():
+    hard_error = HardAgentError(message="provider rejected request", status_code=400)
+    failed_error = AgentFailedError(
+        role_value="implementer",
+        worktree_path=Path("."),
+    )
+
+    assert hard_error.service_name == "claude"
+    assert failed_error.service_name == "claude"
+    assert failed_error.session_dir == ".pycastle-session/implementer/claude"
 
 
 # ── Raise sites ───────────────────────────────────────────────────────────────

@@ -10,8 +10,6 @@ from pycastle_agent_runtime.session import (
 )
 
 from ..agents.output_protocol import AgentRole
-from ..errors import AgentCredentialFailureError
-from ..provider_errors import ProviderErrorObservation
 from ..services.agent_service import AgentService
 from .agent import LocalAuthSeedAction, RunSessionPlan, RunSessionPlanRequest
 from .agent import plan_run_session as _plan_run_session
@@ -82,7 +80,8 @@ class AgentRunSessionState:
         )
 
     def prepare_for_run(self) -> None:
-        _require_auth_seed_source(self.auth_seed_action)
+        if self.auth_seed_action is not None:
+            self.auth_seed_action.require_source()
         preserved_auth = self._preserved_codex_auth_bytes()
         if self.run_kind is RunKind.FRESH:
             self.role_session.start_fresh()
@@ -174,7 +173,7 @@ def prepare_agent_run_session_state(
     )
     auth_seed_action = plan.auth_seed_action
     if auth_seed_action is not None:
-        _require_auth_seed_source(auth_seed_action)
+        auth_seed_action.require_source()
     role_session = RoleSession(
         request.worktree,
         request.role,
@@ -204,26 +203,6 @@ def record_successful_provider_session_metadata(
     session_state: AgentRunSessionState,
 ) -> None:
     session_state.record_successful_run()
-
-
-def _require_auth_seed_source(
-    auth_seed_action: LocalAuthSeedAction | None,
-) -> None:
-    if auth_seed_action is None or auth_seed_action.source.exists():
-        return
-    raise AgentCredentialFailureError(
-        auth_seed_action.missing_source_message,
-        status_code=401,
-        service_name="codex",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text=auth_seed_action.missing_source_message,
-                source_stream="pre-dispatch host check",
-                status_code=401,
-            ),
-        ),
-    )
 
 
 __all__ = [
