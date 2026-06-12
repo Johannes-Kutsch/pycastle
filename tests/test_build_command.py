@@ -140,7 +140,11 @@ def _runtime_python_modules_in_wheel(wheel_path: Path) -> set[str]:
         modules = {
             "pycastle_agent_runtime"
             if name == "pycastle_agent_runtime/__init__.py"
-            else f"pycastle_agent_runtime.{name.removeprefix('pycastle_agent_runtime/').removesuffix('.py').replace('/', '.')}"
+            else (
+                f"pycastle_agent_runtime.{name.removeprefix('pycastle_agent_runtime/').removesuffix('/__init__.py').replace('/', '.')}"
+                if name.endswith("/__init__.py")
+                else f"pycastle_agent_runtime.{name.removeprefix('pycastle_agent_runtime/').removesuffix('.py').replace('/', '.')}"
+            )
             for name in wheel.namelist()
             if name.startswith("pycastle_agent_runtime/") and name.endswith(".py")
         }
@@ -592,6 +596,22 @@ def test_standalone_runtime_distribution_installs_without_pycastle_package(
         "True",
     ]
     assert set(stdout_lines[4:]) == shipped_runtime_modules
+
+
+def test_runtime_python_modules_in_wheel_maps_nested_package_init_to_package_name(
+    tmp_path: Path,
+) -> None:
+    wheel_path = tmp_path / "runtime.whl"
+    with ZipFile(wheel_path, "w") as wheel:
+        wheel.writestr("pycastle_agent_runtime/__init__.py", "")
+        wheel.writestr("pycastle_agent_runtime/provider/__init__.py", "")
+        wheel.writestr("pycastle_agent_runtime/provider/session.py", "")
+
+    assert _runtime_python_modules_in_wheel(wheel_path) == {
+        "pycastle_agent_runtime",
+        "pycastle_agent_runtime.provider",
+        "pycastle_agent_runtime.provider.session",
+    }
 
 
 def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():
