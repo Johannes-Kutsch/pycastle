@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import inspect
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any, Generic, Protocol, TypeVar
 
-from .contracts import AgentService, ToolPolicy
+from .contracts import AgentService, ParsedTurn, ToolPolicy
 from .errors import (
     AgentCredentialFailureError,
     AgentTimeoutError,
@@ -508,7 +508,7 @@ class TextOutputAdapter:
 
 
 def reduce_text_output_events(
-    events: Any,
+    events: Iterable[ParsedTurn],
     on_turn: Callable[[str], None],
     on_tokens: Callable[[int], None] | None = None,
     *,

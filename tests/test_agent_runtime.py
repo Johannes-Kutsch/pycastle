@@ -21,10 +21,14 @@ from pycastle.agents._work_invocation import (
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole
 from pycastle_agent_runtime.errors import (
+    AgentCredentialFailureError,
     AgentTimeoutError,
+    HardAgentError,
     RuntimeConfigurationError,
+    TransientAgentError,
     UsageLimitError,
 )
+from pycastle_agent_runtime.work import reduce_text_output_events
 from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
@@ -37,8 +41,11 @@ from pycastle.services.agent_service import (
     CredentialFailure,
     HardError,
     ParsedTurn,
+    PromptTokens,
     Result,
     TransientError,
+    UnsupportedTokens,
+    UsageLimit,
 )
 from pycastle.session import RunKind
 
@@ -1236,6 +1243,131 @@ def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: P
     assert [getattr(policy, "value", None) for policy in service.tool_policies] == [
         runtime.ToolPolicy.PARTIAL.value
     ]
+
+
+def test_runtime_package_text_output_reducer_returns_result_text() -> None:
+    turns: list[str] = []
+
+    result = reduce_text_output_events(
+        (
+            AssistantTurn(text="first turn"),
+            Result(text="exact text from result"),
+            AssistantTurn(text="ignored after result"),
+        ),
+        turns.append,
+        provider="codex",
+    )
+
+    assert result == "exact text from result"
+    assert turns == ["first turn"]
+
+
+def test_runtime_package_text_output_reducer_returns_joined_assistant_turns() -> None:
+    turns: list[str] = []
+
+    result = reduce_text_output_events(
+        (
+            AssistantTurn(text="first turn"),
+            AssistantTurn(text="second turn"),
+        ),
+        turns.append,
+        provider="codex",
+    )
+
+    assert result == "first turn\nsecond turn"
+    assert turns == ["first turn", "second turn"]
+
+
+def test_runtime_package_text_output_reducer_updates_prompt_tokens_and_ignores_unsupported_tokens() -> (
+    None
+):
+    turns: list[str] = []
+    token_counts: list[int] = []
+
+    result = reduce_text_output_events(
+        (
+            PromptTokens(count=42_000),
+            UnsupportedTokens(count=99, source="codex.turn.completed.usage"),
+            AssistantTurn(text="assistant turn"),
+        ),
+        turns.append,
+        token_counts.append,
+        provider="codex",
+    )
+
+    assert result == "assistant turn"
+    assert turns == ["assistant turn"]
+    assert token_counts == [42_000]
+
+
+def test_runtime_package_text_output_reducer_raises_runtime_owned_usage_limit() -> None:
+    with pytest.raises(UsageLimitError) as excinfo:
+        reduce_text_output_events(
+            (UsageLimit(reset_time=None, raw_message="rate limited"),),
+            lambda _turn: None,
+            provider="codex",
+        )
+
+    assert excinfo.value.raw_message == "rate limited"
+    assert excinfo.value.provider == "codex"
+
+
+def test_runtime_package_text_output_reducer_raises_runtime_owned_transient_error() -> (
+    None
+):
+    with pytest.raises(TransientAgentError) as excinfo:
+        reduce_text_output_events(
+            (TransientError(status_code=529, raw_message="API Error: 529 Overloaded"),),
+            lambda _turn: None,
+            provider="codex",
+        )
+
+    assert str(excinfo.value) == "API Error: 529 Overloaded"
+    assert excinfo.value.status_code == 529
+
+
+def test_runtime_package_text_output_reducer_raises_runtime_owned_hard_error() -> None:
+    with pytest.raises(HardAgentError) as excinfo:
+        reduce_text_output_events(
+            (
+                HardError(
+                    status_code=403,
+                    raw_message="API Error: 403 Forbidden",
+                    classification="permission_denied",
+                ),
+            ),
+            lambda _turn: None,
+            provider="codex",
+        )
+
+    assert str(excinfo.value) == "API Error: 403 Forbidden"
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.service_name == "codex"
+    assert excinfo.value.classification == "permission_denied"
+
+
+def test_runtime_package_text_output_reducer_raises_runtime_owned_credential_failure() -> (
+    None
+):
+    with pytest.raises(AgentCredentialFailureError) as excinfo:
+        reduce_text_output_events(
+            (
+                CredentialFailure(
+                    raw_message="credential failure from provider adapter",
+                    service_name="codex",
+                    classification="operator_actionable_credential_failure",
+                    source_observations=(),
+                    status_code=401,
+                ),
+            ),
+            lambda _turn: None,
+            provider="claude",
+        )
+
+    assert str(excinfo.value) == "credential failure from provider adapter"
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.service_name == "codex"
+    assert excinfo.value.classification == "operator_actionable_credential_failure"
 
 
 def test_runtime_package_surface_import_keeps_application_ownership_unloaded() -> None:
