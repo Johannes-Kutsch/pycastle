@@ -9,7 +9,13 @@ from typing import Any, Protocol
 
 from .provider_errors import ProviderErrorObservation
 from .roles import AgentRole
-from .session import ProviderSessionState, ProviderSessionStateRequest, RunKind
+from .session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+    RunKind,
+)
 
 
 @dataclasses.dataclass
@@ -126,6 +132,10 @@ class AgentService(Protocol):
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None: ...
 
     def is_resumable(self, state_dir: Path) -> bool: ...
+
+    def provider_session_preferences(
+        self, request: ProviderSessionPreferencesRequest
+    ) -> ProviderSessionPreferences: ...
 
     def provider_session_state(
         self, request: ProviderSessionStateRequest

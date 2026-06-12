@@ -9,6 +9,8 @@ from pathlib import Path
 
 from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
@@ -241,6 +243,13 @@ class ClaudeService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(f.is_file() for f in state_dir.rglob("*"))
+
+    def provider_session_preferences(
+        self, request: ProviderSessionPreferencesRequest
+    ) -> ProviderSessionPreferences:
+        return ProviderSessionPreferences(
+            preferred_provider_session_id=request.role_session.session_uuid()
+        )
 
     def provider_session_state(
         self, request: ProviderSessionStateRequest

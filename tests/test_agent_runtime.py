@@ -26,6 +26,8 @@ from pycastle_agent_runtime.errors import (
     UsageLimitError,
 )
 from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
@@ -315,6 +317,10 @@ def _standalone_runtime_surface_behavior_result(
                     def is_resumable(self, state_dir):
                         del state_dir
                         return False
+
+                    def provider_session_preferences(self, request):
+                        del request
+                        return runtime.ProviderSessionPreferences()
 
                     def provider_session_state(self, request):
                         return runtime.ProviderSessionState(
@@ -704,6 +710,13 @@ class _RecordingRuntimeService:
         del state_dir
         return False
 
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
+
     def provider_session_state(
         self,
         request: ProviderSessionStateRequest,
@@ -774,6 +787,13 @@ class _PlanRecordingRuntimeService(_RecordingRuntimeService):
         if namespace:
             return f".pycastle-session/implementer/{namespace}/{self.name}/"
         return f".pycastle-session/implementer/{self.name}/"
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
 
     def provider_session_state(
         self,

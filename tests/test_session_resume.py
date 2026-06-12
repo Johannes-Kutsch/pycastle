@@ -13,6 +13,8 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
@@ -42,6 +44,16 @@ class _FakeService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return self.resumable
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        if self.name == "claude":
+            return ProviderSessionPreferences(
+                preferred_provider_session_id=request.role_session.session_uuid()
+            )
+        return ProviderSessionPreferences()
 
     def provider_session_state(
         self,

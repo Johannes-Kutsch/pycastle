@@ -32,6 +32,8 @@ from pycastle.agents._work_invocation import (
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest, _stage_key_for_role
 from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
@@ -571,6 +573,13 @@ class _RecordingAgentService:
 
     def is_resumable(self, state_dir: Path) -> bool:
         return False
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
 
     def provider_session_state(
         self,
@@ -4459,6 +4468,13 @@ def test_build_work_dependencies_marks_generic_permanent_service_exhaustion(
             del state_dir
             return False
 
+        def provider_session_preferences(
+            self,
+            request: ProviderSessionPreferencesRequest,
+        ) -> ProviderSessionPreferences:
+            del request
+            return ProviderSessionPreferences()
+
         def provider_session_state(self, request: ProviderSessionStateRequest):
             del request
             return ProviderSessionState(RunKind.FRESH, None)
@@ -4529,6 +4545,13 @@ def test_build_work_dependencies_falls_back_to_resettable_service_exhaustion(
         def is_resumable(self, state_dir: Path) -> bool:
             del state_dir
             return False
+
+        def provider_session_preferences(
+            self,
+            request: ProviderSessionPreferencesRequest,
+        ) -> ProviderSessionPreferences:
+            del request
+            return ProviderSessionPreferences()
 
         def provider_session_state(self, request: ProviderSessionStateRequest):
             del request
