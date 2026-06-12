@@ -723,6 +723,39 @@ def test_merge_phase_calls_get_safe_sha_when_conflicts_remain(
     cache.get_safe_sha.assert_called_once()
 
 
+def test_merge_phase_classifies_all_merge_candidates_before_merge_time_preflight(
+    tmp_path, git_svc, github_svc
+):
+    call_order: list[str] = []
+
+    def _record_try_merge(repo_path, branch):
+        call_order.append(branch)
+        return branch != "pycastle/issue-2"
+
+    class RecordingPreflightCache(StubPreflightCache):
+        async def get_safe_sha(self, deps):
+            call_order.append("preflight")
+            return await super().get_safe_sha(deps)
+
+    git_svc.try_merge.side_effect = _record_try_merge
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([]),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        preflight_cache=RecordingPreflightCache(
+            PreflightAFK(sha="abc123", issue_number=99)
+        ),
+    )
+
+    _run(
+        [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}],
+        deps,
+    )
+
+    assert call_order == ["pycastle/issue-1", "pycastle/issue-2", "preflight"]
+
+
 def test_preflight_afk_returns_soft_skip_merge_result(tmp_path, git_svc, github_svc):
 
     verdict = PreflightAFK(sha="abc123", issue_number=99)
@@ -732,6 +765,8 @@ def test_preflight_afk_returns_soft_skip_merge_result(tmp_path, git_svc, github_
     assert isinstance(result, MergeResult)
     assert result.conflicts == [{"number": 1, "title": "Conflict"}]
     assert result.clean == []
+    assert result.completed_conflicts == []
+    assert result.pending_conflicts == [{"number": 1, "title": "Conflict"}]
     assert result.preflight_blocker == verdict
 
 
@@ -744,6 +779,8 @@ def test_preflight_hitl_returns_soft_skip_merge_result(tmp_path, git_svc, github
     assert isinstance(result, MergeResult)
     assert result.conflicts == [{"number": 1, "title": "Conflict"}]
     assert result.clean == []
+    assert result.completed_conflicts == []
+    assert result.pending_conflicts == [{"number": 1, "title": "Conflict"}]
     assert result.preflight_blocker == verdict
 
 
