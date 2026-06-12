@@ -1182,6 +1182,25 @@ def test_process_stream_from_events_preserves_opencode_service_name_for_hard_err
     assert exc_info.value.status_code == 400
 
 
+def test_process_stream_from_events_does_not_default_missing_provider_to_claude():
+    events = [
+        HardError(
+            status_code=400,
+            raw_message="Provider rejected request",
+        )
+    ]
+
+    with pytest.raises(HardAgentError) as exc_info:
+        process_stream_from_events(
+            iter(events),
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+        )
+
+    assert exc_info.value.service_name == ""
+    assert exc_info.value.status_code == 400
+
+
 def test_process_stream_from_events_calls_on_tokens():
     token_counts: list[int] = []
     events = [

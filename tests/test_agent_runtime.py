@@ -1326,7 +1326,7 @@ def test_runtime_surface_behaviors_run_standalone_without_pycastle() -> None:
     result = _standalone_runtime_surface_behavior_result(repo_root)
 
     assert result == {
-        "failure_session_dir": ".pycastle-session/implementer/main/codex",
+        "failure_session_dir": "implementer/main/codex",
         "planned_relpath": "implementer/main/codex/",
         "planned_run_kind": "fresh",
         "provider_run_kind": "fresh",
@@ -1444,6 +1444,20 @@ def test_runtime_public_errors_use_agent_runtime_error_with_pycastle_alias_shim(
     assert issubclass(runtime.TransientAgentError, runtime.AgentRuntimeError)
     assert issubclass(runtime.HardAgentError, runtime.AgentRuntimeError)
     assert issubclass(runtime.AgentFailedError, runtime.AgentRuntimeError)
+
+
+def test_runtime_public_errors_do_not_default_missing_service_names_to_claude():
+    from pycastle_agent_runtime.errors import AgentFailedError, HardAgentError
+
+    hard_error = HardAgentError(message="provider rejected request", status_code=400)
+    failed_error = AgentFailedError(
+        role_value="implementer",
+        worktree_path=Path("."),
+    )
+
+    assert hard_error.service_name == ""
+    assert failed_error.service_name == ""
+    assert failed_error.session_dir == "implementer"
 
 
 def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(

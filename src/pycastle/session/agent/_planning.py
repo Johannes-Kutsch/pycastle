@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from ...agents.output_protocol import AgentRole
 from .._provider_session_decision import (
@@ -177,7 +177,10 @@ def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
         recovered_session_id_persistence=(
             provider_run_state_plan.recovered_session_id_persistence
         ),
-        auth_seed_action=provider_run_state_plan.auth_seed_action,
+        auth_seed_action=cast(
+            LocalAuthSeedAction | None,
+            provider_run_state_plan.auth_seed_action,
+        ),
         exact_transcript_match=provider_run_state_plan.exact_transcript_match,
         _provider_run_state_plan=provider_run_state_plan,
     )

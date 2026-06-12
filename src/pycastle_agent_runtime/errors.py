@@ -63,13 +63,13 @@ class HardAgentError(AgentRuntimeError):
         self,
         message: str = "",
         status_code: int | None = None,
-        service_name: str = "claude",
+        service_name: str = "",
         classification: str | None = None,
         observations: tuple[ProviderErrorObservation, ...] = (),
     ) -> None:
         self.status_code = status_code
         self.caller = ""
-        self.service_name = service_name or "claude"
+        self.service_name = service_name
         self.classification = classification
         self.observations = observations
         super().__init__(message)
@@ -102,16 +102,16 @@ class AgentFailedError(AgentRuntimeError):
         worktree_path: Path,
         namespace: str = "",
         failure_class: str = "",
-        service_name: str = "claude",
+        service_name: str = "",
         provider_session_path: str | None = None,
-        session_root: str = ".pycastle-session",
+        session_root: str = "",
     ) -> None:
         super().__init__(f"Agent {role_value!r} failed irrecoverably")
         self.role_value = role_value
         self.worktree_path = worktree_path
         self.namespace = namespace
         self.failure_class = failure_class
-        self.service_name = service_name or "claude"
+        self.service_name = service_name
         self.provider_session_path = provider_session_path
         self.session_root = session_root
 
@@ -119,10 +119,8 @@ class AgentFailedError(AgentRuntimeError):
     def session_dir(self) -> str:
         if self.provider_session_path is not None:
             return self.provider_session_path
-        base = f"{self.session_root}/{self.role_value}"
-        if self.namespace:
-            base = f"{base}/{self.namespace}"
-        return f"{base}/{self.service_name}"
+        parts = [self.session_root, self.role_value, self.namespace, self.service_name]
+        return "/".join(part for part in parts if part)
 
 
 __all__ = [
