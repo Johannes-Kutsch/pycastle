@@ -28,25 +28,36 @@ class AuthSeedingRequirement(Enum):
 class LocalAuthSeedAction:
     source: Path
     destination: Path
-    missing_source_message: str = dataclasses.field(
-        default="Codex authentication missing: run `codex login` on the host.",
+    missing_source_message: str | None = dataclasses.field(default=None, compare=False)
+    missing_source_service_name: str | None = dataclasses.field(
+        default=None,
         compare=False,
+    )
+    missing_source_status_code: int | None = dataclasses.field(
+        default=None,
+        compare=False,
+    )
+    missing_source_classification: str | None = dataclasses.field(
+        default=None,
+        compare=False,
+    )
+    missing_source_observations: tuple[ProviderErrorObservation, ...] = (
+        dataclasses.field(default=(), compare=False)
     )
 
     def require_source(self) -> Path:
         if not self.source.exists():
+            if (
+                self.missing_source_message is None
+                or self.missing_source_service_name is None
+            ):
+                raise FileNotFoundError(self.source)
             raise AgentCredentialFailureError(
                 self.missing_source_message,
-                status_code=401,
-                service_name="codex",
-                observations=(
-                    ProviderErrorObservation(
-                        service_name="codex",
-                        raw_provider_text=self.missing_source_message,
-                        source_stream="pre-dispatch host check",
-                        status_code=401,
-                    ),
-                ),
+                status_code=self.missing_source_status_code,
+                service_name=self.missing_source_service_name,
+                classification=self.missing_source_classification,
+                observations=self.missing_source_observations,
             )
         return self.source
 

@@ -493,7 +493,21 @@ def _codex_auth_seed_action(
         return None
     if provider_state_dir is None:
         return None
+    missing_source_message = (
+        "Codex authentication missing: run `codex login` on the host."
+    )
     return LocalAuthSeedAction(
         source=Path.home() / ".codex" / "auth.json",
         destination=provider_state_dir / "auth.json",
+        missing_source_message=missing_source_message,
+        missing_source_service_name="codex",
+        missing_source_status_code=401,
+        missing_source_observations=(
+            ProviderErrorObservation(
+                service_name="codex",
+                raw_provider_text=missing_source_message,
+                source_stream="pre-dispatch host check",
+                status_code=401,
+            ),
+        ),
     )
