@@ -13,6 +13,12 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
+from pycastle.errors import (
+    AgentTimeoutError,
+    HardAgentError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitCommandError, GitService
@@ -1523,8 +1529,6 @@ def test_merge_phase_preserves_sandbox_and_session_on_usage_limit_error(
     tmp_path, git_svc, github_svc
 ):
     """UsageLimitError during merger leaves sandbox worktree and session dir on disk."""
-    from pycastle.errors import UsageLimitError
-
     git_svc.try_merge.return_value = False
     sandbox_path = _merge_sandbox_path(tmp_path, Config(), 1)
 
@@ -1544,6 +1548,37 @@ def test_merge_phase_preserves_sandbox_and_session_on_usage_limit_error(
     assert sandbox_path.exists(), "sandbox worktree must be preserved"
     session_dir = sandbox_path / ".pycastle-session" / "merger"
     assert session_dir.exists() and any(session_dir.rglob("*"))
+
+
+@pytest.mark.parametrize(
+    ("agent_error", "expected_type"),
+    [
+        (UsageLimitError(), UsageLimitError),
+        (AgentTimeoutError("timeout"), AgentTimeoutError),
+        (TransientAgentError(status_code=529), TransientAgentError),
+        (
+            HardAgentError(message="hard failure", status_code=400),
+            HardAgentError,
+        ),
+    ],
+)
+def test_merge_phase_propagates_agent_errors_from_conflict_recovery(
+    tmp_path, git_svc, github_svc, agent_error, expected_type
+):
+    git_svc.try_merge.return_value = False
+
+    async def _raise_agent_error(_request: RunRequest):
+        raise agent_error
+
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner(side_effect=_raise_agent_error),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+
+    with pytest.raises(expected_type):
+        _run([{"number": 1, "title": "Conflict"}], deps)
 
 
 def test_merge_phase_tears_down_and_deletes_branch_when_clean_sandbox_and_no_session(
