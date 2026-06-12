@@ -38,6 +38,48 @@ class MergeResult:
     preflight_blocker: PreflightHITL | PreflightAFK | None = None
 
 
+def _classify_merge_candidates(
+    completed: list[dict], deps: _MergeDeps
+) -> tuple[list[dict], list[dict]]:
+    clean_issues: list[dict] = []
+    conflict_issues: list[dict] = []
+    for issue in completed:
+        if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
+            clean_issues.append(issue)
+        else:
+            conflict_issues.append(issue)
+    return clean_issues, conflict_issues
+
+
+def _build_merge_result(
+    *,
+    clean_issues: list[dict],
+    conflict_issues: list[dict],
+    recovery_result: dict[str, list[dict]] | None = None,
+    preflight_blocker: PreflightHITL | PreflightAFK | None = None,
+) -> MergeResult:
+    return MergeResult(
+        clean=clean_issues,
+        conflicts=conflict_issues,
+        preflight_blocker=preflight_blocker,
+        **(recovery_result or {}),
+    )
+
+
+def _should_auto_push(
+    *,
+    auto_push: bool,
+    clean_issues: list[dict],
+    conflict_issues: list[dict],
+    pending_conflicts: list[dict],
+) -> bool:
+    return (
+        auto_push
+        and bool(clean_issues or conflict_issues)
+        and not (conflict_issues and pending_conflicts)
+    )
+
+
 async def _delete_merged_branches(
     branches: list[str],
     deps: _MergeDeps,
@@ -131,14 +173,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     ) as row:
         await _wait_for_clean_working_tree(deps, "Merge")
         completed_total = len(completed)
-
-        clean_issues: list[dict] = []
-        conflict_issues: list[dict] = []
-        for issue in completed:
-            if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
-                clean_issues.append(issue)
-            else:
-                conflict_issues.append(issue)
+        clean_issues, conflict_issues = _classify_merge_candidates(completed, deps)
 
         progress = MergeProgressReporter(
             status_display=deps.status_display,
@@ -206,42 +241,45 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                             deps
                         ),
                     )
-                return MergeResult(
-                    clean=clean_issues,
-                    conflicts=conflict_issues,
-                    pending_conflicts=conflict_issues,
+                return _build_merge_result(
+                    clean_issues=clean_issues,
+                    conflict_issues=conflict_issues,
+                    recovery_result={"pending_conflicts": conflict_issues},
                     preflight_blocker=verdict,
                 )
+
             recovery = await recover_conflicts(
                 conflict_issues=conflict_issues,
                 progress=progress,
                 deps=deps,
             )
-            conflict_deleted = recovery.deleted_conflict_branches
-            completed_conflicts = recovery.completed_conflicts
-            pending_conflicts = recovery.pending_conflicts
-            if completed_conflicts:
+            if recovery.has_completed_conflicts:
                 deps.github_svc.close_completed_parent_issues()
             _close_merge_row(
                 build_merge_close_message(
-                    clean_deleted + conflict_deleted,
-                    completed_conflicts=completed_conflicts,
-                    pending_conflicts=pending_conflicts,
+                    clean_deleted + recovery.deleted_conflict_branches,
+                    **recovery.close_message_kwargs(),
                 )
             )
 
-        if (
-            deps.cfg.auto_push
-            and (clean_issues or conflict_issues)
-            and not (conflict_issues and pending_conflicts)
+        recovery_result = (
+            recovery.merge_result_kwargs()
+            if conflict_issues
+            else {"pending_conflicts": []}
+        )
+        pending_conflicts = recovery_result["pending_conflicts"]
+        if _should_auto_push(
+            auto_push=deps.cfg.auto_push,
+            clean_issues=clean_issues,
+            conflict_issues=conflict_issues,
+            pending_conflicts=pending_conflicts,
         ):
             await deps.git_svc.push(
                 deps.repo_root,
                 resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
             )
-        return MergeResult(
-            clean=clean_issues,
-            conflicts=conflict_issues,
-            completed_conflicts=completed_conflicts if conflict_issues else [],
-            pending_conflicts=pending_conflicts if conflict_issues else [],
+        return _build_merge_result(
+            clean_issues=clean_issues,
+            conflict_issues=conflict_issues,
+            recovery_result=recovery_result,
         )

@@ -43,6 +43,26 @@ class ConflictRecoveryOutcome:
     pending_conflicts: list[dict]
     deleted_conflict_branches: list[str]
 
+    @property
+    def has_completed_conflicts(self) -> bool:
+        return bool(self.completed_conflicts)
+
+    @property
+    def has_pending_conflicts(self) -> bool:
+        return bool(self.pending_conflicts)
+
+    def close_message_kwargs(self) -> dict[str, list[dict]]:
+        return {
+            "completed_conflicts": self.completed_conflicts,
+            "pending_conflicts": self.pending_conflicts,
+        }
+
+    def merge_result_kwargs(self) -> dict[str, list[dict]]:
+        return {
+            "completed_conflicts": self.completed_conflicts,
+            "pending_conflicts": self.pending_conflicts,
+        }
+
 
 def _ensure_conflict_branch_is_merged(
     issue: dict, path: Path, deps: _ConflictRecoveryDeps
