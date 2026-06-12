@@ -10,9 +10,7 @@ from ..services import GitCommandError, GitService, GithubService
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import teardown_worktree, worktree_identity
 from ._merge_conflict_recovery import (
-    ConflictRecoveryCompleted,
-    ConflictRecoveryPending,
-    recover_active_conflict,
+    recover_conflicts,
 )
 from ._merge_reporting import MergeProgressReporter, build_merge_close_message
 from ._rows import status_row
@@ -214,31 +212,14 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     pending_conflicts=conflict_issues,
                     preflight_blocker=verdict,
                 )
-            conflict_deleted: list[str] = []
-            completed_conflicts: list[dict] = []
-            pending_conflicts: list[dict] = []
-            for idx, active_issue in enumerate(conflict_issues):
-                recovery = await recover_active_conflict(
-                    conflict_issues=conflict_issues,
-                    active_issue=active_issue,
-                    pending_issues=conflict_issues[idx:],
-                    deps=deps,
-                )
-                if isinstance(recovery, ConflictRecoveryPending):
-                    deps.status_display.print(
-                        "Merge",
-                        f"Conflict branch {branch_for(active_issue['number'])} failed and remains pending: {recovery.error}",
-                        "warning",
-                    )
-                    pending_conflicts = recovery.issues
-                    break
-                assert isinstance(recovery, ConflictRecoveryCompleted)
-                progress.update_merge_done(progress.merge_done + 1)
-                conflict_deleted.extend(
-                    await _delete_branches([branch_for(active_issue["number"])])
-                )
-                await _close_issues([recovery.issue])
-                completed_conflicts.append(recovery.issue)
+            recovery = await recover_conflicts(
+                conflict_issues=conflict_issues,
+                progress=progress,
+                deps=deps,
+            )
+            conflict_deleted = recovery.deleted_conflict_branches
+            completed_conflicts = recovery.completed_conflicts
+            pending_conflicts = recovery.pending_conflicts
             if completed_conflicts:
                 deps.github_svc.close_completed_parent_issues()
             _close_merge_row(
