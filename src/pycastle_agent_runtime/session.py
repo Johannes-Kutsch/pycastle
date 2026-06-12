@@ -79,6 +79,7 @@ class ProviderSessionState:
     auth_seeding_requirement: AuthSeedingRequirement | None = None
     auth_seed_action: LocalAuthSeedAction | None = None
     allow_protocol_reprompt: bool = True
+    use_service_state_dir_for_container: bool = False
 
 
 def provider_state_relpath(

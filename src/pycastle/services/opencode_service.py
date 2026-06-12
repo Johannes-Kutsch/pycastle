@@ -263,6 +263,7 @@ class OpenCodeService:
                 request.preferred_provider_session_id,
                 state_dir_relpath=request.state_dir_relpath,
                 state_dir_path=request.provider_state_dir,
+                use_service_state_dir_for_container=True,
             )
 
         selection = select_resumable_provider_session_id(
@@ -293,6 +294,7 @@ class OpenCodeService:
             state_dir_path=request.provider_state_dir,
             exact_transcript_match=exact_transcript_match,
             persist_provider_session_id=selection.persist_provider_session_id,
+            use_service_state_dir_for_container=True,
         )
 
     def run(

@@ -75,11 +75,11 @@ class ProviderSessionDecision:
         AuthSeedingRequirement.NOT_REQUIRED
     )
     auth_seed_action: LocalAuthSeedAction | None = None
+    use_service_state_dir_for_container: bool = False
 
-    def container_state_dir(self, *, service_name: str) -> Path | None:
+    def container_state_dir(self) -> Path | None:
         if (
-            service_name == "opencode"
-            and self.run_kind is RunKind.RESUME
+            self.use_service_state_dir_for_container
             and self.service_state_dir is not None
         ):
             return self.service_state_dir
@@ -89,10 +89,9 @@ class ProviderSessionDecision:
         self,
         *,
         worktree: Path,
-        service_name: str,
         container_workspace: str,
     ) -> str | None:
-        container_state_dir = self.container_state_dir(service_name=service_name)
+        container_state_dir = self.container_state_dir()
         if container_state_dir is not None:
             try:
                 container_relpath = container_state_dir.relative_to(worktree)
@@ -139,6 +138,7 @@ class ProviderRunStatePlan:
     service_state_dir: Path | None = None
     exact_transcript_match: bool = False
     auth_seed_action: LocalAuthSeedAction | None = None
+    use_service_state_dir_for_container: bool = False
 
     def provider_session_decision(self) -> ProviderSessionDecision:
         return ProviderSessionDecision(
@@ -151,6 +151,9 @@ class ProviderRunStatePlan:
             exact_transcript_match=self.exact_transcript_match,
             auth_seeding_requirement=self.auth_seeding_requirement,
             auth_seed_action=self.auth_seed_action,
+            use_service_state_dir_for_container=(
+                self.use_service_state_dir_for_container
+            ),
         )
 
     def provider_state_dir_container_path(
@@ -161,7 +164,6 @@ class ProviderRunStatePlan:
     ) -> str | None:
         return self.provider_session_decision().container_state_dir_path(
             worktree=worktree,
-            service_name=self.service_name,
             container_workspace=container_workspace,
         )
 
@@ -289,6 +291,9 @@ def plan_provider_run_state(
         service_state_dir=host_state_dir,
         exact_transcript_match=provider_session_state.exact_transcript_match,
         auth_seed_action=provider_session_state.auth_seed_action,
+        use_service_state_dir_for_container=(
+            provider_session_state.use_service_state_dir_for_container
+        ),
     )
 
 

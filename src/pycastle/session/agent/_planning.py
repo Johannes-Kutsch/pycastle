@@ -48,6 +48,7 @@ class RunSessionPlan:
     provider_session_plan: ProviderSessionDecision | None = None
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
+    use_service_state_dir_for_container: bool = False
     _provider_run_state_plan: ProviderRunStatePlan | None = dataclasses.field(
         default=None,
         repr=False,
@@ -71,6 +72,9 @@ class RunSessionPlan:
                 service_state_dir=self.service_state_dir,
                 exact_transcript_match=self.exact_transcript_match,
                 auth_seed_action=self.auth_seed_action,
+                use_service_state_dir_for_container=(
+                    self.use_service_state_dir_for_container
+                ),
             )
             object.__setattr__(
                 self,
@@ -182,6 +186,9 @@ def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
             provider_run_state_plan.auth_seed_action,
         ),
         exact_transcript_match=provider_run_state_plan.exact_transcript_match,
+        use_service_state_dir_for_container=(
+            provider_run_state_plan.use_service_state_dir_for_container
+        ),
         _provider_run_state_plan=provider_run_state_plan,
     )
 

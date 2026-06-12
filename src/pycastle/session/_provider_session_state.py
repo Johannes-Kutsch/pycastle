@@ -167,6 +167,9 @@ def _run_session_plan_for_request(
                 service_state_dir=decision.service_state_dir,
                 exact_transcript_match=decision.exact_transcript_match,
                 auth_seed_action=decision.auth_seed_action,
+                use_service_state_dir_for_container=(
+                    decision.use_service_state_dir_for_container
+                ),
             )
         else:
             return plan_run_session(
@@ -198,6 +201,9 @@ def _run_session_plan_for_request(
             provider_run_state_plan.auth_seed_action,
         ),
         exact_transcript_match=provider_run_state_plan.exact_transcript_match,
+        use_service_state_dir_for_container=(
+            provider_run_state_plan.use_service_state_dir_for_container
+        ),
         _provider_run_state_plan=provider_run_state_plan,
     )
 

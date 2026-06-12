@@ -1283,6 +1283,7 @@ def test_prepare_provider_session_state_uses_supplied_provider_session_decision_
         state_dir_path=selected_state_dir,
         recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
         service_state_dir=role_service_state_dir,
+        use_service_state_dir_for_container=True,
     )
 
     state = prepare_provider_session_state(
