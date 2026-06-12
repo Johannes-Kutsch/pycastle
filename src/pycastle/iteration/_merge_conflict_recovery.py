@@ -91,7 +91,7 @@ async def _delete_conflict_branch(
     return branch
 
 
-def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> None:
+def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> bool:
     try:
         deps.github_svc.close_issue(issue["number"])
     except Exception as exc:
@@ -100,6 +100,8 @@ def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> None:
             f"Warning: could not close issue #{issue['number']}: {exc}",
             "warning",
         )
+        return False
+    return True
 
 
 async def _recover_active_conflict(
@@ -199,8 +201,8 @@ async def recover_conflicts(
         )
         if deleted_branch is not None:
             deleted_conflict_branches.append(deleted_branch)
-        _close_conflict_issue(active_issue, deps)
-        progress.update_close_done(progress.close_done + 1)
+        if _close_conflict_issue(active_issue, deps):
+            progress.update_close_done(progress.close_done + 1)
         completed_conflicts.append(active_issue)
 
     return ConflictRecoveryOutcome(

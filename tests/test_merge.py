@@ -1784,6 +1784,21 @@ def test_close_issue_failure_in_conflict_path_does_not_abort(
     assert any("conflict close failed" in str(m) for m in print_msgs)
 
 
+def test_conflict_close_failure_does_not_advance_closing_progress(
+    recording_deps, git_svc, github_svc
+):
+    deps, recording = recording_deps
+    git_svc.try_merge.return_value = False
+    github_svc.close_issue.side_effect = RuntimeError("conflict close failed")
+
+    _run([{"number": 1, "title": "Conflict"}], deps)
+
+    update_calls = [
+        c[2] for c in recording.calls if c[0] == "update_phase" and c[1] == "Merge"
+    ]
+    assert "merging 1/1 branches, closing 1/1 issues" not in update_calls
+
+
 def test_close_issue_all_failures_reported_via_status_display(
     recording_deps, github_svc
 ):
