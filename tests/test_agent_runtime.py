@@ -1961,6 +1961,124 @@ def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_
     assert plan.auth_seed_action.destination == state_dir / "auth.json"
 
 
+def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
+    from pycastle_agent_runtime.session_planning import (
+        AuthSeedingRequirement,
+        LocalAuthSeedAction,
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "generic"
+    missing = tmp_path / "host" / "generic-creds.json"
+    observation = ProviderErrorObservation(
+        service_name="generic",
+        raw_provider_text="Generic credentials missing on the host.",
+        source_stream="pre-dispatch host check",
+        status_code=403,
+    )
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=state_dir,
+            has_resumable_provider_state=False,
+            state_dir_relpath=".pycastle-session/implementer/generic/",
+        )
+    )
+    service = _PlanRecordingRuntimeService(
+        "generic",
+        ProviderSessionState(
+            RunKind.FRESH,
+            None,
+            auth_seeding_requirement=AuthSeedingRequirement.REQUIRED,
+            auth_seed_action=LocalAuthSeedAction(
+                source=missing,
+                destination=state_dir / "generic-creds.json",
+                missing_source_message="Generic credentials missing on the host.",
+                missing_source_service_name="generic",
+                missing_source_status_code=403,
+                missing_source_classification=(
+                    "operator_actionable_credential_failure"
+                ),
+                missing_source_observations=(observation,),
+            ),
+        ),
+    )
+
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="",
+            service=service,
+            role_session=role_session,
+        )
+    )
+
+    with pytest.raises(AgentCredentialFailureError) as excinfo:
+        plan.prepare_provider_state_dir()
+
+    assert str(excinfo.value) == "Generic credentials missing on the host."
+    assert excinfo.value.service_name == "generic"
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.classification == "operator_actionable_credential_failure"
+    assert excinfo.value.observations == (observation,)
+
+
+def test_runtime_provider_state_plan_without_provider_auth_seed_policy_raises_file_not_found(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
+    from pycastle_agent_runtime.session_planning import (
+        AuthSeedingRequirement,
+        LocalAuthSeedAction,
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "generic"
+    missing = tmp_path / "host" / "generic-creds.json"
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=state_dir,
+            has_resumable_provider_state=False,
+            state_dir_relpath=".pycastle-session/implementer/generic/",
+        )
+    )
+    service = _PlanRecordingRuntimeService(
+        "generic",
+        ProviderSessionState(
+            RunKind.FRESH,
+            None,
+            auth_seeding_requirement=AuthSeedingRequirement.REQUIRED,
+            auth_seed_action=LocalAuthSeedAction(
+                source=missing,
+                destination=state_dir / "generic-creds.json",
+            ),
+        ),
+    )
+
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="",
+            service=service,
+            role_session=role_session,
+        )
+    )
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        plan.prepare_provider_state_dir()
+
+    assert excinfo.value.args == (missing,)
+
+
 def test_runtime_provider_state_plan_keeps_selected_provider_state_dir_for_opencode_resume_without_container_override_policy(
     tmp_path: Path,
 ) -> None:

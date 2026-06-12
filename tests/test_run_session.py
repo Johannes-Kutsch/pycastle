@@ -913,6 +913,21 @@ def test_run_session_plan_exposes_auth_seed_action_for_fresh_codex_without_auth_
     assert action.destination == (
         tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
     )
+    assert (
+        action.missing_source_message
+        == "Codex authentication missing: run `codex login` on the host."
+    )
+    assert action.missing_source_service_name == "codex"
+    assert action.missing_source_status_code == 401
+    assert len(action.missing_source_observations) == 1
+    observation = action.missing_source_observations[0]
+    assert observation.service_name == "codex"
+    assert (
+        observation.raw_provider_text
+        == "Codex authentication missing: run `codex login` on the host."
+    )
+    assert observation.source_stream == "pre-dispatch host check"
+    assert observation.status_code == 401
 
 
 def test_run_session_plan_skips_auth_seed_action_for_fresh_codex_with_auth_json(
