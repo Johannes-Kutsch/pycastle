@@ -1,12 +1,73 @@
 from pycastle_agent_runtime.errors import (
-    AgentCredentialFailureError,
-    AgentFailedError,
     AgentTimeoutError,
-    HardAgentError,
+    AgentFailedError as RuntimeAgentFailedError,
+    HardAgentError as RuntimeHardAgentError,
     PycastleError,
     TransientAgentError,
     UsageLimitError,
 )
+
+_PYCASTLE_SESSION_ROOT = ".pycastle-session"
+
+
+class HardAgentError(RuntimeHardAgentError):
+    def __init__(
+        self,
+        message: str = "",
+        status_code: int | None = None,
+        service_name: str = "claude",
+        classification: str | None = None,
+        observations=(),
+    ) -> None:
+        super().__init__(
+            message=message,
+            status_code=status_code,
+            service_name=service_name,
+            classification=classification,
+            observations=observations,
+        )
+
+
+class AgentFailedError(RuntimeAgentFailedError):
+    def __init__(
+        self,
+        role_value: str,
+        worktree_path,
+        namespace: str = "",
+        failure_class: str = "",
+        service_name: str = "claude",
+        provider_session_path: str | None = None,
+        session_root: str = _PYCASTLE_SESSION_ROOT,
+    ) -> None:
+        super().__init__(
+            role_value=role_value,
+            worktree_path=worktree_path,
+            namespace=namespace,
+            failure_class=failure_class,
+            service_name=service_name,
+            provider_session_path=provider_session_path,
+            session_root=session_root,
+        )
+
+
+class AgentCredentialFailureError(HardAgentError):
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        status_code: int | None = None,
+        service_name: str,
+        classification: str | None = None,
+        observations=(),
+    ) -> None:
+        self.is_operator_actionable = True
+        super().__init__(
+            message=message,
+            status_code=status_code,
+            service_name=service_name,
+            classification=classification,
+            observations=observations,
+        )
 
 
 class DockerError(PycastleError):

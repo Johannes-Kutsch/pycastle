@@ -5,7 +5,6 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Protocol
 
-from pycastle_agent_runtime.errors import AgentFailedError
 from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import RunKind
 from pycastle_agent_runtime.work import (
@@ -18,7 +17,7 @@ from pycastle_agent_runtime.work import (
     invoke_work,
 )
 
-from ..errors import TransientAgentError
+from ..errors import AgentFailedError, TransientAgentError
 from ..session.resume import provider_state_relpath
 from .output_protocol import (
     AgentOutput,
