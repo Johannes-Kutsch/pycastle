@@ -1961,6 +1961,98 @@ def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_
     assert plan.auth_seed_action.destination == state_dir / "auth.json"
 
 
+def test_runtime_provider_state_plan_keeps_selected_provider_state_dir_for_opencode_resume_without_container_override_policy(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
+    from pycastle_agent_runtime.session_planning import (
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
+
+    selected_state_dir = tmp_path / "custom" / "opencode-state"
+    service_state_dir = tmp_path / ".pycastle-session" / "implementer" / "opencode"
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=service_state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/opencode/",
+        )
+    )
+    service = _PlanRecordingRuntimeService(
+        "opencode",
+        ProviderSessionState(
+            RunKind.RESUME,
+            "sess-opencode",
+            state_dir_relpath="custom/opencode-state/",
+            state_dir_path=selected_state_dir,
+        ),
+    )
+
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="",
+            service=service,
+            role_session=role_session,
+        )
+    )
+
+    assert plan.provider_state_dir == selected_state_dir
+    assert plan.service_state_dir == service_state_dir
+    assert plan.provider_state_dir_container_path(
+        worktree=tmp_path,
+        container_workspace="/workspace",
+    ) == ("/workspace/custom/opencode-state/")
+
+
+def test_runtime_provider_state_plan_uses_service_state_dir_when_provider_requests_container_override_policy(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
+    from pycastle_agent_runtime.session_planning import (
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
+
+    service_state_dir = tmp_path / ".pycastle-session" / "implementer" / "generic"
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=service_state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/generic/",
+        )
+    )
+    service = _PlanRecordingRuntimeService(
+        "generic",
+        ProviderSessionState(
+            RunKind.RESUME,
+            "sess-generic",
+            state_dir_relpath="custom/generic-state/",
+            state_dir_path=tmp_path / "custom" / "generic-state",
+            use_service_state_dir_for_container=True,
+        ),
+    )
+
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="",
+            service=service,
+            role_session=role_session,
+        )
+    )
+
+    assert plan.provider_state_dir_container_path(
+        worktree=tmp_path,
+        container_workspace="/workspace",
+    ) == ("/workspace/.pycastle-session/implementer/generic/")
+
+
 def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
     tmp_path: Path,
 ):

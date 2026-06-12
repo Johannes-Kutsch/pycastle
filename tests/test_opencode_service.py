@@ -363,6 +363,7 @@ def test_opencode_service_resolves_resume_with_saved_session_id_when_state_is_re
     assert provider_session_state.run_kind is RunKind.RESUME
     assert provider_session_state.provider_session_id == "sess-opencode-123"
     assert provider_session_state.persist_provider_session_id is False
+    assert provider_session_state.use_service_state_dir_for_container is True
 
 
 def test_opencode_service_recovers_resume_from_selected_state_dir_without_saved_session_id(
@@ -388,6 +389,7 @@ def test_opencode_service_recovers_resume_from_selected_state_dir_without_saved_
     assert provider_session_state.run_kind is RunKind.RESUME
     assert provider_session_state.provider_session_id == "sess-opencode-123"
     assert provider_session_state.persist_provider_session_id is True
+    assert provider_session_state.use_service_state_dir_for_container is True
     assert role_session.service_session_id("opencode") == "sess-opencode-123"
 
 
