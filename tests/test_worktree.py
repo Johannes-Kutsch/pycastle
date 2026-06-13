@@ -23,6 +23,7 @@ from pycastle.infrastructure.worktree import (
     durable_issue_worktree,
     managed_worktree,
     patch_gitdir_for_container,
+    reusable_sandbox_worktree,
     transient_worktree,
     worktree_identity,
 )
@@ -2056,4 +2057,57 @@ def test_non_ephemeral_worktree_reuses_existing_branch_tip(repo):
 
     assert head_inside == [sha_branch], (
         f"worktree HEAD was {head_inside[0]!r}, expected sha_branch={sha_branch!r}"
+    )
+
+
+def test_reusable_sandbox_rebuilds_stale_non_preserved_branch_at_sha(repo):
+    """Reusable sandboxes replace stale non-preserved state so HEAD matches the requested SHA."""
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "main_extra_reusable.txt").write_text("extra reusable")
+    _git(repo, "add", "main_extra_reusable.txt")
+    _git(repo, "commit", "-m", "main extra reusable")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    _git(repo, "branch", "pycastle/improve-sandbox", sha_base)
+    temp_wt = repo.parent / "temp-improve-sandbox-wt"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            str(temp_wt),
+            "pycastle/improve-sandbox",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (temp_wt / "stale_sandbox_work.txt").write_text("stale reusable sandbox work")
+    _git(temp_wt, "add", "stale_sandbox_work.txt")
+    _git(temp_wt, "commit", "-m", "stale reusable sandbox commit")
+    subprocess.run(
+        ["git", "-C", str(repo), "worktree", "remove", str(temp_wt)],
+        check=True,
+        capture_output=True,
+    )
+
+    head_inside: list[str] = []
+
+    async def _run():
+        async with reusable_sandbox_worktree(
+            "improve-sandbox",
+            sha=sha_main,
+            deps=deps,
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main], (
+        f"worktree HEAD was {head_inside[0]!r}, expected sha_main={sha_main!r}"
     )

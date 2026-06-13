@@ -324,6 +324,23 @@ async def durable_issue_worktree(
 
 
 @asynccontextmanager
+async def reusable_sandbox_worktree(
+    intent: str,
+    *,
+    sha: str | None,
+    deps: _WorktreeDeps,
+):
+    identity = sandbox_worktree_identity(intent, deps.repo_root)
+    async with managed_worktree(
+        identity=identity,
+        sha=sha,
+        delete_branch_on_teardown=True,
+        deps=deps,
+    ) as path:
+        yield path
+
+
+@asynccontextmanager
 async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps):
     path = worktree_path(name, deps.repo_root)
     if sha is not None:
