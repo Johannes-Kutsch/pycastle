@@ -4,7 +4,7 @@ import subprocess
 import sys
 import textwrap
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TypedDict, cast
 from unittest.mock import MagicMock
@@ -599,6 +599,19 @@ def _standalone_runtime_prompt_result(repo_root: Path) -> str:
 def _standalone_runtime_agent_log_result(
     repo_root: Path, effective_logs_dir: Path
 ) -> dict[str, object]:
+    return _standalone_runtime_agent_log_result_with_timezone(
+        repo_root,
+        effective_logs_dir,
+        tz_name="UTC",
+    )
+
+
+def _standalone_runtime_agent_log_result_with_timezone(
+    repo_root: Path,
+    effective_logs_dir: Path,
+    *,
+    tz_name: str,
+) -> dict[str, object]:
     result = subprocess.run(
         [
             sys.executable,
@@ -607,7 +620,9 @@ def _standalone_runtime_agent_log_result(
                 f"""
                 import importlib.abc
                 import json
+                import os
                 import sys
+                import time
                 from datetime import datetime, timezone
                 from pathlib import Path
 
@@ -620,6 +635,8 @@ def _standalone_runtime_agent_log_result(
                             )
                         return None
 
+                os.environ["TZ"] = {tz_name!r}
+                time.tzset()
                 sys.meta_path.insert(0, _BlockPycastle())
 
                 from pycastle_agent_runtime import AgentInvocationLog, AgentRole, RunKind
@@ -1506,6 +1523,31 @@ def test_runtime_agent_log_lifecycle_runs_standalone_without_pycastle(
         ),
         '{"type":"result","result":"done"}',
     ]
+
+
+@pytest.mark.parametrize(
+    ("tz_name", "expected_offset"),
+    [("UTC", timedelta()), ("Etc/GMT+7", -timedelta(hours=7))],
+)
+def test_runtime_agent_log_lifecycle_uses_local_minute_timestamp_standalone(
+    tmp_path: Path,
+    tz_name: str,
+    expected_offset: timedelta,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = _standalone_runtime_agent_log_result_with_timezone(
+        repo_root,
+        tmp_path / tz_name.replace("/", "-"),
+        tz_name=tz_name,
+    )
+
+    expected_local = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone(
+        timezone(expected_offset)
+    )
+    assert Path(cast(str, result["log_path"])).name == (
+        f"standalone-runtime-{expected_local.strftime('%Y%m%dT%H%M')}.log"
+    )
 
 
 def test_runtime_package_prompt_entrypoint_requires_build_work_dependencies_adapter(
