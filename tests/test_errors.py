@@ -146,7 +146,10 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
 
     from pycastle.config import Config
     from pycastle.services import GitService
-    from pycastle.infrastructure.worktree import managed_worktree
+    from pycastle.infrastructure.worktree import (
+        BranchWorktreeLifecycle,
+        managed_worktree,
+    )
 
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     subprocess.run(
@@ -177,7 +180,7 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
             "name1",
             branch="feature/same",
             sha=None,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=deps,
         ):
             with pytest.raises(WorktreeError):
@@ -185,7 +188,7 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
                     "name2",
                     branch="feature/same",
                     sha=None,
-                    delete_branch_on_teardown=True,
+                    lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                     deps=deps,
                 ):
                     pass

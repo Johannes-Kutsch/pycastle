@@ -20,6 +20,7 @@ from pycastle.errors import (
 )
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.infrastructure.worktree import (
+    BranchWorktreeLifecycle,
     DetachedTransientWorktreeIntent,
     DurableIssueWorktreeIntent,
     ReusableSandboxWorktreeIntent,
@@ -111,7 +112,7 @@ def test_managed_worktree_raises_worktree_timeout_error_when_git_times_out(branc
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha="abc123",
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 pass
@@ -128,7 +129,7 @@ def test_managed_worktree_raises_worktree_error_on_git_command_failure(branch_de
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha="abc123",
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 pass
@@ -151,7 +152,7 @@ def test_managed_worktree_raises_when_registered_worktree_has_no_project_files(
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha="abc123",
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 pass
@@ -168,7 +169,7 @@ def test_managed_worktree_yields_valid_path_in_real_repo(real_branch_deps):
             "issue-42",
             branch="pycastle/issue-42",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
         ) as path:
             assert path.exists()
@@ -265,7 +266,7 @@ def test_managed_worktree_creates_new_branch_in_repo(real_branch_deps):
             "issue-42",
             branch="pycastle/issue-42",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
         ):
             branches = subprocess.run(
@@ -294,7 +295,7 @@ def test_managed_worktree_preserves_when_stage_done_sentinel_present(real_branch
             "issue-stage-done",
             branch="pycastle/issue-stage-done",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
         ) as path:
             (path / ".pycastle-session" / "implementer").mkdir(parents=True)
@@ -327,7 +328,7 @@ def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branc
             "issue-clean",
             branch="pycastle/issue-clean",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
         ) as path:
             captured["path"] = path
@@ -390,7 +391,7 @@ def test_managed_worktree_preserves_when_resumable_session_present(real_branch_d
             "issue-resumable",
             branch="pycastle/issue-resumable",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
         ) as path:
             role_dir = path / ".pycastle-session" / "reviewer"
@@ -428,7 +429,7 @@ def test_managed_worktree_preserves_clean_worktree_on_unexpected_agent_failure(
                 "issue-unexpected-failure",
                 branch="pycastle/issue-unexpected-failure",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=real_branch_deps,
             ) as path:
                 captured["path"] = path
@@ -466,7 +467,7 @@ def test_managed_worktree_with_existing_branch(real_branch_deps):
             "existing",
             branch="existing-branch",
             sha=None,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
         ) as path:
             assert (path / "pyproject.toml").exists()
@@ -484,7 +485,7 @@ def test_managed_worktree_succeeds_after_stale_git_registration(real_branch_deps
             "stale",
             branch="pycastle/stale",
             sha=None,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
         ) as wt:
             # commit so the branch has WIP and is preserved by the empty-branch cleanup rule
@@ -515,7 +516,7 @@ def test_managed_worktree_succeeds_after_stale_git_registration(real_branch_deps
             "fresh",
             branch="pycastle/fresh",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
         ) as path:
             assert (path / "pyproject.toml").exists()
@@ -531,7 +532,7 @@ def test_managed_worktree_raises_on_same_branch_conflict(real_branch_deps):
             "name1",
             branch="feature/same",
             sha=None,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
         ):
             with pytest.raises(WorktreeError, match="(?i)worktree add failed"):
@@ -539,7 +540,7 @@ def test_managed_worktree_raises_on_same_branch_conflict(real_branch_deps):
                     "name2",
                     branch="feature/same",
                     sha=None,
-                    delete_branch_on_teardown=True,
+                    lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                     deps=real_branch_deps,
                 ):
                     pass
@@ -556,7 +557,7 @@ def test_managed_worktree_raises_when_project_files_missing(bare_branch_deps):
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=bare_branch_deps,
             ):
                 pass
@@ -573,7 +574,7 @@ def test_managed_worktree_error_includes_path_and_listing(bare_branch_deps):
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=bare_branch_deps,
             ):
                 pass
@@ -640,7 +641,7 @@ def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
             "issue-3",
             branch="issue/3-valid-ancestor",
             sha=None,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=deps,
         ) as path:
             assert (path / "pyproject.toml").exists()
@@ -679,8 +680,7 @@ def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
 def test_managed_worktree_raises_when_non_ancestor_branch_has_no_project_files(
     git_repo,
 ):
-    """Non-ephemeral (delete_branch_on_teardown=False) branch with real commits but no project
-    files must raise, not silently discard work."""
+    """Durable issue worktrees with real commits but no project files must raise."""
     subprocess.run(
         ["git", "-C", str(git_repo), "branch", "issue/2-real-work"],
         check=True,
@@ -738,7 +738,7 @@ def test_managed_worktree_raises_when_non_ancestor_branch_has_no_project_files(
                 "issue-2",
                 branch="issue/2-real-work",
                 sha=None,
-                delete_branch_on_teardown=False,
+                lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
                 deps=deps,
             ):
                 pass
@@ -773,7 +773,7 @@ def test_managed_worktree_recreates_stale_ancestor_branch(git_repo):
             "issue-1",
             branch="issue/1-stale",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=deps,
         ) as path:
             assert (path / "pyproject.toml").exists()
@@ -896,7 +896,7 @@ def test_managed_worktree_accepts_worktree_identity(branch_deps):
         async with managed_worktree(
             identity=identity,
             sha="abc123",
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
         ) as path:
             assert path == identity.path
@@ -1146,7 +1146,7 @@ def test_managed_worktree_creates_worktree_on_enter_and_yields_correct_path(
             "issue-42",
             branch="pycastle/issue-42",
             sha="abc123",
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
         ) as path:
             assert path == expected_path
@@ -1163,7 +1163,7 @@ def test_managed_worktree_removes_worktree_and_branch_on_clean_exit(branch_deps)
             "issue-42",
             branch="pycastle/issue-42",
             sha="abc123",
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
         ):
             pass
@@ -1177,7 +1177,7 @@ def test_managed_worktree_removes_worktree_and_branch_on_clean_exit(branch_deps)
     )
 
 
-def test_managed_worktree_removes_worktree_but_not_branch_when_delete_branch_on_teardown_false(
+def test_managed_worktree_removes_worktree_but_not_branch_for_durable_issue_lifecycle(
     branch_deps,
 ):
     async def _run():
@@ -1185,7 +1185,7 @@ def test_managed_worktree_removes_worktree_but_not_branch_when_delete_branch_on_
             "issue-42",
             branch="pycastle/issue-42",
             sha="abc123",
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=branch_deps,
         ):
             pass
@@ -1204,7 +1204,7 @@ def test_managed_worktree_preserves_worktree_on_unexpected_exception(branch_deps
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha="abc123",
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 raise RuntimeError("body error")
@@ -1228,7 +1228,7 @@ def test_managed_worktree_does_not_delete_branch_when_remove_worktree_raises(
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha="abc123",
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 pass
@@ -1248,7 +1248,7 @@ def test_managed_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha="abc123",
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 pass
@@ -1268,14 +1268,14 @@ def test_managed_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
             "issue-10",
             branch="pycastle/issue-10",
             sha=None,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
         ):
             async with managed_worktree(
                 "issue-11",
                 branch="pycastle/issue-11",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=real_branch_deps,
             ):
                 pass
@@ -1294,7 +1294,7 @@ def test_managed_worktree_removes_worktrees_dir_when_last_worktree_exits(
             "issue-42",
             branch="pycastle/issue-42",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
         ):
             assert worktrees_dir.exists()
@@ -1351,7 +1351,7 @@ def test_managed_worktree_has_clean_status_after_creation(real_branch_deps, auto
             f"issue-eol-{autocrlf}",
             branch=f"pycastle/issue-eol-{autocrlf}",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
         ) as path:
             _assert_worktree_clean(path)
@@ -1388,7 +1388,7 @@ def test_managed_worktree_preserves_worktree_and_branch_when_session_dir_has_fil
             "merge-sandbox",
             branch="pycastle/merge-sandbox",
             sha=None,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
         ) as wt_path:
             session_dir = wt_path / ".pycastle-session" / "merger"
@@ -1411,7 +1411,7 @@ def test_managed_worktree_cleans_up_on_usage_limit_error(branch_deps):
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 raise UsageLimitError(reset_time=None)
@@ -1437,7 +1437,7 @@ def test_managed_worktree_preserves_worktree_on_agent_failed_error(branch_deps):
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ) as wt_path:
                 raise AgentFailedError(
@@ -1479,7 +1479,7 @@ def test_managed_worktree_preservation_predicate(
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ) as wt_path:
                 if has_resumable_session:
@@ -1507,7 +1507,7 @@ def test_managed_worktree_cleans_up_on_transient_agent_error(branch_deps):
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 raise TransientAgentError(status_code=529)
@@ -1531,7 +1531,7 @@ def test_managed_worktree_preserves_worktree_on_hard_agent_error(branch_deps):
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 raise HardAgentError(status_code=403)
@@ -1552,7 +1552,7 @@ def test_managed_worktree_cleans_up_on_agent_credential_failure(branch_deps):
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
                 raise AgentCredentialFailureError(
@@ -1587,7 +1587,7 @@ def test_managed_worktree_preserves_independent_worktree_state_on_agent_credenti
                 "issue-42",
                 branch="pycastle/issue-42",
                 sha=None,
-                delete_branch_on_teardown=True,
+                lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ) as wt_path:
                 if has_resumable_session:
@@ -1833,21 +1833,20 @@ def test_prune_orphan_worktrees_preserves_failure_worktree_without_role_session(
     assert registered_orphan.wt_path.exists()
 
 
-# ── managed_worktree: empty-branch cleanup overrides delete_branch_on_teardown ─
+# ── managed_worktree: durable issue branch cleanup rules ─────────────────────
 
 
-def test_managed_worktree_preserves_branch_with_commits_when_delete_branch_on_teardown_false(
+def test_managed_worktree_preserves_branch_with_commits_for_durable_issue_lifecycle(
     real_branch_deps,
 ):
-    """With delete_branch_on_teardown=False, a branch with at least one commit ahead of
-    main must not be deleted on the teardown path — it represents WIP."""
+    """Durable issue branches with commits ahead of main must be preserved as WIP."""
 
     async def _run():
         async with managed_worktree(
             "issue-wip",
             branch="pycastle/issue-wip",
             sha=None,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
         ) as path:
             (path / "wip.txt").write_text("work in progress")
@@ -1917,11 +1916,10 @@ def test_durable_issue_worktree_preserves_issue_branch_with_commits_ahead_of_mai
     assert "pycastle/issue-42" in branches
 
 
-def test_managed_worktree_deletes_empty_branch_when_delete_branch_on_teardown_false(
+def test_managed_worktree_deletes_empty_branch_for_durable_issue_lifecycle(
     real_branch_deps,
 ):
-    """With delete_branch_on_teardown=False, an empty branch (zero commits ahead of main)
-    must be deleted on the teardown path — empty branches are not WIP."""
+    """Durable issue branches with no commits ahead of main must be deleted."""
     worktree_path: Path | None = None
 
     async def _run():
@@ -1930,7 +1928,7 @@ def test_managed_worktree_deletes_empty_branch_when_delete_branch_on_teardown_fa
             "issue-empty",
             branch="pycastle/issue-empty",
             sha=None,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
         ) as path:
             worktree_path = path
@@ -1966,8 +1964,10 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_divergent_branch_exists(repo):
-    """AC#1: delete_branch_on_teardown=True + divergent stale branch → worktree HEAD is sha."""
+def test_reusable_sandbox_lifecycle_rebuilds_at_sha_when_stale_divergent_branch_exists(
+    repo,
+):
+    """Reusable sandbox lifecycle must rebuild stale non-preserved state at the requested SHA."""
     cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
@@ -2018,7 +2018,7 @@ def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_divergent_branch_exists(re
             "merge-sandbox",
             branch="pycastle/merge-sandbox",
             sha=sha_main,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=deps,
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
@@ -2030,8 +2030,8 @@ def test_ephemeral_sandbox_rebuilds_at_sha_when_stale_divergent_branch_exists(re
     )
 
 
-def test_ephemeral_sandbox_reuses_preserved_failure_worktree_by_default(repo):
-    """AC#2: preserved failure sandboxes stay intact on the default fresh-sandbox path."""
+def test_reusable_sandbox_lifecycle_reuses_preserved_failure_worktree(repo):
+    """Reusable sandboxes must preserve prior failure state instead of replacing it."""
     cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
@@ -2081,7 +2081,7 @@ def test_ephemeral_sandbox_reuses_preserved_failure_worktree_by_default(repo):
             "merge-sandbox",
             branch="pycastle/merge-sandbox",
             sha=sha_main,
-            delete_branch_on_teardown=True,
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=deps,
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
@@ -2095,7 +2095,7 @@ def test_ephemeral_sandbox_reuses_preserved_failure_worktree_by_default(repo):
 
 
 def test_replaceable_merge_lifecycle_replaces_preserved_failure_worktree(repo):
-    """AC#3: replaceable merge lifecycle reopens a fresh sandbox at sha."""
+    """Replaceable merge sandboxes must reopen fresh at the requested SHA."""
     cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
@@ -2147,8 +2147,8 @@ def test_replaceable_merge_lifecycle_replaces_preserved_failure_worktree(repo):
     assert not (wt_dir / ".pycastle-session" / ".preserved-failure").exists()
 
 
-def test_non_ephemeral_worktree_reuses_existing_branch_tip(repo):
-    """AC#3: delete_branch_on_teardown=False + existing branch → worktree HEAD is branch tip (sha ignored)."""
+def test_durable_issue_lifecycle_reuses_existing_branch_tip(repo):
+    """Durable issue worktrees must reopen at the branch tip and ignore the requested SHA."""
     cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
@@ -2196,7 +2196,7 @@ def test_non_ephemeral_worktree_reuses_existing_branch_tip(repo):
             "issue-123",
             branch="pycastle/issue-123",
             sha=sha_main,
-            delete_branch_on_teardown=False,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=deps,
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))

@@ -48,9 +48,10 @@ class ReusableSandboxWorktreeIntent(str, Enum):
     DIVERGENCE = "diverge-sandbox"
 
 
-class _SandboxLifecycle(str, Enum):
-    REUSABLE = "reusable"
-    REPLACEABLE_MERGE = "replaceable-merge"
+class BranchWorktreeLifecycle(str, Enum):
+    DURABLE_ISSUE = "durable-issue"
+    REUSABLE_SANDBOX = "reusable-sandbox"
+    REPLACEABLE_MERGE_SANDBOX = "replaceable-merge-sandbox"
 
 
 class DetachedTransientWorktreeIntent(str, Enum):
@@ -266,22 +267,27 @@ def is_worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
     return current == branch and any_role_dir_present(path)
 
 
-def _cleanup_stale_sandbox(
+def _deletes_branch_on_teardown(lifecycle: BranchWorktreeLifecycle) -> bool:
+    return lifecycle is not BranchWorktreeLifecycle.DURABLE_ISSUE
+
+
+def _cleanup_stale_named_worktree(
     svc: GitService,
     repo_path: Path,
     wt_path: Path,
     branch: str,
     *,
-    lifecycle: _SandboxLifecycle,
+    lifecycle: BranchWorktreeLifecycle,
 ) -> None:
-    """Remove any stale worktree and/or branch for an ephemeral sandbox.
+    """Remove stale worktree state when the named lifecycle requires a fresh branch.
 
-    Called before creating an ephemeral sandbox so the new worktree is built
+    Called before creating a branch worktree that must be rebuilt fresh so the new
+    worktree is built
     fresh at the caller-supplied SHA, regardless of what a prior run left
     behind. Best-effort: subsequent _create_worktree surfaces real errors.
     """
     if (
-        lifecycle is not _SandboxLifecycle.REPLACEABLE_MERGE
+        lifecycle is not BranchWorktreeLifecycle.REPLACEABLE_MERGE_SANDBOX
         and is_failure_worktree_preserved(wt_path)
     ):
         return
@@ -304,8 +310,7 @@ async def managed_worktree(
     branch: str | None = None,
     identity: WorktreeIdentity | None = None,
     sha: str | None,
-    delete_branch_on_teardown: bool,
-    sandbox_lifecycle: _SandboxLifecycle = _SandboxLifecycle.REUSABLE,
+    lifecycle: BranchWorktreeLifecycle,
     deps: _WorktreeDeps,
 ):
     resolved_identity = identity
@@ -316,13 +321,13 @@ async def managed_worktree(
             )
         resolved_identity = worktree_identity(branch, deps.repo_root, name=name)
     path = resolved_identity.path
-    if delete_branch_on_teardown:
-        _cleanup_stale_sandbox(
+    if _deletes_branch_on_teardown(lifecycle):
+        _cleanup_stale_named_worktree(
             deps.git_svc,
             deps.repo_root,
             path,
             resolved_identity.branch,
-            lifecycle=sandbox_lifecycle,
+            lifecycle=lifecycle,
         )
         _create_worktree(
             deps.git_svc, deps.repo_root, path, resolved_identity.branch, sha
@@ -357,7 +362,7 @@ async def managed_worktree(
             except Exception:
                 _branch_has_commits = True
             teardown_worktree(deps.git_svc, deps.repo_root, path)
-            if delete_branch_on_teardown or not _branch_has_commits:
+            if _deletes_branch_on_teardown(lifecycle) or not _branch_has_commits:
                 deps.git_svc.delete_branch(resolved_identity.branch, deps.repo_root)
 
 
@@ -374,7 +379,7 @@ async def durable_issue_worktree(
     async with managed_worktree(
         identity=identity,
         sha=sha,
-        delete_branch_on_teardown=False,
+        lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
         deps=deps,
     ) as path:
         yield path
@@ -391,7 +396,7 @@ async def reusable_sandbox_worktree(
     async with managed_worktree(
         identity=identity,
         sha=sha,
-        delete_branch_on_teardown=True,
+        lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
         deps=deps,
     ) as path:
         yield path
@@ -408,8 +413,7 @@ async def replaceable_merge_sandbox_worktree(
     async with managed_worktree(
         identity=identity,
         sha=sha,
-        delete_branch_on_teardown=True,
-        sandbox_lifecycle=_SandboxLifecycle.REPLACEABLE_MERGE,
+        lifecycle=BranchWorktreeLifecycle.REPLACEABLE_MERGE_SANDBOX,
         deps=deps,
     ) as path:
         yield path
