@@ -65,6 +65,10 @@ def worktree_identity(
     )
 
 
+def issue_branch(issue_number: int) -> str:
+    return f"pycastle/issue-{issue_number}"
+
+
 def sandbox_worktree_identity(intent: str, repo_root: Path) -> WorktreeIdentity:
     return worktree_identity(f"pycastle/{intent}", repo_root, name=intent)
 
@@ -300,6 +304,23 @@ async def managed_worktree(
             teardown_worktree(deps.git_svc, deps.repo_root, path)
             if delete_branch_on_teardown or not _branch_has_commits:
                 deps.git_svc.delete_branch(resolved_identity.branch, deps.repo_root)
+
+
+@asynccontextmanager
+async def durable_issue_worktree(
+    issue_number: int,
+    *,
+    sha: str | None,
+    deps: _WorktreeDeps,
+):
+    identity = worktree_identity(issue_branch(issue_number), deps.repo_root)
+    async with managed_worktree(
+        identity=identity,
+        sha=sha,
+        delete_branch_on_teardown=False,
+        deps=deps,
+    ) as path:
+        yield path
 
 
 @asynccontextmanager

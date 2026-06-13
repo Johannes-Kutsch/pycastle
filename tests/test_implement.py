@@ -1,7 +1,8 @@
 import asyncio
 import dataclasses
+from contextlib import asynccontextmanager
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -515,6 +516,37 @@ def test_run_issue_uses_issue_worktree_mount_path_for_both_agents(tmp_path):
     assert deps.git_svc.create_worktree.call_args_list[0][0][2] == "pycastle/issue-7"
     assert deps.git_svc.create_worktree.call_args_list[1][0][1] == expected_path
     assert deps.git_svc.create_worktree.call_args_list[1][0][2] == "pycastle/issue-7"
+
+
+def test_run_issue_uses_durable_issue_worktree_lifecycle(tmp_path):
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    issue = {
+        "number": 7,
+        "title": "Fix thing",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    deps = _make_deps(tmp_path, fake)
+    mount_path = tmp_path / "pycastle" / ".worktrees" / "issue-7"
+    seen_shas: list[str | None] = []
+
+    @asynccontextmanager
+    async def _fake_durable_issue_worktree(issue_number: int, *, sha: str | None, deps):
+        assert issue_number == 7
+        seen_shas.append(sha)
+        mount_path.mkdir(parents=True, exist_ok=True)
+        yield mount_path
+
+    with (
+        patch(
+            "pycastle.iteration.implement.durable_issue_worktree",
+            _fake_durable_issue_worktree,
+        ),
+    ):
+        asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    assert seen_shas == ["sha-abc", None]
 
 
 def test_run_issue_raises_when_implementer_does_not_complete(tmp_path):

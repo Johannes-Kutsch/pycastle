@@ -27,7 +27,8 @@ from ..session import RoleSession, is_stage_done_for
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
 from ..infrastructure.worktree import (
-    managed_worktree,
+    durable_issue_worktree,
+    issue_branch,
     worktree_identity,
 )
 from ._deps import Logger
@@ -44,7 +45,7 @@ class _ImplementDeps(Protocol):
 
 
 def branch_for(issue_number: int) -> str:
-    return f"pycastle/issue-{issue_number}"
+    return issue_branch(issue_number)
 
 
 def _resolve_slice(issue: dict, cfg: Config) -> tuple[str, PromptTemplate]:
@@ -141,11 +142,9 @@ async def run_issue(
         if not implement_done:
             async with (
                 worktree_semaphore or contextlib.nullcontext(),
-                managed_worktree(
-                    _wt_name,
-                    branch=_branch,
+                durable_issue_worktree(
+                    issue["number"],
                     sha=sha,
-                    delete_branch_on_teardown=False,
                     deps=deps,
                 ) as impl_mount_path,
             ):
@@ -181,11 +180,9 @@ async def run_issue(
 
         async with (
             worktree_semaphore or contextlib.nullcontext(),
-            managed_worktree(
-                _wt_name,
-                branch=_branch,
+            durable_issue_worktree(
+                issue["number"],
                 sha=None,
-                delete_branch_on_teardown=False,
                 deps=deps,
             ) as review_mount_path,
         ):

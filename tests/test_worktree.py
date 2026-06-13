@@ -20,6 +20,7 @@ from pycastle.errors import (
 )
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.infrastructure.worktree import (
+    durable_issue_worktree,
     managed_worktree,
     patch_gitdir_for_container,
     transient_worktree,
@@ -164,6 +165,18 @@ def test_managed_worktree_yields_valid_path_in_real_repo(real_branch_deps):
             delete_branch_on_teardown=True,
             deps=real_branch_deps,
         ) as path:
+            assert path.exists()
+            assert (path / "pyproject.toml").exists()
+
+    asyncio.run(_run())
+
+
+def test_durable_issue_worktree_uses_existing_issue_path_layout(real_branch_deps):
+    expected = worktree_identity("pycastle/issue-42", real_branch_deps.repo_root).path
+
+    async def _run():
+        async with durable_issue_worktree(42, sha=None, deps=real_branch_deps) as path:
+            assert path == expected
             assert path.exists()
             assert (path / "pyproject.toml").exists()
 
