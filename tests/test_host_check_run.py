@@ -672,6 +672,54 @@ def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_
     assert "passing stderr" not in out.out
 
 
+def test_run_host_check_run_routes_default_host_check_worktree_factory_through_detached_transient_lifecycle(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands import host_check_run as run_mod
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+    captured: dict[str, object] = {}
+
+    class _DetachedTransientWorktree:
+        async def __aenter__(self) -> Path:
+            return tmp_path
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_detached_transient_worktree(intent: str, *, sha: str | None, deps):
+        captured["intent"] = intent
+        captured["sha"] = sha
+        captured["repo_root"] = deps.repo_root
+        captured["git_svc"] = deps.git_svc
+        return _DetachedTransientWorktree()
+
+    monkeypatch.setattr(
+        run_mod,
+        "detached_transient_worktree",
+        fake_detached_transient_worktree,
+    )
+
+    result = asyncio.run(
+        run_mod.run_host_check_run(
+            host_checks=(("configured", "python -c configured"),),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            run_host_check=lambda name, command, cwd: None,
+        )
+    )
+
+    assert result == run_mod.HostCheckRunPassed(checked_sha="checked-sha")
+    assert captured == {
+        "intent": "host-check-checked",
+        "sha": "checked-sha",
+        "repo_root": tmp_path,
+        "git_svc": git_svc,
+    }
+
+
 def test_run_host_check_run_surfaces_host_check_phase_row_before_worktree_steps(
     tmp_path,
 ):
