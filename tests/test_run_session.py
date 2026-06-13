@@ -25,7 +25,6 @@ from pycastle.session.run_session import (
     RunSessionPlan,
 )
 from pycastle.session import (
-    ProviderIdentityKind,
     RoleSession,
     RunKind,
     has_exact_transcript_match,
@@ -509,11 +508,10 @@ def test_run_session_plan_preserves_claude_provider_session_persistence_from_ser
     )
 
 
-def test_role_session_exact_transcript_handoff_for_service_reports_unrecoverable_codex_identity_when_rollout_thread_ids_conflict(
+def test_plan_run_session_reports_unrecoverable_codex_identity_when_rollout_thread_ids_conflict(
     tmp_path: Path,
 ):
     service = CodexService()
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
     dir_a = state_dir / "sessions" / "2026" / "05" / "28"
     dir_b = state_dir / "sessions" / "2026" / "05" / "29"
@@ -528,12 +526,18 @@ def test_role_session_exact_transcript_handoff_for_service_reports_unrecoverable
         encoding="utf-8",
     )
 
-    handoff = role_session.exact_transcript_handoff_for_service(service)
+    plan = plan_run_session(
+        RunSessionPlanRequest(
+            role=AgentRole.IMPLEMENTER,
+            worktree=tmp_path,
+            namespace="",
+            service=service,
+        )
+    )
 
-    assert handoff.provider_identity.kind is ProviderIdentityKind.UNRECOVERABLE
-    assert handoff.provider_identity.run_kind is RunKind.FRESH
-    assert handoff.provider_identity.provider_session_id is None
-    assert handoff.is_eligible is False
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_session_id is None
+    assert plan.exact_transcript_match is False
 
 
 def test_has_exact_transcript_match_accepts_sidecar_backed_opencode_handoff_without_state_dir_session_id_sidecar(
@@ -564,7 +568,15 @@ def test_has_exact_transcript_match_accepts_sidecar_backed_opencode_handoff_with
         is True
     )
     assert (
-        role_session.exact_transcript_handoff_for_service(service).is_eligible is True
+        plan_run_session(
+            RunSessionPlanRequest(
+                role=AgentRole.REVIEWER,
+                worktree=tmp_path,
+                namespace="main",
+                service=service,
+            )
+        ).exact_transcript_match
+        is True
     )
 
 

@@ -17,9 +17,6 @@ from .run_dispatch import (
     record_successful_provider_session_metadata,
 )
 from .resume import (
-    ExactTranscriptHandoff,
-    ProviderIdentity,
-    ProviderIdentityKind,
     SESSION_DIR_NAME,
     RunKind,
     RoleSession,
@@ -32,10 +29,7 @@ from ._provider_session_state import has_exact_transcript_match
 __all__ = [
     "AgentRunSessionState",
     "AgentRunSessionStateRequest",
-    "ExactTranscriptHandoff",
     "ProviderFreshFallbackReason",
-    "ProviderIdentity",
-    "ProviderIdentityKind",
     "PreparedProviderRunSession",
     "PreparedProviderSessionState",
     "PreparedRunSession",

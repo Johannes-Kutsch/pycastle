@@ -305,6 +305,7 @@ def test_provider_identity_provider_run_state_preserves_provider_state_dir_and_s
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = CodexService()
     provider_state_dir = rs.path / "codex"
     provider_state_dir.mkdir(parents=True)
     provider_state_dir.joinpath("thread_id").write_text(
@@ -312,11 +313,7 @@ def test_provider_identity_provider_run_state_preserves_provider_state_dir_and_s
         encoding="utf-8",
     )
 
-    provider_run_state = rs.provider_identity(
-        "codex",
-        has_resumable_provider_state=True,
-        provider_state_dir=provider_state_dir,
-    ).provider_run_state(provider_state_dir=provider_state_dir)
+    provider_run_state = rs.provider_run_state_for_service(service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.RESUME,
@@ -329,6 +326,7 @@ def test_provider_identity_provider_run_state_reports_unrecoverable_fallback_rea
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
+    service = CodexService()
     provider_state_dir = rs.path / "codex"
     dir_a = provider_state_dir / "sessions" / "2026" / "05" / "30"
     dir_b = provider_state_dir / "sessions" / "2026" / "05" / "31"
@@ -343,11 +341,7 @@ def test_provider_identity_provider_run_state_reports_unrecoverable_fallback_rea
         encoding="utf-8",
     )
 
-    provider_run_state = rs.provider_identity(
-        "codex",
-        has_resumable_provider_state=True,
-        provider_state_dir=provider_state_dir,
-    ).provider_run_state(provider_state_dir=provider_state_dir)
+    provider_run_state = rs.provider_run_state_for_service(service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.FRESH,
