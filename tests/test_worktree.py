@@ -224,6 +224,36 @@ def test_durable_issue_worktree_raises_worktree_error_on_git_command_failure(
     asyncio.run(_run())
 
 
+def test_durable_issue_worktree_implementer_uses_planner_sha(branch_deps):
+    async def _run():
+        async with durable_issue_worktree(
+            42,
+            intent=DurableIssueWorktreeIntent.IMPLEMENTER,
+            deps=branch_deps,
+            planner_sha="abc123",
+        ):
+            pass
+
+    asyncio.run(_run())
+
+    assert branch_deps.git_svc.create_worktree.call_args[0][3] == "abc123"
+
+
+def test_durable_issue_worktree_reviewer_ignores_planner_sha(branch_deps):
+    async def _run():
+        async with durable_issue_worktree(
+            42,
+            intent=DurableIssueWorktreeIntent.REVIEWER,
+            deps=branch_deps,
+            planner_sha="abc123",
+        ):
+            pass
+
+    asyncio.run(_run())
+
+    assert branch_deps.git_svc.create_worktree.call_args[0][3] is None
+
+
 def test_managed_worktree_creates_new_branch_in_repo(real_branch_deps):
     async def _run():
         async with managed_worktree(
