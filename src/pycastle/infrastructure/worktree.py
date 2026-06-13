@@ -91,6 +91,15 @@ def reusable_sandbox_worktree_identity(
     return worktree_identity(f"pycastle/{intent_name}", repo_root, name=intent_name)
 
 
+def merge_sandbox_worktree_identity(
+    issue_number: int, repo_root: Path
+) -> WorktreeIdentity:
+    return worktree_identity(
+        f"pycastle/merge-sandbox-issue-{issue_number}",
+        repo_root,
+    )
+
+
 def worktree_name_for_branch(branch: str) -> str:
     return _worktree_name_for_branch(branch)
 
@@ -355,6 +364,24 @@ async def reusable_sandbox_worktree(
         identity=identity,
         sha=sha,
         delete_branch_on_teardown=True,
+        deps=deps,
+    ) as path:
+        yield path
+
+
+@asynccontextmanager
+async def replaceable_merge_sandbox_worktree(
+    issue_number: int,
+    *,
+    sha: str | None,
+    deps: _WorktreeDeps,
+):
+    identity = merge_sandbox_worktree_identity(issue_number, deps.repo_root)
+    async with managed_worktree(
+        identity=identity,
+        sha=sha,
+        delete_branch_on_teardown=True,
+        replace_preserved_failure=True,
         deps=deps,
     ) as path:
         yield path

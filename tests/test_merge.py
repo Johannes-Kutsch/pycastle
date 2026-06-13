@@ -18,10 +18,12 @@ from pycastle.errors import (
     HardAgentError,
     TransientAgentError,
     UsageLimitError,
+    WorktreeError,
+    WorktreeTimeoutError,
 )
 from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import GitCommandError, GitService
+from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.services import GithubAPIError, GithubService
 from tests.support import (
     FakeAgentRunner,
@@ -1610,6 +1612,30 @@ def test_merge_phase_propagates_agent_errors_from_conflict_recovery(
     deps = _make_deps(
         tmp_path,
         FakeAgentRunner(side_effect=_raise_agent_error),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+
+    with pytest.raises(expected_type):
+        _run([{"number": 1, "title": "Conflict"}], deps)
+
+
+@pytest.mark.parametrize(
+    ("setup_error", "expected_type"),
+    [
+        (GitCommandError("git died"), WorktreeError),
+        (GitTimeoutError("timed out"), WorktreeTimeoutError),
+    ],
+)
+def test_merge_phase_propagates_merge_sandbox_setup_errors(
+    tmp_path, git_svc, github_svc, setup_error, expected_type
+):
+    git_svc.try_merge.return_value = False
+    git_svc.verify_ref_exists.side_effect = setup_error
+
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([CompletionOutput()]),
         git_svc=git_svc,
         github_svc=github_svc,
     )

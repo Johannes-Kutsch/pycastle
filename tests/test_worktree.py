@@ -25,6 +25,7 @@ from pycastle.infrastructure.worktree import (
     durable_issue_worktree,
     managed_worktree,
     patch_gitdir_for_container,
+    replaceable_merge_sandbox_worktree,
     reusable_sandbox_worktree,
     transient_worktree,
     worktree_identity,
@@ -2279,3 +2280,53 @@ def test_reusable_sandbox_named_intent_keeps_same_lifecycle(repo):
         text=True,
     ).stdout
     assert "pycastle/improve-sandbox" not in branches
+
+
+def test_replaceable_merge_sandbox_replaces_preserved_failure_state(repo):
+    """Replaceable merge sandboxes ignore preserved failure state and reopen at sha."""
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "main_extra_merge_replace.txt").write_text("extra merge replace")
+    _git(repo, "add", "main_extra_merge_replace.txt")
+    _git(repo, "commit", "-m", "main extra merge replace")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    wt_dir = repo / "pycastle" / ".worktrees" / "merge-sandbox-issue-42"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/merge-sandbox-issue-42",
+            str(wt_dir),
+            sha_base,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (wt_dir / "stale-merge-state.txt").write_text("stale merge state")
+    _git(wt_dir, "add", "stale-merge-state.txt")
+    _git(wt_dir, "commit", "-m", "stale merge sandbox commit")
+    (wt_dir / ".pycastle-session" / "merger").mkdir(parents=True)
+    (wt_dir / ".pycastle-session" / ".preserved-failure").write_text("")
+
+    head_inside: list[str] = []
+
+    async def _run():
+        async with replaceable_merge_sandbox_worktree(
+            issue_number=42,
+            sha=sha_main,
+            deps=deps,
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main]
+    assert not (wt_dir / ".pycastle-session" / ".preserved-failure").exists()
