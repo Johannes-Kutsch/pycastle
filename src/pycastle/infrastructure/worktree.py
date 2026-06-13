@@ -48,6 +48,11 @@ class ReusableSandboxWorktreeIntent(str, Enum):
     DIVERGENCE = "diverge-sandbox"
 
 
+class DetachedTransientWorktreeIntent(str, Enum):
+    PLAN = "plan-sandbox"
+    PREFLIGHT = "preflight-sandbox"
+
+
 def _worktree_name_for_branch(branch: str) -> str:
     m = re.match(r"pycastle/issue-(\d+)", branch)
     if m:
@@ -84,6 +89,14 @@ def _reusable_sandbox_intent_name(intent: ReusableSandboxWorktreeIntent | str) -
     return intent.value if isinstance(intent, ReusableSandboxWorktreeIntent) else intent
 
 
+def _detached_transient_intent_name(
+    intent: DetachedTransientWorktreeIntent | str,
+) -> str:
+    return (
+        intent.value if isinstance(intent, DetachedTransientWorktreeIntent) else intent
+    )
+
+
 def reusable_sandbox_worktree_identity(
     intent: ReusableSandboxWorktreeIntent | str, repo_root: Path
 ) -> WorktreeIdentity:
@@ -98,6 +111,13 @@ def merge_sandbox_worktree_identity(
         f"pycastle/merge-sandbox-issue-{issue_number}",
         repo_root,
     )
+
+
+def detached_transient_worktree_path(
+    intent: DetachedTransientWorktreeIntent | str,
+    repo_root: Path,
+) -> Path:
+    return worktree_path(_detached_transient_intent_name(intent), repo_root)
 
 
 def worktree_name_for_branch(branch: str) -> str:
@@ -402,6 +422,21 @@ async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps)
     finally:
         if not _preserve:
             teardown_worktree(deps.git_svc, deps.repo_root, path)
+
+
+@asynccontextmanager
+async def detached_transient_worktree(
+    intent: DetachedTransientWorktreeIntent | str,
+    *,
+    sha: str | None,
+    deps: _WorktreeDeps,
+):
+    async with transient_worktree(
+        _detached_transient_intent_name(intent),
+        sha=sha,
+        deps=deps,
+    ) as path:
+        yield path
 
 
 def patch_gitdir_for_container(worktree_path: Path) -> Path | None:

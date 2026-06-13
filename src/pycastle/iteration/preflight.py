@@ -285,7 +285,10 @@ class PreflightCache:
         await self._branch_refresh.pull_with_resolution(deps)
 
     async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
-        from ..infrastructure.worktree import transient_worktree
+        from ..infrastructure.worktree import (
+            DetachedTransientWorktreeIntent,
+            detached_transient_worktree,
+        )
 
         async with self._lock:
             await _wait_for_clean_working_tree(deps, "Preflight")
@@ -307,8 +310,10 @@ class PreflightCache:
             if self._verdict is not None and self._verdict.sha == sha:
                 return self._verdict
 
-            async with transient_worktree(
-                "preflight-sandbox", sha=sha, deps=deps
+            async with detached_transient_worktree(
+                DetachedTransientWorktreeIntent.PREFLIGHT,
+                sha=sha,
+                deps=deps,
             ) as mount_path:
                 failures = await deps.agent_runner.run_preflight(
                     name="Preflight Agent",

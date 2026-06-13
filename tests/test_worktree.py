@@ -949,14 +949,21 @@ def test_transient_worktree_yields_correct_path(detached_deps):
     asyncio.run(_run())
 
 
-def test_detached_transient_named_intent_opens_detached_checkout_at_sha(detached_deps):
-    expected_path = (
-        detached_deps.repo_root / "pycastle" / ".worktrees" / "plan-sandbox"
-    )
+@pytest.mark.parametrize(
+    ("intent", "expected_name"),
+    [
+        (DetachedTransientWorktreeIntent.PLAN, "plan-sandbox"),
+        (DetachedTransientWorktreeIntent.PREFLIGHT, "preflight-sandbox"),
+    ],
+)
+def test_detached_transient_named_intent_opens_detached_checkout_at_sha(
+    detached_deps, intent, expected_name
+):
+    expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / expected_name
 
     async def _run():
         async with detached_transient_worktree(
-            DetachedTransientWorktreeIntent.PLAN,
+            intent,
             sha="abc123",
             deps=detached_deps,
         ) as path:
