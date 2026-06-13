@@ -3,6 +3,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
+from typing import cast
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol
 from ..config import load_config, replace_config_runtime_fields, resolve_logs_dir
@@ -26,6 +27,7 @@ from ._deps import Deps as IterationDeps, ImproveMode
 from .preflight import PreflightCache
 from ..display.rich_status_display import RichStatusDisplay
 from ..services import (
+    AgentService,
     GitCommandError,
     GithubAPIError,
     GithubAuthError,
@@ -229,9 +231,11 @@ async def run(
                     env=env,
                     cfg=_iter_cfg,
                     git_service=git_svc,
-                    service_registry=service_registry.services
-                    if service_registry is not None
-                    else None,
+                    service_registry=(
+                        cast(dict[str, AgentService], service_registry.services)
+                        if service_registry is not None
+                        else None
+                    ),
                 )
 
             deps = IterationDeps(

@@ -12,6 +12,8 @@ from .contracts import (
     HardError,
     ParsedTurn,
     PromptTokens,
+    ProviderSessionRecordingStore,
+    ProviderStatePreparationAction,
     Result,
     ToolPolicy,
     TransientError,
@@ -30,6 +32,7 @@ from .errors import (
     UsageLimitError,
 )
 from .provider_errors import ProviderErrorObservation
+from .provider_session_adapter import ProviderSessionAdapter
 from .roles import AgentRole
 from .session import (
     ProviderSessionPreferences,
@@ -86,10 +89,13 @@ __all__ = [
     "LogicalAgentInvocationLog",
     "ParsedTurn",
     "ProviderErrorObservation",
+    "ProviderSessionAdapter",
     "ProviderSessionPreferences",
     "ProviderSessionPreferencesRequest",
+    "ProviderSessionRecordingStore",
     "ProviderSessionState",
     "ProviderSessionStateRequest",
+    "ProviderStatePreparationAction",
     "PromptTokens",
     "PycastleError",
     "Result",

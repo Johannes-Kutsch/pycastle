@@ -9,13 +9,7 @@ from typing import Any, Protocol
 
 from .provider_errors import ProviderErrorObservation
 from .roles import AgentRole
-from .session import (
-    ProviderSessionPreferences,
-    ProviderSessionPreferencesRequest,
-    ProviderSessionState,
-    ProviderSessionStateRequest,
-    RunKind,
-)
+from .session import RunKind
 
 
 @dataclasses.dataclass
@@ -96,6 +90,14 @@ class ToolPolicy(enum.Enum):
     FULL = "full"
 
 
+class ProviderStatePreparationAction(Protocol):
+    def apply(self) -> None: ...
+
+
+class ProviderSessionRecordingStore(Protocol):
+    def save_service_session_id(self, service_name: str, session_id: str) -> None: ...
+
+
 class AgentService(Protocol):
     @property
     def name(self) -> str: ...
@@ -133,14 +135,6 @@ class AgentService(Protocol):
 
     def is_resumable(self, state_dir: Path) -> bool: ...
 
-    def provider_session_preferences(
-        self, request: ProviderSessionPreferencesRequest
-    ) -> ProviderSessionPreferences: ...
-
-    def provider_session_state(
-        self, request: ProviderSessionStateRequest
-    ) -> ProviderSessionState: ...
-
     def valid_models(self) -> frozenset[str]: ...
 
     def valid_efforts(self) -> frozenset[str]: ...
@@ -153,6 +147,8 @@ __all__ = [
     "HardError",
     "ParsedTurn",
     "PromptTokens",
+    "ProviderSessionRecordingStore",
+    "ProviderStatePreparationAction",
     "Result",
     "ToolPolicy",
     "TransientError",

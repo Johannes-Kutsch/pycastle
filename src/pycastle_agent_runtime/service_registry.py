@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 
 from .contracts import AgentService
@@ -14,8 +14,8 @@ ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
 
 
 class ServiceRegistry:
-    def __init__(self, services: dict[str, AgentService]) -> None:
-        self._services = services
+    def __init__(self, services: Mapping[str, AgentService]) -> None:
+        self._services = dict(services)
 
     @property
     def services(self) -> dict[str, AgentService]:

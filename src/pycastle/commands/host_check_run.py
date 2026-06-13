@@ -74,9 +74,10 @@ def _resolve_agent_runner(
     from ..agents.runner import AgentRunner
 
     env = load_credential_env()
-    service_registry = ServiceRegistry(_configured_service_registry(cfg, env))
+    configured_services = _configured_service_registry(cfg, env)
+    service_registry = ServiceRegistry(configured_services)
     return (
-        AgentRunner(env, cfg, git_svc, service_registry=service_registry.services),
+        AgentRunner(env, cfg, git_svc, service_registry=configured_services),
         service_registry,
     )
 

@@ -4,6 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
+from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.work import (
     WorkModelDisplayMetadata,
     WorkInvocationDependencies,
@@ -270,7 +271,10 @@ class AgentRunner:
             timeout_retries=self._cfg.timeout_retries,
             stage_key_for_role=_stage_key_for_role,
             prepare_session=_prepare_session,
-            build_session=self._build_session,
+            build_session=cast(
+                Callable[[Path, RuntimeAgentService, str | None], Any],
+                self._build_session,
+            ),
             build_runner=lambda session, status_display: ContainerRunner(
                 name,
                 session,
@@ -293,7 +297,10 @@ class AgentRunner:
                     effort=effort_name,
                 )
             ),
-            handle_provider_account_exhaustion=_handle_provider_account_exhaustion,
+            handle_provider_account_exhaustion=cast(
+                Callable[[RuntimeAgentService, Any], None],
+                _handle_provider_account_exhaustion,
+            ),
             transient_status_message=format_transient_status_message,
         )
 
@@ -336,7 +343,7 @@ class AgentRunner:
         )
 
         return await run_runtime_prompt(
-            runner=self,
+            runner=cast(Any, self),
             service_registry=self._runtime_service_registry(),
             request=PromptRunRequest(
                 name=name,

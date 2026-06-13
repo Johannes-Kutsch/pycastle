@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.session import (
     load_provider_state_session_id,
     load_state_dir_provider_session_id,
@@ -21,7 +22,6 @@ from ._provider_session_decision import (
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
-    from ..services.agent_service import AgentService
 
 _SERVICE_SESSION_METADATA_FILENAME = "_service_session_metadata.json"
 
@@ -145,7 +145,7 @@ def has_exact_provider_transcript_for_service(
     worktree: Path,
     role: AgentRole,
     namespace: str,
-    service: "AgentService",
+    service: RuntimeAgentService,
 ) -> bool:
     role_session_path = _role_session_path(worktree, role, namespace)
     if load_exact_transcript_service_name(role_session_path) != service.name:
@@ -205,7 +205,7 @@ def _service_state_dir(
     worktree: Path,
     role: AgentRole,
     namespace: str,
-    service: "AgentService",
+    service: RuntimeAgentService,
 ) -> Path | None:
     state_dir_relpath = service.state_dir_relpath(role, namespace)
     if state_dir_relpath is None:

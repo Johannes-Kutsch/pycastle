@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from ..agents.output_protocol import (
     AgentOutput,
@@ -12,6 +12,7 @@ from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitService, ServiceRegistry
+from ..services.agent_service import AgentService
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
 from ..display.status_display import StatusDisplay
@@ -287,7 +288,7 @@ async def improve_phase(
                         worktree=sandbox_path,
                         role=AgentRole.IMPROVE,
                         session_namespace="main",
-                        service=service,
+                        service=cast(AgentService, service),
                     )
                 )
                 if not has_exact_main_transcript:

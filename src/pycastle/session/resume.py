@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import (
     RunKind,
@@ -179,7 +180,7 @@ class RoleSession:
 
     def has_exact_provider_transcript_for_service(
         self,
-        service: "AgentService",
+        service: RuntimeAgentService,
     ) -> bool:
         return has_exact_provider_transcript_for_service(
             worktree=self._worktree,
@@ -200,7 +201,9 @@ class RoleSession:
             return False
         return self.has_exact_provider_transcript_for_service(service)
 
-    def service_session_state(self, service: "AgentService") -> ServiceSessionState:
+    def service_session_state(
+        self, service: RuntimeAgentService
+    ) -> ServiceSessionState:
         state_dir_relpath = _normalize_state_dir_relpath(
             self._role,
             self._namespace,
