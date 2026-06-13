@@ -301,7 +301,7 @@ def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thr
     assert rs.service_session_id("codex") == "thread-from-rollout"
 
 
-def test_provider_identity_provider_run_state_preserves_provider_state_dir_and_session_id(
+def test_provider_run_state_for_codex_service_preserves_provider_state_dir_and_session_id(
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
@@ -322,7 +322,7 @@ def test_provider_identity_provider_run_state_preserves_provider_state_dir_and_s
     )
 
 
-def test_provider_identity_provider_run_state_reports_unrecoverable_fallback_reason(
+def test_provider_run_state_for_codex_service_reports_unrecoverable_fallback_reason(
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
