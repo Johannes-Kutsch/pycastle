@@ -980,6 +980,68 @@ def test_detached_transient_named_intent_opens_detached_checkout_at_sha(
     detached_deps.git_svc.delete_branch.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("intent", "expected_name"),
+    [
+        (DetachedTransientWorktreeIntent.PLAN, "plan-sandbox"),
+        (DetachedTransientWorktreeIntent.PREFLIGHT, "preflight-sandbox"),
+    ],
+)
+def test_detached_transient_named_intent_removes_worktree_on_usage_limit_error(
+    detached_deps, intent, expected_name
+):
+    expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / expected_name
+
+    async def _run():
+        with pytest.raises(UsageLimitError):
+            async with detached_transient_worktree(
+                intent,
+                sha="abc123",
+                deps=detached_deps,
+            ):
+                raise UsageLimitError(reset_time=None)
+
+    asyncio.run(_run())
+
+    detached_deps.git_svc.remove_worktree.assert_called_once_with(
+        detached_deps.repo_root, expected_path
+    )
+
+
+@pytest.mark.parametrize(
+    ("intent", "expected_name"),
+    [
+        (DetachedTransientWorktreeIntent.PLAN, "plan-sandbox"),
+        (DetachedTransientWorktreeIntent.PREFLIGHT, "preflight-sandbox"),
+    ],
+)
+def test_detached_transient_named_intent_preserves_worktree_on_agent_failed_error(
+    detached_deps, intent, expected_name
+):
+    marker = (
+        detached_deps.repo_root
+        / "pycastle"
+        / ".worktrees"
+        / expected_name
+        / ".pycastle-session"
+        / ".preserved-failure"
+    )
+
+    async def _run():
+        with pytest.raises(AgentFailedError):
+            async with detached_transient_worktree(
+                intent,
+                sha="abc123",
+                deps=detached_deps,
+            ):
+                raise AgentFailedError("planner", Path(expected_name))
+
+    asyncio.run(_run())
+
+    detached_deps.git_svc.remove_worktree.assert_not_called()
+    assert marker.is_file()
+
+
 def test_transient_worktree_removes_worktree_on_clean_exit(detached_deps):
     expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / "sandbox"
 
