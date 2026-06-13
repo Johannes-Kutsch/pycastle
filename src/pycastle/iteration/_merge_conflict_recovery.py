@@ -11,9 +11,11 @@ from ..errors import (
     HardAgentError,
     TransientAgentError,
     UsageLimitError,
+    WorktreeError,
+    WorktreeTimeoutError,
 )
 from ..infrastructure.worktree import (
-    managed_worktree,
+    replaceable_merge_sandbox_worktree,
     teardown_worktree,
     worktree_identity,
 )
@@ -136,11 +138,9 @@ async def _recover_active_conflict(
     )
     target_branch = deps.git_svc.get_current_branch(deps.repo_root)
     try:
-        async with managed_worktree(
-            identity=sandbox_identity,
+        async with replaceable_merge_sandbox_worktree(
+            issue_number=active_issue["number"],
             sha=deps.git_svc.get_head_sha(deps.repo_root),
-            delete_branch_on_teardown=True,
-            replace_preserved_failure=True,
             deps=deps,
         ) as sandbox_path:
             deps.git_svc.start_merge(sandbox_path, branch_for(active_issue["number"]))
@@ -181,6 +181,8 @@ async def _recover_active_conflict(
         UsageLimitError,
         TransientAgentError,
         HardAgentError,
+        WorktreeError,
+        WorktreeTimeoutError,
     ):
         raise
     except Exception as exc:
