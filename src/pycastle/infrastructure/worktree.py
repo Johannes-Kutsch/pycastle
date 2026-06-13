@@ -416,8 +416,9 @@ async def replaceable_merge_sandbox_worktree(
 
 
 @asynccontextmanager
-async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps):
-    path = worktree_path(name, deps.repo_root)
+async def _detached_checkout_lifecycle(
+    path: Path, *, sha: str | None, deps: _WorktreeDeps
+):
     if sha is not None:
         deps.git_svc.checkout_detached(deps.repo_root, path, sha)
     _preserve = False
@@ -433,14 +434,24 @@ async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps)
 
 
 @asynccontextmanager
+async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps):
+    async with _detached_checkout_lifecycle(
+        worktree_path(name, deps.repo_root),
+        sha=sha,
+        deps=deps,
+    ) as path:
+        yield path
+
+
+@asynccontextmanager
 async def detached_transient_worktree(
     intent: DetachedTransientWorktreeIntent | str,
     *,
     sha: str | None,
     deps: _WorktreeDeps,
 ):
-    async with transient_worktree(
-        _detached_transient_intent_name(intent),
+    async with _detached_checkout_lifecycle(
+        detached_transient_worktree_path(intent, deps.repo_root),
         sha=sha,
         deps=deps,
     ) as path:
