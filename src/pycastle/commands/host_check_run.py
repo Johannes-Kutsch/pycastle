@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
@@ -24,7 +25,7 @@ from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config, StageOverride, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..errors import SetupPhaseError
-from ..infrastructure.worktree import transient_worktree
+from ..infrastructure.worktree import detached_transient_worktree
 from ..issue_readiness import issue_readiness_error_for_issue, resolve_issue_readiness
 from ..main import _configured_service_registry
 from ..prompts.dispatch import build_prompt_invocation
@@ -149,6 +150,15 @@ def run_host_check_subprocess(
 
 
 _run_host_check = run_host_check_subprocess
+
+
+def _create_host_check_transient_worktree(
+    name: str, *, sha: str, deps
+) -> AbstractAsyncContextManager[Path]:
+    return detached_transient_worktree(name, sha=sha, deps=deps)
+
+
+transient_worktree = _create_host_check_transient_worktree
 
 
 def prepare_host_check_run(
