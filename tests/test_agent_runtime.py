@@ -6,7 +6,7 @@ import textwrap
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import Any, TypedDict, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -810,6 +810,113 @@ class _PlanRecordingRuntimeService(_RecordingRuntimeService):
         return self._provider_state
 
 
+class _ExecutionOnlyRuntimeService:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def build_command(
+        self,
+        role: AgentRole,
+        model: str,
+        effort: str,
+        run_kind: RunKind,
+        session_uuid: str | None,
+        *,
+        tool_policy=None,
+    ) -> str:
+        del role, model, effort, run_kind, session_uuid, tool_policy
+        return f"{self.name} exec"
+
+    def build_env(
+        self,
+        state_dir_container_path: str | None = None,
+        token: str | None = None,
+    ) -> dict[str, str]:
+        del state_dir_container_path, token
+        return {}
+
+    def run(
+        self,
+        lines: Iterable[str],
+        on_provider_session_id: Callable[[str], None] | None = None,
+    ) -> Iterator[ParsedTurn]:
+        del on_provider_session_id
+        list(lines)
+        yield Result(text="runtime result")
+
+    def is_available(self, now: datetime | None = None) -> bool:
+        del now
+        return True
+
+    def next_wake_time(self) -> datetime:
+        return datetime.max
+
+    def mark_exhausted(self, reset_time: datetime | None) -> None:
+        del reset_time
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        del role
+        if namespace:
+            return f".pycastle-session/implementer/{namespace}/{self.name}/"
+        return f".pycastle-session/implementer/{self.name}/"
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        del state_dir
+        return True
+
+    def valid_efforts(self) -> frozenset[str]:
+        return frozenset({"medium"})
+
+    def valid_models(self) -> frozenset[str]:
+        return frozenset({"gpt-5.4"})
+
+
+class _RecordingProviderSessionAdapter:
+    def __init__(self, provider_state: ProviderSessionState) -> None:
+        self._provider_state = provider_state
+        self.preferences_requests: list[ProviderSessionPreferencesRequest] = []
+        self.state_requests: list[ProviderSessionStateRequest] = []
+        self.prepare_calls: list[tuple[Path | None, object | None]] = []
+        self.record_calls: list[tuple[str, Path | None]] = []
+
+    @property
+    def service_name(self) -> str:
+        return "generic"
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        self.preferences_requests.append(request)
+        return ProviderSessionPreferences(
+            preferred_provider_session_id="preferred-session-id"
+        )
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        self.state_requests.append(request)
+        return self._provider_state
+
+    def prepare_local_provider_run_state(
+        self,
+        provider_state_dir: Path | None,
+        auth_seed_action: object | None = None,
+    ) -> None:
+        self.prepare_calls.append((provider_state_dir, auth_seed_action))
+
+    def record_provider_session_id(
+        self,
+        *,
+        role_session: Any,
+        provider_session_id: str,
+        service_state_dir: Path | None = None,
+    ) -> None:
+        role_session.save_service_session_id(self.service_name, provider_session_id)
+        self.record_calls.append((provider_session_id, service_state_dir))
+
+
 class _RuntimeServiceSessionState:
     def __init__(
         self,
@@ -1447,6 +1554,9 @@ def test_runtime_top_level_surface_is_accessible_standalone_without_pycastle() -
             "ServiceRegistry",
             "ChainEntry",
             "select_configured_candidate_chain",
+            "ProviderSessionAdapter",
+            "ProviderSessionRecordingStore",
+            "ProviderStatePreparationAction",
             "ProviderSessionState",
             "ProviderSessionStateRequest",
             "RunKind",
@@ -1842,6 +1952,122 @@ def test_runtime_provider_state_plan_records_successful_run_metadata_through_rol
     )
 
     assert role_session.recorded_success_metadata == [("codex", "thread-runtime")]
+
+
+def test_runtime_provider_session_adapter_plan_allows_execution_service_without_session_methods(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import RunKind
+    from pycastle_agent_runtime.session_planning import (
+        AuthSeedingRequirement,
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
+
+    service_state_dir = (
+        tmp_path / ".pycastle-session" / "implementer" / "main" / "generic"
+    )
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=service_state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/main/generic/",
+        )
+    )
+    adapter = _RecordingProviderSessionAdapter(
+        ProviderSessionState(
+            RunKind.RESUME,
+            "adapter-session-id",
+            state_dir_relpath="custom/provider-state/",
+            state_dir_path=tmp_path / "custom" / "provider-state",
+            exact_transcript_match=True,
+            persist_provider_session_id=True,
+            auth_seeding_requirement=AuthSeedingRequirement.REQUIRED,
+        )
+    )
+
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="main",
+            service=cast(Any, _ExecutionOnlyRuntimeService("generic")),
+            role_session=role_session,
+            provider_session_adapter=adapter,
+        )
+    )
+
+    assert len(adapter.preferences_requests) == 1
+    assert adapter.preferences_requests[0].provider_state_dir == service_state_dir
+    assert adapter.preferences_requests[0].has_resumable_provider_state is True
+    assert adapter.preferences_requests[0].state_dir_relpath == (
+        ".pycastle-session/implementer/main/generic/"
+    )
+    assert len(adapter.state_requests) == 1
+    assert adapter.state_requests[0].preferred_provider_session_id == (
+        "preferred-session-id"
+    )
+    assert adapter.state_requests[0].require_exact_transcript_match is True
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == "adapter-session-id"
+    assert plan.provider_state_dir == tmp_path / "custom" / "provider-state"
+    assert plan.provider_state_dir_relpath == "custom/provider-state/"
+    assert plan.exact_transcript_match is True
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+
+
+def test_runtime_provider_session_adapter_handles_local_preparation_and_session_recording(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import RunKind
+    from pycastle_agent_runtime.session_planning import (
+        ProviderRunStatePlanRequest,
+        plan_provider_run_state,
+    )
+
+    service_state_dir = (
+        tmp_path / ".pycastle-session" / "implementer" / "main" / "generic"
+    )
+    selected_state_dir = tmp_path / "custom" / "provider-state"
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=service_state_dir,
+            has_resumable_provider_state=False,
+            state_dir_relpath=".pycastle-session/implementer/main/generic/",
+        )
+    )
+    adapter = _RecordingProviderSessionAdapter(
+        ProviderSessionState(
+            RunKind.FRESH,
+            None,
+            state_dir_relpath="custom/provider-state/",
+            state_dir_path=selected_state_dir,
+        )
+    )
+
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="main",
+            service=cast(Any, _ExecutionOnlyRuntimeService("generic")),
+            role_session=role_session,
+            provider_session_adapter=adapter,
+        )
+    )
+
+    plan.prepare_provider_state_dir()
+    plan.remember_provider_session_id("adapter-recorded-session")
+
+    assert adapter.prepare_calls == [(selected_state_dir, None)]
+    assert adapter.record_calls == [
+        ("adapter-recorded-session", service_state_dir),
+    ]
+    assert role_session.saved_service_session_ids == [
+        ("generic", "adapter-recorded-session")
+    ]
 
 
 def test_runtime_session_select_resumable_provider_session_id_persists_state_dir_sidecar_identity(
