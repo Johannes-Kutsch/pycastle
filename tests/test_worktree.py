@@ -20,6 +20,7 @@ from pycastle.errors import (
 )
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.infrastructure.worktree import (
+    DurableIssueWorktreeIntent,
     durable_issue_worktree,
     managed_worktree,
     patch_gitdir_for_container,
@@ -175,7 +176,11 @@ def test_durable_issue_worktree_uses_existing_issue_path_layout(real_branch_deps
     expected = worktree_identity("pycastle/issue-42", real_branch_deps.repo_root).path
 
     async def _run():
-        async with durable_issue_worktree(42, sha=None, deps=real_branch_deps) as path:
+        async with durable_issue_worktree(
+            42,
+            intent=DurableIssueWorktreeIntent.REVIEWER,
+            deps=real_branch_deps,
+        ) as path:
             assert path == expected
             assert path.exists()
             assert (path / "pyproject.toml").exists()
@@ -190,7 +195,12 @@ def test_durable_issue_worktree_raises_worktree_timeout_error_when_git_times_out
 
     async def _run():
         with pytest.raises(WorktreeTimeoutError):
-            async with durable_issue_worktree(42, sha="abc123", deps=branch_deps):
+            async with durable_issue_worktree(
+                42,
+                intent=DurableIssueWorktreeIntent.IMPLEMENTER,
+                deps=branch_deps,
+                planner_sha="abc123",
+            ):
                 pass
 
     asyncio.run(_run())
@@ -203,7 +213,12 @@ def test_durable_issue_worktree_raises_worktree_error_on_git_command_failure(
 
     async def _run():
         with pytest.raises(WorktreeError, match="git died"):
-            async with durable_issue_worktree(42, sha="abc123", deps=branch_deps):
+            async with durable_issue_worktree(
+                42,
+                intent=DurableIssueWorktreeIntent.IMPLEMENTER,
+                deps=branch_deps,
+                planner_sha="abc123",
+            ):
                 pass
 
     asyncio.run(_run())
@@ -306,7 +321,11 @@ def test_durable_issue_worktree_tears_down_empty_issue_branch_on_clean_exit(
     captured: dict = {}
 
     async def _run():
-        async with durable_issue_worktree(42, sha=None, deps=real_branch_deps) as path:
+        async with durable_issue_worktree(
+            42,
+            intent=DurableIssueWorktreeIntent.REVIEWER,
+            deps=real_branch_deps,
+        ) as path:
             captured["path"] = path
 
     asyncio.run(_run())
@@ -1736,7 +1755,11 @@ def test_durable_issue_worktree_preserves_issue_branch_with_commits_ahead_of_mai
     real_branch_deps,
 ):
     async def _run():
-        async with durable_issue_worktree(42, sha=None, deps=real_branch_deps) as path:
+        async with durable_issue_worktree(
+            42,
+            intent=DurableIssueWorktreeIntent.REVIEWER,
+            deps=real_branch_deps,
+        ) as path:
             (path / "wip.txt").write_text("work in progress")
             subprocess.run(
                 ["git", "-C", str(path), "add", "wip.txt"],

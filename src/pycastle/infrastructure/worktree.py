@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from contextlib import asynccontextmanager, contextmanager, suppress
+from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
@@ -35,6 +36,11 @@ class WorktreeIdentity:
     branch: str
     name: str
     path: Path
+
+
+class DurableIssueWorktreeIntent(str, Enum):
+    IMPLEMENTER = "implementer"
+    REVIEWER = "reviewer"
 
 
 def _worktree_name_for_branch(branch: str) -> str:
@@ -310,10 +316,12 @@ async def managed_worktree(
 async def durable_issue_worktree(
     issue_number: int,
     *,
-    sha: str | None,
+    intent: DurableIssueWorktreeIntent,
     deps: _WorktreeDeps,
+    planner_sha: str | None = None,
 ):
     identity = worktree_identity(issue_branch(issue_number), deps.repo_root)
+    sha = planner_sha if intent is DurableIssueWorktreeIntent.IMPLEMENTER else None
     async with managed_worktree(
         identity=identity,
         sha=sha,

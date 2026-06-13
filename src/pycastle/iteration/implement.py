@@ -27,6 +27,7 @@ from ..session import RoleSession, is_stage_done_for
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
 from ..infrastructure.worktree import (
+    DurableIssueWorktreeIntent,
     durable_issue_worktree,
     issue_branch,
     worktree_identity,
@@ -144,8 +145,9 @@ async def run_issue(
                 worktree_semaphore or contextlib.nullcontext(),
                 durable_issue_worktree(
                     issue["number"],
-                    sha=sha,
+                    intent=DurableIssueWorktreeIntent.IMPLEMENTER,
                     deps=deps,
+                    planner_sha=sha,
                 ) as impl_mount_path,
             ):
                 _impl_scope_args = _scope_args_for(
@@ -182,7 +184,7 @@ async def run_issue(
             worktree_semaphore or contextlib.nullcontext(),
             durable_issue_worktree(
                 issue["number"],
-                sha=None,
+                intent=DurableIssueWorktreeIntent.REVIEWER,
                 deps=deps,
             ) as review_mount_path,
         ):
