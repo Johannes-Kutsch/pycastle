@@ -21,6 +21,7 @@ from pycastle.errors import (
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.infrastructure.worktree import (
     DurableIssueWorktreeIntent,
+    ReusableSandboxWorktreeIntent,
     durable_issue_worktree,
     managed_worktree,
     patch_gitdir_for_container,
@@ -2234,6 +2235,38 @@ def test_reusable_sandbox_tears_down_clean_branch_on_success(repo):
             deps=deps,
         ) as path:
             assert path == sandbox_path
+            assert _git(path, "rev-parse", "HEAD") == sha_main
+
+    asyncio.run(_run())
+
+    assert not sandbox_path.exists()
+    branches = subprocess.run(
+        ["git", "-C", str(repo), "branch", "--list", "pycastle/improve-sandbox"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/improve-sandbox" not in branches
+
+
+def test_reusable_sandbox_named_intent_keeps_same_lifecycle(repo):
+    """Reusable sandboxes keep their branch, path, and cleanup when opened by named intent."""
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_main = _git(repo, "rev-parse", "HEAD")
+    sandbox_path = repo / "pycastle" / ".worktrees" / "improve-sandbox"
+
+    async def _run():
+        async with reusable_sandbox_worktree(
+            ReusableSandboxWorktreeIntent.IMPROVE,
+            sha=sha_main,
+            deps=deps,
+        ) as path:
+            assert path == sandbox_path
+            assert _git(path, "symbolic-ref", "--short", "HEAD") == (
+                "pycastle/improve-sandbox"
+            )
             assert _git(path, "rev-parse", "HEAD") == sha_main
 
     asyncio.run(_run())
