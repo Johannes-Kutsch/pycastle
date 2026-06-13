@@ -30,6 +30,11 @@ from ..issue_readiness import (
     resolve_issue_readiness,
 )
 from ..display.status_display import StatusDisplay
+from ..infrastructure.worktree import (
+    ReusableSandboxWorktreeIntent,
+    reusable_sandbox_worktree,
+    reusable_sandbox_worktree_identity,
+)
 from ._utils import _wait_for_clean_working_tree
 from ..infrastructure.preflight_failure_interpreter import (
     MissingDeclaredPythonToolDecision,
@@ -104,8 +109,7 @@ def validate_issue_report(
 class BranchRefreshBoundary:
     """Refresh the current branch, preserving preflight's existing recovery flow."""
 
-    _DIVERGE_SANDBOX_INTENT = "diverge-sandbox"
-    _DIVERGE_SANDBOX = "pycastle/diverge-sandbox"
+    _DIVERGE_SANDBOX_INTENT = ReusableSandboxWorktreeIntent.DIVERGENCE
 
     @staticmethod
     def _try_recover_unrelated_histories(deps: _PreflightDeps) -> bool:
@@ -149,7 +153,6 @@ class BranchRefreshBoundary:
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
         """Pull from origin, escalating to the divergence-resolver agent on textual conflict."""
-        from ..infrastructure.worktree import reusable_sandbox_worktree
 
         try:
             deps.git_svc.pull_with_merge_fallback(deps.repo_root)
@@ -162,6 +165,10 @@ class BranchRefreshBoundary:
                 raise
             branch = deps.git_svc.get_current_branch(deps.repo_root)
             current_sha = deps.git_svc.get_head_sha(deps.repo_root)
+            sandbox_identity = reusable_sandbox_worktree_identity(
+                self._DIVERGE_SANDBOX_INTENT,
+                deps.repo_root,
+            )
             try:
                 async with reusable_sandbox_worktree(
                     self._DIVERGE_SANDBOX_INTENT,
@@ -183,7 +190,7 @@ class BranchRefreshBoundary:
                         )
                     )
                     deps.git_svc.fast_forward_branch(
-                        deps.repo_root, branch, self._DIVERGE_SANDBOX
+                        deps.repo_root, branch, sandbox_identity.branch
                     )
                     RoleSession(sandbox_path, AgentRole.DIVERGENCE_RESOLVER).discard()
             except Exception:

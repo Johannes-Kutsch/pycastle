@@ -43,6 +43,11 @@ class DurableIssueWorktreeIntent(str, Enum):
     REVIEWER = "reviewer"
 
 
+class ReusableSandboxWorktreeIntent(str, Enum):
+    IMPROVE = "improve-sandbox"
+    DIVERGENCE = "diverge-sandbox"
+
+
 def _worktree_name_for_branch(branch: str) -> str:
     m = re.match(r"pycastle/issue-(\d+)", branch)
     if m:
@@ -75,8 +80,15 @@ def issue_branch(issue_number: int) -> str:
     return f"pycastle/issue-{issue_number}"
 
 
-def sandbox_worktree_identity(intent: str, repo_root: Path) -> WorktreeIdentity:
-    return worktree_identity(f"pycastle/{intent}", repo_root, name=intent)
+def _reusable_sandbox_intent_name(intent: ReusableSandboxWorktreeIntent | str) -> str:
+    return intent.value if isinstance(intent, ReusableSandboxWorktreeIntent) else intent
+
+
+def reusable_sandbox_worktree_identity(
+    intent: ReusableSandboxWorktreeIntent | str, repo_root: Path
+) -> WorktreeIdentity:
+    intent_name = _reusable_sandbox_intent_name(intent)
+    return worktree_identity(f"pycastle/{intent_name}", repo_root, name=intent_name)
 
 
 def worktree_name_for_branch(branch: str) -> str:
@@ -333,12 +345,12 @@ async def durable_issue_worktree(
 
 @asynccontextmanager
 async def reusable_sandbox_worktree(
-    intent: str,
+    intent: ReusableSandboxWorktreeIntent | str,
     *,
     sha: str | None,
     deps: _WorktreeDeps,
 ):
-    identity = sandbox_worktree_identity(intent, deps.repo_root)
+    identity = reusable_sandbox_worktree_identity(intent, deps.repo_root)
     async with managed_worktree(
         identity=identity,
         sha=sha,

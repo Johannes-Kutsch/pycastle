@@ -15,7 +15,10 @@ from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
 from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import reusable_sandbox_worktree
+from ..infrastructure.worktree import (
+    ReusableSandboxWorktreeIntent,
+    reusable_sandbox_worktree,
+)
 from ._rows import status_row
 from .improve_preparation import (
     prepare_improve_step,
@@ -23,8 +26,8 @@ from .improve_preparation import (
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
-IMPROVE_SANDBOX_INTENT = "improve-sandbox"
-IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT}"
+IMPROVE_SANDBOX_INTENT = ReusableSandboxWorktreeIntent.IMPROVE
+IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
 
 
 @dataclass(frozen=True)
