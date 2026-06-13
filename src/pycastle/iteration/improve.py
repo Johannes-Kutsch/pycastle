@@ -15,7 +15,7 @@ from ..services import GitService, ServiceRegistry
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
 from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import managed_worktree, sandbox_worktree_identity
+from ..infrastructure.worktree import reusable_sandbox_worktree
 from ._rows import status_row
 from .improve_preparation import (
     prepare_improve_step,
@@ -252,14 +252,9 @@ async def improve_phase(
             row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
             return verdict
 
-        sandbox_identity = sandbox_worktree_identity(
-            IMPROVE_SANDBOX_INTENT, deps.repo_root
-        )
-        async with managed_worktree(
-            sandbox_identity.name,
-            branch=sandbox_identity.branch,
+        async with reusable_sandbox_worktree(
+            IMPROVE_SANDBOX_INTENT,
             sha=verdict.sha,
-            delete_branch_on_teardown=True,
             deps=deps,
         ) as sandbox_path:
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)

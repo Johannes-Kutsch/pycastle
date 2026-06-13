@@ -104,6 +104,7 @@ def validate_issue_report(
 class BranchRefreshBoundary:
     """Refresh the current branch, preserving preflight's existing recovery flow."""
 
+    _DIVERGE_SANDBOX_INTENT = "diverge-sandbox"
     _DIVERGE_SANDBOX = "pycastle/diverge-sandbox"
 
     @staticmethod
@@ -148,7 +149,7 @@ class BranchRefreshBoundary:
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
         """Pull from origin, escalating to the divergence-resolver agent on textual conflict."""
-        from ..infrastructure.worktree import managed_worktree, worktree_identity
+        from ..infrastructure.worktree import reusable_sandbox_worktree
 
         try:
             deps.git_svc.pull_with_merge_fallback(deps.repo_root)
@@ -161,12 +162,10 @@ class BranchRefreshBoundary:
                 raise
             branch = deps.git_svc.get_current_branch(deps.repo_root)
             current_sha = deps.git_svc.get_head_sha(deps.repo_root)
-            sandbox_identity = worktree_identity(self._DIVERGE_SANDBOX, deps.repo_root)
             try:
-                async with managed_worktree(
-                    identity=sandbox_identity,
+                async with reusable_sandbox_worktree(
+                    self._DIVERGE_SANDBOX_INTENT,
                     sha=current_sha,
-                    delete_branch_on_teardown=True,
                     deps=deps,
                 ) as sandbox_path:
                     await deps.agent_runner.run(
