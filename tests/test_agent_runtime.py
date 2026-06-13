@@ -599,6 +599,19 @@ def _standalone_runtime_prompt_result(repo_root: Path) -> str:
 def _standalone_runtime_agent_log_result(
     repo_root: Path, effective_logs_dir: Path
 ) -> dict[str, object]:
+    return _standalone_runtime_agent_log_result_with_timezone(
+        repo_root,
+        effective_logs_dir,
+        tz_name="UTC",
+    )
+
+
+def _standalone_runtime_agent_log_result_with_timezone(
+    repo_root: Path,
+    effective_logs_dir: Path,
+    *,
+    tz_name: str,
+) -> dict[str, object]:
     result = subprocess.run(
         [
             sys.executable,
@@ -607,7 +620,9 @@ def _standalone_runtime_agent_log_result(
                 f"""
                 import importlib.abc
                 import json
+                import os
                 import sys
+                import time
                 from datetime import datetime, timezone
                 from pathlib import Path
 
@@ -620,6 +635,8 @@ def _standalone_runtime_agent_log_result(
                             )
                         return None
 
+                os.environ["TZ"] = {tz_name!r}
+                time.tzset()
                 sys.meta_path.insert(0, _BlockPycastle())
 
                 from pycastle_agent_runtime import AgentInvocationLog, AgentRole, RunKind
@@ -1616,6 +1633,30 @@ def test_runtime_agent_log_lifecycle_runs_standalone_without_pycastle(
         ),
         '{"type":"result","result":"done"}',
     ]
+
+
+@pytest.mark.parametrize(
+    ("tz_name", "expected_filename"),
+    [
+        ("UTC", "standalone-runtime-20260517T1430.log"),
+        ("Etc/GMT+7", "standalone-runtime-20260517T0730.log"),
+        ("Etc/GMT-14", "standalone-runtime-20260518T0430.log"),
+    ],
+)
+def test_runtime_agent_log_lifecycle_uses_local_minute_timestamp_standalone(
+    tmp_path: Path,
+    tz_name: str,
+    expected_filename: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    result = _standalone_runtime_agent_log_result_with_timezone(
+        repo_root,
+        tmp_path / tz_name.replace("/", "-"),
+        tz_name=tz_name,
+    )
+
+    assert Path(cast(str, result["log_path"])).name == expected_filename
 
 
 def test_runtime_package_prompt_entrypoint_requires_build_work_dependencies_adapter(
