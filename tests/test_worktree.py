@@ -20,8 +20,10 @@ from pycastle.errors import (
 )
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.infrastructure.worktree import (
+    DetachedTransientWorktreeIntent,
     DurableIssueWorktreeIntent,
     ReusableSandboxWorktreeIntent,
+    detached_transient_worktree,
     durable_issue_worktree,
     managed_worktree,
     patch_gitdir_for_container,
@@ -945,6 +947,37 @@ def test_transient_worktree_yields_correct_path(detached_deps):
             assert path == expected_path
 
     asyncio.run(_run())
+
+
+@pytest.mark.parametrize(
+    ("intent", "expected_name"),
+    [
+        (DetachedTransientWorktreeIntent.PLAN, "plan-sandbox"),
+        (DetachedTransientWorktreeIntent.PREFLIGHT, "preflight-sandbox"),
+    ],
+)
+def test_detached_transient_named_intent_opens_detached_checkout_at_sha(
+    detached_deps, intent, expected_name
+):
+    expected_path = detached_deps.repo_root / "pycastle" / ".worktrees" / expected_name
+
+    async def _run():
+        async with detached_transient_worktree(
+            intent,
+            sha="abc123",
+            deps=detached_deps,
+        ) as path:
+            assert path == expected_path
+
+    asyncio.run(_run())
+
+    detached_deps.git_svc.checkout_detached.assert_called_once_with(
+        detached_deps.repo_root,
+        expected_path,
+        "abc123",
+    )
+    detached_deps.git_svc.create_worktree.assert_not_called()
+    detached_deps.git_svc.delete_branch.assert_not_called()
 
 
 def test_transient_worktree_removes_worktree_on_clean_exit(detached_deps):

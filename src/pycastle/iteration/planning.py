@@ -15,7 +15,10 @@ from ..prompts.scope_args import build_plan_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import transient_worktree
+from ..infrastructure.worktree import (
+    DetachedTransientWorktreeIntent,
+    detached_transient_worktree,
+)
 from ._rows import status_row
 from .implement import branch_for
 from .planning_issue_intake import PlanReady, PreparedPlanningIssueSet
@@ -129,7 +132,11 @@ async def planning_phase(
                 issue_set,
             )
 
-        async with transient_worktree("plan-sandbox", sha=sha, deps=deps) as wt:
+        async with detached_transient_worktree(
+            DetachedTransientWorktreeIntent.PLAN,
+            sha=sha,
+            deps=deps,
+        ) as wt:
             try:
                 output = await deps.agent_runner.run(
                     RunRequest(
