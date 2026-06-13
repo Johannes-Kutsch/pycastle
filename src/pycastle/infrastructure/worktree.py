@@ -48,6 +48,11 @@ class ReusableSandboxWorktreeIntent(str, Enum):
     DIVERGENCE = "diverge-sandbox"
 
 
+class _SandboxLifecycle(str, Enum):
+    REUSABLE = "reusable"
+    REPLACEABLE_MERGE = "replaceable-merge"
+
+
 def _worktree_name_for_branch(branch: str) -> str:
     m = re.match(r"pycastle/issue-(\d+)", branch)
     if m:
@@ -247,7 +252,7 @@ def _cleanup_stale_sandbox(
     wt_path: Path,
     branch: str,
     *,
-    replace_preserved_failure: bool,
+    lifecycle: _SandboxLifecycle,
 ) -> None:
     """Remove any stale worktree and/or branch for an ephemeral sandbox.
 
@@ -255,7 +260,10 @@ def _cleanup_stale_sandbox(
     fresh at the caller-supplied SHA, regardless of what a prior run left
     behind. Best-effort: subsequent _create_worktree surfaces real errors.
     """
-    if not replace_preserved_failure and is_failure_worktree_preserved(wt_path):
+    if (
+        lifecycle is not _SandboxLifecycle.REPLACEABLE_MERGE
+        and is_failure_worktree_preserved(wt_path)
+    ):
         return
     try:
         registered = svc.list_worktrees(repo_path)
@@ -277,7 +285,7 @@ async def managed_worktree(
     identity: WorktreeIdentity | None = None,
     sha: str | None,
     delete_branch_on_teardown: bool,
-    replace_preserved_failure: bool = False,
+    sandbox_lifecycle: _SandboxLifecycle = _SandboxLifecycle.REUSABLE,
     deps: _WorktreeDeps,
 ):
     resolved_identity = identity
@@ -294,7 +302,7 @@ async def managed_worktree(
             deps.repo_root,
             path,
             resolved_identity.branch,
-            replace_preserved_failure=replace_preserved_failure,
+            lifecycle=sandbox_lifecycle,
         )
         _create_worktree(
             deps.git_svc, deps.repo_root, path, resolved_identity.branch, sha
@@ -381,7 +389,7 @@ async def replaceable_merge_sandbox_worktree(
         identity=identity,
         sha=sha,
         delete_branch_on_teardown=True,
-        replace_preserved_failure=True,
+        sandbox_lifecycle=_SandboxLifecycle.REPLACEABLE_MERGE,
         deps=deps,
     ) as path:
         yield path

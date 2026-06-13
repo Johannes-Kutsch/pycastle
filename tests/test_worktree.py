@@ -1999,8 +1999,8 @@ def test_ephemeral_sandbox_reuses_preserved_failure_worktree_by_default(repo):
     assert (wt_dir / ".pycastle-session" / ".preserved-failure").is_file()
 
 
-def test_ephemeral_sandbox_can_replace_preserved_failure_worktree_when_requested(repo):
-    """AC#3: callers can explicitly request a fresh sandbox replacement."""
+def test_replaceable_merge_lifecycle_replaces_preserved_failure_worktree(repo):
+    """AC#3: replaceable merge lifecycle reopens a fresh sandbox at sha."""
     cfg = Config()
     deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
 
@@ -2011,7 +2011,8 @@ def test_ephemeral_sandbox_can_replace_preserved_failure_worktree_when_requested
     _git(repo, "commit", "-m", "main extra replace")
     sha_main = _git(repo, "rev-parse", "HEAD")
 
-    wt_dir = repo / "pycastle" / ".worktrees" / "merge-sandbox"
+    issue_number = 42
+    wt_dir = repo / "pycastle" / ".worktrees" / f"merge-sandbox-issue-{issue_number}"
     subprocess.run(
         [
             "git",
@@ -2020,7 +2021,7 @@ def test_ephemeral_sandbox_can_replace_preserved_failure_worktree_when_requested
             "worktree",
             "add",
             "-b",
-            "pycastle/merge-sandbox",
+            f"pycastle/merge-sandbox-issue-{issue_number}",
             str(wt_dir),
             sha_base,
         ],
@@ -2036,12 +2037,9 @@ def test_ephemeral_sandbox_can_replace_preserved_failure_worktree_when_requested
     head_inside: list[str] = []
 
     async def _run():
-        async with managed_worktree(
-            "merge-sandbox",
-            branch="pycastle/merge-sandbox",
+        async with replaceable_merge_sandbox_worktree(
+            issue_number=issue_number,
             sha=sha_main,
-            delete_branch_on_teardown=True,
-            replace_preserved_failure=True,
             deps=deps,
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
