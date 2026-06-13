@@ -183,6 +183,32 @@ def test_durable_issue_worktree_uses_existing_issue_path_layout(real_branch_deps
     asyncio.run(_run())
 
 
+def test_durable_issue_worktree_raises_worktree_timeout_error_when_git_times_out(
+    branch_deps,
+):
+    branch_deps.git_svc.verify_ref_exists.side_effect = GitTimeoutError("timed out")
+
+    async def _run():
+        with pytest.raises(WorktreeTimeoutError):
+            async with durable_issue_worktree(42, sha="abc123", deps=branch_deps):
+                pass
+
+    asyncio.run(_run())
+
+
+def test_durable_issue_worktree_raises_worktree_error_on_git_command_failure(
+    branch_deps,
+):
+    branch_deps.git_svc.create_worktree.side_effect = GitCommandError("git died")
+
+    async def _run():
+        with pytest.raises(WorktreeError, match="git died"):
+            async with durable_issue_worktree(42, sha="abc123", deps=branch_deps):
+                pass
+
+    asyncio.run(_run())
+
+
 def test_managed_worktree_creates_new_branch_in_repo(real_branch_deps):
     async def _run():
         async with managed_worktree(
@@ -272,6 +298,33 @@ def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branc
         text=True,
     ).stdout
     assert "pycastle/issue-clean" not in branches
+
+
+def test_durable_issue_worktree_tears_down_empty_issue_branch_on_clean_exit(
+    real_branch_deps,
+):
+    captured: dict = {}
+
+    async def _run():
+        async with durable_issue_worktree(42, sha=None, deps=real_branch_deps) as path:
+            captured["path"] = path
+
+    asyncio.run(_run())
+
+    assert not captured["path"].exists()
+    branches = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "branch",
+            "--list",
+            "pycastle/issue-42",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/issue-42" not in branches
 
 
 def test_managed_worktree_preserves_when_resumable_session_present(real_branch_deps):
@@ -1677,6 +1730,40 @@ def test_managed_worktree_preserves_branch_with_commits_when_delete_branch_on_te
         text=True,
     ).stdout
     assert "pycastle/issue-wip" in branches
+
+
+def test_durable_issue_worktree_preserves_issue_branch_with_commits_ahead_of_main(
+    real_branch_deps,
+):
+    async def _run():
+        async with durable_issue_worktree(42, sha=None, deps=real_branch_deps) as path:
+            (path / "wip.txt").write_text("work in progress")
+            subprocess.run(
+                ["git", "-C", str(path), "add", "wip.txt"],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(path), "commit", "-m", "wip commit"],
+                check=True,
+                capture_output=True,
+            )
+
+    asyncio.run(_run())
+
+    branches = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(real_branch_deps.repo_root),
+            "branch",
+            "--list",
+            "pycastle/issue-42",
+        ],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "pycastle/issue-42" in branches
 
 
 def test_managed_worktree_deletes_empty_branch_when_delete_branch_on_teardown_false(
