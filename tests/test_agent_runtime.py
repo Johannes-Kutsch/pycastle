@@ -2528,6 +2528,142 @@ def test_runtime_package_prompt_entrypoint_preserves_runtime_owned_session_contr
     ]
 
 
+def test_runtime_package_prompt_entrypoint_fills_missing_credential_failure_service_name_from_selected_fallback(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("opencode")
+    adapter = _PromptRuntimeExecutionAdapterStandIn(
+        git_service=_make_git_service(),
+        service=service,
+        session=_RuntimeSessionStandIn(),
+    )
+
+    class _CredentialFailureRunner(_RuntimeWorkRunnerStandIn):
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: object = "full",
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AgentCredentialFailureError(
+                "credential failure from provider adapter",
+                status_code=401,
+                service_name="",
+                observations=(),
+            )
+
+    adapter.work_runner = _CredentialFailureRunner()
+    registry = runtime.ServiceRegistry({"opencode": service})
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="missing",
+            model="ignored",
+            effort="medium",
+            fallback=runtime.StageOverride(
+                service="opencode",
+                model="gpt-5.4",
+                effort="medium",
+            ),
+        ),
+    )
+
+    with pytest.raises(AgentCredentialFailureError) as excinfo:
+        asyncio.run(
+            runtime.run_prompt(
+                runner=adapter,
+                service_registry=registry,
+                request=request,
+            )
+        )
+
+    assert excinfo.value.service_name == "opencode"
+
+
+def test_runtime_package_prompt_entrypoint_preserves_provider_named_credential_failure_from_selected_fallback(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("opencode")
+    adapter = _PromptRuntimeExecutionAdapterStandIn(
+        git_service=_make_git_service(),
+        service=service,
+        session=_RuntimeSessionStandIn(),
+    )
+
+    class _CredentialFailureRunner(_RuntimeWorkRunnerStandIn):
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: object = "full",
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AgentCredentialFailureError(
+                "credential failure from provider adapter",
+                status_code=401,
+                service_name="claude",
+                observations=(),
+            )
+
+    adapter.work_runner = _CredentialFailureRunner()
+    registry = runtime.ServiceRegistry({"opencode": service})
+    request = runtime.PromptRunRequest(
+        name="Runtime Consumer",
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return the final answer only.",
+        override=runtime.StageOverride(
+            service="missing",
+            model="ignored",
+            effort="medium",
+            fallback=runtime.StageOverride(
+                service="opencode",
+                model="gpt-5.4",
+                effort="medium",
+            ),
+        ),
+    )
+
+    with pytest.raises(AgentCredentialFailureError) as excinfo:
+        asyncio.run(
+            runtime.run_prompt(
+                runner=adapter,
+                service_registry=registry,
+                request=request,
+            )
+        )
+
+    assert excinfo.value.service_name == "claude"
+
+
 def test_runtime_package_default_status_row_preserves_usage_limit_shutdown_message(
     tmp_path: Path,
 ) -> None:
@@ -2642,6 +2778,126 @@ def test_runtime_package_default_status_row_preserves_timeout_shutdown_message(
     assert status_display.remove_calls == [
         ("Runtime Consumer", "timed out", "interrupted")
     ]
+
+
+def test_runtime_package_invoke_work_preserves_provider_named_credential_failure(
+    tmp_path: Path,
+) -> None:
+    class _CredentialFailureRunner(_RuntimeWorkRunnerStandIn):
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: object = "full",
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AgentCredentialFailureError(
+                "credential failure from provider adapter",
+                status_code=401,
+                service_name="claude",
+                observations=(),
+            )
+
+    with pytest.raises(AgentCredentialFailureError) as excinfo:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Runtime Consumer",
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service=_RecordingRuntimeService("opencode"),
+                    model="gpt-5.4",
+                    effort="medium",
+                    output_adapter=TextOutputAdapter(prompt="runtime prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda **_kwargs: (
+                            _PreparedRuntimeSessionStandIn()
+                        ),
+                        build_session=lambda *_args: _RuntimeSessionStandIn(),
+                        build_runner=lambda *_args: _CredentialFailureRunner(),
+                        get_git_identity=lambda: ("Alice", "alice@example.com"),
+                    ),
+                )
+            )
+        )
+
+    assert str(excinfo.value) == "credential failure from provider adapter"
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.service_name == "claude"
+
+
+def test_runtime_package_invoke_work_fills_missing_credential_failure_service_name(
+    tmp_path: Path,
+) -> None:
+    class _CredentialFailureRunner(_RuntimeWorkRunnerStandIn):
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: object = "full",
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AgentCredentialFailureError(
+                "credential failure from provider adapter",
+                status_code=401,
+                service_name="",
+                observations=(),
+            )
+
+    with pytest.raises(AgentCredentialFailureError) as excinfo:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Runtime Consumer",
+                    mount_path=tmp_path,
+                    role=AgentRole.IMPLEMENTER,
+                    service=_RecordingRuntimeService("opencode"),
+                    model="gpt-5.4",
+                    effort="medium",
+                    output_adapter=TextOutputAdapter(prompt="runtime prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=0,
+                        stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda **_kwargs: (
+                            _PreparedRuntimeSessionStandIn()
+                        ),
+                        build_session=lambda *_args: _RuntimeSessionStandIn(),
+                        build_runner=lambda *_args: _CredentialFailureRunner(),
+                        get_git_identity=lambda: ("Alice", "alice@example.com"),
+                    ),
+                )
+            )
+        )
+
+    assert str(excinfo.value) == "credential failure from provider adapter"
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.service_name == "opencode"
 
 
 def test_runtime_package_owns_service_selection_contract() -> None:
