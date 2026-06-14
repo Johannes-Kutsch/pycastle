@@ -2386,6 +2386,61 @@ def test_push_non_nff_divergence_patterns_raise_git_command_error(tmp_path, stde
     assert not isinstance(exc_info.value, OperatorActionableGitError)
 
 
+def test_named_passthrough_decision_preserves_git_command_error(tmp_path):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    class CustomPassthroughRemoteFailure(PassthroughRemoteFailure):
+        pass
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return _git_failure(b"custom passthrough stderr")
+
+    with (
+        patch.object(
+            svc._remote_retry_policy,
+            "classify_remote_failure",
+            return_value=CustomPassthroughRemoteFailure(),
+        ),
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitCommandError) as exc_info:
+            svc.fetch(tmp_path)
+
+    assert attempts == 1
+    assert exc_info.value.stderr == "custom passthrough stderr"
+    mock_sleep.assert_not_called()
+    assert not isinstance(exc_info.value, OperatorActionableGitError)
+
+
+@pytest.mark.parametrize("stderr", _PULL_FETCH_DIVERGENCE_STDERRS)
+def test_fetch_divergence_patterns_raise_git_command_error_without_retry(
+    tmp_path, stderr
+):
+    svc = GitService(_cfg)
+    attempts = 0
+
+    def fake_run(*a, **kw):
+        nonlocal attempts
+        attempts += 1
+        return _git_failure(stderr)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(GitCommandError) as exc_info:
+            svc.fetch(tmp_path)
+
+    assert attempts == 1
+    assert exc_info.value.stderr == stderr.decode()
+    mock_sleep.assert_not_called()
+    assert not isinstance(exc_info.value, OperatorActionableGitError)
+
+
 def test_operator_actionable_git_error_is_not_subclass_of_git_command_error():
     assert not issubclass(OperatorActionableGitError, GitCommandError)
     assert issubclass(OperatorActionableGitError, GitServiceError)

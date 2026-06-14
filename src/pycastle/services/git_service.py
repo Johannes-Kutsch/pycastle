@@ -9,7 +9,7 @@ from ._base import _SubprocessService
 from ._git_remote_retry import (
     DEFAULT_REMOTE_GIT_RETRY_POLICY,
     EscalateOperatorActionableGitFailure,
-    PassthroughRemoteDivergenceOrConflict,
+    PassthroughRemoteFailure,
     RecoverPushNonFastForward,
     RemoteGitOperation,
     RemoteGitRetryDecision,
@@ -409,7 +409,7 @@ class GitService(_SubprocessService):
                 op=operation,
                 attempt_count=attempt,
             ) from cause
-        if isinstance(decision, PassthroughRemoteDivergenceOrConflict):
+        if isinstance(decision, PassthroughRemoteFailure):
             raise cause
         if isinstance(decision, RetryTransientRemoteFailure):
             logger.warning(
