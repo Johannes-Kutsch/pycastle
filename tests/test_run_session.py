@@ -179,6 +179,24 @@ class _CodexWithoutAuthPolicyService:
         )
 
 
+class _ClaudeExecutionOnlyService(ClaudeService):
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        raise AssertionError(
+            "Claude provider session adapter should supply preferences"
+        )
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        del request
+        raise AssertionError("Claude provider session adapter should supply state")
+
+
 def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: Path):
     service = cast(
         AgentService, _FakeAgentService(".pycastle-session/improve/main/codex/")
@@ -403,6 +421,26 @@ def test_run_session_plan_reports_fresh_for_claude_with_absent_or_empty_state_di
     assert empty_plan.auth_seeding_requirement is AuthSeedingRequirement.NOT_REQUIRED
 
 
+def test_run_session_plan_uses_claude_provider_session_adapter_for_fresh_identity(
+    tmp_path: Path,
+) -> None:
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=cast(AgentService, _ClaudeExecutionOnlyService()),
+    )
+
+    assert plan.run_kind is RunKind.FRESH
+    assert plan.provider_session_id == (
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    )
+    assert plan.provider_state_dir_relpath == ".pycastle-session/implementer/claude/"
+    assert plan.host_provider_state_dir == (
+        tmp_path / ".pycastle-session" / "implementer" / "claude"
+    )
+
+
 def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
     tmp_path: Path,
 ):
@@ -422,6 +460,27 @@ def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
     assert plan.run_kind is RunKind.RESUME
     assert plan.service_state_dir == expected_state_dir
     assert plan.provider_session_id == expected_session_id
+
+
+def test_run_session_plan_uses_claude_provider_session_adapter_for_resume_exact_transcript_match(
+    tmp_path: Path,
+) -> None:
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+    role_session.save_service_session_metadata("claude", role_session.session_uuid())
+
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=cast(AgentService, _ClaudeExecutionOnlyService()),
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.provider_session_id == role_session.session_uuid()
+    assert plan.exact_transcript_match is True
 
 
 def test_run_session_plan_preserves_claude_container_state_dir_path_without_namespace(
