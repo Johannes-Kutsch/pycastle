@@ -5,31 +5,31 @@ from typing import Literal
 
 
 @dataclass(frozen=True)
-class _RetryTransient:
+class RetryTransientRemoteFailure:
     delay_seconds: int
 
 
 @dataclass(frozen=True)
-class _EscalateOperatorActionable:
+class EscalateOperatorActionableGitFailure:
     pass
 
 
 @dataclass(frozen=True)
-class _PassthroughDivergenceOrConflict:
+class PassthroughRemoteDivergenceOrConflict:
     pass
 
 
 @dataclass(frozen=True)
-class _RecoverPushNonFastForward:
+class RecoverPushNonFastForward:
     pass
 
 
-_RemoteOperation = Literal["fetch", "pull", "push"]
-_RemoteRetryDecision = (
-    _RetryTransient
-    | _EscalateOperatorActionable
-    | _PassthroughDivergenceOrConflict
-    | _RecoverPushNonFastForward
+RemoteGitOperation = Literal["fetch", "pull", "push"]
+RemoteGitRetryDecision = (
+    RetryTransientRemoteFailure
+    | EscalateOperatorActionableGitFailure
+    | PassthroughRemoteDivergenceOrConflict
+    | RecoverPushNonFastForward
 )
 
 
@@ -60,31 +60,39 @@ _OPERATOR_ACTIONABLE_PATTERNS = (
 _NON_FAST_FORWARD_PUSH_PATTERNS = ("[rejected]",)
 
 
-class _PrivateGitRemotePolicy:
+class RemoteGitRetryPolicy:
     @property
     def max_attempts(self) -> int:
         return _REMOTE_RETRY_PROFILE.max_attempts
 
-    def decision_for(
+    def classify_remote_failure(
         self,
-        operation: _RemoteOperation,
+        operation: RemoteGitOperation,
         stderr: str,
         attempt: int,
-    ) -> _RemoteRetryDecision:
+    ) -> RemoteGitRetryDecision:
         stderr_lower = stderr.lower()
         if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
-            return _EscalateOperatorActionable()
+            return EscalateOperatorActionableGitFailure()
         if operation == "push" and any(
             pattern in stderr for pattern in _NON_FAST_FORWARD_PUSH_PATTERNS
         ):
-            return _RecoverPushNonFastForward()
+            return RecoverPushNonFastForward()
         if any(pattern in stderr_lower for pattern in _DIVERGENCE_OR_CONFLICT_PATTERNS):
-            return _PassthroughDivergenceOrConflict()
+            return PassthroughRemoteDivergenceOrConflict()
         if attempt >= _REMOTE_RETRY_PROFILE.max_attempts:
-            return _EscalateOperatorActionable()
-        return _RetryTransient(
+            return EscalateOperatorActionableGitFailure()
+        return RetryTransientRemoteFailure(
             delay_seconds=_REMOTE_RETRY_PROFILE.backoff_seconds[attempt - 1]
         )
 
 
-_PRIVATE_GIT_REMOTE_POLICY = _PrivateGitRemotePolicy()
+DEFAULT_REMOTE_GIT_RETRY_POLICY = RemoteGitRetryPolicy()
+
+_RetryTransient = RetryTransientRemoteFailure
+_EscalateOperatorActionable = EscalateOperatorActionableGitFailure
+_PassthroughDivergenceOrConflict = PassthroughRemoteDivergenceOrConflict
+_RecoverPushNonFastForward = RecoverPushNonFastForward
+_RemoteOperation = RemoteGitOperation
+_RemoteRetryDecision = RemoteGitRetryDecision
+_PRIVATE_GIT_REMOTE_POLICY = DEFAULT_REMOTE_GIT_RETRY_POLICY
