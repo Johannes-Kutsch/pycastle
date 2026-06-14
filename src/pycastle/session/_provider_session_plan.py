@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import dataclasses
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from pycastle_agent_runtime.provider_session_adapter import ProviderSessionAdapter
+from pycastle_agent_runtime.session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle_agent_runtime.session_planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -22,6 +29,55 @@ from .resume import RoleSession
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
+
+
+class _ClaudeProviderSessionAdapter:
+    @property
+    def service_name(self) -> str:
+        return "claude"
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        from ..services.claude_service import _provider_session_preferences_for_request
+
+        return _provider_session_preferences_for_request(request)
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        from ..services.claude_service import _provider_session_state_for_request
+
+        return _provider_session_state_for_request(request)
+
+    def prepare_local_provider_run_state(
+        self,
+        provider_state_dir: Path | None,
+        auth_seed_action: LocalAuthSeedAction | None = None,
+    ) -> None:
+        if provider_state_dir is not None:
+            provider_state_dir.mkdir(parents=True, exist_ok=True)
+        if auth_seed_action is not None:
+            auth_seed_action.apply()
+
+    def record_provider_session_id(
+        self,
+        *,
+        role_session: RoleSession,
+        provider_session_id: str,
+        service_state_dir: Path | None = None,
+    ) -> None:
+        del role_session, provider_session_id, service_state_dir
+
+
+def _provider_session_adapter(service: "AgentService") -> ProviderSessionAdapter | None:
+    from ..services.claude_service import ClaudeService
+
+    if isinstance(service, ClaudeService):
+        return cast(ProviderSessionAdapter, _ClaudeProviderSessionAdapter())
+    return None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -75,6 +131,7 @@ def _runtime_request(
         namespace=request.namespace,
         service=request.service,
         role_session=_role_session(request.worktree, request.role, request.namespace),
+        provider_session_adapter=_provider_session_adapter(request.service),
     )
 
 
