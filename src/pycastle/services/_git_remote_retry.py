@@ -16,7 +16,12 @@ class EscalateOperatorActionableGitFailure:
 
 
 @dataclass(frozen=True)
-class PassthroughRemoteDivergenceOrConflict:
+class PassthroughRemoteFailure:
+    pass
+
+
+@dataclass(frozen=True)
+class PassthroughRemoteDivergenceOrConflict(PassthroughRemoteFailure):
     pass
 
 

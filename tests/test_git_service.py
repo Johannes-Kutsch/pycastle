@@ -7,6 +7,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
+from pycastle.services._git_remote_retry import (
+    DEFAULT_REMOTE_GIT_RETRY_POLICY,
+    PassthroughRemoteFailure,
+)
 from pycastle.services import (
     GitCommandError,
     GitNotFoundError,
@@ -67,6 +71,33 @@ _NON_FAST_FORWARD_PUSH_STDERR = (
 
 
 # ── Exception hierarchy ────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("operation", ["pull", "fetch"])
+@pytest.mark.parametrize("stderr", _PULL_FETCH_DIVERGENCE_STDERRS)
+def test_remote_retry_policy_classifies_pull_fetch_divergence_as_named_passthrough(
+    operation, stderr
+):
+    decision = DEFAULT_REMOTE_GIT_RETRY_POLICY.classify_remote_failure(
+        operation,
+        stderr.decode(),
+        attempt=1,
+    )
+
+    assert isinstance(decision, PassthroughRemoteFailure)
+
+
+@pytest.mark.parametrize("stderr", _PUSH_DIVERGENCE_STDERRS)
+def test_remote_retry_policy_classifies_push_divergence_as_named_passthrough(
+    stderr,
+):
+    decision = DEFAULT_REMOTE_GIT_RETRY_POLICY.classify_remote_failure(
+        "push",
+        stderr.decode(),
+        attempt=1,
+    )
+
+    assert isinstance(decision, PassthroughRemoteFailure)
 
 
 def test_git_service_error_is_runtime_error():
