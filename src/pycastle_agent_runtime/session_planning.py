@@ -276,11 +276,12 @@ def plan_provider_run_state(
         provider_session_adapter.service_name,
         provider_session_planning_facts.state_dir_relpath,
     )
-    host_state_dir = _host_state_dir(request.worktree, state_dir_relpath)
+    host_state_dir = provider_session_planning_facts.provider_state_dir
     has_resumable_provider_state = (
         provider_session_planning_facts.has_resumable_provider_state
     )
     if state_dir_relpath != provider_session_planning_facts.state_dir_relpath:
+        host_state_dir = _host_state_dir(request.worktree, state_dir_relpath)
         has_resumable_provider_state = (
             host_state_dir is not None and request.service.is_resumable(host_state_dir)
         )
