@@ -21,6 +21,7 @@ from pycastle_agent_runtime.session import (
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
+    is_exact_resumable_service_session,
     load_provider_state_session_id,
     select_resumable_provider_session_id,
 )
@@ -67,18 +68,6 @@ _OPENCODE_POLICY_MAPPINGS = {
     AgentToolPolicyGroup.PARTIAL: _OpenCodePolicyMapping(),
     AgentToolPolicyGroup.FULL: _OpenCodePolicyMapping(),
 }
-
-
-def _has_exact_service_session_metadata(
-    request: ProviderSessionStateRequest,
-    provider_session_id: str,
-) -> bool:
-    metadata = request.role_session.service_session_metadata("opencode")
-    return (
-        request.role_session.exact_transcript_service_name() == "opencode"
-        and metadata is not None
-        and metadata["provider_session_id"] == provider_session_id
-    )
 
 
 def _load_opencode_state_dir_session_id(state_dir: Path | None) -> str | None:
@@ -290,9 +279,15 @@ class OpenCodeService:
 
         exact_transcript_match = False
         if request.require_exact_transcript_match:
-            exact_transcript_match = (
-                state_dir_session_id == provider_session_id
-                and _has_exact_service_session_metadata(request, provider_session_id)
+            exact_transcript_match = is_exact_resumable_service_session(
+                request.role_session,
+                self.name,
+                provider_session_id=provider_session_id,
+                provider_state_dir=request.provider_state_dir,
+                exact_provider_session_matcher=lambda session_id, provider_state_dir: (
+                    _load_opencode_state_dir_session_id(provider_state_dir)
+                    == session_id
+                ),
             )
         return ProviderSessionState(
             RunKind.RESUME,

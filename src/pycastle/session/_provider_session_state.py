@@ -21,6 +21,7 @@ from ._provider_session_plan import (
     ProviderRunStatePlan,
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
+    provider_session_adapter_for_service_name,
 )
 from .agent import RunSessionPlan, RunSessionPlanRequest, plan_run_session
 from .resume import RoleSession, RunKind
@@ -154,6 +155,9 @@ def _run_session_plan_for_request(
                     request.worktree,
                     request.role,
                     request.session_namespace,
+                ),
+                provider_session_adapter=provider_session_adapter_for_service_name(
+                    request.service.name
                 ),
                 service_name=request.service.name,
                 run_kind=decision.run_kind,

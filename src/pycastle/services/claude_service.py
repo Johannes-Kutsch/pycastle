@@ -14,11 +14,11 @@ from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
+    is_exact_resumable_service_session,
 )
 
 from .. import _time as _time_module
 from ..session.resume import provider_state_relpath
-from ..session.service_resume_identity import is_exact_resumable_service_session
 from pycastle_agent_runtime.contracts import (
     AssistantTurn,
     CredentialFailure,
