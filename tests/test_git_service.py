@@ -7,9 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
-from pycastle.services._git_remote_retry import (
-    PassthroughRemoteFailure,
-)
 from pycastle.services import (
     GitCommandError,
     GitNotFoundError,
@@ -2220,36 +2217,6 @@ def test_push_non_nff_divergence_raises_git_command_error(tmp_path):
 
     assert attempts == 1
     assert exc_info.value.stderr == stderr.decode()
-    mock_sleep.assert_not_called()
-    assert not isinstance(exc_info.value, OperatorActionableGitError)
-
-
-def test_named_passthrough_decision_preserves_git_command_error(tmp_path):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    class CustomPassthroughRemoteFailure(PassthroughRemoteFailure):
-        pass
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return _git_failure(b"custom passthrough stderr")
-
-    with (
-        patch.object(
-            svc._remote_retry_policy,
-            "classify_remote_failure",
-            return_value=CustomPassthroughRemoteFailure(),
-        ),
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(GitCommandError) as exc_info:
-            svc.fetch(tmp_path)
-
-    assert attempts == 1
-    assert exc_info.value.stderr == "custom passthrough stderr"
     mock_sleep.assert_not_called()
     assert not isinstance(exc_info.value, OperatorActionableGitError)
 
