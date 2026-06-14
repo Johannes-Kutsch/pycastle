@@ -2,6 +2,7 @@ import pytest
 
 from pycastle.services._git_remote_retry import (
     EscalateOperatorActionableGitFailure,
+    RecoverPushNonFastForward,
     RemoteGitRetryPolicy,
     RetryTransientRemoteFailure,
 )
@@ -61,3 +62,33 @@ def test_policy_escalates_stable_remote_misconfig_on_attempt_one(operation, stde
     )
 
     assert decision == EscalateOperatorActionableGitFailure()
+
+
+def test_policy_classifies_push_rejected_stderr_as_named_push_recovery_on_final_attempt():
+    policy = RemoteGitRetryPolicy()
+
+    decision = policy.classify_remote_failure(
+        operation="push",
+        stderr=(
+            "! [rejected] main -> main (fetch first)\n"
+            "CONFLICT (content): Merge conflict in README.md"
+        ),
+        attempt=4,
+    )
+
+    assert decision == RecoverPushNonFastForward()
+
+
+@pytest.mark.parametrize("operation", ["pull", "fetch"])
+def test_policy_does_not_classify_pull_fetch_rejected_stderr_as_push_recovery(
+    operation,
+):
+    policy = RemoteGitRetryPolicy()
+
+    decision = policy.classify_remote_failure(
+        operation=operation,
+        stderr="! [rejected] main -> main (fetch first)",
+        attempt=1,
+    )
+
+    assert decision != RecoverPushNonFastForward()

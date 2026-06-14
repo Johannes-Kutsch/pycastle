@@ -1766,6 +1766,29 @@ def test_push_uses_pull_with_merge_fallback_on_nff_rejection(tmp_path):
     )
 
 
+def test_push_retries_non_fast_forward_recovery_without_sleep(tmp_path):
+    svc = GitService(_cfg)
+    push_attempt = 0
+
+    def fake_run(cmd, **kwargs):
+        nonlocal push_attempt
+        if cmd == ["git", "push"]:
+            push_attempt += 1
+            if push_attempt == 1:
+                return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
+            return _git_result()
+        return _git_result(stdout=b"Already up to date.\n")
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        asyncio.run(svc.push(tmp_path))
+
+    assert push_attempt == 2
+    mock_sleep.assert_not_called()
+
+
 def test_push_calls_async_resolver_on_textual_conflict_and_retries(tmp_path):
     """When pull_with_merge_fallback raises a textual conflict, the async resolver is called and push retries."""
     svc = GitService(_cfg)
