@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -52,9 +53,9 @@ _DIVERGENCE_OR_CONFLICT_PATTERNS = (
 )
 
 _OPERATOR_ACTIONABLE_PATTERNS = (
-    "repository not found",
-    "remote: not found",
-    "does not appear to be a git repository",
+    re.compile(r"\brepository\b.*\bnot found\b", re.IGNORECASE),
+    re.compile(r"remote:\s*not found", re.IGNORECASE),
+    re.compile(r"does not appear to be a git repository", re.IGNORECASE),
 )
 
 _NON_FAST_FORWARD_PUSH_PATTERNS = ("[rejected]",)
@@ -72,7 +73,7 @@ class RemoteGitRetryPolicy:
         attempt: int,
     ) -> RemoteGitRetryDecision:
         stderr_lower = stderr.lower()
-        if any(pattern in stderr_lower for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
+        if any(pattern.search(stderr) for pattern in _OPERATOR_ACTIONABLE_PATTERNS):
             return EscalateOperatorActionableGitFailure()
         if operation == "push" and any(
             pattern in stderr for pattern in _NON_FAST_FORWARD_PUSH_PATTERNS

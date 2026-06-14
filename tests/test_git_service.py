@@ -1458,6 +1458,43 @@ def test_remote_op_raises_operator_actionable_error_immediately_for_stable_misco
     mock_sleep.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("run_remote_op", "op", "returncode"),
+    [
+        pytest.param(_run_pull, "pull", 1, id="pull"),
+        pytest.param(_run_fetch, "fetch", 1, id="fetch"),
+        pytest.param(_run_push, "push", 128, id="push"),
+    ],
+)
+def test_remote_op_raises_operator_actionable_error_immediately_for_quoted_repository_not_found(
+    tmp_path, run_remote_op, op, returncode
+):
+    svc = GitService(_cfg)
+    attempts = 0
+    captured: list[list[str]] = []
+    stderr = b"fatal: repository 'git@github.com:owner/repo.git' not found"
+
+    def fake_run(cmd, **kw):
+        nonlocal attempts
+        attempts += 1
+        captured.append(list(cmd))
+        return _git_failure(stderr, returncode=returncode)
+
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        patch("time.sleep") as mock_sleep,
+    ):
+        with pytest.raises(OperatorActionableGitError) as exc_info:
+            run_remote_op(svc, tmp_path)
+
+    assert attempts == 1
+    assert exc_info.value.op == op
+    assert exc_info.value.attempt_count == 1
+    assert exc_info.value.stderr == stderr.decode()
+    assert captured == [["git", op] if op != "pull" else ["git", "pull", "--ff-only"]]
+    mock_sleep.assert_not_called()
+
+
 def test_pull_final_exception_carries_last_attempt_stderr(tmp_path):
     svc = GitService(_cfg)
     responses = iter(
