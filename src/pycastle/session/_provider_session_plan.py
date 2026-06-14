@@ -5,12 +5,17 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from pycastle_agent_runtime.provider_session_adapter import ProviderSessionAdapter
+from pycastle_agent_runtime.provider_session_adapter import (
+    ProviderSessionAdapter,
+    ProviderSessionPlanningFacts,
+    ProviderSessionPlanningRequest,
+)
 from pycastle_agent_runtime.session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
+    provider_state_relpath,
 )
 from pycastle_agent_runtime.session_planning import (
     AuthSeedingRequirement,
@@ -39,6 +44,25 @@ class _BaseProviderSessionAdapter:
     @property
     def service_name(self) -> str:
         return self._service_name
+
+    def provider_session_planning_facts(
+        self,
+        request: ProviderSessionPlanningRequest,
+    ) -> ProviderSessionPlanningFacts:
+        state_dir_relpath = provider_state_relpath(
+            request.role,
+            self.service_name,
+            request.namespace,
+            session_root=".pycastle-session",
+        )
+        provider_state_dir = request.worktree / state_dir_relpath.rstrip("/")
+        return ProviderSessionPlanningFacts(
+            state_dir_relpath=state_dir_relpath,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=self._has_resumable_provider_state(
+                provider_state_dir
+            ),
+        )
 
     def prepare_local_provider_run_state(
         self,
@@ -73,6 +97,11 @@ class _BaseProviderSessionAdapter:
         provider_state_dir: Path | None,
     ) -> bool:
         return provider_session_id is not None and provider_state_dir is not None
+
+    def _has_resumable_provider_state(self, provider_state_dir: Path) -> bool:
+        return provider_state_dir.is_dir() and any(
+            candidate.is_file() for candidate in provider_state_dir.rglob("*")
+        )
 
 
 class _ClaudeProviderSessionAdapter(_BaseProviderSessionAdapter):
@@ -120,6 +149,33 @@ class _DelegatingProviderSessionAdapter(_BaseProviderSessionAdapter):
                 "provider session selection requires a concrete provider session service"
             )
         return self._service.provider_session_state(request)
+
+    def provider_session_planning_facts(
+        self,
+        request: ProviderSessionPlanningRequest,
+    ) -> ProviderSessionPlanningFacts:
+        if self._service is None:
+            raise RuntimeError(
+                "provider session selection requires a concrete provider session service"
+            )
+        state_dir_relpath = self._service.state_dir_relpath(
+            request.role,
+            request.namespace,
+        )
+        provider_state_dir = (
+            None
+            if state_dir_relpath is None
+            else request.worktree / state_dir_relpath.rstrip("/")
+        )
+        has_resumable_provider_state = (
+            provider_state_dir is not None
+            and self._service.is_resumable(provider_state_dir)
+        )
+        return ProviderSessionPlanningFacts(
+            state_dir_relpath=state_dir_relpath,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=has_resumable_provider_state,
+        )
 
 
 class _CodexProviderSessionAdapter(_DelegatingProviderSessionAdapter):

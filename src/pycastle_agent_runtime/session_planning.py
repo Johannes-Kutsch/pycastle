@@ -10,6 +10,7 @@ from .contracts import AgentService
 from .errors import AgentCredentialFailureError
 from .provider_session_adapter import (
     ProviderSessionAdapter,
+    ProviderSessionPlanningRequest,
     ProviderSessionService,
     legacy_provider_session_adapter,
     legacy_provider_session_metadata_adapter,
@@ -260,20 +261,29 @@ def plan_provider_run_state(
         provider_session_adapter = legacy_provider_session_adapter(
             cast(ProviderSessionService, request.service)
         )
-    raw_state_dir_relpath = request.service.state_dir_relpath(
-        request.role,
-        request.namespace,
+    provider_session_planning_facts = (
+        provider_session_adapter.provider_session_planning_facts(
+            ProviderSessionPlanningRequest(
+                worktree=request.worktree,
+                role=request.role,
+                namespace=request.namespace,
+            )
+        )
     )
     state_dir_relpath = normalize_state_dir_relpath(
         request.role,
         request.namespace,
-        request.service.name,
-        raw_state_dir_relpath,
+        provider_session_adapter.service_name,
+        provider_session_planning_facts.state_dir_relpath,
     )
     host_state_dir = _host_state_dir(request.worktree, state_dir_relpath)
     has_resumable_provider_state = (
-        host_state_dir is not None and request.service.is_resumable(host_state_dir)
+        provider_session_planning_facts.has_resumable_provider_state
     )
+    if state_dir_relpath != provider_session_planning_facts.state_dir_relpath:
+        has_resumable_provider_state = (
+            host_state_dir is not None and request.service.is_resumable(host_state_dir)
+        )
     provider_session_preferences = (
         provider_session_adapter.provider_session_preferences(
             ProviderSessionPreferencesRequest(
@@ -310,7 +320,7 @@ def plan_provider_run_state(
     return ProviderRunStatePlan(
         role_session=request.role_session,
         provider_session_adapter=provider_session_adapter,
-        service_name=request.service.name,
+        service_name=provider_session_adapter.service_name,
         run_kind=provider_session_state.run_kind,
         provider_session_id=provider_session_state.provider_session_id,
         provider_state_dir=selected_provider_state_dir,

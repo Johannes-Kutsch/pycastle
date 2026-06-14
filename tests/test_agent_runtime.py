@@ -20,6 +20,10 @@ from pycastle.agents._work_invocation import (
 )
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole
+from pycastle_agent_runtime.provider_session_adapter import (
+    ProviderSessionPlanningFacts,
+    ProviderSessionPlanningRequest,
+)
 from pycastle_agent_runtime.errors import (
     AgentCredentialFailureError,
     AgentTimeoutError,
@@ -891,6 +895,7 @@ class _ExecutionOnlyRuntimeService:
 class _RecordingProviderSessionAdapter:
     def __init__(self, provider_state: ProviderSessionState) -> None:
         self._provider_state = provider_state
+        self.planning_requests: list[ProviderSessionPlanningRequest] = []
         self.preferences_requests: list[ProviderSessionPreferencesRequest] = []
         self.state_requests: list[ProviderSessionStateRequest] = []
         self.prepare_calls: list[tuple[Path | None, object | None]] = []
@@ -899,6 +904,20 @@ class _RecordingProviderSessionAdapter:
     @property
     def service_name(self) -> str:
         return "generic"
+
+    def provider_session_planning_facts(
+        self,
+        request: ProviderSessionPlanningRequest,
+    ) -> ProviderSessionPlanningFacts:
+        self.planning_requests.append(request)
+        provider_state_dir = (
+            request.worktree / ".pycastle-session/implementer/main/generic"
+        )
+        return ProviderSessionPlanningFacts(
+            state_dir_relpath=".pycastle-session/implementer/main/generic/",
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+        )
 
     def provider_session_preferences(
         self,

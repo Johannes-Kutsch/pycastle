@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from typing import Protocol
 
 from .contracts import ProviderSessionRecordingStore, ProviderStatePreparationAction
+from .roles import AgentRole
 from .session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -12,9 +14,27 @@ from .session import (
 )
 
 
+@dataclasses.dataclass(frozen=True)
+class ProviderSessionPlanningRequest:
+    worktree: Path
+    role: AgentRole
+    namespace: str
+
+
+@dataclasses.dataclass(frozen=True)
+class ProviderSessionPlanningFacts:
+    state_dir_relpath: str | None
+    provider_state_dir: Path | None
+    has_resumable_provider_state: bool
+
+
 class ProviderSessionService(Protocol):
     @property
     def name(self) -> str: ...
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None: ...
+
+    def is_resumable(self, state_dir: Path) -> bool: ...
 
     def provider_session_preferences(
         self, request: ProviderSessionPreferencesRequest
@@ -28,6 +48,10 @@ class ProviderSessionService(Protocol):
 class ProviderSessionAdapter(Protocol):
     @property
     def service_name(self) -> str: ...
+
+    def provider_session_planning_facts(
+        self, request: ProviderSessionPlanningRequest
+    ) -> ProviderSessionPlanningFacts: ...
 
     def provider_session_preferences(
         self, request: ProviderSessionPreferencesRequest
@@ -77,6 +101,24 @@ class _LegacyProviderSessionAdapter:
     @property
     def service_name(self) -> str:
         return self._service_name
+
+    def provider_session_planning_facts(
+        self, request: ProviderSessionPlanningRequest
+    ) -> ProviderSessionPlanningFacts:
+        state_dir_relpath = self._require_service().state_dir_relpath(
+            request.role,
+            request.namespace,
+        )
+        provider_state_dir = _host_state_dir(request.worktree, state_dir_relpath)
+        has_resumable_provider_state = (
+            provider_state_dir is not None
+            and self._require_service().is_resumable(provider_state_dir)
+        )
+        return ProviderSessionPlanningFacts(
+            state_dir_relpath=state_dir_relpath,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=has_resumable_provider_state,
+        )
 
     def provider_session_preferences(
         self, request: ProviderSessionPreferencesRequest
@@ -143,7 +185,15 @@ def legacy_provider_session_metadata_adapter(
     return _LegacyProviderSessionAdapter(service_name=service_name)
 
 
+def _host_state_dir(worktree: Path, state_dir_relpath: str | None) -> Path | None:
+    if state_dir_relpath is None:
+        return None
+    return worktree / state_dir_relpath.rstrip("/")
+
+
 __all__ = [
     "ProviderSessionAdapter",
+    "ProviderSessionPlanningFacts",
+    "ProviderSessionPlanningRequest",
     "ProviderSessionService",
 ]
