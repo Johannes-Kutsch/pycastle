@@ -106,8 +106,46 @@ _SUBSCRIPTION_ACCESS_DENIAL_PHRASE = (
 _PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
 
 
+def _provider_session_preferences_for_request(
+    request: ProviderSessionPreferencesRequest,
+) -> ProviderSessionPreferences:
+    return ProviderSessionPreferences(
+        preferred_provider_session_id=request.role_session.session_uuid()
+    )
+
+
 def _provider_session_id_for_request(request: ProviderSessionStateRequest) -> str:
     return request.preferred_provider_session_id or request.role_session.session_uuid()
+
+
+def _provider_session_state_for_request(
+    request: ProviderSessionStateRequest,
+) -> ProviderSessionState:
+    exact_transcript_match = False
+    run_kind = (
+        RunKind.RESUME
+        if request.force_resume or request.has_resumable_provider_state
+        else RunKind.FRESH
+    )
+    provider_session_id = _provider_session_id_for_request(request)
+    if (
+        request.require_exact_transcript_match
+        and request.has_resumable_provider_state
+        and run_kind is RunKind.RESUME
+    ):
+        exact_transcript_match = is_exact_resumable_service_session(
+            request.role_session,
+            "claude",
+            provider_session_id=provider_session_id,
+            provider_state_dir=request.provider_state_dir,
+        )
+    return ProviderSessionState(
+        run_kind=run_kind,
+        provider_session_id=provider_session_id,
+        state_dir_relpath=request.state_dir_relpath,
+        state_dir_path=request.provider_state_dir,
+        exact_transcript_match=exact_transcript_match,
+    )
 
 
 def _is_subscription_access_denial(
@@ -247,38 +285,12 @@ class ClaudeService:
     def provider_session_preferences(
         self, request: ProviderSessionPreferencesRequest
     ) -> ProviderSessionPreferences:
-        return ProviderSessionPreferences(
-            preferred_provider_session_id=request.role_session.session_uuid()
-        )
+        return _provider_session_preferences_for_request(request)
 
     def provider_session_state(
         self, request: ProviderSessionStateRequest
     ) -> ProviderSessionState:
-        exact_transcript_match = False
-        run_kind = (
-            RunKind.RESUME
-            if request.force_resume or request.has_resumable_provider_state
-            else RunKind.FRESH
-        )
-        provider_session_id = _provider_session_id_for_request(request)
-        if (
-            request.require_exact_transcript_match
-            and request.has_resumable_provider_state
-            and run_kind is RunKind.RESUME
-        ):
-            exact_transcript_match = is_exact_resumable_service_session(
-                request.role_session,
-                self.name,
-                provider_session_id=provider_session_id,
-                provider_state_dir=request.provider_state_dir,
-            )
-        return ProviderSessionState(
-            run_kind=run_kind,
-            provider_session_id=provider_session_id,
-            state_dir_relpath=request.state_dir_relpath,
-            state_dir_path=request.provider_state_dir,
-            exact_transcript_match=exact_transcript_match,
-        )
+        return _provider_session_state_for_request(request)
 
     def account_names(self) -> list[str]:
         if self._pool is None:
