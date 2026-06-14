@@ -7,8 +7,13 @@ from pathlib import Path
 from ..config import Config
 from ._base import _SubprocessService
 from ._git_remote_retry import (
+    _EscalateOperatorActionable,
     _PRIVATE_GIT_REMOTE_POLICY,
-    _RemoteRetryAction,
+    _PassthroughDivergenceOrConflict,
+    _RecoverPushNonFastForward,
+    _RemoteRetryDecision,
+    _RemoteOperation,
+    _RetryTransient,
 )
 
 logger = logging.getLogger(__name__)
@@ -359,16 +364,16 @@ class GitService(_SubprocessService):
         self,
         cmd: list[str],
         message: str,
-        operation: str,
+        operation: _RemoteOperation,
         cwd: Path | None = None,
     ) -> None:
         for attempt in range(1, _PRIVATE_GIT_REMOTE_POLICY.max_attempts + 1):
             try:
                 self._run_or_raise(cmd, message, cwd=cwd)
             except GitCommandError as exc:
-                if self._handle_remote_retry_action(
-                    action=_PRIVATE_GIT_REMOTE_POLICY.action_for_fetch_or_pull(
-                        exc.stderr, attempt
+                if self._handle_remote_retry_decision(
+                    decision=_PRIVATE_GIT_REMOTE_POLICY.decision_for(
+                        operation, exc.stderr, attempt
                     ),
                     message=message,
                     operation=operation,
@@ -386,35 +391,35 @@ class GitService(_SubprocessService):
                     )
                 return
 
-    def _handle_remote_retry_action(
+    def _handle_remote_retry_decision(
         self,
         *,
-        action: _RemoteRetryAction,
+        decision: _RemoteRetryDecision,
         message: str,
         operation: str,
         attempt: int,
         stderr: str,
         cause: GitCommandError,
     ) -> bool:
-        if action.operator_actionable:
+        if isinstance(decision, _EscalateOperatorActionable):
             raise OperatorActionableGitError(
                 message,
                 stderr=stderr,
                 op=operation,
                 attempt_count=attempt,
             ) from cause
-        if action.passthrough:
+        if isinstance(decision, _PassthroughDivergenceOrConflict):
             raise cause
-        if action.retry_delay_seconds is not None:
+        if isinstance(decision, _RetryTransient):
             logger.warning(
                 "git %s failed (attempt %d/%d), retrying in %ds: %s",
                 operation,
                 attempt,
                 _PRIVATE_GIT_REMOTE_POLICY.max_attempts,
-                action.retry_delay_seconds,
+                decision.delay_seconds,
                 stderr,
             )
-            time.sleep(action.retry_delay_seconds)
+            time.sleep(decision.delay_seconds)
             return True
         return False
 
@@ -484,8 +489,10 @@ class GitService(_SubprocessService):
             try:
                 self._run_or_raise(["git", "push"], "git push failed", cwd=repo_path)
             except GitCommandError as exc:
-                action = _PRIVATE_GIT_REMOTE_POLICY.action_for_push(exc.stderr, attempt)
-                if action.recover_push_non_fast_forward:
+                decision = _PRIVATE_GIT_REMOTE_POLICY.decision_for(
+                    "push", exc.stderr, attempt
+                )
+                if isinstance(decision, _RecoverPushNonFastForward):
                     if attempt == _PRIVATE_GIT_REMOTE_POLICY.max_attempts:
                         raise exc
                     logger.warning(
@@ -500,8 +507,8 @@ class GitService(_SubprocessService):
                             raise
                         await resolver()
                     continue
-                if self._handle_remote_retry_action(
-                    action=action,
+                if self._handle_remote_retry_decision(
+                    decision=decision,
                     message="git push failed",
                     operation="push",
                     attempt=attempt,
