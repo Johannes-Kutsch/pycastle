@@ -135,6 +135,29 @@ def _runtime_package_wheel(tmp_path: Path) -> Path:
         shutil.rmtree(runtime_egg_info_dir, ignore_errors=True)
 
 
+def _runtime_package_sdist(tmp_path: Path) -> Path:
+    from setuptools.build_meta import build_sdist  # type: ignore[import-untyped]
+
+    repo_root = Path(__file__).resolve().parents[1]
+    runtime_package_root = repo_root / "src/pycastle_agent_runtime"
+    build_dir = repo_root / "build"
+    runtime_build_dir = runtime_package_root / "build"
+    runtime_egg_info_dir = runtime_package_root / "pycastle_agent_runtime.egg-info"
+    shutil.rmtree(build_dir, ignore_errors=True)
+    shutil.rmtree(runtime_build_dir, ignore_errors=True)
+    shutil.rmtree(runtime_egg_info_dir, ignore_errors=True)
+    current_dir = Path.cwd()
+    try:
+        os.chdir(runtime_package_root)
+        sdist_name = build_sdist(str(tmp_path))
+        return tmp_path / sdist_name
+    finally:
+        os.chdir(current_dir)
+        shutil.rmtree(build_dir, ignore_errors=True)
+        shutil.rmtree(runtime_build_dir, ignore_errors=True)
+        shutil.rmtree(runtime_egg_info_dir, ignore_errors=True)
+
+
 def _runtime_python_modules_in_wheel(wheel_path: Path) -> set[str]:
     with ZipFile(wheel_path) as wheel:
         modules = {
@@ -149,6 +172,83 @@ def _runtime_python_modules_in_wheel(wheel_path: Path) -> set[str]:
             if name.startswith("pycastle_agent_runtime/") and name.endswith(".py")
         }
     return modules
+
+
+def _runtime_python_modules_in_sdist(sdist_path: Path) -> set[str]:
+    with tarfile.open(sdist_path, "r:gz") as sdist:
+        modules = {
+            "pycastle_agent_runtime"
+            if Path(name).name == "__init__.py"
+            else f"pycastle_agent_runtime.{Path(name).name.removesuffix('.py')}"
+            for name in sdist.getnames()
+            if name.count("/") == 1 and name.endswith(".py")
+        }
+    return modules
+
+
+def _runtime_expected_module_set() -> set[str]:
+    runtime_root = Path("src/pycastle_agent_runtime")
+    return {
+        "pycastle_agent_runtime"
+        if path.name == "__init__.py"
+        else f"pycastle_agent_runtime.{path.stem}"
+        for path in runtime_root.glob("*.py")
+    }
+
+
+def _install_runtime_artifact(tmp_path: Path, artifact_kind: str) -> Path:
+    artifact_path = (
+        _runtime_package_wheel(tmp_path)
+        if artifact_kind == "wheel"
+        else _runtime_package_sdist(tmp_path)
+    )
+    install_dir = tmp_path / f"{artifact_kind}-site-packages"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            str(artifact_path),
+            "--no-deps",
+            "--target",
+            str(install_dir),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    return install_dir
+
+
+def _runtime_public_api_probe(tmp_path: Path, artifact_kind: str) -> list[str]:
+    install_dir = _install_runtime_artifact(tmp_path, artifact_kind)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            (
+                f"import sys; sys.path.insert(0, {str(install_dir)!r}); "
+                "import importlib.util; "
+                "import pycastle_agent_runtime as runtime; "
+                "from pycastle_agent_runtime import provider_session_adapter; "
+                "print(importlib.util.find_spec('pycastle') is None); "
+                "print(hasattr(runtime, 'PycastleError')); "
+                "print(hasattr(provider_session_adapter, 'ProviderSessionPlanningRequest')); "
+                "print(hasattr(provider_session_adapter, 'ProviderSessionPlanningFacts')); "
+                "print(hasattr(provider_session_adapter, 'ProviderSessionAdapter')); "
+            ),
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    return result.stdout.splitlines()
 
 
 def _shipped_defaults_in_sdist(tmp_path: Path) -> set[str]:
@@ -596,6 +696,108 @@ def test_standalone_runtime_distribution_installs_without_pycastle_package(
         "True",
     ]
     assert set(stdout_lines[4:]) == shipped_runtime_modules
+
+
+def test_standalone_runtime_wheel_ships_exact_runtime_module_set(
+    tmp_path: Path,
+) -> None:
+    wheel_path = _runtime_package_wheel(tmp_path)
+
+    assert (
+        _runtime_python_modules_in_wheel(wheel_path) == _runtime_expected_module_set()
+    )
+
+
+def test_standalone_runtime_sdist_installs_without_pycastle_package(
+    tmp_path: Path,
+) -> None:
+    sdist_path = _runtime_package_sdist(tmp_path)
+    shipped_runtime_modules = _runtime_python_modules_in_sdist(sdist_path)
+    install_dir = tmp_path / "site-packages"
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            str(sdist_path),
+            "--no-deps",
+            "--target",
+            str(install_dir),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            (
+                f"import sys; sys.path.insert(0, {str(install_dir)!r}); "
+                "import importlib; "
+                "import importlib.util; "
+                "from importlib.resources import files; "
+                "import pycastle_agent_runtime as runtime; "
+                "runtime.ServiceRegistry; "
+                "runtime.ProviderSessionAdapter; "
+                "runtime.ProviderSessionState; "
+                "runtime.ProviderSessionStateRequest; "
+                "runtime.RunKind; "
+                "runtime.StageOverride; "
+                "runtime.UsageLimitOutcome; "
+                "runtime.decide_usage_limit_continuation; "
+                "runtime.select_configured_candidate_chain; "
+                "print(importlib.util.find_spec('pycastle') is None); "
+                "print(runtime.ServiceRegistry.__module__); "
+                "print(runtime.decide_usage_limit_continuation.__module__); "
+                "print(files('pycastle_agent_runtime').joinpath('pyproject.toml').is_file()); "
+                f"modules = {sorted(shipped_runtime_modules)!r}; "
+                "[print(importlib.import_module(name).__name__) for name in modules]"
+            ),
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    stdout_lines = result.stdout.splitlines()
+
+    assert stdout_lines[:4] == [
+        "True",
+        "pycastle_agent_runtime.service_registry",
+        "pycastle_agent_runtime.usage_limit_decision",
+        "True",
+    ]
+    assert set(stdout_lines[4:]) == shipped_runtime_modules
+
+
+def test_standalone_runtime_sdist_ships_exact_runtime_module_set(
+    tmp_path: Path,
+) -> None:
+    sdist_path = _runtime_package_sdist(tmp_path)
+
+    assert (
+        _runtime_python_modules_in_sdist(sdist_path) == _runtime_expected_module_set()
+    )
+
+
+@pytest.mark.parametrize("artifact_kind", ["wheel", "sdist"])
+def test_standalone_runtime_artifacts_expose_provider_session_adapter_contract(
+    tmp_path: Path,
+    artifact_kind: str,
+) -> None:
+    assert _runtime_public_api_probe(tmp_path, artifact_kind) == [
+        "True",
+        "False",
+        "True",
+        "True",
+        "True",
+    ]
 
 
 def test_runtime_python_modules_in_wheel_maps_nested_package_init_to_package_name(
