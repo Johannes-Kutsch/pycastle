@@ -1928,9 +1928,7 @@ def test_runtime_provider_state_plan_records_observed_provider_session_id_for_op
     assert role_session.saved_service_session_ids == [
         ("opencode", "sess-runtime-opencode")
     ]
-    assert (service_state_dir / "session_id").read_text(encoding="utf-8") == (
-        "sess-runtime-opencode"
-    )
+    assert (service_state_dir / "session_id").exists() is False
 
 
 def test_runtime_session_helpers_recover_and_persist_opencode_session_id(

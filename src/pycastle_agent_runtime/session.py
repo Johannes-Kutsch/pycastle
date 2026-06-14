@@ -28,7 +28,7 @@ class ServiceResumeIdentityStore(Protocol):
     def exact_transcript_service_name(self) -> str | None: ...
 
 
-_SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
+_DEFAULT_PROVIDER_SESSION_ID_FILENAME = "thread_id"
 
 
 class RunKind(Enum):
@@ -126,9 +126,14 @@ def _session_root_for_relpath(state_dir_relpath: str) -> str:
     return ""
 
 
-def provider_state_session_id_path(state_dir: Path, service_name: str) -> Path:
-    filename = _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
-    return state_dir / filename
+def provider_state_session_id_path(
+    state_dir: Path,
+    service_name: str,
+    *,
+    session_id_filename: str = _DEFAULT_PROVIDER_SESSION_ID_FILENAME,
+) -> Path:
+    del service_name
+    return state_dir / session_id_filename
 
 
 def load_provider_state_session_id(path: Path) -> str | None:
@@ -144,11 +149,17 @@ def load_provider_state_session_id(path: Path) -> str | None:
 def load_state_dir_provider_session_id(
     state_dir: Path | None,
     service_name: str,
+    *,
+    session_id_filename: str = _DEFAULT_PROVIDER_SESSION_ID_FILENAME,
 ) -> str | None:
     if state_dir is None:
         return None
     return load_provider_state_session_id(
-        provider_state_session_id_path(state_dir, service_name)
+        provider_state_session_id_path(
+            state_dir,
+            service_name,
+            session_id_filename=session_id_filename,
+        )
     )
 
 
@@ -158,6 +169,7 @@ def select_resumable_provider_session_id(
     *,
     provider_state_dir: Path | None,
     has_resumable_provider_state: bool,
+    recover_provider_session_id: Callable[[Path | None], str | None] | None = None,
 ) -> ProviderSessionSelection:
     if not has_resumable_provider_state:
         return ProviderSessionSelection(provider_session_id=None)
@@ -166,10 +178,13 @@ def select_resumable_provider_session_id(
     if provider_session_id is not None:
         return ProviderSessionSelection(provider_session_id=provider_session_id)
 
-    provider_session_id = load_state_dir_provider_session_id(
-        provider_state_dir,
-        service_name,
+    recover_provider_session_id = recover_provider_session_id or (
+        lambda state_dir: load_state_dir_provider_session_id(
+            state_dir,
+            service_name,
+        )
     )
+    provider_session_id = recover_provider_session_id(provider_state_dir)
     if provider_session_id is None:
         return ProviderSessionSelection(provider_session_id=None)
 

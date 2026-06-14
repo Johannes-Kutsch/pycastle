@@ -8,8 +8,6 @@ from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.session import (
     ServiceResumeIdentityStore,
     load_provider_state_session_id,
-    load_state_dir_provider_session_id,
-    provider_state_session_id_path,
 )
 
 from ..agents.output_protocol import AgentRole
@@ -24,6 +22,23 @@ if TYPE_CHECKING:
     from ..services import ServiceRegistry
 
 _SERVICE_SESSION_METADATA_FILENAME = "_service_session_metadata.json"
+_SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
+
+
+def provider_state_session_id_path(state_dir: Path, service_name: str) -> Path:
+    filename = _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
+    return state_dir / filename
+
+
+def load_state_dir_provider_session_id(
+    state_dir: Path | None,
+    service_name: str,
+) -> str | None:
+    if state_dir is None:
+        return None
+    return load_provider_state_session_id(
+        provider_state_session_id_path(state_dir, service_name)
+    )
 
 
 def service_session_id_path(role_session_path: Path, service_name: str) -> Path:

@@ -105,14 +105,8 @@ class _LegacyProviderSessionAdapter:
         provider_session_id: str,
         service_state_dir: Path | None = None,
     ) -> None:
-        if self._service_name != "opencode":
-            return
         role_session.save_service_session_id(self._service_name, provider_session_id)
-        if service_state_dir is None:
-            return
-        session_id_path = service_state_dir / "session_id"
-        session_id_path.parent.mkdir(parents=True, exist_ok=True)
-        session_id_path.write_text(provider_session_id, encoding="utf-8")
+        del service_state_dir
 
     def recover_provider_session_id(
         self,

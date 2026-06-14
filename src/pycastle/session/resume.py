@@ -10,9 +10,7 @@ from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import (
     RunKind,
-    load_provider_state_session_id,
     normalize_state_dir_relpath,
-    provider_state_session_id_path,
     provider_state_relpath as runtime_provider_state_relpath,
 )
 
@@ -22,10 +20,12 @@ from .provider_session_state import (
     clear_service_session_metadata,
     has_exact_provider_transcript_for_service,
     is_exact_resumable_service_session,
+    load_service_session_id as load_role_service_session_id,
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
     load_service_session_metadata,
     save_service_session_metadata,
+    service_session_id_path as role_service_session_id_path,
 )
 
 if TYPE_CHECKING:
@@ -131,15 +131,10 @@ class RoleSession:
         return self._worktree / self.provider_state_relpath(provider_name)
 
     def service_session_id_path(self, service_name: str) -> Path:
-        return provider_state_session_id_path(
-            self.provider_state_dir(service_name),
-            service_name,
-        )
+        return role_service_session_id_path(self.path, service_name)
 
     def service_session_id(self, service_name: str) -> str | None:
-        return load_provider_state_session_id(
-            self.service_session_id_path(service_name)
-        )
+        return load_role_service_session_id(self.path, service_name)
 
     def save_service_session_id(self, service_name: str, session_id: str) -> None:
         path = self.service_session_id_path(service_name)

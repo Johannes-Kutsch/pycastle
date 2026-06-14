@@ -21,7 +21,7 @@ from pycastle_agent_runtime.session import (
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
-    load_state_dir_provider_session_id,
+    load_provider_state_session_id,
     select_resumable_provider_session_id,
 )
 
@@ -35,6 +35,7 @@ from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 
 _OPENCODE_GO_PROVIDER_ID = "opencode-go"
 _OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1"
+_OPENCODE_SESSION_ID_FILENAME = "session_id"
 _OPENCODE_GO_MODELS = (
     "deepseek-v4-flash",
     "deepseek-v4-pro",
@@ -78,6 +79,12 @@ def _has_exact_service_session_metadata(
         and metadata is not None
         and metadata["provider_session_id"] == provider_session_id
     )
+
+
+def _load_opencode_state_dir_session_id(state_dir: Path | None) -> str | None:
+    if state_dir is None:
+        return None
+    return load_provider_state_session_id(state_dir / _OPENCODE_SESSION_ID_FILENAME)
 
 
 def _opencode_go_model_ref(model: str) -> str:
@@ -246,9 +253,8 @@ class OpenCodeService:
     def provider_session_state(
         self, request: ProviderSessionStateRequest
     ) -> ProviderSessionState:
-        state_dir_session_id = load_state_dir_provider_session_id(
-            request.provider_state_dir,
-            self.name,
+        state_dir_session_id = _load_opencode_state_dir_session_id(
+            request.provider_state_dir
         )
         if not request.has_resumable_provider_state or state_dir_session_id is None:
             return ProviderSessionState(
@@ -271,6 +277,7 @@ class OpenCodeService:
             self.name,
             provider_state_dir=request.provider_state_dir,
             has_resumable_provider_state=request.has_resumable_provider_state,
+            recover_provider_session_id=_load_opencode_state_dir_session_id,
         )
         provider_session_id = selection.provider_session_id
         if provider_session_id is None:

@@ -13,6 +13,7 @@ from pycastle_agent_runtime.session import (
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
+    load_provider_state_session_id,
 )
 from pycastle.session.run_dispatch import (
     PreparedRunSession as PreparedAgentSession,
@@ -42,6 +43,12 @@ from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService, CodexService
 from pycastle.services.agent_service import AgentService
 from pycastle.services.opencode_service import OpenCodeService
+
+
+def _load_opencode_state_dir_session_id(state_dir: Path | None) -> str | None:
+    if state_dir is None:
+        return None
+    return load_provider_state_session_id(state_dir / "session_id")
 
 
 @dataclass
@@ -114,6 +121,7 @@ class _CustomOpenCodeStateDirService:
             self.name,
             provider_state_dir=request.provider_state_dir,
             has_resumable_provider_state=request.has_resumable_provider_state,
+            recover_provider_session_id=_load_opencode_state_dir_session_id,
         )
         if selection.provider_session_id is None:
             return ProviderSessionState(RunKind.FRESH, None)
