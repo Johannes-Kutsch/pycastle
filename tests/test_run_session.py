@@ -30,6 +30,7 @@ from pycastle.session import (
     has_exact_transcript_match,
     provider_state_relpath,
 )
+from pycastle.session._provider_session_plan import record_observed_provider_session_id
 from pycastle.session.service_resume_identity import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
@@ -1104,6 +1105,25 @@ def test_run_session_plan_captures_codex_provider_session_id_for_same_plan_reuse
         "service": "codex",
         "provider_session_id": "thread-codex-456",
     }
+
+
+def test_record_observed_provider_session_id_persists_codex_thread_id_sidecar(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+
+    record_observed_provider_session_id(
+        worktree=tmp_path,
+        role=AgentRole.IMPLEMENTER,
+        namespace="",
+        service_name="codex",
+        service_state_dir=state_dir,
+        provider_session_id="thread-codex-456",
+    )
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert role_session.service_session_id("codex") == "thread-codex-456"
+    assert (state_dir / "thread_id").read_text(encoding="utf-8") == ("thread-codex-456")
 
 
 def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_reuse(

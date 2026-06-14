@@ -254,6 +254,9 @@ def _metadata_plan(
     role_session = _role_session(worktree, role, namespace)
     return ProviderRunStatePlan(
         role_session=role_session,
+        provider_session_adapter=provider_session_adapter_for_service_name(
+            service_name
+        ),
         service_name=service_name,
         run_kind=role_session.run_kind(),
         provider_state_dir=service_state_dir,
