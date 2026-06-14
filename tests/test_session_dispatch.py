@@ -1382,6 +1382,10 @@ def test_prepare_agent_session_opencode_resume_uses_selected_service_state_dir(
     assert session.run_kind is RunKind.RESUME
     assert session.provider_session_id == "sess-from-custom-state"
     assert (
+        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
+        == "sess-from-custom-state"
+    )
+    assert (
         session.provider_state_dir_container_path
         == "/home/agent/workspace/custom/opencode-state/"
     )
