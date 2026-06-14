@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 
 from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.session import (
+    ServiceResumeIdentityStore,
     load_provider_state_session_id,
     load_state_dir_provider_session_id,
     provider_state_session_id_path,
-    recover_state_dir_provider_session_id,
 )
 
 from ..agents.output_protocol import AgentRole
@@ -166,13 +166,11 @@ def has_exact_provider_transcript_for_service(
     if state_dir is None or not service.is_resumable(state_dir):
         return False
 
-    if service.name != "codex":
-        return True
-
-    exact_provider_session_id = _exact_provider_session_id_from_state_dir(
-        state_dir, service.name
+    return _is_exact_resumable_provider_session(
+        service.name,
+        provider_session_id,
+        state_dir,
     )
-    return exact_provider_session_id == provider_session_id
 
 
 def has_exact_provider_transcript_for_selected_service(
@@ -213,13 +211,54 @@ def _service_state_dir(
     return worktree / state_dir_relpath.rstrip("/")
 
 
-def _exact_provider_session_id_from_state_dir(
-    state_dir: Path,
+def recover_state_dir_provider_session_id(
+    state_dir: Path | None,
     service_name: str,
 ) -> str | None:
-    if service_name == "codex":
-        return recover_state_dir_provider_session_id(state_dir, service_name)
-    return None
+    adapter = _provider_session_adapter(service_name)
+    if adapter is None:
+        return None
+    return adapter.recover_provider_session_id(state_dir)
+
+
+def is_exact_resumable_service_session(
+    role_session: ServiceResumeIdentityStore,
+    service_name: str,
+    *,
+    provider_session_id: str | None,
+    provider_state_dir: Path | None,
+) -> bool:
+    metadata = role_session.service_session_metadata(service_name)
+    return (
+        role_session.exact_transcript_service_name() == service_name
+        and metadata is not None
+        and metadata["provider_session_id"] == provider_session_id
+        and _is_exact_resumable_provider_session(
+            service_name,
+            provider_session_id,
+            provider_state_dir,
+        )
+    )
+
+
+def _is_exact_resumable_provider_session(
+    service_name: str,
+    provider_session_id: str | None,
+    provider_state_dir: Path | None,
+) -> bool:
+    adapter = _provider_session_adapter(service_name)
+    if adapter is None:
+        return provider_session_id is not None and provider_state_dir is not None
+    return adapter.is_exact_resumable_provider_session(
+        provider_session_id=provider_session_id,
+        provider_state_dir=provider_state_dir,
+    )
+
+
+def _provider_session_adapter(service_name: str):
+    from ._provider_session_plan import provider_session_adapter_for_service_name
+
+    return provider_session_adapter_for_service_name(service_name)
 
 
 __all__ = [
@@ -234,6 +273,7 @@ __all__ = [
     "load_service_session_metadata_payload",
     "recover_state_dir_provider_session_id",
     "load_state_dir_provider_session_id",
+    "is_exact_resumable_service_session",
     "LocalAuthSeedAction",
     "parse_service_session_metadata",
     "provider_state_session_id_path",

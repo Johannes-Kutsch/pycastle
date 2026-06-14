@@ -26,14 +26,16 @@ from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
-    is_exact_resumable_service_session,
-    recover_state_dir_provider_session_id,
     select_resumable_provider_session_id,
 )
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentOutputProtocolError
 from ..session.agent import AuthSeedingRequirement, LocalAuthSeedAction
+from ..session.provider_session_state import (
+    is_exact_resumable_service_session,
+    recover_state_dir_provider_session_id,
+)
 from ..session.resume import provider_state_relpath
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for

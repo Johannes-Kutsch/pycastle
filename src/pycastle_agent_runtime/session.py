@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 if TYPE_CHECKING:
     from .roles import AgentRole
@@ -153,15 +152,6 @@ def load_state_dir_provider_session_id(
     )
 
 
-def recover_state_dir_provider_session_id(
-    state_dir: Path | None,
-    service_name: str,
-) -> str | None:
-    if service_name != "codex":
-        return None
-    return _recover_codex_rollout_thread_id(state_dir)
-
-
 def select_resumable_provider_session_id(
     role_session: ServiceResumeIdentityStore,
     service_name: str,
@@ -196,61 +186,19 @@ def is_exact_resumable_service_session(
     *,
     provider_session_id: str | None,
     provider_state_dir: Path | None,
+    exact_provider_session_matcher: Callable[[str | None, Path | None], bool]
+    | None = None,
 ) -> bool:
     metadata = role_session.service_session_metadata(service_name)
-    return (
-        role_session.exact_transcript_service_name() == service_name
-        and metadata is not None
-        and metadata["provider_session_id"] == provider_session_id
-        and _is_exact_resumable_provider_session(
-            service_name,
-            provider_session_id,
-            provider_state_dir,
-        )
-    )
-
-
-def _is_exact_resumable_provider_session(
-    service_name: str,
-    provider_session_id: str | None,
-    provider_state_dir: Path | None,
-) -> bool:
-    if provider_session_id is None or provider_state_dir is None:
+    if (
+        role_session.exact_transcript_service_name() != service_name
+        or metadata is None
+        or metadata["provider_session_id"] != provider_session_id
+    ):
         return False
-    if service_name != "codex":
-        return True
-    exact_provider_session_id = recover_state_dir_provider_session_id(
-        provider_state_dir,
-        service_name,
-    )
-    return exact_provider_session_id == provider_session_id
-
-
-def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
-    if state_dir is None:
-        return None
-    sessions_dir = state_dir / "sessions"
-    if not sessions_dir.is_dir():
-        return None
-
-    found: set[str] = set()
-    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
-        try:
-            lines = rollout.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeDecodeError):
-            continue
-        for line in lines:
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(obj, dict) or obj.get("type") != "thread.started":
-                continue
-            thread_id = obj.get("thread_id")
-            if isinstance(thread_id, str) and thread_id.strip():
-                found.add(thread_id.strip())
-
-    return next(iter(found)) if len(found) == 1 else None
+    if exact_provider_session_matcher is not None:
+        return exact_provider_session_matcher(provider_session_id, provider_state_dir)
+    return provider_session_id is not None and provider_state_dir is not None
 
 
 __all__ = [
@@ -266,6 +214,5 @@ __all__ = [
     "normalize_state_dir_relpath",
     "provider_state_session_id_path",
     "provider_state_relpath",
-    "recover_state_dir_provider_session_id",
     "select_resumable_provider_session_id",
 ]

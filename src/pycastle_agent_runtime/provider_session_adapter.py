@@ -51,6 +51,18 @@ class ProviderSessionAdapter(Protocol):
         service_state_dir: Path | None = None,
     ) -> None: ...
 
+    def recover_provider_session_id(
+        self,
+        provider_state_dir: Path | None,
+    ) -> str | None: ...
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool: ...
+
 
 class _LegacyProviderSessionAdapter:
     def __init__(
@@ -93,13 +105,29 @@ class _LegacyProviderSessionAdapter:
         provider_session_id: str,
         service_state_dir: Path | None = None,
     ) -> None:
-        if self._service_name == "opencode" and service_state_dir is not None:
-            session_id_path = service_state_dir / "session_id"
-            session_id_path.parent.mkdir(parents=True, exist_ok=True)
-            session_id_path.write_text(provider_session_id, encoding="utf-8")
-        if self._service_name not in {"codex", "opencode"}:
+        if self._service_name != "opencode":
             return
         role_session.save_service_session_id(self._service_name, provider_session_id)
+        if service_state_dir is None:
+            return
+        session_id_path = service_state_dir / "session_id"
+        session_id_path.parent.mkdir(parents=True, exist_ok=True)
+        session_id_path.write_text(provider_session_id, encoding="utf-8")
+
+    def recover_provider_session_id(
+        self,
+        provider_state_dir: Path | None,
+    ) -> str | None:
+        del provider_state_dir
+        return None
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return provider_session_id is not None and provider_state_dir is not None
 
     def _require_service(self) -> ProviderSessionService:
         if self._service is None:

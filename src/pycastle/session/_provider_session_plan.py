@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -31,26 +32,13 @@ if TYPE_CHECKING:
     from ..services.agent_service import AgentService
 
 
-class _ClaudeProviderSessionAdapter:
+class _BaseProviderSessionAdapter:
+    def __init__(self, service_name: str) -> None:
+        self._service_name = service_name
+
     @property
     def service_name(self) -> str:
-        return "claude"
-
-    def provider_session_preferences(
-        self,
-        request: ProviderSessionPreferencesRequest,
-    ) -> ProviderSessionPreferences:
-        from ..services.claude_service import _provider_session_preferences_for_request
-
-        return _provider_session_preferences_for_request(request)
-
-    def provider_session_state(
-        self,
-        request: ProviderSessionStateRequest,
-    ) -> ProviderSessionState:
-        from ..services.claude_service import _provider_session_state_for_request
-
-        return _provider_session_state_for_request(request)
+        return self._service_name
 
     def prepare_local_provider_run_state(
         self,
@@ -71,13 +59,168 @@ class _ClaudeProviderSessionAdapter:
     ) -> None:
         del role_session, provider_session_id, service_state_dir
 
+    def recover_provider_session_id(
+        self,
+        provider_state_dir: Path | None,
+    ) -> str | None:
+        del provider_state_dir
+        return None
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return provider_session_id is not None and provider_state_dir is not None
+
+
+class _ClaudeProviderSessionAdapter(_BaseProviderSessionAdapter):
+    def __init__(self) -> None:
+        super().__init__("claude")
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        from ..services.claude_service import _provider_session_preferences_for_request
+
+        return _provider_session_preferences_for_request(request)
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        from ..services.claude_service import _provider_session_state_for_request
+
+        return _provider_session_state_for_request(request)
+
+
+class _DelegatingProviderSessionAdapter(_BaseProviderSessionAdapter):
+    def __init__(self, service_name: str, service: AgentService | None = None) -> None:
+        super().__init__(service_name)
+        self._service = service
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        if self._service is None:
+            raise RuntimeError(
+                "provider session selection requires a concrete provider session service"
+            )
+        return self._service.provider_session_preferences(request)
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        if self._service is None:
+            raise RuntimeError(
+                "provider session selection requires a concrete provider session service"
+            )
+        return self._service.provider_session_state(request)
+
+
+class _CodexProviderSessionAdapter(_DelegatingProviderSessionAdapter):
+    def __init__(self, service: AgentService | None = None) -> None:
+        super().__init__("codex", service)
+
+    def record_provider_session_id(
+        self,
+        *,
+        role_session: RoleSession,
+        provider_session_id: str,
+        service_state_dir: Path | None = None,
+    ) -> None:
+        del service_state_dir
+        role_session.save_service_session_id(self.service_name, provider_session_id)
+
+    def recover_provider_session_id(
+        self,
+        provider_state_dir: Path | None,
+    ) -> str | None:
+        return _recover_codex_rollout_thread_id(provider_state_dir)
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return (
+            self.recover_provider_session_id(provider_state_dir) == provider_session_id
+        )
+
+
+class _OpenCodeProviderSessionAdapter(_DelegatingProviderSessionAdapter):
+    def __init__(self, service: AgentService | None = None) -> None:
+        super().__init__("opencode", service)
+
+    def record_provider_session_id(
+        self,
+        *,
+        role_session: RoleSession,
+        provider_session_id: str,
+        service_state_dir: Path | None = None,
+    ) -> None:
+        role_session.save_service_session_id(self.service_name, provider_session_id)
+        if service_state_dir is None:
+            return
+        session_id_path = service_state_dir / "session_id"
+        session_id_path.parent.mkdir(parents=True, exist_ok=True)
+        session_id_path.write_text(provider_session_id, encoding="utf-8")
+
 
 def _provider_session_adapter(service: "AgentService") -> ProviderSessionAdapter | None:
     from ..services.claude_service import ClaudeService
 
     if isinstance(service, ClaudeService):
         return cast(ProviderSessionAdapter, _ClaudeProviderSessionAdapter())
+    if service.name == "codex":
+        return cast(ProviderSessionAdapter, _CodexProviderSessionAdapter(service))
+    if service.name == "opencode":
+        return cast(ProviderSessionAdapter, _OpenCodeProviderSessionAdapter(service))
     return None
+
+
+def provider_session_adapter_for_service_name(
+    service_name: str,
+) -> ProviderSessionAdapter | None:
+    if service_name == "claude":
+        return cast(ProviderSessionAdapter, _ClaudeProviderSessionAdapter())
+    if service_name == "codex":
+        return cast(ProviderSessionAdapter, _CodexProviderSessionAdapter())
+    if service_name == "opencode":
+        return cast(ProviderSessionAdapter, _OpenCodeProviderSessionAdapter())
+    return None
+
+
+def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
+    if state_dir is None:
+        return None
+    sessions_dir = state_dir / "sessions"
+    if not sessions_dir.is_dir():
+        return None
+
+    found: set[str] = set()
+    for rollout in sessions_dir.rglob("rollout-*.jsonl"):
+        try:
+            lines = rollout.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict) or obj.get("type") != "thread.started":
+                continue
+            thread_id = obj.get("thread_id")
+            if isinstance(thread_id, str) and thread_id.strip():
+                found.add(thread_id.strip())
+
+    return next(iter(found)) if len(found) == 1 else None
 
 
 @dataclasses.dataclass(frozen=True)

@@ -10,7 +10,6 @@ from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import (
     RunKind,
-    is_exact_resumable_service_session,
     load_provider_state_session_id,
     normalize_state_dir_relpath,
     provider_state_session_id_path,
@@ -22,6 +21,7 @@ from .provider_run_state import ProviderFreshFallbackReason, ProviderRunState
 from .provider_session_state import (
     clear_service_session_metadata,
     has_exact_provider_transcript_for_service,
+    is_exact_resumable_service_session,
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
     load_service_session_metadata,

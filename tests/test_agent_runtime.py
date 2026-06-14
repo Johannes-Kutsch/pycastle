@@ -933,6 +933,21 @@ class _RecordingProviderSessionAdapter:
         role_session.save_service_session_id(self.service_name, provider_session_id)
         self.record_calls.append((provider_session_id, service_state_dir))
 
+    def recover_provider_session_id(
+        self,
+        provider_state_dir: Path | None,
+    ) -> str | None:
+        del provider_state_dir
+        return None
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return provider_session_id is not None and provider_state_dir is not None
+
 
 class _RuntimeServiceSessionState:
     def __init__(
@@ -2135,45 +2150,52 @@ def test_runtime_session_select_resumable_provider_session_id_persists_state_dir
     assert role_session.saved_service_session_ids == [("codex", "thread-from-sidecar")]
 
 
-def test_runtime_session_exact_codex_resume_requires_matching_rollout_identity(
+def test_runtime_session_exact_resume_uses_injected_provider_identity_matcher(
     tmp_path: Path,
 ) -> None:
     from pycastle_agent_runtime.session import (
         is_exact_resumable_service_session,
     )
 
-    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
-    rollout_dir = state_dir / "sessions" / "2026" / "06" / "09"
-    rollout_dir.mkdir(parents=True)
-    (rollout_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-exact"}\n',
-        encoding="utf-8",
-    )
+    state_dir = tmp_path / ".runtime-session" / "provider"
+    state_dir.mkdir(parents=True)
     role_session = _RuntimeSessionIdentityStoreStandIn(
         service_metadata={
-            "codex": {
-                "service": "codex",
+            "provider": {
+                "service": "provider",
                 "provider_session_id": "thread-exact",
             }
         },
-        exact_transcript_service_name="codex",
+        exact_transcript_service_name="provider",
     )
 
     assert (
         is_exact_resumable_service_session(
             role_session,
-            "codex",
+            "provider",
             provider_session_id="thread-exact",
             provider_state_dir=state_dir,
+            exact_provider_session_matcher=(
+                lambda provider_session_id, provider_state_dir: (
+                    provider_session_id == "thread-exact"
+                    and provider_state_dir == state_dir
+                )
+            ),
         )
         is True
     )
     assert (
         is_exact_resumable_service_session(
             role_session,
-            "codex",
+            "provider",
             provider_session_id="thread-other",
             provider_state_dir=state_dir,
+            exact_provider_session_matcher=(
+                lambda provider_session_id, provider_state_dir: (
+                    provider_session_id == "thread-exact"
+                    and provider_state_dir == state_dir
+                )
+            ),
         )
         is False
     )
