@@ -15,6 +15,7 @@ from .._provider_session_plan import (
     ProviderRunStatePlanRequest,
     ProviderSessionDecision,
     plan_provider_run_state,
+    provider_session_adapter_for_service_name,
     record_observed_provider_session_id,
     record_successful_provider_session_metadata,
 )
@@ -60,6 +61,9 @@ class RunSessionPlan:
         if provider_run_state_plan is None:
             provider_run_state_plan = ProviderRunStatePlan(
                 role_session=RoleSession(self.worktree, self.role, self.namespace),
+                provider_session_adapter=provider_session_adapter_for_service_name(
+                    self.service.name
+                ),
                 service_name=self.service.name,
                 run_kind=self.run_kind,
                 provider_state_dir=self.host_provider_state_dir,

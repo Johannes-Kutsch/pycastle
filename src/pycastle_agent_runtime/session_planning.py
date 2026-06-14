@@ -11,9 +11,6 @@ from .errors import AgentCredentialFailureError
 from .provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
-    ProviderSessionService,
-    legacy_provider_session_adapter,
-    legacy_provider_session_metadata_adapter,
 )
 from .provider_errors import ProviderErrorObservation
 from .roles import AgentRole
@@ -141,7 +138,7 @@ class ProviderRunStatePlanRequest:
     namespace: str
     service: AgentService
     role_session: RoleSessionLike
-    provider_session_adapter: ProviderSessionAdapter | None = None
+    provider_session_adapter: ProviderSessionAdapter
 
 
 @dataclasses.dataclass
@@ -154,10 +151,9 @@ class ProviderRunStatePlan:
     provider_session_id: str | None
     auth_seeding_requirement: AuthSeedingRequirement
     recovered_session_id_persistence: RecoveredSessionIdPersistence
-    provider_session_adapter: ProviderSessionAdapter | None = dataclasses.field(
+    provider_session_adapter: ProviderSessionAdapter = dataclasses.field(
         repr=False,
         compare=False,
-        default=None,
     )
     service_state_dir: Path | None = None
     exact_transcript_match: bool = False
@@ -192,7 +188,7 @@ class ProviderRunStatePlan:
         )
 
     def prepare_provider_state_dir(self) -> None:
-        self._provider_session_adapter().prepare_local_provider_run_state(
+        self.provider_session_adapter.prepare_local_provider_run_state(
             self.provider_state_dir,
             self.auth_seed_action,
         )
@@ -210,7 +206,7 @@ class ProviderRunStatePlan:
 
     def remember_provider_session_id(self, provider_session_id: str) -> None:
         self.provider_session_id = provider_session_id
-        self._provider_session_adapter().record_provider_session_id(
+        self.provider_session_adapter.record_provider_session_id(
             role_session=self.role_session,
             provider_session_id=provider_session_id,
             service_state_dir=self.service_state_dir,
@@ -221,11 +217,6 @@ class ProviderRunStatePlan:
             self.service_name,
             provider_session_id,
         )
-
-    def _provider_session_adapter(self) -> ProviderSessionAdapter:
-        if self.provider_session_adapter is not None:
-            return self.provider_session_adapter
-        return legacy_provider_session_metadata_adapter(self.service_name)
 
 
 ProviderSessionPlanRequest = ProviderRunStatePlanRequest
@@ -257,10 +248,6 @@ def plan_provider_run_state(
     request: ProviderRunStatePlanRequest,
 ) -> ProviderRunStatePlan:
     provider_session_adapter = request.provider_session_adapter
-    if provider_session_adapter is None:
-        provider_session_adapter = legacy_provider_session_adapter(
-            cast(ProviderSessionService, request.service)
-        )
     provider_session_planning_facts = (
         provider_session_adapter.provider_session_planning_facts(
             ProviderSessionPlanningRequest(

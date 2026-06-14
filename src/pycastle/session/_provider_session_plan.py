@@ -81,7 +81,8 @@ class _BaseProviderSessionAdapter:
         provider_session_id: str,
         service_state_dir: Path | None = None,
     ) -> None:
-        del role_session, provider_session_id, service_state_dir
+        del service_state_dir
+        role_session.save_service_session_id(self.service_name, provider_session_id)
 
     def recover_provider_session_id(
         self,
@@ -228,7 +229,7 @@ class _OpenCodeProviderSessionAdapter(_DelegatingProviderSessionAdapter):
         session_id_path.write_text(provider_session_id, encoding="utf-8")
 
 
-def _provider_session_adapter(service: "AgentService") -> ProviderSessionAdapter | None:
+def _provider_session_adapter(service: "AgentService") -> ProviderSessionAdapter:
     from ..services.claude_service import ClaudeService
 
     if isinstance(service, ClaudeService):
@@ -237,19 +238,22 @@ def _provider_session_adapter(service: "AgentService") -> ProviderSessionAdapter
         return cast(ProviderSessionAdapter, _CodexProviderSessionAdapter(service))
     if service.name == "opencode":
         return cast(ProviderSessionAdapter, _OpenCodeProviderSessionAdapter(service))
-    return None
+    return cast(
+        ProviderSessionAdapter,
+        _DelegatingProviderSessionAdapter(service.name, service),
+    )
 
 
 def provider_session_adapter_for_service_name(
     service_name: str,
-) -> ProviderSessionAdapter | None:
+) -> ProviderSessionAdapter:
     if service_name == "claude":
         return cast(ProviderSessionAdapter, _ClaudeProviderSessionAdapter())
     if service_name == "codex":
         return cast(ProviderSessionAdapter, _CodexProviderSessionAdapter())
     if service_name == "opencode":
         return cast(ProviderSessionAdapter, _OpenCodeProviderSessionAdapter())
-    return None
+    return cast(ProviderSessionAdapter, _BaseProviderSessionAdapter(service_name))
 
 
 def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:

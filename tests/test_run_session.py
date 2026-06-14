@@ -1126,6 +1126,24 @@ def test_record_observed_provider_session_id_persists_codex_thread_id_sidecar(
     assert (state_dir / "thread_id").read_text(encoding="utf-8") == ("thread-codex-456")
 
 
+def test_record_observed_provider_session_id_persists_generic_service_session_id(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "fake"
+
+    record_observed_provider_session_id(
+        worktree=tmp_path,
+        role=AgentRole.IMPLEMENTER,
+        namespace="",
+        service_name="fake",
+        service_state_dir=state_dir,
+        provider_session_id="thread-fake-456",
+    )
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert role_session.service_session_id("fake") == "thread-fake-456"
+
+
 def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_reuse(
     tmp_path: Path,
 ):
@@ -1145,6 +1163,32 @@ def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_re
     assert role_session.service_session_metadata("opencode") == {
         "service": "opencode",
         "provider_session_id": "sess-opencode-456",
+    }
+
+
+def test_run_session_plan_captures_generic_provider_session_id_for_same_plan_reuse(
+    tmp_path: Path,
+):
+    service = cast(
+        AgentService,
+        _FakeAgentService(".pycastle-session/implementer/fake/"),
+    )
+    plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=tmp_path,
+        namespace="",
+        service=service,
+    )
+
+    plan.capture_provider_session_id("thread-fake-456")
+    plan.record_successful_run()
+
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    assert plan.provider_session_id == "thread-fake-456"
+    assert role_session.service_session_id("fake") == "thread-fake-456"
+    assert role_session.service_session_metadata("fake") == {
+        "service": "fake",
+        "provider_session_id": "thread-fake-456",
     }
 
 

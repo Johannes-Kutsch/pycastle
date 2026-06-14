@@ -26,16 +26,14 @@ from pycastle_agent_runtime.session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
+    is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentOutputProtocolError
 from ..session.agent import AuthSeedingRequirement, LocalAuthSeedAction
-from ..session.provider_session_state import (
-    is_exact_resumable_service_session,
-    recover_state_dir_provider_session_id,
-)
+from ..session._provider_session_plan import provider_session_adapter_for_service_name
 from ..session.resume import provider_state_relpath
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
@@ -55,6 +53,18 @@ _GENERIC_AUTH_RE = re.compile(
 )
 _HTTP_STATUS_RE = re.compile(r"\bstatus\s+(?P<status>\d{3})\b", re.IGNORECASE)
 _AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION = "codex_auth_lineage_exhausted"
+
+
+def _is_exact_resumable_codex_session(
+    provider_session_id: str | None,
+    provider_state_dir: Path | None,
+) -> bool:
+    return provider_session_adapter_for_service_name(
+        "codex"
+    ).is_exact_resumable_provider_session(
+        provider_session_id=provider_session_id,
+        provider_state_dir=provider_state_dir,
+    )
 
 
 def _is_exact_refresh_token_reused_message(message: str) -> bool:
@@ -263,6 +273,7 @@ class CodexService:
                     self.name,
                     provider_session_id=saved_provider_session_id,
                     provider_state_dir=request.provider_state_dir,
+                    exact_provider_session_matcher=_is_exact_resumable_codex_session,
                 )
             return ProviderSessionState(
                 RunKind.RESUME,
@@ -293,10 +304,9 @@ class CodexService:
         provider_session_id = selection.provider_session_id
         persist_provider_session_id = selection.persist_provider_session_id
         if provider_session_id is None:
-            provider_session_id = recover_state_dir_provider_session_id(
-                request.provider_state_dir,
-                self.name,
-            )
+            provider_session_id = provider_session_adapter_for_service_name(
+                self.name
+            ).recover_provider_session_id(request.provider_state_dir)
             if provider_session_id is not None:
                 request.role_session.save_service_session_id(
                     self.name,
@@ -321,6 +331,7 @@ class CodexService:
                 self.name,
                 provider_session_id=provider_session_id,
                 provider_state_dir=request.provider_state_dir,
+                exact_provider_session_matcher=_is_exact_resumable_codex_session,
             )
 
         return ProviderSessionState(

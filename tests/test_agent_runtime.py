@@ -372,6 +372,94 @@ def _standalone_runtime_surface_behavior_result(
                     ):
                         del service_name, provider_session_id
 
+                class _Adapter:
+                    def __init__(self, service):
+                        self._service = service
+
+                    @property
+                    def service_name(self):
+                        return self._service.name
+
+                    def provider_session_planning_facts(self, request):
+                        state_dir_relpath = self._service.state_dir_relpath(
+                            request.role,
+                            request.namespace,
+                        )
+                        provider_state_dir = (
+                            None
+                            if state_dir_relpath is None
+                            else request.worktree / state_dir_relpath.rstrip("/")
+                        )
+                        has_resumable_provider_state = (
+                            provider_state_dir is not None
+                            and self._service.is_resumable(provider_state_dir)
+                        )
+                        class _PlanningFacts:
+                            def __init__(
+                                self,
+                                *,
+                                state_dir_relpath,
+                                provider_state_dir,
+                                has_resumable_provider_state,
+                            ):
+                                self.state_dir_relpath = state_dir_relpath
+                                self.provider_state_dir = provider_state_dir
+                                self.has_resumable_provider_state = (
+                                    has_resumable_provider_state
+                                )
+
+                        return _PlanningFacts(
+                            state_dir_relpath=state_dir_relpath,
+                            provider_state_dir=provider_state_dir,
+                            has_resumable_provider_state=(
+                                has_resumable_provider_state
+                            ),
+                        )
+
+                    def provider_session_preferences(self, request):
+                        return self._service.provider_session_preferences(request)
+
+                    def provider_session_state(self, request):
+                        return self._service.provider_session_state(request)
+
+                    def prepare_local_provider_run_state(
+                        self,
+                        provider_state_dir,
+                        auth_seed_action=None,
+                    ):
+                        if provider_state_dir is not None:
+                            provider_state_dir.mkdir(parents=True, exist_ok=True)
+                        if auth_seed_action is not None:
+                            auth_seed_action.apply()
+
+                    def record_provider_session_id(
+                        self,
+                        *,
+                        role_session,
+                        provider_session_id,
+                        service_state_dir=None,
+                    ):
+                        del service_state_dir
+                        role_session.save_service_session_id(
+                            self.service_name,
+                            provider_session_id,
+                        )
+
+                    def recover_provider_session_id(self, provider_state_dir):
+                        del provider_state_dir
+                        return None
+
+                    def is_exact_resumable_provider_session(
+                        self,
+                        *,
+                        provider_session_id,
+                        provider_state_dir,
+                    ):
+                        return (
+                            provider_session_id is not None
+                            and provider_state_dir is not None
+                        )
+
                 service = _Service()
                 registry = runtime.ServiceRegistry({"codex": service})
                 override = runtime.StageOverride(
@@ -399,6 +487,7 @@ def _standalone_runtime_surface_behavior_result(
                     has_resumable_provider_state=False,
                 )
                 provider_state = service.provider_session_state(provider_request)
+                adapter = _Adapter(service)
                 plan = runtime.plan_provider_run_state(
                     runtime.ProviderRunStatePlanRequest(
                         worktree=Path("."),
@@ -406,6 +495,7 @@ def _standalone_runtime_surface_behavior_result(
                         namespace="main",
                         service=service,
                         role_session=_RoleSession(),
+                        provider_session_adapter=adapter,
                     )
                 )
                 decision = runtime.decide_usage_limit_continuation(
@@ -893,8 +983,14 @@ class _ExecutionOnlyRuntimeService:
 
 
 class _RecordingProviderSessionAdapter:
-    def __init__(self, provider_state: ProviderSessionState) -> None:
+    def __init__(
+        self,
+        provider_state: ProviderSessionState,
+        *,
+        service_name: str = "generic",
+    ) -> None:
         self._provider_state = provider_state
+        self._service_name = service_name
         self.planning_requests: list[ProviderSessionPlanningRequest] = []
         self.preferences_requests: list[ProviderSessionPreferencesRequest] = []
         self.state_requests: list[ProviderSessionStateRequest] = []
@@ -904,7 +1000,7 @@ class _RecordingProviderSessionAdapter:
 
     @property
     def service_name(self) -> str:
-        return "generic"
+        return self._service_name
 
     def provider_session_planning_facts(
         self,
@@ -942,7 +1038,7 @@ class _RecordingProviderSessionAdapter:
     def prepare_local_provider_run_state(
         self,
         provider_state_dir: Path | None,
-        auth_seed_action: object | None = None,
+        auth_seed_action: Any = None,
     ) -> None:
         self.prepare_calls.append((provider_state_dir, auth_seed_action))
 
@@ -955,6 +1051,85 @@ class _RecordingProviderSessionAdapter:
     ) -> None:
         role_session.save_service_session_id(self.service_name, provider_session_id)
         self.record_calls.append((provider_session_id, service_state_dir))
+
+    def recover_provider_session_id(
+        self,
+        provider_state_dir: Path | None,
+    ) -> str | None:
+        del provider_state_dir
+        return None
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return provider_session_id is not None and provider_state_dir is not None
+
+
+class _ServiceBackedRuntimeProviderSessionAdapter:
+    def __init__(self, service: Any) -> None:
+        self._service = service
+
+    @property
+    def service_name(self) -> str:
+        return self._service.name
+
+    def provider_session_planning_facts(
+        self,
+        request: ProviderSessionPlanningRequest,
+    ) -> ProviderSessionPlanningFacts:
+        state_dir_relpath = self._service.state_dir_relpath(
+            request.role,
+            request.namespace,
+        )
+        provider_state_dir = (
+            None
+            if state_dir_relpath is None
+            else request.worktree / state_dir_relpath.rstrip("/")
+        )
+        has_resumable_provider_state = (
+            provider_state_dir is not None
+            and self._service.is_resumable(provider_state_dir)
+        )
+        return ProviderSessionPlanningFacts(
+            state_dir_relpath=state_dir_relpath,
+            provider_state_dir=provider_state_dir,
+            has_resumable_provider_state=has_resumable_provider_state,
+        )
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        return self._service.provider_session_preferences(request)
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState:
+        return self._service.provider_session_state(request)
+
+    def prepare_local_provider_run_state(
+        self,
+        provider_state_dir: Path | None,
+        auth_seed_action: Any = None,
+    ) -> None:
+        if provider_state_dir is not None:
+            provider_state_dir.mkdir(parents=True, exist_ok=True)
+        if auth_seed_action is not None:
+            auth_seed_action.apply()
+
+    def record_provider_session_id(
+        self,
+        *,
+        role_session: Any,
+        provider_session_id: str,
+        service_state_dir: Path | None = None,
+    ) -> None:
+        del service_state_dir
+        role_session.save_service_session_id(self.service_name, provider_session_id)
 
     def recover_provider_session_id(
         self,
@@ -1831,6 +2006,9 @@ def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
             namespace="main",
             service=service,
             role_session=role_session,
+            provider_session_adapter=_ServiceBackedRuntimeProviderSessionAdapter(
+                service
+            ),
         )
     )
 
@@ -1933,6 +2111,10 @@ def test_runtime_provider_state_plan_records_observed_provider_session_id_for_op
     )
     plan = ProviderRunStatePlan(
         role_session=role_session,
+        provider_session_adapter=_RecordingProviderSessionAdapter(
+            ProviderSessionState(RunKind.FRESH, None),
+            service_name="opencode",
+        ),
         service_name="opencode",
         run_kind=RunKind.FRESH,
         provider_state_dir=service_state_dir,
@@ -2055,6 +2237,10 @@ def test_runtime_provider_state_plan_records_successful_run_metadata_through_rol
     )
     plan = ProviderRunStatePlan(
         role_session=role_session,
+        provider_session_adapter=_RecordingProviderSessionAdapter(
+            ProviderSessionState(RunKind.FRESH, "thread-runtime"),
+            service_name="codex",
+        ),
         service_name="codex",
         run_kind=RunKind.FRESH,
         provider_state_dir=None,
@@ -2348,6 +2534,9 @@ def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_
             namespace="",
             service=service,
             role_session=role_session,
+            provider_session_adapter=_ServiceBackedRuntimeProviderSessionAdapter(
+                service
+            ),
         )
     )
 
@@ -2412,6 +2601,9 @@ def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy
             namespace="",
             service=service,
             role_session=role_session,
+            provider_session_adapter=_ServiceBackedRuntimeProviderSessionAdapter(
+                service
+            ),
         )
     )
 
@@ -2466,6 +2658,9 @@ def test_runtime_provider_state_plan_without_provider_auth_seed_policy_raises_fi
             namespace="",
             service=service,
             role_session=role_session,
+            provider_session_adapter=_ServiceBackedRuntimeProviderSessionAdapter(
+                service
+            ),
         )
     )
 
@@ -2511,6 +2706,9 @@ def test_runtime_provider_state_plan_keeps_selected_provider_state_dir_for_openc
             namespace="",
             service=service,
             role_session=role_session,
+            provider_session_adapter=_ServiceBackedRuntimeProviderSessionAdapter(
+                service
+            ),
         )
     )
 
@@ -2558,6 +2756,9 @@ def test_runtime_provider_state_plan_uses_service_state_dir_when_provider_reques
             namespace="",
             service=service,
             role_session=role_session,
+            provider_session_adapter=_ServiceBackedRuntimeProviderSessionAdapter(
+                service
+            ),
         )
     )
 
