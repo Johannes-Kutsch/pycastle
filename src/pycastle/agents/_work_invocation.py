@@ -128,6 +128,12 @@ def format_transient_status_message(err: RuntimeTransientAgentError) -> str:
 async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
     try:
         return await runtime_invoke_work(request)
+    except AgentTimeoutError:
+        raise
+    except UsageLimitError:
+        raise
+    except TransientAgentError:
+        raise
     except RuntimeAgentTimeoutError as err:
         raise AgentTimeoutError(
             str(err),

@@ -4223,6 +4223,66 @@ def test_work_invocation_timeout_exhaustion_preserves_agent_timeout_context(
     assert err.worktree_path == tmp_path
 
 
+def test_work_invocation_translates_runtime_usage_limit_to_pycastle_compatibility_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pycastle.agents import _work_invocation as work_invocation_module
+    from pycastle_agent_runtime.errors import UsageLimitError as RuntimeUsageLimitError
+
+    reset_time = datetime(2026, 6, 8, 12, 0, 0)
+
+    async def fake_runtime_invoke_work(request):
+        del request
+        raise RuntimeUsageLimitError(
+            reset_time=reset_time,
+            raw_message="limit",
+            provider="codex",
+            is_permanent=True,
+            account_label="lineage-a",
+            stage_key="plan",
+        )
+
+    monkeypatch.setattr(
+        work_invocation_module,
+        "runtime_invoke_work",
+        fake_runtime_invoke_work,
+    )
+
+    with pytest.raises(UsageLimitError) as exc_info:
+        asyncio.run(invoke_work(cast(WorkInvocationRequest[Any], object())))
+
+    assert type(exc_info.value) is UsageLimitError
+    assert exc_info.value.reset_time == reset_time
+    assert exc_info.value.raw_message == "limit"
+    assert exc_info.value.provider == "codex"
+    assert exc_info.value.is_permanent is True
+    assert exc_info.value.account_label == "lineage-a"
+    assert exc_info.value.stage_key == "plan"
+
+
+def test_work_invocation_preserves_existing_pycastle_usage_limit_error_instance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pycastle.agents import _work_invocation as work_invocation_module
+
+    error = UsageLimitError(stage_key="plan")
+
+    async def fake_runtime_invoke_work(request):
+        del request
+        raise error
+
+    monkeypatch.setattr(
+        work_invocation_module,
+        "runtime_invoke_work",
+        fake_runtime_invoke_work,
+    )
+
+    with pytest.raises(UsageLimitError) as exc_info:
+        asyncio.run(invoke_work(cast(WorkInvocationRequest[Any], object())))
+
+    assert exc_info.value is error
+
+
 # ── AgentRunner: prompt dispatch delegation ───────────────────────────────────
 
 
@@ -4714,6 +4774,36 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
 
     # Account must still be available — mark_exhausted was NOT called
     assert svc.is_available() is True
+
+
+def test_translate_run_outcome_translates_runtime_timeout_to_pycastle_compatibility_error(
+    tmp_path: Path,
+) -> None:
+    from pycastle.agents.runner import translate_run_outcome
+    from pycastle_agent_runtime.errors import (
+        AgentTimeoutError as RuntimeAgentTimeoutError,
+    )
+
+    async def fail() -> PlannerOutput:
+        raise RuntimeAgentTimeoutError("timeout")
+
+    with pytest.raises(AgentTimeoutError) as exc_info:
+        asyncio.run(
+            translate_run_outcome(
+                fail(),
+                _run_request(
+                    name="Planner",
+                    template=_PLAN_TEMPLATE,
+                    mount_path=tmp_path,
+                    role=AgentRole.PLANNER,
+                    service="codex",
+                ),
+            )
+        )
+
+    assert type(exc_info.value) is AgentTimeoutError
+    assert exc_info.value.role_value == AgentRole.PLANNER.value
+    assert exc_info.value.worktree_path == tmp_path
 
 
 def _make_setup_docker_client() -> MagicMock:

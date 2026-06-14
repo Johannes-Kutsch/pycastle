@@ -119,6 +119,10 @@ async def translate_run_outcome(
             err.role_value = request.role.value
             err.worktree_path = request.mount_path
         raise
+    except UsageLimitError:
+        raise
+    except TransientAgentError:
+        raise
     except RuntimeAgentTimeoutError as err:
         raise AgentTimeoutError(
             str(err),

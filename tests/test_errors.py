@@ -99,6 +99,12 @@ def test_runtime_derived_pycastle_compatibility_errors_subclass_pycastle_error()
     assert issubclass(AgentFailedError, PycastleError)
 
 
+def test_pycastle_error_is_runtime_compatibility_base_error():
+    from pycastle_agent_runtime.errors import AgentRuntimeError
+
+    assert issubclass(PycastleError, AgentRuntimeError)
+
+
 # ── Raise sites ───────────────────────────────────────────────────────────────
 
 
