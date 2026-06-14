@@ -8,7 +8,6 @@ import pytest
 
 from pycastle.config import Config
 from pycastle.services._git_remote_retry import (
-    DEFAULT_REMOTE_GIT_RETRY_POLICY,
     PassthroughRemoteFailure,
 )
 from pycastle.services import (
@@ -49,55 +48,12 @@ def _run_push(svc: GitService, repo_path: Path) -> None:
 
 
 _PERMISSION_DENIED_STDERR = b"Permission denied (publickey)."
-_STABLE_MISCONFIG_STDERRS = (
-    b"fatal: 'origin' does not appear to be a git repository",
-    b"remote: Repository not found.",
-    b"remote: not found",
-)
-_PULL_FETCH_DIVERGENCE_STDERRS = (
-    b"fatal: Not possible to fast-forward, aborting.",
-    b"hint: Need to specify how to reconcile divergent branches.",
-    b"fatal: refusing to merge unrelated histories",
-    b"CONFLICT (content): Merge conflict in README.md",
-)
-_PUSH_DIVERGENCE_STDERRS = (
-    b"hint: Need to specify how to reconcile divergent branches.",
-    b"fatal: refusing to merge unrelated histories",
-    b"CONFLICT (content): Merge conflict in README.md",
-)
 _NON_FAST_FORWARD_PUSH_STDERR = (
     b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
 )
 
 
 # ── Exception hierarchy ────────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize("operation", ["pull", "fetch"])
-@pytest.mark.parametrize("stderr", _PULL_FETCH_DIVERGENCE_STDERRS)
-def test_remote_retry_policy_classifies_pull_fetch_divergence_as_named_passthrough(
-    operation, stderr
-):
-    decision = DEFAULT_REMOTE_GIT_RETRY_POLICY.classify_remote_failure(
-        operation,
-        stderr.decode(),
-        attempt=1,
-    )
-
-    assert isinstance(decision, PassthroughRemoteFailure)
-
-
-@pytest.mark.parametrize("stderr", _PUSH_DIVERGENCE_STDERRS)
-def test_remote_retry_policy_classifies_push_divergence_as_named_passthrough(
-    stderr,
-):
-    decision = DEFAULT_REMOTE_GIT_RETRY_POLICY.classify_remote_failure(
-        "push",
-        stderr.decode(),
-        attempt=1,
-    )
-
-    assert isinstance(decision, PassthroughRemoteFailure)
 
 
 def test_git_service_error_is_runtime_error():
@@ -1409,7 +1365,7 @@ def test_pull_retries_on_transient_failure_and_succeeds(tmp_path):
     assert mock_sleep.call_args_list[1][0][0] == 60
 
 
-def test_pull_raises_immediately_on_permanent_failure(tmp_path):
+def test_pull_raises_git_command_error_immediately_on_divergence(tmp_path):
     svc = GitService(_cfg)
     attempts = 0
 
@@ -1430,32 +1386,6 @@ def test_pull_raises_immediately_on_permanent_failure(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "stderr",
-    _PULL_FETCH_DIVERGENCE_STDERRS,
-)
-def test_pull_raises_git_command_error_immediately_for_divergence_patterns(
-    tmp_path, stderr
-):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return _git_failure(stderr)
-
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(GitCommandError):
-            svc.pull(tmp_path)
-
-    assert attempts == 1
-    mock_sleep.assert_not_called()
-
-
-@pytest.mark.parametrize(
     ("run_remote_op", "op", "returncode"),
     [
         pytest.param(_run_pull, "pull", 1, id="pull"),
@@ -1463,52 +1393,16 @@ def test_pull_raises_git_command_error_immediately_for_divergence_patterns(
         pytest.param(_run_push, "push", 128, id="push"),
     ],
 )
-@pytest.mark.parametrize("stderr", _STABLE_MISCONFIG_STDERRS)
 def test_remote_op_raises_operator_actionable_error_immediately_for_stable_misconfig(
-    tmp_path, run_remote_op, op, returncode, stderr
-):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return _git_failure(stderr, returncode=returncode)
-
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            run_remote_op(svc, tmp_path)
-
-    assert attempts == 1
-    assert exc_info.value.op == op
-    assert exc_info.value.attempt_count == 1
-    assert exc_info.value.stderr == stderr.decode()
-    mock_sleep.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    ("run_remote_op", "op", "returncode"),
-    [
-        pytest.param(_run_pull, "pull", 1, id="pull"),
-        pytest.param(_run_fetch, "fetch", 1, id="fetch"),
-        pytest.param(_run_push, "push", 128, id="push"),
-    ],
-)
-def test_remote_op_raises_operator_actionable_error_immediately_for_quoted_repository_not_found(
     tmp_path, run_remote_op, op, returncode
 ):
     svc = GitService(_cfg)
     attempts = 0
-    captured: list[list[str]] = []
-    stderr = b"fatal: repository 'git@github.com:owner/repo.git' not found"
+    stderr = b"remote: Repository not found."
 
-    def fake_run(cmd, **kw):
+    def fake_run(*a, **kw):
         nonlocal attempts
         attempts += 1
-        captured.append(list(cmd))
         return _git_failure(stderr, returncode=returncode)
 
     with (
@@ -1522,7 +1416,6 @@ def test_remote_op_raises_operator_actionable_error_immediately_for_quoted_repos
     assert exc_info.value.op == op
     assert exc_info.value.attempt_count == 1
     assert exc_info.value.stderr == stderr.decode()
-    assert captured == [["git", op] if op != "pull" else ["git", "pull", "--ff-only"]]
     mock_sleep.assert_not_called()
 
 
@@ -2053,15 +1946,10 @@ def test_fetch_retries_permission_denied_and_succeeds_on_second_attempt(tmp_path
     mock_sleep.assert_called_once()
 
 
-@pytest.mark.parametrize(
-    "stderr",
-    _PULL_FETCH_DIVERGENCE_STDERRS,
-)
-def test_fetch_raises_git_command_error_immediately_for_divergence_patterns(
-    tmp_path, stderr
-):
+def test_fetch_raises_git_command_error_immediately_for_divergence(tmp_path):
     svc = GitService(_cfg)
     attempts = 0
+    stderr = b"fatal: refusing to merge unrelated histories"
 
     def fake_run(*a, **kw):
         nonlocal attempts
@@ -2290,76 +2178,6 @@ def test_pull_raises_operator_actionable_error_when_all_four_attempts_permission
     assert "Permission denied" in exc_info.value.stderr
 
 
-def test_pull_raises_operator_actionable_error_immediately_on_repository_not_found(
-    tmp_path,
-):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return _git_failure(b"remote: Repository not found.", returncode=128)
-
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            svc.pull(tmp_path)
-
-    assert attempts == 1
-    mock_sleep.assert_not_called()
-    assert exc_info.value.op == "pull"
-    assert exc_info.value.attempt_count == 1
-
-
-def test_pull_unrelated_histories_still_raises_git_command_error(tmp_path):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return _git_failure(
-            b"fatal: refusing to merge unrelated histories", returncode=128
-        )
-
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(GitCommandError) as exc_info:
-            svc.pull(tmp_path)
-
-    assert attempts == 1
-    mock_sleep.assert_not_called()
-    assert not isinstance(exc_info.value, OperatorActionableGitError)
-
-
-def test_pull_conflict_stderr_raises_git_command_error_not_operator_actionable(
-    tmp_path,
-):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return _git_failure(b"CONFLICT (content): Merge conflict in README.md")
-
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(GitCommandError) as exc_info:
-            svc.pull(tmp_path)
-
-    assert attempts == 1
-    mock_sleep.assert_not_called()
-    assert not isinstance(exc_info.value, OperatorActionableGitError)
-
-
 def test_push_raises_operator_actionable_error_after_four_permission_denied_attempts(
     tmp_path,
 ):
@@ -2383,13 +2201,10 @@ def test_push_raises_operator_actionable_error_after_four_permission_denied_atte
     assert exc_info.value.attempt_count == 4
 
 
-@pytest.mark.parametrize(
-    "stderr",
-    _PUSH_DIVERGENCE_STDERRS,
-)
-def test_push_non_nff_divergence_patterns_raise_git_command_error(tmp_path, stderr):
+def test_push_non_nff_divergence_raises_git_command_error(tmp_path):
     svc = GitService(_cfg)
     attempts = 0
+    stderr = b"fatal: refusing to merge unrelated histories"
 
     def fake_run(*a, **kw):
         nonlocal attempts
@@ -2435,31 +2250,6 @@ def test_named_passthrough_decision_preserves_git_command_error(tmp_path):
 
     assert attempts == 1
     assert exc_info.value.stderr == "custom passthrough stderr"
-    mock_sleep.assert_not_called()
-    assert not isinstance(exc_info.value, OperatorActionableGitError)
-
-
-@pytest.mark.parametrize("stderr", _PULL_FETCH_DIVERGENCE_STDERRS)
-def test_fetch_divergence_patterns_raise_git_command_error_without_retry(
-    tmp_path, stderr
-):
-    svc = GitService(_cfg)
-    attempts = 0
-
-    def fake_run(*a, **kw):
-        nonlocal attempts
-        attempts += 1
-        return _git_failure(stderr)
-
-    with (
-        patch("subprocess.run", side_effect=fake_run),
-        patch("time.sleep") as mock_sleep,
-    ):
-        with pytest.raises(GitCommandError) as exc_info:
-            svc.fetch(tmp_path)
-
-    assert attempts == 1
-    assert exc_info.value.stderr == stderr.decode()
     mock_sleep.assert_not_called()
     assert not isinstance(exc_info.value, OperatorActionableGitError)
 

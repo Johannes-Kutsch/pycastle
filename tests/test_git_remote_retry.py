@@ -2,9 +2,23 @@ import pytest
 
 from pycastle.services._git_remote_retry import (
     EscalateOperatorActionableGitFailure,
+    PassthroughRemoteDivergenceOrConflict,
     RecoverPushNonFastForward,
     RemoteGitRetryPolicy,
     RetryTransientRemoteFailure,
+)
+
+_PULL_FETCH_DIVERGENCE_STDERRS = (
+    "fatal: Not possible to fast-forward, aborting.",
+    "hint: Need to specify how to reconcile divergent branches.",
+    "fatal: refusing to merge unrelated histories",
+    "CONFLICT (content): Merge conflict in README.md",
+)
+
+_PUSH_DIVERGENCE_STDERRS = (
+    "hint: Need to specify how to reconcile divergent branches.",
+    "fatal: refusing to merge unrelated histories",
+    "CONFLICT (content): Merge conflict in README.md",
 )
 
 
@@ -62,6 +76,33 @@ def test_policy_escalates_stable_remote_misconfig_on_attempt_one(operation, stde
     )
 
     assert decision == EscalateOperatorActionableGitFailure()
+
+
+@pytest.mark.parametrize("operation", ["pull", "fetch"])
+@pytest.mark.parametrize("stderr", _PULL_FETCH_DIVERGENCE_STDERRS)
+def test_policy_classifies_pull_fetch_divergence_as_passthrough(operation, stderr):
+    policy = RemoteGitRetryPolicy()
+
+    decision = policy.classify_remote_failure(
+        operation=operation,
+        stderr=stderr,
+        attempt=1,
+    )
+
+    assert decision == PassthroughRemoteDivergenceOrConflict()
+
+
+@pytest.mark.parametrize("stderr", _PUSH_DIVERGENCE_STDERRS)
+def test_policy_classifies_push_divergence_as_passthrough(stderr):
+    policy = RemoteGitRetryPolicy()
+
+    decision = policy.classify_remote_failure(
+        operation="push",
+        stderr=stderr,
+        attempt=1,
+    )
+
+    assert decision == PassthroughRemoteDivergenceOrConflict()
 
 
 def test_policy_classifies_push_rejected_stderr_as_named_push_recovery_on_final_attempt():
