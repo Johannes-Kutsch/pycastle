@@ -81,7 +81,8 @@ class _BaseProviderSessionAdapter:
         provider_session_id: str,
         service_state_dir: Path | None = None,
     ) -> None:
-        del role_session, provider_session_id, service_state_dir
+        del service_state_dir
+        role_session.save_service_session_id(self.service_name, provider_session_id)
 
     def recover_provider_session_id(
         self,
