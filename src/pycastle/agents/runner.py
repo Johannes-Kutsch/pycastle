@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
 from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
+from pycastle_agent_runtime.errors import (
+    AgentTimeoutError as RuntimeAgentTimeoutError,
+    TransientAgentError as RuntimeTransientAgentError,
+    UsageLimitError as RuntimeUsageLimitError,
+)
 from pycastle_agent_runtime.work import (
     WorkModelDisplayMetadata,
     WorkInvocationDependencies,
@@ -27,6 +32,8 @@ from ..errors import (
     AgentTimeoutError,
     DockerError,
     SetupPhaseError,
+    TransientAgentError,
+    UsageLimitError,
 )
 from ..prompts.dispatch import (
     PromptInvocation,
@@ -112,6 +119,26 @@ async def translate_run_outcome(
             err.role_value = request.role.value
             err.worktree_path = request.mount_path
         raise
+    except RuntimeAgentTimeoutError as err:
+        raise AgentTimeoutError(
+            str(err),
+            role_value=err.role_value or request.role.value,
+            worktree_path=err.worktree_path or request.mount_path,
+        ) from err
+    except RuntimeUsageLimitError as err:
+        raise UsageLimitError(
+            reset_time=err.reset_time,
+            raw_message=err.raw_message,
+            provider=err.provider,
+            is_permanent=err.is_permanent,
+            account_label=err.account_label,
+            stage_key=err.stage_key,
+        ) from err
+    except RuntimeTransientAgentError as err:
+        raise TransientAgentError(
+            str(err),
+            status_code=err.status_code,
+        ) from err
 
 
 class AgentRunnerProtocol(Protocol):

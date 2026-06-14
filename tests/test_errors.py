@@ -94,6 +94,11 @@ def test_pycastle_error_shims_preserve_legacy_service_and_session_defaults():
     assert failed_error.session_dir == ".pycastle-session/implementer/claude"
 
 
+def test_runtime_derived_pycastle_compatibility_errors_subclass_pycastle_error():
+    assert issubclass(HardAgentError, PycastleError)
+    assert issubclass(AgentFailedError, PycastleError)
+
+
 # ── Raise sites ───────────────────────────────────────────────────────────────
 
 

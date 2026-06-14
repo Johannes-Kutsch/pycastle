@@ -10,10 +10,6 @@ class AgentRuntimeError(RuntimeError):
     pass
 
 
-# Compatibility alias for existing pycastle callers during the runtime migration.
-PycastleError = AgentRuntimeError
-
-
 class RuntimeConfigurationError(AgentRuntimeError):
     pass
 
@@ -129,7 +125,6 @@ __all__ = [
     "AgentRuntimeError",
     "AgentTimeoutError",
     "HardAgentError",
-    "PycastleError",
     "RuntimeConfigurationError",
     "TransientAgentError",
     "UsageLimitError",

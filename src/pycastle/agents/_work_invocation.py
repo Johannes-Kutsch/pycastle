@@ -5,6 +5,11 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Protocol
 
+from pycastle_agent_runtime.errors import (
+    AgentTimeoutError as RuntimeAgentTimeoutError,
+    TransientAgentError as RuntimeTransientAgentError,
+    UsageLimitError as RuntimeUsageLimitError,
+)
 from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import RunKind
 from pycastle_agent_runtime.work import (
@@ -14,10 +19,16 @@ from pycastle_agent_runtime.work import (
     WorkInvocationDependencies,
     WorkInvocationRequest,
     WorkOutputAdapter,
-    invoke_work,
+    WorkResultT,
+    invoke_work as runtime_invoke_work,
 )
 
-from ..errors import AgentFailedError, TransientAgentError
+from ..errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from ..session.resume import provider_state_relpath
 from .output_protocol import (
     AgentOutput,
@@ -107,11 +118,36 @@ class ProtocolOutputAdapter:
         return result
 
 
-def format_transient_status_message(err: TransientAgentError) -> str:
+def format_transient_status_message(err: RuntimeTransientAgentError) -> str:
     return (
         "transient API error: status "
         f"{err.status_code if err.status_code is not None else 'no status'}"
     )
+
+
+async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
+    try:
+        return await runtime_invoke_work(request)
+    except RuntimeAgentTimeoutError as err:
+        raise AgentTimeoutError(
+            str(err),
+            role_value=err.role_value,
+            worktree_path=err.worktree_path,
+        ) from err
+    except RuntimeUsageLimitError as err:
+        raise UsageLimitError(
+            reset_time=err.reset_time,
+            raw_message=err.raw_message,
+            provider=err.provider,
+            is_permanent=err.is_permanent,
+            account_label=err.account_label,
+            stage_key=err.stage_key,
+        ) from err
+    except RuntimeTransientAgentError as err:
+        raise TransientAgentError(
+            str(err),
+            status_code=err.status_code,
+        ) from err
 
 
 __all__ = [

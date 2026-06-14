@@ -1,16 +1,32 @@
 from pycastle_agent_runtime.errors import (
-    AgentTimeoutError,
+    AgentRuntimeError,
+    AgentTimeoutError as RuntimeAgentTimeoutError,
     AgentFailedError as RuntimeAgentFailedError,
     HardAgentError as RuntimeHardAgentError,
-    PycastleError,
-    TransientAgentError,
-    UsageLimitError,
+    TransientAgentError as RuntimeTransientAgentError,
+    UsageLimitError as RuntimeUsageLimitError,
 )
 
 _PYCASTLE_SESSION_ROOT = ".pycastle-session"
 
 
-class HardAgentError(RuntimeHardAgentError):
+class PycastleError(AgentRuntimeError):
+    pass
+
+
+class AgentTimeoutError(PycastleError, RuntimeAgentTimeoutError):
+    pass
+
+
+class UsageLimitError(PycastleError, RuntimeUsageLimitError):
+    pass
+
+
+class TransientAgentError(PycastleError, RuntimeTransientAgentError):
+    pass
+
+
+class HardAgentError(PycastleError, RuntimeHardAgentError):
     def __init__(
         self,
         message: str = "",
@@ -28,7 +44,7 @@ class HardAgentError(RuntimeHardAgentError):
         )
 
 
-class AgentFailedError(RuntimeAgentFailedError):
+class AgentFailedError(PycastleError, RuntimeAgentFailedError):
     def __init__(
         self,
         role_value: str,

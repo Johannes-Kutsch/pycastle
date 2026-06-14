@@ -1738,10 +1738,10 @@ def test_runtime_package_import_isolation_guardrail_rejects_pycastle_services() 
     )
 
 
-def test_runtime_public_errors_use_agent_runtime_error_with_pycastle_alias_shim():
+def test_runtime_public_errors_use_agent_runtime_error_without_pycastle_alias_export():
     import pycastle_agent_runtime as runtime
 
-    assert runtime.PycastleError is runtime.AgentRuntimeError
+    assert not hasattr(runtime, "PycastleError")
     assert issubclass(runtime.RuntimeConfigurationError, runtime.AgentRuntimeError)
     assert issubclass(runtime.UsageLimitError, runtime.AgentRuntimeError)
     assert issubclass(runtime.TransientAgentError, runtime.AgentRuntimeError)
