@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import builtins
 from typing import Protocol, runtime_checkable
 
-from .status_print_sequencing import Kind, StatusPrintSequencer
+from .status_print_sequencing import Kind, OutputEvent, StatusPrintSequencer
 
 
 @dataclass(frozen=True)
@@ -73,9 +73,10 @@ class PlainStatusDisplay:
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
         lines = str(message).split("\n")
-        if self._sequencer.should_prepend_blank_line(caller):
+        if self._sequencer.record_output_event(
+            OutputEvent(caller=caller, text=str(message))
+        ):
             builtins.print()
-        self._sequencer.record_output(caller)
         for line in lines:
             if caller:
                 builtins.print(f"[{caller}] {line}")
