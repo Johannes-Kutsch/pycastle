@@ -1415,6 +1415,17 @@ def test_plain_same_caller_remove_after_print_no_blank(capsys) -> None:
     assert out == "\n[X] msg\n[X] finished\n"
 
 
+def test_plain_phase_shutdown_then_agent_start_keeps_shared_transition_spacing(
+    capsys,
+) -> None:
+    d = PlainStatusDisplay()
+    d.register("Plan", "phase")
+    d.remove("Plan")
+    d.register("Worker", "agent")
+    out = capsys.readouterr().out
+    assert out == "\n[Plan] started\n[Plan] finished\n[Worker] started\n"
+
+
 # ── RecordingStatusDisplay behaviour ─────────────────────────────────────────
 
 
