@@ -92,6 +92,16 @@ def test_removed_last_phase_stops_suppressing_blank_line_for_next_agent() -> Non
     assert sequencer.should_prepend_blank_line("Plan Agent")
 
 
+def test_removed_last_agent_stops_suppressing_blank_line_for_next_phase() -> None:
+    sequencer = StatusPrintSequencer()
+    sequencer.register_caller("Plan Agent", "agent")
+    sequencer.record_output("Plan Agent")
+    sequencer.remove_caller("Plan Agent")
+    sequencer.register_caller("Implement", "phase")
+
+    assert sequencer.should_prepend_blank_line("Implement")
+
+
 def test_first_named_output_prepends_blank_line() -> None:
     sequencer = StatusPrintSequencer()
 

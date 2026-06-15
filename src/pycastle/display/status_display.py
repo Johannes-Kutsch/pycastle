@@ -69,7 +69,7 @@ class PlainStatusDisplay:
         shutdown_style: str = "success",
     ) -> None:
         self.print(caller, shutdown_message)
-        self._sequencer.remove_caller(caller)
+        self._sequencer.remove_caller(caller, preserve_last_output_kind=True)
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
         lines = str(message).split("\n")

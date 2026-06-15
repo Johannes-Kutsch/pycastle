@@ -20,8 +20,12 @@ class StatusPrintSequencer:
         if caller != "":
             self._kinds[caller] = kind
 
-    def remove_caller(self, caller: str) -> None:
+    def remove_caller(
+        self, caller: str, *, preserve_last_output_kind: bool = False
+    ) -> None:
         self._kinds.pop(caller, None)
+        if self._last_caller == caller and not preserve_last_output_kind:
+            self._last_kind = None
 
     def caller_kind(self, caller: str) -> Kind | None:
         return self._kinds.get(caller)

@@ -253,7 +253,7 @@ class RichStatusDisplay:
             live_to_stop.stop()
         self.print(caller, shutdown_message, style=shutdown_style)
         with self._lock:
-            self._sequencer.remove_caller(caller)
+            self._sequencer.remove_caller(caller, preserve_last_output_kind=True)
             self._color_keys.pop(caller, None)
 
     def print(
