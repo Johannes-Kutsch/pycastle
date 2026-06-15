@@ -1,4 +1,29 @@
-from pycastle.display.status_print_sequencing import StatusPrintSequencer
+from pycastle.display.status_print_sequencing import OutputEvent, StatusPrintSequencer
+
+
+def test_first_output_event_requests_leading_blank_line() -> None:
+    sequencer = StatusPrintSequencer()
+
+    assert sequencer.record_output_event("Plan")
+
+
+def test_output_event_recording_ignores_text_and_rendering_details() -> None:
+    sequencer = StatusPrintSequencer()
+
+    decisions = [
+        sequencer.record_output_event(OutputEvent(caller="Plan", text="plain")),
+        sequencer.record_output_event(
+            OutputEvent(caller="Plan", text="[bold]rich markup[/bold]")
+        ),
+        sequencer.record_output_event(
+            OutputEvent(caller="", text="\x1b[31manonymous ansi\x1b[0m")
+        ),
+        sequencer.record_output_event(OutputEvent(caller="", text="multi\nline")),
+        sequencer.record_output_event(OutputEvent(caller="Implement", text="next")),
+        sequencer.record_output_event(OutputEvent(caller="Review", text="switch")),
+    ]
+
+    assert decisions == [True, False, True, True, True, True]
 
 
 def test_register_caller_records_kind() -> None:

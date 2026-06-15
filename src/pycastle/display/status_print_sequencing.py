@@ -1,6 +1,13 @@
+from dataclasses import dataclass
 from typing import Literal
 
 Kind = Literal["phase", "agent"]
+
+
+@dataclass(frozen=True)
+class OutputEvent:
+    caller: str
+    text: str
 
 
 class StatusPrintSequencer:
@@ -28,6 +35,12 @@ class StatusPrintSequencer:
         if "agent" in kinds and kinds <= {"phase", "agent"}:
             return False
         return True
+
+    def record_output_event(self, event: str | OutputEvent) -> bool:
+        caller = event if isinstance(event, str) else event.caller
+        should_prepend_blank_line = self.should_prepend_blank_line(caller)
+        self.record_output(caller)
+        return should_prepend_blank_line
 
     def record_output(self, caller: str) -> None:
         self._last_caller = caller
