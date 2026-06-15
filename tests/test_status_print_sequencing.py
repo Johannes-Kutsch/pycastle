@@ -26,6 +26,45 @@ def test_output_event_recording_ignores_text_and_rendering_details() -> None:
     assert decisions == [True, False, True, True, True, True]
 
 
+def test_repeated_named_output_event_from_same_caller_skips_leading_blank_line() -> (
+    None
+):
+    sequencer = StatusPrintSequencer()
+
+    decisions = [
+        sequencer.record_output_event(OutputEvent(caller="Plan", text="first")),
+        sequencer.record_output_event(OutputEvent(caller="Plan", text="second")),
+    ]
+
+    assert decisions == [True, False]
+
+
+def test_output_event_switch_between_unregistered_named_callers_adds_separator() -> (
+    None
+):
+    sequencer = StatusPrintSequencer()
+
+    decisions = [
+        sequencer.record_output_event(OutputEvent(caller="Plan", text="first")),
+        sequencer.record_output_event(OutputEvent(caller="Implement", text="second")),
+    ]
+
+    assert decisions == [True, True]
+
+
+def test_anonymous_output_event_always_adds_separator_across_transitions() -> None:
+    sequencer = StatusPrintSequencer()
+
+    decisions = [
+        sequencer.record_output_event(OutputEvent(caller="", text="anonymous one")),
+        sequencer.record_output_event(OutputEvent(caller="", text="anonymous two")),
+        sequencer.record_output_event(OutputEvent(caller="Plan", text="named")),
+        sequencer.record_output_event(OutputEvent(caller="", text="anonymous three")),
+    ]
+
+    assert decisions == [True, True, True, True]
+
+
 def test_register_caller_records_kind() -> None:
     sequencer = StatusPrintSequencer()
 
