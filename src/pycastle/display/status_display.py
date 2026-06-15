@@ -72,9 +72,10 @@ class PlainStatusDisplay:
         self._sequencer.remove_caller(caller, preserve_last_output_kind=True)
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
-        lines = str(message).split("\n")
+        rendered = str(message)
+        lines = rendered.split("\n")
         if self._sequencer.record_output_event(
-            OutputEvent(caller=caller, text=str(message))
+            OutputEvent(caller=caller, text=rendered)
         ):
             builtins.print()
         for line in lines:

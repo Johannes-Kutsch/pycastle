@@ -937,6 +937,20 @@ def test_rich_preflight_phase_row_renders_above_plan_agent() -> None:
     assert output.find("Preflight") < output.find("Plan Agent")
 
 
+def test_rich_phase_row_ordering_ignores_anonymous_output_history() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent")
+    d.print("", "anonymous note")
+    d.register("Preflight", "phase")
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert output.find("Preflight") < output.find("Plan Agent")
+
+
 def test_rich_improve_phase_row_renders_above_scan_agent() -> None:
     d = RichStatusDisplay()
     d.register("Scan Agent", "agent")

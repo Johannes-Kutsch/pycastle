@@ -20,6 +20,9 @@ class StatusPrintSequencer:
         if caller != "":
             self._kinds[caller] = kind
 
+    def caller_kinds(self, callers: list[str]) -> dict[str, Kind | None]:
+        return {caller: self.caller_kind(caller) for caller in callers}
+
     def remove_caller(
         self, caller: str, *, preserve_last_output_kind: bool = False
     ) -> None:
