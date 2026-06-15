@@ -19,6 +19,12 @@ def test_print_named_caller_has_brackets(capsys: pytest.CaptureFixture[str]) -> 
     assert capsys.readouterr().out == "\n[Alice] message\n"
 
 
+def test_print_ignores_style_argument(capsys: pytest.CaptureFixture[str]) -> None:
+    d = PlainStatusDisplay()
+    d.print("Alice", "message", style="error")
+    assert capsys.readouterr().out == "\n[Alice] message\n"
+
+
 def test_register_custom_startup_message(capsys: pytest.CaptureFixture[str]) -> None:
     d = PlainStatusDisplay()
     d.register("Alice", "agent", startup_message="connecting")
