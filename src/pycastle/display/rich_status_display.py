@@ -2,8 +2,6 @@ import re
 import threading
 import time
 
-from typing import Literal
-
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.live import Live
 from rich.padding import Padding
@@ -11,6 +9,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .status_display import ModelDisplayMetadata
+from .status_print_sequencing import Kind, StatusPrintSequencer
 
 
 _PALETTE: list[tuple[int, int, int]] = [
@@ -47,7 +46,7 @@ def _styled_with_issue_overlay(text: str, base_style: str) -> Text:
     return rendered
 
 
-def _row_priority(name: str, kinds: dict[str, str]) -> int:
+def _row_priority(name: str, kinds: dict[str, Kind | None]) -> int:
     if kinds.get(name) == "phase":
         return -1
     m = re.search(r"#(\d+)", name)
@@ -137,9 +136,7 @@ class RichStatusDisplay:
         self._rows: dict[str, _AgentRow] = {}
         self._lock = threading.Lock()
         self._live: Live | None = None
-        self._last_caller: str | None = None
-        self._last_kind: str | None = None
-        self._kinds: dict[str, str] = {}
+        self._sequencer = StatusPrintSequencer()
         self._color_keys: dict[str, int | None] = {}
 
     def __rich_console__(
@@ -148,8 +145,12 @@ class RichStatusDisplay:
         # Called by Live on each refresh tick from the Live thread.
         # Acquire lock only to snapshot row state, then release before yielding.
         with self._lock:
+            caller_kinds = {
+                name: self._sequencer.caller_kind(name) for name in self._rows
+            }
             rows = sorted(
-                self._rows.values(), key=lambda r: _row_priority(r.name, self._kinds)
+                self._rows.values(),
+                key=lambda row: _row_priority(row.name, caller_kinds),
             )
 
         table = Table(show_header=False, expand=False, box=None)
@@ -195,20 +196,10 @@ class RichStatusDisplay:
             return live
         return None
 
-    def _blank_before(self, caller: str) -> bool:
-        if caller == "":
-            return True
-        if caller == self._last_caller:
-            return False
-        kinds = {self._last_kind, self._kinds.get(caller)}
-        if "agent" in kinds and kinds <= {"phase", "agent"}:
-            return False
-        return True
-
     def register(
         self,
         caller: str,
-        kind: Literal["phase", "agent"],
+        kind: Kind,
         startup_message: str = "started",
         work_body: str = "",
         initial_phase: str = "Setup",
@@ -224,7 +215,7 @@ class RichStatusDisplay:
                 model_display,
             )
             if caller != "":
-                self._kinds[caller] = kind
+                self._sequencer.register_caller(caller, kind)
                 self._color_keys[caller] = color_key
             live_to_start = self._acquire_live()
         if live_to_start is not None:
@@ -262,7 +253,7 @@ class RichStatusDisplay:
             live_to_stop.stop()
         self.print(caller, shutdown_message, style=shutdown_style)
         with self._lock:
-            self._kinds.pop(caller, None)
+            self._sequencer.remove_caller(caller)
             self._color_keys.pop(caller, None)
 
     def print(
@@ -280,9 +271,8 @@ class RichStatusDisplay:
         rich_style = style_map.get(style or "")
         lines = str(message).split("\n")
         with self._lock:
-            prepend_blank = self._blank_before(caller)
-            self._last_caller = caller
-            self._last_kind = self._kinds.get(caller)
+            prepend_blank = self._sequencer.should_prepend_blank_line(caller)
+            self._sequencer.record_output(caller)
             caller_color_key = self._color_keys.get(caller)
         if prepend_blank:
             self._console.print()

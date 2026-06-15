@@ -1,0 +1,34 @@
+from typing import Literal
+
+Kind = Literal["phase", "agent"]
+
+
+class StatusPrintSequencer:
+    def __init__(self) -> None:
+        self._last_caller: str | None = None
+        self._last_kind: Kind | None = None
+        self._kinds: dict[str, Kind] = {}
+
+    def register_caller(self, caller: str, kind: Kind) -> None:
+        if caller != "":
+            self._kinds[caller] = kind
+
+    def remove_caller(self, caller: str) -> None:
+        self._kinds.pop(caller, None)
+
+    def caller_kind(self, caller: str) -> Kind | None:
+        return self._kinds.get(caller)
+
+    def should_prepend_blank_line(self, caller: str) -> bool:
+        if caller == "":
+            return True
+        if caller == self._last_caller:
+            return False
+        kinds = {self._last_kind, self.caller_kind(caller)}
+        if "agent" in kinds and kinds <= {"phase", "agent"}:
+            return False
+        return True
+
+    def record_output(self, caller: str) -> None:
+        self._last_caller = caller
+        self._last_kind = self.caller_kind(caller)

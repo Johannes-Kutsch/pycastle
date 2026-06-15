@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 import builtins
-from typing import Literal, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
-Kind = Literal["phase", "agent"]
+from .status_print_sequencing import Kind, StatusPrintSequencer
 
 
 @dataclass(frozen=True)
@@ -38,19 +38,7 @@ class StatusDisplay(Protocol):
 
 class PlainStatusDisplay:
     def __init__(self) -> None:
-        self._last_caller: str | None = None
-        self._last_kind: str | None = None
-        self._kinds: dict[str, str] = {}
-
-    def _blank_before(self, caller: str) -> bool:
-        if caller == "":
-            return True
-        if caller == self._last_caller:
-            return False
-        kinds = {self._last_kind, self._kinds.get(caller)}
-        if "agent" in kinds and kinds <= {"phase", "agent"}:
-            return False
-        return True
+        self._sequencer = StatusPrintSequencer()
 
     def register(
         self,
@@ -62,8 +50,7 @@ class PlainStatusDisplay:
         color_key: int | None = None,
         model_display: ModelDisplayMetadata | None = None,
     ) -> None:
-        if caller != "":
-            self._kinds[caller] = kind
+        self._sequencer.register_caller(caller, kind)
         self.print(caller, startup_message)
 
     def update_phase(self, name: str, phase: str) -> None:
@@ -82,14 +69,13 @@ class PlainStatusDisplay:
         shutdown_style: str = "success",
     ) -> None:
         self.print(caller, shutdown_message)
-        self._kinds.pop(caller, None)
+        self._sequencer.remove_caller(caller)
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
         lines = str(message).split("\n")
-        if self._blank_before(caller):
+        if self._sequencer.should_prepend_blank_line(caller):
             builtins.print()
-        self._last_caller = caller
-        self._last_kind = self._kinds.get(caller)
+        self._sequencer.record_output(caller)
         for line in lines:
             if caller:
                 builtins.print(f"[{caller}] {line}")
