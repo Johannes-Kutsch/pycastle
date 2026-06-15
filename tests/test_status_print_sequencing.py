@@ -73,6 +73,18 @@ def test_register_caller_records_kind() -> None:
     assert sequencer.caller_kind("Plan") == "phase"
 
 
+def test_bulk_caller_kind_lookup_preserves_registered_and_missing_callers() -> None:
+    sequencer = StatusPrintSequencer()
+    sequencer.register_caller("Preflight", "phase")
+    sequencer.register_caller("Implement Agent #7", "agent")
+
+    assert sequencer.caller_kinds(["Preflight", "Implement Agent #7", "Stranger"]) == {
+        "Preflight": "phase",
+        "Implement Agent #7": "agent",
+        "Stranger": None,
+    }
+
+
 def test_remove_caller_clears_registered_kind() -> None:
     sequencer = StatusPrintSequencer()
     sequencer.register_caller("Plan Agent", "agent")
