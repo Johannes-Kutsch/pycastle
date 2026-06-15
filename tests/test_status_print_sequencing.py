@@ -82,6 +82,16 @@ def test_remove_caller_clears_registered_kind() -> None:
     assert sequencer.caller_kind("Plan Agent") is None
 
 
+def test_removed_last_phase_stops_suppressing_blank_line_for_next_agent() -> None:
+    sequencer = StatusPrintSequencer()
+    sequencer.register_caller("Plan", "phase")
+    sequencer.record_output("Plan")
+    sequencer.remove_caller("Plan")
+    sequencer.register_caller("Plan Agent", "agent")
+
+    assert sequencer.should_prepend_blank_line("Plan Agent")
+
+
 def test_first_named_output_prepends_blank_line() -> None:
     sequencer = StatusPrintSequencer()
 
