@@ -9,7 +9,7 @@ from rich.table import Table
 from rich.text import Text
 
 from .status_display import ModelDisplayMetadata
-from .status_print_sequencing import Kind, StatusPrintSequencer
+from .status_print_sequencing import Kind, OutputEvent, StatusPrintSequencer
 
 
 _PALETTE: list[tuple[int, int, int]] = [
@@ -145,9 +145,7 @@ class RichStatusDisplay:
         # Called by Live on each refresh tick from the Live thread.
         # Acquire lock only to snapshot row state, then release before yielding.
         with self._lock:
-            caller_kinds = {
-                name: self._sequencer.caller_kind(name) for name in self._rows
-            }
+            caller_kinds = self._sequencer.caller_kinds(list(self._rows))
             rows = sorted(
                 self._rows.values(),
                 key=lambda row: _row_priority(row.name, caller_kinds),
@@ -214,8 +212,8 @@ class RichStatusDisplay:
                 color_key,
                 model_display,
             )
+            self._sequencer.register_caller(caller, kind)
             if caller != "":
-                self._sequencer.register_caller(caller, kind)
                 self._color_keys[caller] = color_key
             live_to_start = self._acquire_live()
         if live_to_start is not None:
@@ -269,10 +267,12 @@ class RichStatusDisplay:
             "interrupted": "cyan",
         }
         rich_style = style_map.get(style or "")
-        lines = str(message).split("\n")
+        rendered = str(message)
+        lines = rendered.split("\n")
         with self._lock:
-            prepend_blank = self._sequencer.should_prepend_blank_line(caller)
-            self._sequencer.record_output(caller)
+            prepend_blank = self._sequencer.record_output_event(
+                OutputEvent(caller=caller, text=rendered)
+            )
             caller_color_key = self._color_keys.get(caller)
         if prepend_blank:
             self._console.print()
