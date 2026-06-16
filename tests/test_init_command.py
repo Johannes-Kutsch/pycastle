@@ -1367,6 +1367,65 @@ def test_init_global_asks_whether_to_delete_existing_local_env(
     assert local_env.exists() is local_should_exist
 
 
+@pytest.mark.parametrize(
+    ("delete_local", "expected_local_content"),
+    [
+        (True, None),
+        (False, "GH_TOKEN=local-secret\n"),
+    ],
+)
+def test_init_global_with_existing_local_env_still_writes_credentials_to_global_env(
+    tmp_path, monkeypatch, delete_local, expected_local_content
+):
+    """With --global, credential writes still target global .env when local .env exists."""
+    from pycastle.commands.init import main
+
+    home = tmp_path / "home"
+    home.mkdir()
+    global_env = home / ".env"
+    local_env = tmp_path / "pycastle" / ".env"
+    local_env.parent.mkdir()
+    local_env.write_text("GH_TOKEN=local-secret\n")
+    monkeypatch.setenv("PYCASTLE_HOME", str(home))
+    monkeypatch.chdir(tmp_path)
+
+    confirm_messages: list[str] = []
+
+    def confirm_side_effect(message, *args, **kwargs):
+        confirm_messages.append(message)
+        if "Delete local .env" in message:
+            return delete_local
+        return False
+
+    def prompt_side_effect(message, *args, **kwargs):
+        if "agent services" in message:
+            return "claude"
+        if "GitHub token" in message:
+            return "global-gh"
+        if "Claude OAuth token" in message:
+            return "global-claude"
+        return ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect),
+        patch("click.confirm", side_effect=confirm_side_effect),
+    ):
+        main(scope="global")
+
+    assert any(
+        "Delete local .env? (Global will be used instead)" in message
+        for message in confirm_messages
+    )
+    assert not any("Create local .env" in message for message in confirm_messages)
+    assert global_env.read_text() == (
+        "GH_TOKEN=global-gh\nCLAUDE_CODE_OAUTH_TOKEN=global-claude\n"
+    )
+    if expected_local_content is None:
+        assert not local_env.exists()
+    else:
+        assert local_env.read_text() == expected_local_content
+
+
 def test_init_local_always_prompts_for_credentials(tmp_path, monkeypatch):
     """With --local, credential prompts run even if global .env already has them."""
     from pycastle.commands.init import main
