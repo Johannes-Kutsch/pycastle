@@ -122,17 +122,37 @@ def _normalize_selected_services(selected_services: tuple[str, ...]) -> tuple[st
     if not selected_services:
         return _SUPPORTED_SERVICE_SELECTIONS["all"]
 
+    normalized_services = tuple(
+        service.strip().lower() for service in selected_services
+    )
+
     if len(selected_services) == 1:
-        selection = selected_services[0]
-        service_set = _SUPPORTED_SERVICE_SELECTIONS.get(selection.lower())
+        selection = normalized_services[0] or "all"
+        service_set = _SUPPORTED_SERVICE_SELECTIONS.get(selection)
         if service_set is not None:
             return service_set
         choices = "/".join(_SUPPORTED_SERVICE_SELECTIONS)
         raise ValueError(
-            f"Invalid service selection {selection!r}. Choose one of: {choices}."
+            f"Invalid service selection {selected_services[0]!r}. Choose one of: {choices}."
         )
 
-    return tuple(service.lower() for service in selected_services)
+    supported_services = set(_SUPPORTED_SERVICE_SELECTIONS) - {"all"}
+    invalid_index = next(
+        (
+            index
+            for index, service in enumerate(normalized_services)
+            if service not in supported_services
+        ),
+        None,
+    )
+    if invalid_index is not None:
+        choices = "/".join(_SUPPORTED_SERVICE_SELECTIONS)
+        raise ValueError(
+            "Invalid service selection "
+            f"{selected_services[invalid_index]!r}. Choose one of: {choices}."
+        )
+
+    return normalized_services
 
 
 def _managed_env_keys(selected_services: tuple[str, ...]) -> tuple[str, ...]:

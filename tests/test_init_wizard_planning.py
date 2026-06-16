@@ -153,12 +153,26 @@ def test_init_wizard_planning_module_has_no_click_imports():
     ("selected_services", "expected_services"),
     [
         ((), ("claude", "codex", "opencode")),
+        (("",), ("claude", "codex", "opencode")),
         (("claude",), ("claude",)),
+        ((" CLAUDE ",), ("claude",)),
         (("codex",), ("codex",)),
         (("opencode",), ("opencode",)),
+        ((" OpEnCoDe ",), ("opencode",)),
         (("all",), ("claude", "codex", "opencode")),
+        ((" ALL ",), ("claude", "codex", "opencode")),
     ],
-    ids=["empty_defaults_to_all", "claude", "codex", "opencode", "all"],
+    ids=[
+        "empty_tuple_defaults_to_all",
+        "empty_string_defaults_to_all",
+        "claude",
+        "claude_strips_and_lowercases",
+        "codex",
+        "opencode",
+        "opencode_strips_and_lowercases",
+        "all",
+        "all_strips_and_lowercases",
+    ],
 )
 def test_build_init_plan_normalizes_service_selection_aliases(
     selected_services, expected_services
