@@ -1,13 +1,30 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Callable, Iterable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any
 
-from .contracts import AgentService, ParsedTurn, ToolPolicy
+from .contracts import AgentService, ParsedTurn
+from .execution_contracts import (
+    CancellationToken,
+    PreparedProviderRunSession,
+    PreparedSession,
+    PrepareSessionAdapter,
+    ProviderAccountExhaustionHandler,
+    RunSessionPlan,
+    SetupFailureTranslator,
+    TextOutputAdapter,
+    WorkExecutionAdapter,
+    WorkInvocationDependencies,
+    WorkInvocationRequest,
+    WorkModelDisplayMetadata,
+    WorkOutputAdapter,
+    WorkResultT,
+    WorkStatusDisplay,
+    WorkStatusRow,
+)
 from .errors import (
     AgentCredentialFailureError,
     AgentTimeoutError,
@@ -17,92 +34,6 @@ from .errors import (
 )
 from .roles import AgentRole
 from .session import RunKind
-
-WorkResultT = TypeVar("WorkResultT")
-
-
-@dataclasses.dataclass(frozen=True)
-class RunSessionPlan:
-    mount_path: Path
-    role: AgentRole
-    session_namespace: str
-    service: AgentService
-    container_workspace: str
-    run_session_plan: Any = None
-
-
-@dataclasses.dataclass(frozen=True)
-class WorkModelDisplayMetadata:
-    service: str
-    model: str
-    effort: str
-
-
-class WorkStatusDisplay(Protocol):
-    def register(
-        self,
-        caller: str,
-        kind: str,
-        startup_message: str = "started",
-        work_body: str = "",
-        initial_phase: str = "Setup",
-        color_key: int | None = None,
-        model_display: WorkModelDisplayMetadata | None = None,
-    ) -> None: ...
-
-    def update_phase(self, name: str, phase: str) -> None: ...
-
-    def reset_idle_timer(self, name: str) -> None: ...
-
-    def update_tokens(self, name: str, current_tokens: int) -> None: ...
-
-    def remove(
-        self,
-        caller: str,
-        shutdown_message: str = "finished",
-        shutdown_style: str = "success",
-    ) -> None: ...
-
-    def print(self, caller: str, message: object, style: str | None = None) -> None: ...
-
-
-class WorkStatusRow(Protocol):
-    def close(
-        self,
-        shutdown_message: str = "finished",
-        *,
-        shutdown_style: str = "success",
-    ) -> None: ...
-
-
-class PreparedProviderRunSession(Protocol):
-    run_kind: RunKind
-    provider_session_id: str | None
-
-    def record_provider_session_id(self, provider_session_id: str) -> None: ...
-
-    def record_successful_run(self) -> None: ...
-
-
-class PreparedSession(Protocol):
-    provider_state_dir_container_path: str | None
-
-    def prepare_for_run(self) -> None: ...
-
-    def initial_provider_run_session(self) -> PreparedProviderRunSession: ...
-
-    def resumable_provider_run_session(self) -> PreparedProviderRunSession: ...
-
-    def protocol_reprompt_provider_run_session(
-        self,
-    ) -> PreparedProviderRunSession | None: ...
-
-
-PrepareSessionAdapter = Callable[[RunSessionPlan], PreparedSession]
-StatusRowFactory = Callable[..., AbstractAsyncContextManager[Any]]
-SetupFailureTranslator = Callable[[AgentRole, BaseException], BaseException | None]
-ProviderAccountExhaustionHandler = Callable[[AgentService, UsageLimitError], None]
-StatusDisplayFactory = Callable[[], WorkStatusDisplay]
 
 
 class _PlainStatusDisplay:
@@ -286,207 +217,6 @@ def _default_provider_account_exhaustion_handler(
     error: UsageLimitError,
 ) -> None:
     service.mark_exhausted(error.reset_time)
-
-
-@dataclasses.dataclass
-class CancellationToken:
-    _event: asyncio.Event = dataclasses.field(
-        default_factory=asyncio.Event,
-        init=False,
-        repr=False,
-    )
-
-    @property
-    def is_cancelled(self) -> bool:
-        return self._event.is_set()
-
-    def cancel(self) -> None:
-        self._event.set()
-
-
-class WorkExecutionAdapter(Protocol):
-    async def setup(
-        self, git_name: str, git_email: str, work_body: str = ""
-    ) -> None: ...
-
-    async def work(
-        self,
-        role: AgentRole,
-        prompt: str,
-        *,
-        run_kind: RunKind = RunKind.FRESH,
-        session_uuid: str | None = None,
-        on_provider_session_id: Callable[[str], None] | None = None,
-    ) -> Any: ...
-
-    async def work_text(
-        self,
-        prompt: str,
-        *,
-        role: AgentRole = AgentRole.IMPLEMENTER,
-        tool_policy: Any = ToolPolicy.FULL,
-        run_kind: RunKind = RunKind.FRESH,
-        session_uuid: str | None = None,
-        on_provider_session_id: Callable[[str], None] | None = None,
-    ) -> str: ...
-
-
-class WorkOutputAdapter(Protocol[WorkResultT]):
-    async def build_prompt(
-        self,
-        *,
-        run_kind: RunKind,
-        container_exec: Callable[[str], Awaitable[str]],
-    ) -> str: ...
-
-    async def invoke(
-        self,
-        *,
-        runner: WorkExecutionAdapter,
-        role: AgentRole,
-        prompt: str,
-        run_kind: RunKind,
-        session_uuid: str | None,
-        on_provider_session_id: Callable[[str], None],
-    ) -> WorkResultT: ...
-
-    def is_successful_result(self, result: WorkResultT) -> bool: ...
-
-    def protocol_reprompt_message(self) -> str | None: ...
-
-    def protocol_error_result(self) -> WorkResultT | None: ...
-
-    def protocol_error_types(self) -> tuple[type[BaseException], ...]: ...
-
-    def non_typed_failure_result(self) -> WorkResultT | None: ...
-
-    def finalize_result(
-        self,
-        result: WorkResultT,
-        *,
-        role: AgentRole,
-        mount_path: Path,
-        session_namespace: str,
-        service_name: str,
-    ) -> WorkResultT: ...
-
-
-@dataclasses.dataclass(frozen=True)
-class WorkInvocationDependencies:
-    container_workspace: str
-    timeout_retries: int
-    stage_key_for_role: Callable[[AgentRole], str | None]
-    prepare_session: PrepareSessionAdapter
-    build_session: Callable[[Path, AgentService, str | None], Any]
-    build_runner: Callable[[Any, Any], WorkExecutionAdapter]
-    get_git_identity: Callable[[], tuple[str, str]]
-    status_display_factory: StatusDisplayFactory = _default_status_display_factory
-    status_row_factory: StatusRowFactory = _default_status_row_factory
-    translate_setup_failure: SetupFailureTranslator | None = None
-    build_model_display_metadata: Callable[[str, str, str], Any | None] | None = None
-    handle_provider_account_exhaustion: ProviderAccountExhaustionHandler = (
-        _default_provider_account_exhaustion_handler
-    )
-    transient_status_message: Callable[[TransientAgentError], str] | None = None
-
-
-@dataclasses.dataclass(frozen=True)
-class WorkInvocationRequest(Generic[WorkResultT]):
-    name: str
-    mount_path: Path
-    role: AgentRole
-    service: AgentService
-    model: str
-    effort: str
-    output_adapter: WorkOutputAdapter[WorkResultT] = dataclasses.field(repr=False)
-    dependencies: WorkInvocationDependencies = dataclasses.field(repr=False)
-    status_display: Any = None
-    token: CancellationToken | None = None
-    work_body: str = ""
-    session_namespace: str = ""
-    run_session_plan: Any = None
-    run_session: RunSessionPlan | None = None
-    color_key: int | None = None
-    allow_non_typed_resume_retry: bool = False
-
-    def __post_init__(self) -> None:
-        run_session = self.run_session
-        if run_session is None:
-            run_session = RunSessionPlan(
-                mount_path=self.mount_path,
-                role=self.role,
-                session_namespace=self.session_namespace,
-                service=self.service,
-                container_workspace=self.dependencies.container_workspace,
-                run_session_plan=self.run_session_plan,
-            )
-        object.__setattr__(self, "run_session", run_session)
-        object.__setattr__(self, "mount_path", run_session.mount_path)
-        object.__setattr__(self, "role", run_session.role)
-        object.__setattr__(self, "service", run_session.service)
-        object.__setattr__(self, "session_namespace", run_session.session_namespace)
-        object.__setattr__(self, "run_session_plan", run_session.run_session_plan)
-
-
-@dataclasses.dataclass(frozen=True)
-class TextOutputAdapter:
-    prompt: str
-    tool_policy: Any = ToolPolicy.FULL
-
-    async def build_prompt(
-        self,
-        *,
-        run_kind: RunKind,
-        container_exec: Callable[[str], Awaitable[str]],
-    ) -> str:
-        del run_kind, container_exec
-        return self.prompt
-
-    async def invoke(
-        self,
-        *,
-        runner: WorkExecutionAdapter,
-        role: AgentRole,
-        prompt: str,
-        run_kind: RunKind,
-        session_uuid: str | None,
-        on_provider_session_id: Callable[[str], None],
-    ) -> str:
-        return await runner.work_text(
-            prompt,
-            role=role,
-            tool_policy=self.tool_policy,
-            run_kind=run_kind,
-            session_uuid=session_uuid,
-            on_provider_session_id=on_provider_session_id,
-        )
-
-    def is_successful_result(self, result: str) -> bool:
-        return True
-
-    def protocol_reprompt_message(self) -> str | None:
-        return None
-
-    def protocol_error_result(self) -> str | None:
-        return None
-
-    def non_typed_failure_result(self) -> str | None:
-        return None
-
-    def protocol_error_types(self) -> tuple[type[BaseException], ...]:
-        return ()
-
-    def finalize_result(
-        self,
-        result: str,
-        *,
-        role: AgentRole,
-        mount_path: Path,
-        session_namespace: str,
-        service_name: str,
-    ) -> str:
-        del role, mount_path, session_namespace, service_name
-        return result
 
 
 def reduce_text_output_events(
