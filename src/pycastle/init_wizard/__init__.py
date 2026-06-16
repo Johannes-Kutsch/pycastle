@@ -13,6 +13,7 @@ from .planning import (
     PlannedEnvFile,
     PlannedWarning,
     ScaffoldStageChainFacts,
+    build_init_plan,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "PlannedEnvFile",
     "PlannedWarning",
     "ScaffoldStageChainFacts",
+    "build_init_plan",
 ]
