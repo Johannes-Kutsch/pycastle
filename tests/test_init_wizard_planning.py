@@ -240,6 +240,7 @@ def test_build_init_plan_warns_when_codex_is_selected_without_host_auth():
     from pycastle.init_wizard import (
         HostAuthFacts,
         InitWizardPlanningInputs,
+        PlannedWarning,
         build_init_plan,
     )
 
@@ -253,7 +254,100 @@ def test_build_init_plan_warns_when_codex_is_selected_without_host_auth():
     )
 
     assert plan.warnings == (
-        HostAuthFacts,  # type: ignore[comparison-overlap]
+        PlannedWarning(
+            message="Codex authentication missing: run `codex login` on the host."
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("selected_services", "has_host_codex_auth"),
+    [
+        (("claude",), False),
+        (("codex",), True),
+    ],
+    ids=["codex_not_selected", "host_auth_present"],
+)
+def test_build_init_plan_omits_codex_host_auth_warning_when_not_needed(
+    selected_services, has_host_codex_auth
+):
+    from pycastle.init_wizard import (
+        HostAuthFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=selected_services,
+            scope_choice="local",
+            layout=_layout(),
+            host_auth=HostAuthFacts(has_host_codex_auth=has_host_codex_auth),
+        )
+    )
+
+    assert "Codex authentication missing: run `codex login` on the host." not in {
+        warning.message for warning in plan.warnings
+    }
+
+
+def test_build_init_plan_warns_when_selected_services_do_not_cover_bundled_stage_chains():
+    from pycastle.init_wizard import (
+        InitWizardPlanningInputs,
+        PlannedWarning,
+        ScaffoldStageChainFacts,
+        build_init_plan,
+    )
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("opencode",),
+            scope_choice="local",
+            layout=_layout(),
+            scaffold_stage_chains=ScaffoldStageChainFacts(
+                bundled_default_stage_chains=(
+                    ("opencode", "codex", "claude"),
+                    ("codex", "claude"),
+                )
+            ),
+        )
+    )
+
+    assert plan.warnings == (
+        PlannedWarning(
+            message=(
+                "selected services do not cover every bundled default stage priority "
+                "chain. Define your own stage overrides in config.py before running "
+                "pycastle."
+            )
+        ),
+    )
+
+
+def test_build_init_plan_omits_bundled_stage_warning_when_selected_services_cover_every_chain():
+    from pycastle.init_wizard import (
+        InitWizardPlanningInputs,
+        ScaffoldStageChainFacts,
+        build_init_plan,
+    )
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("codex",),
+            scope_choice="local",
+            layout=_layout(),
+            scaffold_stage_chains=ScaffoldStageChainFacts(
+                bundled_default_stage_chains=(
+                    ("opencode", "codex", "claude"),
+                    ("codex", "claude"),
+                )
+            ),
+        )
+    )
+
+    assert (
+        "selected services do not cover every bundled default stage priority chain"
+        not in {warning.message for warning in plan.warnings}
     )
 
 
