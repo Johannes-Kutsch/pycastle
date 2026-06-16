@@ -19,6 +19,8 @@ from .errors import RuntimeConfigurationError, UsageLimitError
 from .roles import AgentRole
 from .service_registry import ServiceRegistry
 from .session import RunKind
+from .stage_priority_chain import iter_stage_chain
+from .types import StageOverride
 from .work import invoke_work
 
 __all__ = [
@@ -53,8 +55,25 @@ class OneShotRunResult:
     selected_service: str
     selected_model: str
     selected_effort: str
+    used_fallback: bool
+    selected_service_path: tuple[str, ...]
     raw_output: Any
     runtime_metadata: OneShotRuntimeMetadata
+
+
+def _selected_service_path(
+    override: StageOverride,
+    *,
+    selected_service: str,
+) -> tuple[str, ...]:
+    path: list[str] = []
+    for node in iter_stage_chain(override):
+        if not node.service:
+            continue
+        path.append(node.service)
+        if node.service == selected_service:
+            return tuple(path)
+    return (selected_service,)
 
 
 def _require_execution_adapter_method(
@@ -336,6 +355,11 @@ async def run_one_shot(
             selected_service=resolved_service.name,
             selected_model=resolved_override.model,
             selected_effort=resolved_override.effort,
+            used_fallback=resolved_service.name != request.override.service,
+            selected_service_path=_selected_service_path(
+                request.override,
+                selected_service=resolved_service.name,
+            ),
             raw_output=raw_output,
             runtime_metadata=output_adapter.runtime_metadata,
         )

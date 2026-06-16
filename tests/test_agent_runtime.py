@@ -3129,6 +3129,8 @@ def test_runtime_package_one_shot_entrypoint_resolves_stage_chain_and_returns_se
         selected_service="codex",
         selected_model="gpt-5.4",
         selected_effort="medium",
+        used_fallback=True,
+        selected_service_path=("missing", "codex"),
         raw_output={
             "role": AgentRole.IMPLEMENTER.value,
             "prompt": "Return JSON only.",
@@ -3256,10 +3258,22 @@ def test_runtime_package_one_shot_entrypoint_preserves_resume_runtime_metadata(
         )
     )
 
-    assert result.runtime_metadata == runtime.OneShotRuntimeMetadata(
-        provider_session_id="provider-resume",
-        run_kind=runtime.RunKind.RESUME,
-        session_namespace="issues",
+    assert result == runtime.OneShotRunResult(
+        selected_service="codex",
+        selected_model="gpt-5.4",
+        selected_effort="medium",
+        used_fallback=False,
+        selected_service_path=("codex",),
+        raw_output={
+            "prompt": "Return JSON only.",
+            "run_kind": runtime.RunKind.RESUME.value,
+            "session_uuid": "provider-resume",
+        },
+        runtime_metadata=runtime.OneShotRuntimeMetadata(
+            provider_session_id="provider-resume",
+            run_kind=runtime.RunKind.RESUME,
+            session_namespace="issues",
+        ),
     )
 
 
@@ -3394,6 +3408,8 @@ def test_runtime_package_one_shot_entrypoint_falls_through_on_usage_limit_with_s
         selected_service="claude",
         selected_model="sonnet",
         selected_effort="high",
+        used_fallback=True,
+        selected_service_path=("codex", "claude"),
         raw_output={"service": "claude", "result": "raw fallback result"},
         runtime_metadata=runtime.OneShotRuntimeMetadata(
             provider_session_id="fallback-session",
