@@ -11,6 +11,7 @@ from .roles import AgentRole
 from .service_registry import ServiceRegistry
 from .work import (
     CancellationToken,
+    RunSessionPlan,
     TextOutputAdapter,
     WorkInvocationDependencies,
     WorkInvocationRequest,
@@ -126,6 +127,14 @@ async def run_prompt(
         effort=resolved_override.effort,
         service=resolved_service,
     )
+    run_session = RunSessionPlan(
+        mount_path=request.mount_path,
+        role=role,
+        session_namespace=request.session_namespace,
+        service=resolved_service,
+        container_workspace=dependencies.container_workspace,
+        run_session_plan=request.run_session_plan,
+    )
 
     return await invoke_work(
         WorkInvocationRequest(
@@ -143,7 +152,6 @@ async def run_prompt(
             status_display=request.status_display,
             token=request.token,
             work_body=request.work_body,
-            session_namespace=request.session_namespace,
-            run_session_plan=request.run_session_plan,
+            run_session=run_session,
         )
     )

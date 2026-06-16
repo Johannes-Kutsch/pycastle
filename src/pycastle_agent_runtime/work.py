@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import inspect
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
@@ -23,7 +22,7 @@ WorkResultT = TypeVar("WorkResultT")
 
 
 @dataclasses.dataclass(frozen=True)
-class PrepareSessionRequest:
+class RunSessionPlan:
     mount_path: Path
     role: AgentRole
     session_namespace: str
@@ -99,7 +98,7 @@ class PreparedSession(Protocol):
     ) -> PreparedProviderRunSession | None: ...
 
 
-PrepareSessionAdapter = Callable[..., PreparedSession]
+PrepareSessionAdapter = Callable[[RunSessionPlan], PreparedSession]
 StatusRowFactory = Callable[..., AbstractAsyncContextManager[Any]]
 SetupFailureTranslator = Callable[[AgentRole, BaseException], BaseException | None]
 ProviderAccountExhaustionHandler = Callable[[AgentService, UsageLimitError], None]
@@ -289,42 +288,6 @@ def _default_provider_account_exhaustion_handler(
     service.mark_exhausted(error.reset_time)
 
 
-def _invoke_prepare_session(
-    prepare_session: PrepareSessionAdapter,
-    *,
-    mount_path: Path,
-    role: AgentRole,
-    session_namespace: str,
-    service: AgentService,
-    container_workspace: str,
-    run_session_plan: Any,
-) -> PreparedSession:
-    request = PrepareSessionRequest(
-        mount_path=mount_path,
-        role=role,
-        session_namespace=session_namespace,
-        service=service,
-        container_workspace=container_workspace,
-        run_session_plan=run_session_plan,
-    )
-    parameters = tuple(inspect.signature(prepare_session).parameters.values())
-    if (
-        not any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters
-        )
-        and len(parameters) == 1
-    ):
-        return prepare_session(request)
-    return prepare_session(
-        mount_path=request.mount_path,
-        role=request.role,
-        session_namespace=request.session_namespace,
-        service=request.service,
-        container_workspace=request.container_workspace,
-        run_session_plan=request.run_session_plan,
-    )
-
-
 @dataclasses.dataclass
 class CancellationToken:
     _event: asyncio.Event = dataclasses.field(
@@ -442,8 +405,27 @@ class WorkInvocationRequest(Generic[WorkResultT]):
     work_body: str = ""
     session_namespace: str = ""
     run_session_plan: Any = None
+    run_session: RunSessionPlan | None = None
     color_key: int | None = None
     allow_non_typed_resume_retry: bool = False
+
+    def __post_init__(self) -> None:
+        run_session = self.run_session
+        if run_session is None:
+            run_session = RunSessionPlan(
+                mount_path=self.mount_path,
+                role=self.role,
+                session_namespace=self.session_namespace,
+                service=self.service,
+                container_workspace=self.dependencies.container_workspace,
+                run_session_plan=self.run_session_plan,
+            )
+        object.__setattr__(self, "run_session", run_session)
+        object.__setattr__(self, "mount_path", run_session.mount_path)
+        object.__setattr__(self, "role", run_session.role)
+        object.__setattr__(self, "service", run_session.service)
+        object.__setattr__(self, "session_namespace", run_session.session_namespace)
+        object.__setattr__(self, "run_session_plan", run_session.run_session_plan)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -598,15 +580,9 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
             stage_key=request.dependencies.stage_key_for_role(request.role),
         )
 
-    prepared_session = _invoke_prepare_session(
-        request.dependencies.prepare_session,
-        mount_path=request.mount_path,
-        role=request.role,
-        session_namespace=request.session_namespace,
-        service=request.service,
-        container_workspace=request.dependencies.container_workspace,
-        run_session_plan=request.run_session_plan,
-    )
+    run_session = request.run_session
+    assert run_session is not None
+    prepared_session = request.dependencies.prepare_session(run_session)
     non_typed_retry_done = False
     initial_attempt = True
 
@@ -811,10 +787,10 @@ def _build_model_display_metadata(
 
 __all__ = [
     "CancellationToken",
-    "PrepareSessionRequest",
     "PreparedProviderRunSession",
     "PreparedSession",
     "PrepareSessionAdapter",
+    "RunSessionPlan",
     "ProviderAccountExhaustionHandler",
     "SetupFailureTranslator",
     "TextOutputAdapter",

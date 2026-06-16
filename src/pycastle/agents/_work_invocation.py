@@ -14,6 +14,7 @@ from pycastle_agent_runtime.roles import AgentRole
 from pycastle_agent_runtime.session import RunKind
 from pycastle_agent_runtime.work import (
     CancellationToken,
+    RunSessionPlan,
     TextOutputAdapter,
     WorkExecutionAdapter,
     WorkInvocationDependencies,
@@ -159,6 +160,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
 __all__ = [
     "CancellationToken",
     "ProtocolOutputAdapter",
+    "RunSessionPlan",
     "TextOutputAdapter",
     "WorkExecutionAdapter",
     "WorkInvocationDependencies",

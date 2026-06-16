@@ -32,7 +32,7 @@ from pycastle_agent_runtime.errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from pycastle_agent_runtime.work import reduce_text_output_events
+from pycastle_agent_runtime.work import RunSessionPlan, reduce_text_output_events
 from pycastle_agent_runtime.session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -652,7 +652,7 @@ def _standalone_runtime_prompt_result(repo_root: Path) -> str:
                             container_workspace="/tmp/workspace",
                             timeout_retries=0,
                             stage_key_for_role=lambda role: role.value,
-                            prepare_session=lambda **_kwargs: _PreparedSession(),
+                            prepare_session=lambda _plan: _PreparedSession(),
                             build_session=lambda *_args: _Session(),
                             build_runner=lambda *_args: _Runner(),
                             get_git_identity=lambda: ("Test User", "test@example.com"),
@@ -1525,7 +1525,7 @@ class _PromptRuntimeExecutionAdapterStandIn:
         self.work_runner = runner or _RuntimeWorkRunnerStandIn()
         self.resolve_service_calls: list[str] = []
         self.build_work_dependency_calls: list[tuple[str, str, str, object]] = []
-        self.prepare_session_calls: list[dict[str, object]] = []
+        self.prepare_session_calls: list[RunSessionPlan] = []
 
     def resolve_service(self, service_name: str = "") -> _RecordingRuntimeService:
         self.resolve_service_calls.append(service_name)
@@ -1545,8 +1545,10 @@ class _PromptRuntimeExecutionAdapterStandIn:
         def _build_runner(*_args: object) -> WorkExecutionAdapter:
             return self.work_runner
 
-        def _prepare_session(**kwargs: object) -> _PreparedRuntimeSessionStandIn:
-            self.prepare_session_calls.append(dict(kwargs))
+        def _prepare_session(
+            run_session_plan: RunSessionPlan,
+        ) -> _PreparedRuntimeSessionStandIn:
+            self.prepare_session_calls.append(run_session_plan)
             return _PreparedRuntimeSessionStandIn()
 
         return WorkInvocationDependencies(
@@ -2888,15 +2890,91 @@ def test_runtime_package_prompt_entrypoint_preserves_runtime_owned_session_contr
 
     assert result == "adapter result"
     assert adapter.prepare_session_calls == [
-        {
-            "mount_path": tmp_path,
-            "role": AgentRole.IMPLEMENTER,
-            "session_namespace": "issues",
-            "service": service,
-            "container_workspace": "/home/agent/workspace",
-            "run_session_plan": run_session_plan,
-        }
+        RunSessionPlan(
+            mount_path=tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            session_namespace="issues",
+            service=service,
+            container_workspace="/home/agent/workspace",
+            run_session_plan=run_session_plan,
+        )
     ]
+
+
+def test_runtime_package_invoke_work_dispatches_through_canonical_run_session_plan(
+    tmp_path: Path,
+) -> None:
+    service = _RecordingRuntimeService("codex")
+    mirrored_service = _RecordingRuntimeService("claude")
+    runner = _RuntimeWorkRunnerStandIn()
+    observed_session_builds: list[tuple[Path, object, str | None]] = []
+    observed_prepare_plans: list[RunSessionPlan] = []
+
+    class _PreparedResumeSession(_PreparedRuntimeSessionStandIn):
+        def __init__(self) -> None:
+            super().__init__()
+            self.initial_session.run_kind = RunKind.RESUME
+            self.initial_session.provider_session_id = "provider-resume"
+
+    def _prepare_session(run_session: RunSessionPlan) -> _PreparedResumeSession:
+        observed_prepare_plans.append(run_session)
+        return _PreparedResumeSession()
+
+    def _build_session(
+        mount_path: Path,
+        selected_service: object,
+        state_dir: str | None,
+    ) -> _RuntimeSessionStandIn:
+        observed_session_builds.append((mount_path, selected_service, state_dir))
+        return _RuntimeSessionStandIn()
+
+    canonical_run_session = RunSessionPlan(
+        mount_path=tmp_path / "canonical",
+        role=AgentRole.IMPLEMENTER,
+        session_namespace="issues",
+        service=service,
+        container_workspace="/workspace/canonical",
+        run_session_plan={"resume": "provider-resume"},
+    )
+
+    result = asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Runtime Consumer",
+                mount_path=tmp_path / "mirrored",
+                role=AgentRole.REVIEWER,
+                service=mirrored_service,
+                model="gpt-5.4",
+                effort="medium",
+                output_adapter=TextOutputAdapter(prompt="runtime prompt"),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/workspace/mirrored",
+                    timeout_retries=0,
+                    stage_key_for_role=lambda role: role.value,
+                    prepare_session=_prepare_session,
+                    build_session=_build_session,
+                    build_runner=lambda *_args: runner,
+                    get_git_identity=lambda: ("Alice", "alice@example.com"),
+                ),
+                session_namespace="mirrored",
+                run_session_plan={"resume": "mirrored"},
+                run_session=canonical_run_session,
+            )
+        )
+    )
+
+    assert result == "adapter result"
+    assert observed_prepare_plans == [canonical_run_session]
+    assert observed_session_builds == [
+        (canonical_run_session.mount_path, service, None)
+    ]
+    assert len(runner.work_text_calls) == 1
+    role, tool_policy, run_kind, session_uuid, prompt = runner.work_text_calls[0]
+    assert role is AgentRole.IMPLEMENTER
+    assert getattr(tool_policy, "value", tool_policy) == "full"
+    assert run_kind is RunKind.RESUME
+    assert session_uuid == "provider-resume"
+    assert prompt == "runtime prompt"
 
 
 def test_runtime_package_prompt_entrypoint_fills_missing_credential_failure_service_name_from_selected_fallback(
@@ -3076,9 +3154,7 @@ def test_runtime_package_default_status_row_preserves_usage_limit_shutdown_messa
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=lambda role: role.value,
-                        prepare_session=lambda **_kwargs: (
-                            _PreparedRuntimeSessionStandIn()
-                        ),
+                        prepare_session=lambda _plan: _PreparedRuntimeSessionStandIn(),
                         build_session=lambda *_args: _RuntimeSessionStandIn(),
                         build_runner=lambda *_args: _UsageLimitRunner(),
                         get_git_identity=lambda: ("Alice", "alice@example.com"),
@@ -3134,9 +3210,7 @@ def test_runtime_package_default_status_row_preserves_timeout_shutdown_message(
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=lambda role: role.value,
-                        prepare_session=lambda **_kwargs: (
-                            _PreparedRuntimeSessionStandIn()
-                        ),
+                        prepare_session=lambda _plan: _PreparedRuntimeSessionStandIn(),
                         build_session=lambda *_args: _RuntimeSessionStandIn(),
                         build_runner=lambda *_args: _TimeoutRunner(),
                         get_git_identity=lambda: ("Alice", "alice@example.com"),
@@ -3195,9 +3269,7 @@ def test_runtime_package_invoke_work_preserves_provider_named_credential_failure
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=lambda role: role.value,
-                        prepare_session=lambda **_kwargs: (
-                            _PreparedRuntimeSessionStandIn()
-                        ),
+                        prepare_session=lambda _plan: _PreparedRuntimeSessionStandIn(),
                         build_session=lambda *_args: _RuntimeSessionStandIn(),
                         build_runner=lambda *_args: _CredentialFailureRunner(),
                         get_git_identity=lambda: ("Alice", "alice@example.com"),
@@ -3255,9 +3327,7 @@ def test_runtime_package_invoke_work_fills_missing_credential_failure_service_na
                         container_workspace="/home/agent/workspace",
                         timeout_retries=0,
                         stage_key_for_role=lambda role: role.value,
-                        prepare_session=lambda **_kwargs: (
-                            _PreparedRuntimeSessionStandIn()
-                        ),
+                        prepare_session=lambda _plan: _PreparedRuntimeSessionStandIn(),
                         build_session=lambda *_args: _RuntimeSessionStandIn(),
                         build_runner=lambda *_args: _CredentialFailureRunner(),
                         get_git_identity=lambda: ("Alice", "alice@example.com"),

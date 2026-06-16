@@ -63,6 +63,7 @@ if TYPE_CHECKING:
     )
     from pycastle_agent_runtime.work import (
         CancellationToken,
+        RunSessionPlan,
         TextOutputAdapter,
         WorkInvocationDependencies,
         WorkInvocationRequest,
@@ -97,6 +98,7 @@ __all__ = [
     "ProviderStatePreparationAction",
     "PromptTokens",
     "Result",
+    "RunSessionPlan",
     "RuntimeConfigurationError",
     "RunKind",
     "ProviderRunStatePlan",
@@ -148,6 +150,7 @@ def __getattr__(name: str):
         return ServiceRegistry
     if name in {
         "CancellationToken",
+        "RunSessionPlan",
         "TextOutputAdapter",
         "WorkInvocationDependencies",
         "WorkInvocationRequest",
