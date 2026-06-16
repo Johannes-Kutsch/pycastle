@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import asyncio
-import difflib
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -10,13 +9,10 @@ import pycastle_agent_runtime as runtime_package
 
 from .config import (
     Config,
-    KNOWN_CREDENTIAL_ENV_KEYS,
-    StageOverride,
     load_config,
     load_credential_env,
     resolve_logs_dir,
 )
-from .config.loader import referenced_services
 from .errors import (
     ClaudeCliNotFoundError,
     ConfigValidationError,
@@ -24,10 +20,13 @@ from .errors import (
 )
 from .layout import describe_config_layers, resolve_layout
 from . import orchestration as pycastle_orchestration
+from .run_startup_preparation import (
+    RunStartupImproveModeFlagFacts,
+    configured_provider_adapters_for_run,
+    prepare_run_startup,
+)
 from ._universal_image_build import UniversalImageBuildOptions
 from .display.status_display import PlainStatusDisplay
-
-_KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
 
 if TYPE_CHECKING:
     from .services.agent_service import AgentService
@@ -49,67 +48,6 @@ class _AgentRuntimeAdapter:
 agent_runtime: Any = _AgentRuntimeAdapter()
 
 
-def _stage_overrides(cfg: Config) -> list[tuple[str, StageOverride]]:
-    return [
-        ("plan", cfg.plan_override),
-        ("implement", cfg.implement_override),
-        ("review", cfg.review_override),
-        ("merge", cfg.merge_override),
-        ("preflight_issue", cfg.preflight_issue_override),
-        ("improve", cfg.improve_override),
-    ]
-
-
-def _validate_stage_overrides(
-    cfg: Config,
-    valid_efforts_by_service: dict[str, frozenset[str]],
-    valid_models_by_service: dict[str, frozenset[str]] | None = None,
-) -> list[str]:
-    if valid_models_by_service is None:
-        valid_models_by_service = {}
-    violations: list[str] = []
-    for stage_name, override in _stage_overrides(cfg):
-        for stage_label, entry in zip(
-            agent_runtime.validation_labels(stage_name, override),
-            agent_runtime.chain_entries(override),
-            strict=True,
-        ):
-            svc_name = entry.service
-            valid_efforts: frozenset[str] | None = None
-            if not svc_name:
-                violations.append(f"  stage={stage_label!r}: service is required")
-            else:
-                valid_efforts = valid_efforts_by_service.get(svc_name)
-                if valid_efforts is None:
-                    violations.append(
-                        f"  stage={stage_label!r}: service={svc_name!r} is not a known service"
-                        f" (known: {sorted(_KNOWN_SERVICES)})"
-                    )
-            if not entry.effort:
-                violations.append(f"  stage={stage_label!r}: effort is required")
-            elif valid_efforts is not None and entry.effort not in valid_efforts:
-                violations.append(
-                    f"  stage={stage_label!r}: effort={entry.effort!r} is invalid"
-                    f" for service={svc_name!r} (valid: {sorted(valid_efforts)})"
-                )
-            if svc_name and entry.model:
-                valid_models = valid_models_by_service.get(svc_name)
-                if valid_models is not None and entry.model not in valid_models:
-                    suggestion = difflib.get_close_matches(
-                        entry.model, sorted(valid_models), n=1
-                    )
-                    detail = (
-                        f' Did you mean "{suggestion[0]}"?'
-                        if suggestion
-                        else f" (valid: {sorted(valid_models)})"
-                    )
-                    violations.append(
-                        f"  stage={stage_label!r}: model={entry.model!r} is invalid"
-                        f" for service={svc_name!r}.{detail}"
-                    )
-    return violations
-
-
 def _load_env(cfg: Config | None = None) -> dict[str, str]:
     if cfg is None:
         load_config()
@@ -119,51 +57,7 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
 def _configured_service_registry(
     cfg: Config, env: dict[str, str]
 ) -> dict[str, "AgentService"]:
-    from .services.agent_service import AgentService
-    from .services.claude_service import ClaudeService
-    from .services.codex_service import CodexService
-    from .services.opencode_service import OpenCodeService
-
-    referenced = referenced_services(cfg)
-    service_registry: dict[str, AgentService] = {}
-
-    if "codex" in referenced:
-        service_registry["codex"] = CodexService()
-
-    if "opencode" in referenced and env.get("OPENCODE_GO_API_KEY"):
-        service_registry["opencode"] = OpenCodeService(
-            api_key=env.get("OPENCODE_GO_API_KEY")
-        )
-
-    if "claude" not in referenced:
-        return service_registry
-
-    primary = env.get("CLAUDE_CODE_OAUTH_TOKEN")
-    if not primary:
-        return service_registry
-
-    accounts: list[tuple[str, str]] = []
-    secondary = env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
-    if secondary:
-        accounts.append(("secondary", secondary))
-    accounts.append(("primary", primary))
-    service_registry["claude"] = ClaudeService(accounts=accounts)
-    return service_registry
-
-
-def _validate_locally_configured_stage_overrides(
-    cfg: Config, service_registry: dict[str, "AgentService"]
-) -> list[str]:
-    registry = agent_runtime.ServiceRegistry(service_registry)
-    violations: list[str] = []
-    for stage_name, override in _stage_overrides(cfg):
-        if registry.has_configured_candidate(override):
-            continue
-        violations.append(
-            f"  stage={stage_name!r}: no locally configured service in priority chain "
-            f"{agent_runtime.render_chain_label(override)!r}"
-        )
-    return violations
+    return configured_provider_adapters_for_run(cfg, env)
 
 
 def _print_layer_summary() -> None:
@@ -311,41 +205,19 @@ def _do_run(
     from typing import cast
 
     from .commands.build import main as _build
-    from .iteration._deps import ImproveMode
-    from .services.agent_service import AgentService
-    from .services.claude_service import ClaudeService
-    from .services.codex_service import CodexService
-    from .services.opencode_service import OpenCodeService
+    from .run_startup_preparation import RunImproveMode
 
-    validation_services: dict[str, AgentService] = {
-        "claude": ClaudeService(),
-        "codex": CodexService(),
-        "opencode": OpenCodeService(),
-    }
-    valid_efforts_by_service = {
-        name: svc.valid_efforts() for name, svc in validation_services.items()
-    }
-    valid_models_by_service = {
-        name: svc.valid_models() for name, svc in validation_services.items()
-    }
-    violations = _validate_stage_overrides(
-        cfg, valid_efforts_by_service, valid_models_by_service
+    startup = prepare_run_startup(
+        cfg,
+        _load_env(cfg=cfg),
+        RunStartupImproveModeFlagFacts(
+            no_improve=no_improve,
+            improve_mode_flag=cast(RunImproveMode, improve_mode_flag),
+        ),
     )
-    if violations:
+    if startup.validation_failures:
         click.echo(
-            "Config validation errors:\n" + "\n".join(violations),
-            err=True,
-        )
-        sys.exit(1)
-
-    env = _load_env(cfg=cfg)
-    service_registry = _configured_service_registry(cfg, env)
-    local_config_violations = _validate_locally_configured_stage_overrides(
-        cfg, service_registry
-    )
-    if local_config_violations:
-        click.echo(
-            "Config validation errors:\n" + "\n".join(local_config_violations),
+            "Config validation errors:\n" + "\n".join(startup.validation_failures),
             err=True,
         )
         sys.exit(1)
@@ -358,27 +230,12 @@ def _do_run(
     except (ConfigValidationError, DockerServiceError) as exc:
         click.echo(str(exc), err=True)
         sys.exit(1)
-    # Strip provider-specific credentials from the shared env; service adapters
-    # inject what they need into the agent container at the streaming boundary.
-    container_env = {
-        k: v
-        for k, v in env.items()
-        if k in KNOWN_CREDENTIAL_ENV_KEYS
-        and k not in {"CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "OPENCODE_GO_API_KEY"}
-    }
-    if no_improve:
-        effective_improve_mode = None
-    elif improve_mode_flag is not None:
-        effective_improve_mode = improve_mode_flag
-    else:
-        effective_improve_mode = cfg.improve_mode
-    registry = agent_runtime.ServiceRegistry(service_registry)
     asyncio.run(
         agent_runtime.run(
-            container_env,
+            startup.shared_container_env,
             Path(".").resolve(),
-            service_registry=registry,
-            improve_mode=cast(ImproveMode, effective_improve_mode),
+            service_registry=startup.runtime_registry,
+            improve_mode=startup.effective_improve_mode,
         )
     )
 
