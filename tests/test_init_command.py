@@ -662,6 +662,62 @@ def test_init_runs_wizard_prompts_while_refresh_is_non_interactive(
         refresh()
 
 
+def test_init_skips_github_labels_prompt_when_gh_token_is_preserved(
+    tmp_path, monkeypatch
+):
+    """Re-running init with a preserved GH_TOKEN must not ask to create labels."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("GH_TOKEN=existing-gh\nCLAUDE_CODE_OAUTH_TOKEN=\n")
+
+    confirm_messages: list[str] = []
+
+    def confirm_side_effect(message: str, *args: object, **kwargs: object) -> bool:
+        confirm_messages.append(message)
+        return False
+
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", side_effect=confirm_side_effect),
+    ):
+        main(scope="local")
+
+    assert "GH_TOKEN=existing-gh" in env_file.read_text()
+    assert not any("Create GitHub labels?" in message for message in confirm_messages)
+
+
+def test_init_prompts_for_github_labels_when_gh_token_is_set_during_init(
+    tmp_path, monkeypatch
+):
+    """Entering a GH_TOKEN during init must make the labels prompt eligible."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    confirm_messages: list[str] = []
+
+    def confirm_side_effect(message: str, *args: object, **kwargs: object) -> bool:
+        confirm_messages.append(message)
+        return "Create GitHub labels?" in message
+
+    def prompt_side_effect(message: str, *args: object, **kwargs: object) -> str:
+        if "GitHub token" in message:
+            return "my-gh-token"
+        return ""
+
+    with (
+        patch("click.prompt", side_effect=prompt_side_effect),
+        patch("click.confirm", side_effect=confirm_side_effect),
+        patch("pycastle.commands.labels.create_labels_interactive") as create_labels,
+    ):
+        main(scope="local")
+
+    assert any("Create GitHub labels?" in message for message in confirm_messages)
+    create_labels.assert_called_once_with("my-gh-token")
+
+
 def test_init_creates_setup_scaffold_for_refreshable_helpers(tmp_path, monkeypatch):
     """init exposes the refreshable setup scaffold without testing module-owned details."""
     from pycastle.commands.init import main
