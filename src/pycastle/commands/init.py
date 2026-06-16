@@ -236,27 +236,41 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     local_env_file = layout.local_env_file
     local_env_exists = local_env_file.exists()
     global_env_exists = layout.global_env_file.exists()
-    plan_layout = _plan_layout(layout, scope)
-    initial_env_plan = _build_click_init_plan(
+    init_plan = _build_click_init_plan(
         layout=layout,
         scope=scope,
         service_selection=service_selection,
-        target_env_exists=plan_layout.target_env_file.exists(),
+        target_env_exists=(
+            local_env_exists if scope == "local" else layout.global_env_file.exists()
+        ),
         local_env_exists=local_env_exists,
         global_env_exists=global_env_exists,
     )
-    manage_env_file = initial_env_plan.planned_env_file.should_manage
+    manage_env_file = init_plan.planned_env_file.should_manage
 
-    if initial_env_plan.planned_env_file.should_delete_local_env:
+    if init_plan.planned_env_file.should_delete_local_env:
         if click.confirm(
             "Delete local .env? (Global will be used instead)", default=False
         ):
             local_env_file.unlink()
             local_env_exists = False
-    if initial_env_plan.planned_env_file.should_create_local_env:
+    if init_plan.planned_env_file.should_create_local_env:
         manage_env_file = click.confirm(
             "Create local .env? (Global stays unchanged, local takes priority)",
             default=False,
+        )
+    if local_env_exists != layout.local_env_file.exists():
+        init_plan = _build_click_init_plan(
+            layout=layout,
+            scope=scope,
+            service_selection=service_selection,
+            target_env_exists=(
+                local_env_exists
+                if scope == "local"
+                else layout.global_env_file.exists()
+            ),
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
         )
 
     try:
@@ -268,7 +282,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
         sys.exit(1)
 
-    config_file = plan_layout.target_config_file
+    config_file = init_plan.target_config_file
     if config_file.exists():
         if scope == "global":
             click.echo(
@@ -299,13 +313,13 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             )
             sys.exit(1)
 
-    env_file = plan_layout.target_env_file
+    env_file = init_plan.planned_env_file.path
     gh_token = ""
     claude_token = ""
     if manage_env_file:
         if env_file.exists():
             existing_env_keys = _read_env_keys(env_file)
-            init_plan = _build_click_init_plan(
+            env_plan = _build_click_init_plan(
                 layout=layout,
                 scope=scope,
                 service_selection=service_selection,
@@ -315,9 +329,9 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                 local_env_exists=local_env_exists,
                 global_env_exists=global_env_exists,
             )
-            _merge_missing_env_keys(env_file, init_plan.planned_env_file.missing_keys)
+            _merge_missing_env_keys(env_file, env_plan.planned_env_file.missing_keys)
         else:
-            init_plan = _build_click_init_plan(
+            env_plan = _build_click_init_plan(
                 layout=layout,
                 scope=scope,
                 service_selection=service_selection,
@@ -329,7 +343,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             try:
                 env_file.write_text(
                     "".join(
-                        f"{key}=\n" for key in init_plan.planned_env_file.missing_keys
+                        f"{key}=\n" for key in env_plan.planned_env_file.missing_keys
                     )
                 )
             except Exception as e:
@@ -340,7 +354,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                 sys.exit(1)
 
         existing_env = _read_env_values(env_file)
-        init_plan = _build_click_init_plan(
+        env_plan = _build_click_init_plan(
             layout=layout,
             scope=scope,
             service_selection=service_selection,
@@ -352,7 +366,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
 
         prompted_values: dict[str, str] = {}
-        for credential_prompt in init_plan.credential_prompts:
+        for credential_prompt in env_plan.credential_prompts:
             if credential_prompt.allow_overwrite:
                 value = _prompt_credential_with_overwrite(
                     env_file,
@@ -369,7 +383,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         gh_token = prompted_values.get("GH_TOKEN", "")
         claude_token = prompted_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
 
-        if "claude" in init_plan.selected_services and not claude_token:
+        if "claude" in env_plan.selected_services and not claude_token:
             click.echo(
                 f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
                 "Run `claude setup-token` to generate a token."
