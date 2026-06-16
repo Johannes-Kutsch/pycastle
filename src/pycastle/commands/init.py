@@ -9,6 +9,7 @@ from typing import Literal
 import click
 
 from ..init_wizard import (
+    ConfigFileAction,
     HostAuthFacts,
     InitPlan,
     InitWizardLayoutFacts,
@@ -137,18 +138,48 @@ def _echo_init_plan_warnings(plan: InitPlan) -> None:
         click.echo(f"Warning: {message}")
 
 
+def _apply_config_file_action(defaults_pkg, config_action: ConfigFileAction) -> None:
+    config_file = config_action.path
+    if not config_action.should_create:
+        if config_action.message is not None:
+            click.echo(config_action.message)
+    else:
+        try:
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_file.write_bytes((defaults_pkg / "config.py").read_bytes())
+        except Exception as e:
+            click.echo(
+                click.style(f"Error: could not write {config_file} — {e}", fg="red"),
+                err=True,
+            )
+            sys.exit(1)
+
+    for hint in config_action.hints:
+        try:
+            _fill_commented_hint(config_file, hint.key, hint.value)
+        except Exception as e:
+            click.echo(
+                click.style(
+                    f"Error: could not set {hint.key} in {config_file} — {e}",
+                    fg="red",
+                ),
+                err=True,
+            )
+            sys.exit(1)
+
+
 def _prompt_credential_with_overwrite(
     env_file: Path,
     key: str,
     prompt_text: str,
     existing: dict[str, str],
-) -> str:
+) -> tuple[str, bool]:
     """Prompt for a credential, asking for overwrite confirmation if already set."""
     current = existing.get(key, "")
     if current:
         if not click.confirm(f"Overwrite existing {key}?", default=False):
-            return current
-    return _prompt_and_save_credential(env_file, key, prompt_text)
+            return current, False
+    return _prompt_and_save_credential(env_file, key, prompt_text), True
 
 
 def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> str:
@@ -273,34 +304,9 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
         sys.exit(1)
 
-    config_file = init_plan.target_config_file
     config_action = init_plan.config_file_action
-    if config_action is not None and not config_action.should_create:
-        if config_action.message is not None:
-            click.echo(config_action.message)
-    else:
-        try:
-            config_file.parent.mkdir(parents=True, exist_ok=True)
-            config_file.write_bytes((pkg / "config.py").read_bytes())
-        except Exception as e:
-            click.echo(
-                click.style(f"Error: could not write {config_file} — {e}", fg="red"),
-                err=True,
-            )
-            sys.exit(1)
-
-    for hint in () if config_action is None else config_action.hints:
-        try:
-            _fill_commented_hint(config_file, hint.key, hint.value)
-        except Exception as e:
-            click.echo(
-                click.style(
-                    f"Error: could not set {hint.key} in {config_file} — {e}",
-                    fg="red",
-                ),
-                err=True,
-            )
-            sys.exit(1)
+    if config_action is not None:
+        _apply_config_file_action(pkg, config_action)
 
     env_file = init_plan.planned_env_file.path
     gh_token = ""
@@ -355,22 +361,27 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
 
         prompted_values: dict[str, str] = {}
+        effective_values: dict[str, str] = {}
         for credential_prompt in env_plan.credential_prompts:
             if credential_prompt.allow_overwrite:
-                value = _prompt_credential_with_overwrite(
+                value, was_prompted = _prompt_credential_with_overwrite(
                     env_file,
                     credential_prompt.key,
                     credential_prompt.prompt_text,
                     existing_env,
                 )
+                if was_prompted and value:
+                    prompted_values[credential_prompt.key] = value
             else:
                 value = _prompt_and_save_credential(
                     env_file, credential_prompt.key, credential_prompt.prompt_text
                 )
-            prompted_values[credential_prompt.key] = value
+                if value:
+                    prompted_values[credential_prompt.key] = value
+            effective_values[credential_prompt.key] = value
 
-        gh_token = prompted_values.get("GH_TOKEN", "")
-        claude_token = prompted_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+        gh_token = effective_values.get("GH_TOKEN", "")
+        claude_token = effective_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
 
         if "claude" in env_plan.selected_services and not claude_token:
             click.echo(
@@ -379,7 +390,19 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             )
 
     click.echo()
-    if gh_token and click.confirm("Create GitHub labels?", default=False):
+    label_plan = _build_click_init_plan(
+        layout=layout,
+        scope=scope,
+        service_selection=service_selection,
+        manage_env_file=manage_env_file,
+        prompted_env_values=prompted_values if manage_env_file else {},
+        target_env_exists=env_file.exists(),
+        local_env_exists=layout.local_env_file.exists(),
+        global_env_exists=layout.global_env_file.exists(),
+    )
+    if label_plan.label_prompt_eligibility.should_prompt and click.confirm(
+        "Create GitHub labels?", default=False
+    ):
         from .labels import create_labels_interactive
 
         create_labels_interactive(gh_token)
