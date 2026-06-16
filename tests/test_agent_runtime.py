@@ -3318,6 +3318,190 @@ def test_runtime_package_resident_entrypoint_executes_planned_resume_and_returns
     ]
 
 
+def test_runtime_package_resident_entrypoint_executes_planned_fresh_run_and_returns_fresh_session_metadata(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=tmp_path / ".pycastle-session" / "implementer" / "main" / "codex",
+            has_resumable_provider_state=False,
+            state_dir_relpath=".pycastle-session/implementer/main/codex/",
+        )
+    )
+    provider_state = runtime.ProviderSessionState(runtime.RunKind.FRESH, None)
+    service = _PlanRecordingRuntimeService("codex", provider_state)
+    provider_session_adapter = _RecordingProviderSessionAdapter(
+        provider_state,
+        service_name="codex",
+    )
+
+    class _ResidentRunner(_RuntimeWorkRunnerStandIn):
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: object = "full",
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> str:
+            if on_provider_session_id is not None:
+                on_provider_session_id("fresh-runtime-session-id")
+            self.work_text_calls.append(
+                (role, tool_policy, run_kind, session_uuid, prompt)
+            )
+            return self._result
+
+    adapter = _PromptRuntimeExecutionAdapterStandIn(
+        git_service=_make_git_service(),
+        service=service,
+        session=_RuntimeSessionStandIn(),
+        runner=_ResidentRunner(),
+    )
+    plan = runtime.plan_resident_session(
+        runtime.ResidentSessionPlanRequest(
+            worktree=tmp_path,
+            role=runtime.AgentRole.IMPLEMENTER,
+            namespace="main",
+            service=service,
+            role_session=role_session,
+            provider_session_adapter=provider_session_adapter,
+        )
+    )
+
+    result = asyncio.run(
+        runtime.run_resident_prompt(
+            runner=adapter,
+            request=runtime.ResidentRunRequest(
+                name="Runtime Consumer",
+                prompt="Start a new session.",
+                worktree=runtime.WorktreeMount(tmp_path),
+                model="gpt-5.4",
+                effort="medium",
+                session_plan=plan,
+            ),
+        )
+    )
+
+    assert result == runtime.ResidentRunResult(
+        output="adapter result",
+        runtime_metadata=runtime.ResidentRuntimeMetadata(
+            service_name="codex",
+            provider_session_id="fresh-runtime-session-id",
+            run_kind=runtime.RunKind.FRESH,
+            session_namespace="main",
+            exact_transcript_match=False,
+        ),
+    )
+    assert provider_session_adapter.prepare_calls == [
+        (plan.host_provider_state_dir, None)
+    ]
+    assert role_session.saved_service_session_ids == [
+        ("codex", "fresh-runtime-session-id")
+    ]
+    assert role_session.recorded_success_metadata == [
+        ("codex", "fresh-runtime-session-id")
+    ]
+    assert adapter.prepare_session_calls == []
+    assert adapter.work_runner.work_text_calls == [
+        (
+            AgentRole.IMPLEMENTER,
+            runtime.ToolPolicy.FULL,
+            RunKind.FRESH,
+            None,
+            "Start a new session.",
+        )
+    ]
+
+
+def test_runtime_package_resident_entrypoint_returns_prepared_provider_session_id_when_execution_keeps_existing_session(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    selected_state_dir = tmp_path / "custom" / "generic-state"
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=tmp_path
+            / ".pycastle-session"
+            / "implementer"
+            / "issues"
+            / "codex",
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/issues/codex/",
+        )
+    )
+    provider_state = runtime.ProviderSessionState(
+        runtime.RunKind.RESUME,
+        "persisted-session-id",
+        state_dir_relpath="custom/generic-state/",
+        state_dir_path=selected_state_dir,
+        exact_transcript_match=True,
+        persist_provider_session_id=True,
+    )
+    service = _PlanRecordingRuntimeService("codex", provider_state)
+    provider_session_adapter = _RecordingProviderSessionAdapter(
+        provider_state,
+        service_name="codex",
+    )
+    adapter = _PromptRuntimeExecutionAdapterStandIn(
+        git_service=_make_git_service(),
+        service=service,
+        session=_RuntimeSessionStandIn(),
+    )
+    plan = runtime.plan_resident_session(
+        runtime.ResidentSessionPlanRequest(
+            worktree=tmp_path,
+            role=runtime.AgentRole.IMPLEMENTER,
+            namespace="issues",
+            service=service,
+            role_session=role_session,
+            provider_session_adapter=provider_session_adapter,
+        )
+    )
+
+    result = asyncio.run(
+        runtime.run_resident_prompt(
+            runner=adapter,
+            request=runtime.ResidentRunRequest(
+                name="Runtime Consumer",
+                prompt="Continue from prior context.",
+                worktree=runtime.WorktreeMount(tmp_path),
+                model="gpt-5.4",
+                effort="medium",
+                session_plan=plan,
+            ),
+        )
+    )
+
+    assert result == runtime.ResidentRunResult(
+        output="adapter result",
+        runtime_metadata=runtime.ResidentRuntimeMetadata(
+            service_name="codex",
+            provider_session_id="persisted-session-id",
+            run_kind=runtime.RunKind.RESUME,
+            session_namespace="issues",
+            exact_transcript_match=True,
+        ),
+    )
+    assert provider_session_adapter.prepare_calls == [(selected_state_dir, None)]
+    assert role_session.saved_service_session_ids == [("codex", "persisted-session-id")]
+    assert role_session.recorded_success_metadata == [("codex", "persisted-session-id")]
+    assert adapter.prepare_session_calls == []
+    assert adapter.work_runner.work_text_calls == [
+        (
+            AgentRole.IMPLEMENTER,
+            runtime.ToolPolicy.FULL,
+            RunKind.RESUME,
+            "persisted-session-id",
+            "Continue from prior context.",
+        )
+    ]
+
+
 def test_runtime_package_one_shot_entrypoint_resolves_stage_chain_and_returns_selected_runtime_result(
     tmp_path: Path,
 ) -> None:
