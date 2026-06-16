@@ -319,6 +319,26 @@ def test_build_init_plan_represents_existing_prompted_credentials_as_overwrite_c
     )
 
 
+def test_build_init_plan_keeps_existing_empty_unprompted_env_keys():
+    from pycastle.init_wizard import InitWizardPlanningInputs, build_init_plan
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("codex",),
+            scope_choice="local",
+            layout=_layout(),
+            existing_env_keys=("GH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"),
+            existing_env_values={"GH_TOKEN": "existing-gh"},
+        )
+    )
+
+    assert plan.planned_env_file.missing_keys == ()
+    assert tuple((action.key, action.action) for action in plan.env_key_actions) == (
+        ("GH_TOKEN", "overwrite_prompt"),
+        ("CLAUDE_CODE_OAUTH_TOKEN", "keep"),
+    )
+
+
 def test_build_init_plan_is_filesystem_pure_for_service_selection_and_credentials(
     tmp_path,
 ):

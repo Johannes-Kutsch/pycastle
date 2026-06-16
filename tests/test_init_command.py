@@ -1720,6 +1720,26 @@ def test_init_merges_missing_template_keys_into_existing_env(tmp_path, monkeypat
     assert "CLAUDE_CODE_OAUTH_TOKEN=" in content
 
 
+def test_init_codex_rerun_keeps_existing_empty_managed_env_key_once(
+    tmp_path, monkeypatch
+):
+    """Re-running init for codex keeps an existing empty Claude key without duplicating it."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    env_file = tmp_path / "pycastle" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("GH_TOKEN=existing-gh\nCLAUDE_CODE_OAUTH_TOKEN=\n")
+
+    with (
+        patch("click.prompt", return_value="codex"),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert env_file.read_text() == "GH_TOKEN=existing-gh\nCLAUDE_CODE_OAUTH_TOKEN=\n"
+
+
 def test_init_overwrite_no_preserves_existing_gh_token(tmp_path, monkeypatch):
     """Declining overwrite for GH_TOKEN keeps the existing value unchanged."""
     from pycastle.commands.init import main

@@ -199,7 +199,7 @@ def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
                     "overwrite_prompt"
                     if key in existing_values and key in prompted_env_keys
                     else "keep"
-                    if key in existing_values
+                    if key in existing_keys
                     else "prompt"
                     if key in prompted_env_keys
                     else "add_missing"
