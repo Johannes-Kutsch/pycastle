@@ -425,6 +425,15 @@ class AgentRunner:
 
         from pycastle_agent_runtime.work import invoke_work
 
+        run_session = RuntimeRunSessionPlan(
+            mount_path=request.mount_path,
+            role=request.role,
+            session_namespace=request.session_namespace,
+            service=service,
+            container_workspace=dependencies.container_workspace,
+            run_session_plan=request.run_session_plan,
+        )
+
         return await invoke_work(
             WorkInvocationRequest(
                 name=request.name,
@@ -441,8 +450,7 @@ class AgentRunner:
                 status_display=request.status_display,
                 token=request.token,
                 work_body=request.work_body,
-                session_namespace=request.session_namespace,
-                run_session_plan=request.run_session_plan,
+                run_session=run_session,
                 color_key=color_key,
                 allow_non_typed_resume_retry=True,
             )
