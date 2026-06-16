@@ -131,6 +131,9 @@ class InitPlan:
         default_factory=lambda: LabelPromptEligibility(False)
     )
 
+    def warning_messages(self) -> tuple[str, ...]:
+        return tuple(warning.message for warning in self.warnings)
+
 
 def _normalize_selected_services(selected_services: tuple[str, ...]) -> tuple[str, ...]:
     if not selected_services:

@@ -11,6 +11,7 @@ import click
 from ..config.loader import derive_docker_image_name
 from ..init_wizard import (
     HostAuthFacts,
+    InitPlan,
     InitWizardLayoutFacts,
     InitWizardPlanningInputs,
     ScaffoldStageChainFacts,
@@ -126,8 +127,8 @@ def _build_click_init_plan(
         raise click.ClickException(str(exc)) from exc
 
 
-def _echo_init_plan_warnings(messages: tuple[str, ...]) -> None:
-    for message in messages:
+def _echo_init_plan_warnings(plan: InitPlan) -> None:
+    for message in plan.warning_messages():
         click.echo(f"Warning: {message}")
 
 
@@ -209,9 +210,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             bundled_default_stage_chains=scaffold.bundled_default_stage_chains()
         ),
     )
-    _echo_init_plan_warnings(
-        tuple(warning.message for warning in service_plan.warnings)
-    )
+    _echo_init_plan_warnings(service_plan)
 
     if scope is None:
         use_global = click.confirm(
