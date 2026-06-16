@@ -236,6 +236,27 @@ def test_build_init_plan_targets_scope_specific_config_and_env_files(
     assert plan.planned_env_file.path == expected_env_file
 
 
+def test_build_init_plan_warns_when_codex_is_selected_without_host_auth():
+    from pycastle.init_wizard import (
+        HostAuthFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("codex",),
+            scope_choice="local",
+            layout=_layout(),
+            host_auth=HostAuthFacts(has_host_codex_auth=False),
+        )
+    )
+
+    assert plan.warnings == (
+        HostAuthFacts,  # type: ignore[comparison-overlap]
+    )
+
+
 def test_build_init_plan_marks_delete_local_env_as_optional_when_global_scope_has_local_env(
     tmp_path,
 ):
