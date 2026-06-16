@@ -1,47 +1,32 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from . import _time as _time_module
-from .contracts import AgentService, ToolPolicy
+from .contracts import ToolPolicy
+from .execution_contracts import (
+    PromptRunRequest,
+    PromptRunSession,
+    PromptRuntimeExecutionAdapter,
+    RunSessionPlan,
+    TextOutputAdapter,
+    WorkInvocationRequest,
+    WorktreeMount,
+)
 from .errors import RuntimeConfigurationError
 from .roles import AgentRole
 from .service_registry import ServiceRegistry
-from .work import (
-    CancellationToken,
-    RunSessionPlan,
-    TextOutputAdapter,
-    WorkInvocationDependencies,
-    WorkInvocationRequest,
-    invoke_work,
-)
-from .types import StageOverride
+from .work import invoke_work
 
-
-@dataclass(frozen=True)
-class WorktreeMount:
-    host_path: Path
-
-
-@dataclass(frozen=True)
-class PromptRunSession:
-    namespace: str = ""
-    plan: Any = None
-
-
-class PromptRuntimeExecutionAdapter(Protocol):
-    def resolve_service(self, service_name: str = "") -> AgentService: ...
-
-    def build_work_dependencies(
-        self,
-        *,
-        name: str,
-        model: str,
-        effort: str,
-        service: AgentService,
-    ) -> WorkInvocationDependencies: ...
+__all__ = [
+    "PromptRunRequest",
+    "PromptRunSession",
+    "PromptRuntime",
+    "PromptRuntimeExecutionAdapter",
+    "ToolPolicy",
+    "WorktreeMount",
+    "run_prompt",
+]
 
 
 def _require_execution_adapter_method(
@@ -54,31 +39,6 @@ def _require_execution_adapter_method(
     raise RuntimeConfigurationError(
         f"Prompt runtime requires an execution adapter with callable `{method_name}()`."
     )
-
-
-@dataclass(frozen=True)
-class PromptRunRequest:
-    prompt: str
-    worktree: WorktreeMount
-    override: StageOverride
-    tool_policy: ToolPolicy = ToolPolicy.FULL
-    name: str = "Runtime Agent"
-    status_display: Any = None
-    work_body: str = ""
-    token: CancellationToken | None = None
-    session: PromptRunSession = field(default_factory=PromptRunSession)
-
-    @property
-    def mount_path(self) -> Path:
-        return self.worktree.host_path
-
-    @property
-    def session_namespace(self) -> str:
-        return self.session.namespace
-
-    @property
-    def run_session_plan(self) -> Any:
-        return self.session.plan
 
 
 class PromptRuntime:

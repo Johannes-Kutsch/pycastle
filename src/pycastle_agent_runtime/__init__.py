@@ -20,6 +20,12 @@ from .contracts import (
     UnsupportedTokens,
     UsageLimit,
 )
+from .execution_contracts import (
+    RunSessionPlan,
+    TextOutputAdapter,
+    WorkInvocationDependencies,
+    WorkInvocationRequest,
+)
 from .errors import (
     AgentCredentialFailureError,
     AgentFailedError,
@@ -63,10 +69,6 @@ if TYPE_CHECKING:
     )
     from pycastle_agent_runtime.work import (
         CancellationToken,
-        RunSessionPlan,
-        TextOutputAdapter,
-        WorkInvocationDependencies,
-        WorkInvocationRequest,
         invoke_work,
     )
 
@@ -137,28 +139,48 @@ def __getattr__(name: str):
     if name in {
         "PromptRunRequest",
         "PromptRunSession",
+        "PromptRuntimeExecutionAdapter",
         "PromptRuntime",
         "WorktreeMount",
         "run_prompt",
     }:
-        from pycastle_agent_runtime import runtime
+        if name == "PromptRuntime" or name == "run_prompt":
+            from pycastle_agent_runtime import runtime
 
-        return getattr(runtime, name)
+            return getattr(runtime, name)
+        from pycastle_agent_runtime import execution_contracts
+
+        return getattr(execution_contracts, name)
     if name == "ServiceRegistry":
         from pycastle_agent_runtime.service_registry import ServiceRegistry
 
         return ServiceRegistry
     if name in {
         "CancellationToken",
+        "PreparedProviderRunSession",
+        "PreparedSession",
+        "PrepareSessionAdapter",
         "RunSessionPlan",
+        "SetupFailureTranslator",
+        "StatusDisplayFactory",
+        "StatusRowFactory",
         "TextOutputAdapter",
+        "WorkExecutionAdapter",
         "WorkInvocationDependencies",
         "WorkInvocationRequest",
+        "WorkModelDisplayMetadata",
+        "WorkOutputAdapter",
+        "WorkStatusDisplay",
+        "WorkStatusRow",
         "invoke_work",
     }:
-        from pycastle_agent_runtime import work
+        if name == "invoke_work" or name == "CancellationToken":
+            from pycastle_agent_runtime import work
 
-        return getattr(work, name)
+            return getattr(work, name)
+        from pycastle_agent_runtime import execution_contracts
+
+        return getattr(execution_contracts, name)
     if name in {
         "ProviderRunStatePlan",
         "ProviderRunStatePlanRequest",
