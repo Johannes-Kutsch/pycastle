@@ -175,6 +175,193 @@ def test_init_plan_warning_messages_preserve_warning_order():
     assert plan.warning_messages() == ("first warning", "second warning")
 
 
+def test_build_init_plan_local_missing_config_plans_creation_with_docker_image_hint(
+    tmp_path, monkeypatch
+):
+    from pycastle.init_wizard import (
+        ConfigHintAction,
+        InitWizardLayoutFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    repo_root = tmp_path / "My Cool Project"
+    repo_root.mkdir()
+    monkeypatch.chdir(repo_root)
+
+    config_file = repo_root / "pycastle" / "config.py"
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="local",
+            layout=InitWizardLayoutFacts(
+                pycastle_dir=repo_root / "pycastle",
+                pycastle_home=tmp_path / "home",
+                target_config_file=config_file,
+                target_env_file=repo_root / "pycastle" / ".env",
+                local_env_file=repo_root / "pycastle" / ".env",
+                global_env_file=tmp_path / "home" / ".env",
+            ),
+        )
+    )
+
+    assert plan.target_config_file == config_file
+    assert plan.config_file_action is not None
+    assert plan.config_file_action.path == config_file
+    assert plan.config_file_action.should_create is True
+    assert plan.config_file_action.hints == (
+        ConfigHintAction(key="docker_image_name", value="my-cool-project"),
+    )
+    assert not config_file.exists()
+
+
+def test_build_init_plan_global_missing_config_plans_creation_without_docker_image_hint(
+    tmp_path, monkeypatch
+):
+    from pycastle.init_wizard import (
+        InitWizardLayoutFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    repo_root = tmp_path / "My Cool Project"
+    repo_root.mkdir()
+    monkeypatch.chdir(repo_root)
+
+    config_file = tmp_path / "home" / "config.py"
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="global",
+            layout=InitWizardLayoutFacts(
+                pycastle_dir=repo_root / "pycastle",
+                pycastle_home=tmp_path / "home",
+                target_config_file=config_file,
+                target_env_file=tmp_path / "home" / ".env",
+                local_env_file=repo_root / "pycastle" / ".env",
+                global_env_file=tmp_path / "home" / ".env",
+            ),
+        )
+    )
+
+    assert plan.target_config_file == config_file
+    assert plan.config_file_action is not None
+    assert plan.config_file_action.path == config_file
+    assert plan.config_file_action.should_create is True
+    assert plan.config_file_action.hints == ()
+    assert not config_file.exists()
+
+
+def test_build_init_plan_existing_global_config_preserves_file_with_untouched_message(
+    tmp_path, monkeypatch
+):
+    from pycastle.init_wizard import (
+        InitWizardLayoutFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    repo_root = tmp_path / "project"
+    repo_root.mkdir()
+    monkeypatch.chdir(repo_root)
+
+    config_file = tmp_path / "home" / "config.py"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text("# existing\n")
+    before = config_file.read_text()
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="global",
+            layout=InitWizardLayoutFacts(
+                pycastle_dir=repo_root / "pycastle",
+                pycastle_home=tmp_path / "home",
+                target_config_file=config_file,
+                target_env_file=tmp_path / "home" / ".env",
+                local_env_file=repo_root / "pycastle" / ".env",
+                global_env_file=tmp_path / "home" / ".env",
+            ),
+        )
+    )
+
+    assert plan.config_file_action is not None
+    assert plan.config_file_action.path == config_file
+    assert plan.config_file_action.should_create is False
+    assert plan.config_file_action.message == (
+        f"global config.py already exists at {config_file}; leaving it untouched"
+    )
+    assert config_file.read_text() == before
+
+
+def test_build_init_plan_marks_label_prompt_eligible_only_for_new_non_empty_gh_token():
+    from pycastle.init_wizard import InitWizardPlanningInputs, build_init_plan
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="local",
+            layout=_layout(),
+            manage_env_file=True,
+            prompted_env_values={"GH_TOKEN": "new-gh-token"},
+        )
+    )
+
+    assert plan.label_prompt_eligibility.should_prompt is True
+    assert plan.label_prompt_eligibility.reason == "GH_TOKEN set during this init run"
+
+
+@pytest.mark.parametrize(
+    (
+        "manage_env_file",
+        "prompted_env_values",
+        "existing_env_values",
+        "expected_reason",
+    ),
+    [
+        (
+            False,
+            {},
+            {},
+            "env management skipped for this init run",
+        ),
+        (
+            True,
+            {"GH_TOKEN": ""},
+            {},
+            "GH_TOKEN not set during this init run",
+        ),
+        (
+            True,
+            {},
+            {"GH_TOKEN": "existing-gh-token"},
+            "GH_TOKEN not set during this init run",
+        ),
+    ],
+    ids=["env_management_skipped", "blank_prompted_token", "existing_token_preserved"],
+)
+def test_build_init_plan_keeps_label_prompt_ineligible_without_new_non_empty_gh_token(
+    manage_env_file, prompted_env_values, existing_env_values, expected_reason
+):
+    from pycastle.init_wizard import InitWizardPlanningInputs, build_init_plan
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="local",
+            layout=_layout(),
+            manage_env_file=manage_env_file,
+            prompted_env_values=prompted_env_values,
+            existing_env_values=existing_env_values,
+        )
+    )
+
+    assert plan.label_prompt_eligibility.should_prompt is False
+    assert plan.label_prompt_eligibility.reason == expected_reason
+
+
 def test_init_wizard_planning_module_has_no_click_imports():
     planning_source = Path("src/pycastle/init_wizard/planning.py").read_text()
     module = ast.parse(planning_source)

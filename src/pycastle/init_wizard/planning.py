@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from ..config.loader import derive_docker_image_name
+
 InitWizardScopeChoice = Literal["global", "local"]
 EnvKeyActionKind = Literal["keep", "prompt", "overwrite_prompt", "add_missing"]
 PlannedEnvFileAction = Literal["create", "merge", "preserve"]
@@ -93,6 +95,7 @@ class ConfigFileAction:
     path: Path
     should_create: bool
     hints: tuple[ConfigHintAction, ...] = ()
+    message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,8 @@ class InitWizardPlanningInputs:
     selected_services: tuple[str, ...]
     scope_choice: InitWizardScopeChoice
     layout: InitWizardLayoutFacts
+    manage_env_file: bool = False
+    prompted_env_values: dict[str, str] = field(default_factory=dict)
     existing_env_keys: tuple[str, ...] = ()
     existing_env_values: dict[str, str] = field(default_factory=dict)
     target_env_exists: bool | None = None
@@ -220,6 +225,55 @@ def _plan_warnings(inputs: InitWizardPlanningInputs) -> tuple[PlannedWarning, ..
     return tuple(warnings)
 
 
+def _plan_config_file_action(
+    inputs: InitWizardPlanningInputs,
+) -> ConfigFileAction:
+    config_file = inputs.layout.target_config_file
+    config_exists = config_file.exists()
+    hints: tuple[ConfigHintAction, ...] = ()
+    message: str | None = None
+    if not config_exists and inputs.scope_choice == "local":
+        hints = (
+            ConfigHintAction(
+                key="docker_image_name",
+                value=derive_docker_image_name(inputs.layout.pycastle_dir.parent.name),
+            ),
+        )
+    if config_exists and inputs.scope_choice == "global":
+        message = (
+            f"global config.py already exists at {config_file}; leaving it untouched"
+        )
+
+    return ConfigFileAction(
+        path=config_file,
+        should_create=not config_exists,
+        hints=hints,
+        message=message,
+    )
+
+
+def _plan_label_prompt_eligibility(
+    inputs: InitWizardPlanningInputs,
+) -> LabelPromptEligibility:
+    if not inputs.manage_env_file:
+        return LabelPromptEligibility(
+            should_prompt=False,
+            reason="env management skipped for this init run",
+        )
+
+    gh_token = inputs.prompted_env_values.get(_GITHUB_KEY, "").strip()
+    if gh_token:
+        return LabelPromptEligibility(
+            should_prompt=True,
+            reason="GH_TOKEN set during this init run",
+        )
+
+    return LabelPromptEligibility(
+        should_prompt=False,
+        reason="GH_TOKEN not set during this init run",
+    )
+
+
 def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
     selected_services = _normalize_selected_services(inputs.selected_services)
     managed_env_keys = _managed_env_keys(selected_services)
@@ -293,4 +347,6 @@ def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
             if key in prompted_env_keys
         ),
         warnings=_plan_warnings(inputs),
+        config_file_action=_plan_config_file_action(inputs),
+        label_prompt_eligibility=_plan_label_prompt_eligibility(inputs),
     )
