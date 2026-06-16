@@ -137,14 +137,29 @@ __all__ = [
 
 def __getattr__(name: str):
     if name in {
+        "OneShotRunRequest",
+        "OneShotRunResult",
+        "OneShotRuntime",
+        "OneShotRuntimeExecutionAdapter",
+        "OneShotRuntimeMetadata",
         "PromptRunRequest",
         "PromptRunSession",
         "PromptRuntimeExecutionAdapter",
         "PromptRuntime",
         "WorktreeMount",
+        "run_one_shot",
         "run_prompt",
     }:
-        if name == "PromptRuntime" or name == "run_prompt":
+        if name in {
+            "OneShotRunRequest",
+            "OneShotRunResult",
+            "OneShotRuntime",
+            "OneShotRuntimeExecutionAdapter",
+            "OneShotRuntimeMetadata",
+            "PromptRuntime",
+            "run_one_shot",
+            "run_prompt",
+        }:
             from pycastle_agent_runtime import runtime
 
             return getattr(runtime, name)

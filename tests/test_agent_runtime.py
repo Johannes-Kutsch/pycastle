@@ -2969,6 +2969,368 @@ def test_runtime_package_prompt_entrypoint_preserves_runtime_owned_session_contr
     ]
 
 
+def test_runtime_package_one_shot_entrypoint_resolves_stage_chain_and_returns_selected_runtime_result(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    service = _RecordingRuntimeService("codex")
+    adapter = _PromptRuntimeExecutionAdapterStandIn(
+        git_service=_make_git_service(),
+        service=service,
+        session=_RuntimeSessionStandIn(),
+    )
+
+    class _RawOutputRunner:
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> dict[str, object]:
+            del session_uuid
+            if on_provider_session_id is not None:
+                on_provider_session_id("provider-session")
+            return {
+                "role": role.value,
+                "prompt": prompt,
+                "run_kind": run_kind.value,
+                "events": [{"type": "assistant", "text": "raw turn"}],
+            }
+
+        async def setup(
+            self, git_name: str, git_email: str, work_body: str = ""
+        ) -> None:
+            del git_name, git_email, work_body
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole = AgentRole.IMPLEMENTER,
+            tool_policy: object = "full",
+            run_kind: RunKind = RunKind.FRESH,
+            session_uuid: str | None = None,
+            on_provider_session_id: Callable[[str], None] | None = None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AssertionError("one-shot runtime should preserve raw output")
+
+    adapter.work_runner = cast(Any, _RawOutputRunner())
+    registry = runtime.ServiceRegistry({"codex": service})
+    request = runtime.OneShotRunRequest(
+        name="Runtime Consumer",
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return JSON only.",
+        override=runtime.StageOverride(
+            service="missing",
+            model="ignored",
+            effort="medium",
+            fallback=runtime.StageOverride(
+                service="codex",
+                model="gpt-5.4",
+                effort="medium",
+            ),
+        ),
+        tool_policy=runtime.ToolPolicy.PARTIAL,
+    )
+
+    result = asyncio.run(
+        runtime.run_one_shot(
+            runner=adapter,
+            service_registry=registry,
+            request=request,
+        )
+    )
+
+    assert result == runtime.OneShotRunResult(
+        selected_service="codex",
+        selected_model="gpt-5.4",
+        selected_effort="medium",
+        raw_output={
+            "role": AgentRole.IMPLEMENTER.value,
+            "prompt": "Return JSON only.",
+            "run_kind": RunKind.FRESH.value,
+            "events": [{"type": "assistant", "text": "raw turn"}],
+        },
+        runtime_metadata=runtime.OneShotRuntimeMetadata(
+            provider_session_id="provider-session",
+            run_kind=runtime.RunKind.FRESH,
+            session_namespace="",
+        ),
+    )
+
+
+def test_runtime_package_one_shot_entrypoint_preserves_resume_runtime_metadata(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    codex_service = _RecordingRuntimeService("codex")
+
+    class _ResumeAwareAdapter:
+        def resolve_service(self, service_name: str = "") -> _RecordingRuntimeService:
+            assert service_name == "codex"
+            return codex_service
+
+        def build_work_dependencies(
+            self,
+            *,
+            name: str,
+            model: str,
+            effort: str,
+            service: _RecordingRuntimeService,
+        ) -> WorkInvocationDependencies:
+            assert name == "Runtime Consumer"
+            assert model == "gpt-5.4"
+            assert effort == "medium"
+            assert service is codex_service
+
+            class _ResumeRunner:
+                async def setup(
+                    self,
+                    git_name: str,
+                    git_email: str,
+                    work_body: str = "",
+                ) -> None:
+                    del git_name, git_email, work_body
+
+                async def work(
+                    self,
+                    role: AgentRole,
+                    prompt: str,
+                    *,
+                    run_kind: RunKind = RunKind.FRESH,
+                    session_uuid: str | None = None,
+                    on_provider_session_id: Callable[[str], None] | None = None,
+                ) -> dict[str, object]:
+                    del role, on_provider_session_id
+                    return {
+                        "prompt": prompt,
+                        "run_kind": run_kind.value,
+                        "session_uuid": session_uuid,
+                    }
+
+                async def work_text(
+                    self,
+                    prompt: str,
+                    *,
+                    role: AgentRole = AgentRole.IMPLEMENTER,
+                    tool_policy: object = "full",
+                    run_kind: RunKind = RunKind.FRESH,
+                    session_uuid: str | None = None,
+                    on_provider_session_id: Callable[[str], None] | None = None,
+                ) -> str:
+                    del (
+                        prompt,
+                        role,
+                        tool_policy,
+                        run_kind,
+                        session_uuid,
+                        on_provider_session_id,
+                    )
+                    raise AssertionError("one-shot runtime should preserve raw output")
+
+            def _prepare_session(
+                run_session_plan: RunSessionPlan,
+            ) -> _PreparedRuntimeSessionStandIn:
+                del run_session_plan
+                prepared = _PreparedRuntimeSessionStandIn()
+                prepared.initial_session.run_kind = RunKind.RESUME
+                prepared.initial_session.provider_session_id = "provider-resume"
+                return prepared
+
+            return WorkInvocationDependencies(
+                container_workspace="/home/agent/workspace",
+                timeout_retries=0,
+                stage_key_for_role=lambda role: role.value,
+                prepare_session=_prepare_session,
+                build_session=lambda *_args: _RuntimeSessionStandIn(),
+                build_runner=lambda *_args: cast(Any, _ResumeRunner()),
+                get_git_identity=lambda: ("Alice", "alice@example.com"),
+            )
+
+    registry = runtime.ServiceRegistry({"codex": codex_service})
+    request = runtime.OneShotRunRequest(
+        name="Runtime Consumer",
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return JSON only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        session=runtime.PromptRunSession(
+            namespace="issues",
+            plan={"resume": "provider-resume"},
+        ),
+    )
+
+    result = asyncio.run(
+        runtime.run_one_shot(
+            runner=cast(Any, _ResumeAwareAdapter()),
+            service_registry=registry,
+            request=request,
+        )
+    )
+
+    assert result.runtime_metadata == runtime.OneShotRuntimeMetadata(
+        provider_session_id="provider-resume",
+        run_kind=runtime.RunKind.RESUME,
+        session_namespace="issues",
+    )
+
+
+def test_runtime_package_one_shot_entrypoint_falls_through_on_usage_limit_with_shared_cancellation_token(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    class _ExhaustibleRuntimeService(_RecordingRuntimeService):
+        def __init__(self, name: str) -> None:
+            super().__init__(name)
+            self._available = True
+
+        def is_available(self, now: datetime | None = None) -> bool:
+            del now
+            return self._available
+
+        def mark_exhausted(self, reset_time: datetime | None) -> None:
+            del reset_time
+            self._available = False
+
+    primary = _ExhaustibleRuntimeService("codex")
+    fallback = _ExhaustibleRuntimeService("claude")
+    observed_service_names: list[str] = []
+
+    class _FallbackAdapter:
+        def resolve_service(self, service_name: str = "") -> _RecordingRuntimeService:
+            if service_name == "codex":
+                return primary
+            if service_name == "claude":
+                return fallback
+            raise AssertionError(f"unexpected service {service_name!r}")
+
+        def build_work_dependencies(
+            self,
+            *,
+            name: str,
+            model: str,
+            effort: str,
+            service: _RecordingRuntimeService,
+        ) -> WorkInvocationDependencies:
+            del name, model, effort
+            observed_service_names.append(service.name)
+
+            class _UsageLimitThenFallbackRunner:
+                async def setup(
+                    self,
+                    git_name: str,
+                    git_email: str,
+                    work_body: str = "",
+                ) -> None:
+                    del git_name, git_email, work_body
+
+                async def work(
+                    self,
+                    role: AgentRole,
+                    prompt: str,
+                    *,
+                    run_kind: RunKind = RunKind.FRESH,
+                    session_uuid: str | None = None,
+                    on_provider_session_id: Callable[[str], None] | None = None,
+                ) -> dict[str, object]:
+                    del role, prompt, run_kind, session_uuid
+                    if service.name == "codex":
+                        raise UsageLimitError(reset_time=datetime(2026, 1, 1))
+                    if on_provider_session_id is not None:
+                        on_provider_session_id("fallback-session")
+                    return {"service": service.name, "result": "raw fallback result"}
+
+                async def work_text(
+                    self,
+                    prompt: str,
+                    *,
+                    role: AgentRole = AgentRole.IMPLEMENTER,
+                    tool_policy: object = "full",
+                    run_kind: RunKind = RunKind.FRESH,
+                    session_uuid: str | None = None,
+                    on_provider_session_id: Callable[[str], None] | None = None,
+                ) -> str:
+                    del (
+                        prompt,
+                        role,
+                        tool_policy,
+                        run_kind,
+                        session_uuid,
+                        on_provider_session_id,
+                    )
+                    raise AssertionError("one-shot runtime should preserve raw output")
+
+            return WorkInvocationDependencies(
+                container_workspace="/home/agent/workspace",
+                timeout_retries=0,
+                stage_key_for_role=lambda role: role.value,
+                prepare_session=lambda _plan: _PreparedRuntimeSessionStandIn(),
+                build_session=lambda *_args: _RuntimeSessionStandIn(),
+                build_runner=lambda *_args: cast(
+                    Any,
+                    _UsageLimitThenFallbackRunner(),
+                ),
+                get_git_identity=lambda: ("Alice", "alice@example.com"),
+            )
+
+    request = runtime.OneShotRunRequest(
+        name="Runtime Consumer",
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return JSON only.",
+        override=runtime.StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+            fallback=runtime.StageOverride(
+                service="claude",
+                model="sonnet",
+                effort="high",
+            ),
+        ),
+        token=runtime.CancellationToken(),
+    )
+
+    result = asyncio.run(
+        runtime.run_one_shot(
+            runner=cast(Any, _FallbackAdapter()),
+            service_registry=runtime.ServiceRegistry(
+                {"codex": primary, "claude": fallback}
+            ),
+            request=request,
+        )
+    )
+
+    assert observed_service_names == ["codex", "claude"]
+    assert result == runtime.OneShotRunResult(
+        selected_service="claude",
+        selected_model="sonnet",
+        selected_effort="high",
+        raw_output={"service": "claude", "result": "raw fallback result"},
+        runtime_metadata=runtime.OneShotRuntimeMetadata(
+            provider_session_id="fallback-session",
+            run_kind=runtime.RunKind.FRESH,
+            session_namespace="",
+        ),
+    )
+
+
 def test_runtime_package_invoke_work_dispatches_through_canonical_run_session_plan(
     tmp_path: Path,
 ) -> None:
