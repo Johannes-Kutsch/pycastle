@@ -1,4 +1,5 @@
 from .planning import (
+    build_init_plan_for_scope,
     ConfigFileAction,
     ConfigHintAction,
     CredentialPrompt,
@@ -34,4 +35,5 @@ __all__ = [
     "PlannedWarning",
     "ScaffoldStageChainFacts",
     "build_init_plan",
+    "build_init_plan_for_scope",
 ]

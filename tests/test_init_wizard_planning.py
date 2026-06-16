@@ -53,6 +53,7 @@ def test_init_wizard_exports_init_plan_public_names():
         "PlannedWarning",
         "ScaffoldStageChainFacts",
         "build_init_plan",
+        "build_init_plan_for_scope",
     ]
 
 
@@ -71,6 +72,7 @@ def test_init_plan_types_capture_init_wizard_planning_facts():
         PlannedEnvFile,
         PlannedWarning,
         ScaffoldStageChainFacts,
+        build_init_plan_for_scope,
     )
 
     planned_env_action: PlannedEnvFileAction = "merge"
@@ -153,6 +155,7 @@ def test_init_plan_types_capture_init_wizard_planning_facts():
         ),
     )
     assert init_plan.warning_messages() == ("warning",)
+    assert callable(build_init_plan_for_scope)
 
 
 def test_init_plan_warning_messages_preserve_warning_order():
@@ -473,14 +476,13 @@ def test_build_init_plan_normalizes_service_selection_aliases(
 def test_build_init_plan_targets_scope_specific_config_and_env_files(
     scope_choice, expected_config_file, expected_env_file
 ):
-    from pycastle.init_wizard import InitWizardPlanningInputs, build_init_plan
+    from pycastle.init_wizard import build_init_plan_for_scope
 
-    plan = build_init_plan(
-        InitWizardPlanningInputs(
-            selected_services=("claude",),
-            scope_choice=scope_choice,
-            layout=_layout_for_scope(scope_choice),
-        )
+    plan = build_init_plan_for_scope(
+        selected_services=("claude",),
+        scope_choice=scope_choice,
+        pycastle_dir=Path("pycastle"),
+        pycastle_home=Path("/tmp/home"),
     )
 
     assert plan.target_config_file == expected_config_file
@@ -762,17 +764,16 @@ def test_build_init_plan_uses_local_env_without_cross_scope_action_when_both_env
 
 
 def test_build_init_plan_accepts_explicit_env_existence_facts_without_reading_paths():
-    from pycastle.init_wizard import InitWizardPlanningInputs, build_init_plan
+    from pycastle.init_wizard import build_init_plan_for_scope
 
-    plan = build_init_plan(
-        InitWizardPlanningInputs(
-            selected_services=("claude",),
-            scope_choice="local",
-            layout=_layout_for_scope("local"),
-            target_env_exists=False,
-            local_env_exists=False,
-            global_env_exists=True,
-        )
+    plan = build_init_plan_for_scope(
+        selected_services=("claude",),
+        scope_choice="local",
+        pycastle_dir=Path("pycastle"),
+        pycastle_home=Path("/tmp/home"),
+        target_env_exists=False,
+        local_env_exists=False,
+        global_env_exists=True,
     )
 
     assert plan.planned_env_file.should_manage is False

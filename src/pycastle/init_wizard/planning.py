@@ -140,6 +140,52 @@ class InitPlan:
         return tuple(warning.message for warning in self.warnings)
 
 
+def build_init_plan_for_scope(
+    *,
+    selected_services: tuple[str, ...],
+    scope_choice: InitWizardScopeChoice,
+    pycastle_dir: Path,
+    pycastle_home: Path,
+    manage_env_file: bool = False,
+    prompted_env_values: dict[str, str] | None = None,
+    existing_env_keys: tuple[str, ...] = (),
+    existing_env_values: dict[str, str] | None = None,
+    target_env_exists: bool | None = None,
+    local_env_exists: bool | None = None,
+    global_env_exists: bool | None = None,
+    host_auth: HostAuthFacts | None = None,
+    scaffold_stage_chains: ScaffoldStageChainFacts | None = None,
+) -> InitPlan:
+    scoped_dir = pycastle_home if scope_choice == "global" else pycastle_dir
+    return build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=selected_services,
+            scope_choice=scope_choice,
+            layout=InitWizardLayoutFacts(
+                pycastle_dir=pycastle_dir,
+                pycastle_home=pycastle_home,
+                target_config_file=scoped_dir / "config.py",
+                target_env_file=scoped_dir / ".env",
+                local_env_file=pycastle_dir / ".env",
+                global_env_file=pycastle_home / ".env",
+            ),
+            manage_env_file=manage_env_file,
+            prompted_env_values=(
+                {} if prompted_env_values is None else prompted_env_values
+            ),
+            existing_env_keys=existing_env_keys,
+            existing_env_values=(
+                {} if existing_env_values is None else existing_env_values
+            ),
+            target_env_exists=target_env_exists,
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
+            host_auth=host_auth or HostAuthFacts(False),
+            scaffold_stage_chains=(scaffold_stage_chains or ScaffoldStageChainFacts()),
+        )
+    )
+
+
 def _normalize_selected_services(selected_services: tuple[str, ...]) -> tuple[str, ...]:
     if not selected_services:
         return _SUPPORTED_SERVICE_SELECTIONS["all"]

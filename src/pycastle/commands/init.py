@@ -9,13 +9,11 @@ from typing import Literal
 import click
 
 from ..init_wizard import (
+    build_init_plan_for_scope,
     ConfigFileAction,
     HostAuthFacts,
     InitPlan,
-    InitWizardLayoutFacts,
-    InitWizardPlanningInputs,
     ScaffoldStageChainFacts,
-    build_init_plan,
 )
 from ..layout import resolve_layout
 from ..scaffold import InitScaffold
@@ -74,63 +72,6 @@ def _merge_missing_env_keys(env_file: Path, missing_keys: tuple[str, ...]) -> No
             content += "\n"
         content += f"{key}=\n"
     env_file.write_text(content)
-
-
-def _plan_layout(
-    layout,
-    scope: Literal["global", "local"],
-) -> InitWizardLayoutFacts:
-    scoped_dir = layout.pycastle_home if scope == "global" else layout.pycastle_dir
-    return InitWizardLayoutFacts(
-        pycastle_dir=layout.pycastle_dir,
-        pycastle_home=layout.pycastle_home,
-        target_config_file=scoped_dir / "config.py",
-        target_env_file=scoped_dir / ".env",
-        local_env_file=layout.local_env_file,
-        global_env_file=layout.global_env_file,
-    )
-
-
-def _build_click_init_plan(
-    *,
-    layout,
-    scope: Literal["global", "local"],
-    service_selection: str,
-    manage_env_file: bool = False,
-    prompted_env_values: dict[str, str] | None = None,
-    existing_env_keys: tuple[str, ...] = (),
-    existing_env_values: dict[str, str] | None = None,
-    target_env_exists: bool | None = None,
-    local_env_exists: bool | None = None,
-    global_env_exists: bool | None = None,
-    host_auth: HostAuthFacts | None = None,
-    scaffold_stage_chains: ScaffoldStageChainFacts | None = None,
-):
-    try:
-        return build_init_plan(
-            InitWizardPlanningInputs(
-                selected_services=(service_selection,),
-                scope_choice=scope,
-                layout=_plan_layout(layout, scope),
-                manage_env_file=manage_env_file,
-                prompted_env_values=(
-                    {} if prompted_env_values is None else prompted_env_values
-                ),
-                existing_env_keys=existing_env_keys,
-                existing_env_values=(
-                    {} if existing_env_values is None else existing_env_values
-                ),
-                target_env_exists=target_env_exists,
-                local_env_exists=local_env_exists,
-                global_env_exists=global_env_exists,
-                host_auth=host_auth or HostAuthFacts(False),
-                scaffold_stage_chains=(
-                    scaffold_stage_chains or ScaffoldStageChainFacts()
-                ),
-            )
-        )
-    except ValueError as exc:
-        raise click.ClickException(str(exc)) from exc
 
 
 def _echo_init_plan_warnings(plan: InitPlan) -> None:
@@ -232,20 +173,24 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         "Which agent services do you want to use? [claude/codex/opencode/all]",
         default="all",
     )
-    service_plan = _build_click_init_plan(
-        layout=layout,
-        scope="local",
-        service_selection=service_selection,
-        target_env_exists=layout.local_env_file.exists(),
-        local_env_exists=layout.local_env_file.exists(),
-        global_env_exists=layout.global_env_file.exists(),
-        host_auth=HostAuthFacts(
-            has_host_codex_auth=(Path.home() / ".codex" / "auth.json").exists()
-        ),
-        scaffold_stage_chains=ScaffoldStageChainFacts(
-            bundled_default_stage_chains=scaffold.bundled_default_stage_chains()
-        ),
-    )
+    try:
+        service_plan = build_init_plan_for_scope(
+            selected_services=(service_selection,),
+            scope_choice="local",
+            pycastle_dir=layout.pycastle_dir,
+            pycastle_home=layout.pycastle_home,
+            target_env_exists=layout.local_env_file.exists(),
+            local_env_exists=layout.local_env_file.exists(),
+            global_env_exists=layout.global_env_file.exists(),
+            host_auth=HostAuthFacts(
+                has_host_codex_auth=(Path.home() / ".codex" / "auth.json").exists()
+            ),
+            scaffold_stage_chains=ScaffoldStageChainFacts(
+                bundled_default_stage_chains=scaffold.bundled_default_stage_chains()
+            ),
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     _echo_init_plan_warnings(service_plan)
 
     if scope is None:
@@ -258,16 +203,22 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     local_env_file = layout.local_env_file
     local_env_exists = local_env_file.exists()
     global_env_exists = layout.global_env_file.exists()
-    init_plan = _build_click_init_plan(
-        layout=layout,
-        scope=scope,
-        service_selection=service_selection,
-        target_env_exists=(
-            local_env_exists if scope == "local" else layout.global_env_file.exists()
-        ),
-        local_env_exists=local_env_exists,
-        global_env_exists=global_env_exists,
-    )
+    try:
+        init_plan = build_init_plan_for_scope(
+            selected_services=(service_selection,),
+            scope_choice=scope,
+            pycastle_dir=layout.pycastle_dir,
+            pycastle_home=layout.pycastle_home,
+            target_env_exists=(
+                local_env_exists
+                if scope == "local"
+                else layout.global_env_file.exists()
+            ),
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     manage_env_file = init_plan.planned_env_file.should_manage
 
     if init_plan.planned_env_file.should_delete_local_env:
@@ -282,18 +233,22 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             default=False,
         )
     if local_env_exists != layout.local_env_file.exists():
-        init_plan = _build_click_init_plan(
-            layout=layout,
-            scope=scope,
-            service_selection=service_selection,
-            target_env_exists=(
-                local_env_exists
-                if scope == "local"
-                else layout.global_env_file.exists()
-            ),
-            local_env_exists=local_env_exists,
-            global_env_exists=global_env_exists,
-        )
+        try:
+            init_plan = build_init_plan_for_scope(
+                selected_services=(service_selection,),
+                scope_choice=scope,
+                pycastle_dir=layout.pycastle_dir,
+                pycastle_home=layout.pycastle_home,
+                target_env_exists=(
+                    local_env_exists
+                    if scope == "local"
+                    else layout.global_env_file.exists()
+                ),
+                local_env_exists=local_env_exists,
+                global_env_exists=global_env_exists,
+            )
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
 
     try:
         scaffold.refresh()
@@ -314,26 +269,34 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     if manage_env_file:
         if env_file.exists():
             existing_env_keys = _read_env_keys(env_file)
-            env_plan = _build_click_init_plan(
-                layout=layout,
-                scope=scope,
-                service_selection=service_selection,
-                existing_env_keys=existing_env_keys,
-                existing_env_values=_read_env_values(env_file),
-                target_env_exists=True,
-                local_env_exists=local_env_exists,
-                global_env_exists=global_env_exists,
-            )
+            try:
+                env_plan = build_init_plan_for_scope(
+                    selected_services=(service_selection,),
+                    scope_choice=scope,
+                    pycastle_dir=layout.pycastle_dir,
+                    pycastle_home=layout.pycastle_home,
+                    existing_env_keys=existing_env_keys,
+                    existing_env_values=_read_env_values(env_file),
+                    target_env_exists=True,
+                    local_env_exists=local_env_exists,
+                    global_env_exists=global_env_exists,
+                )
+            except ValueError as exc:
+                raise click.ClickException(str(exc)) from exc
             _merge_missing_env_keys(env_file, env_plan.planned_env_file.missing_keys)
         else:
-            env_plan = _build_click_init_plan(
-                layout=layout,
-                scope=scope,
-                service_selection=service_selection,
-                target_env_exists=False,
-                local_env_exists=local_env_exists,
-                global_env_exists=global_env_exists,
-            )
+            try:
+                env_plan = build_init_plan_for_scope(
+                    selected_services=(service_selection,),
+                    scope_choice=scope,
+                    pycastle_dir=layout.pycastle_dir,
+                    pycastle_home=layout.pycastle_home,
+                    target_env_exists=False,
+                    local_env_exists=local_env_exists,
+                    global_env_exists=global_env_exists,
+                )
+            except ValueError as exc:
+                raise click.ClickException(str(exc)) from exc
             env_file.parent.mkdir(parents=True, exist_ok=True)
             try:
                 env_file.write_text(
@@ -349,16 +312,21 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                 sys.exit(1)
 
         existing_env = _read_env_values(env_file)
-        env_plan = _build_click_init_plan(
-            layout=layout,
-            scope=scope,
-            service_selection=service_selection,
-            existing_env_keys=_read_env_keys(env_file),
-            existing_env_values=existing_env,
-            target_env_exists=True,
-            local_env_exists=local_env_exists or env_file == layout.local_env_file,
-            global_env_exists=global_env_exists or env_file == layout.global_env_file,
-        )
+        try:
+            env_plan = build_init_plan_for_scope(
+                selected_services=(service_selection,),
+                scope_choice=scope,
+                pycastle_dir=layout.pycastle_dir,
+                pycastle_home=layout.pycastle_home,
+                existing_env_keys=_read_env_keys(env_file),
+                existing_env_values=existing_env,
+                target_env_exists=True,
+                local_env_exists=local_env_exists or env_file == layout.local_env_file,
+                global_env_exists=global_env_exists
+                or env_file == layout.global_env_file,
+            )
+        except ValueError as exc:
+            raise click.ClickException(str(exc)) from exc
 
         prompted_values: dict[str, str] = {}
         effective_values: dict[str, str] = {}
@@ -390,16 +358,20 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             )
 
     click.echo()
-    label_plan = _build_click_init_plan(
-        layout=layout,
-        scope=scope,
-        service_selection=service_selection,
-        manage_env_file=manage_env_file,
-        prompted_env_values=prompted_values if manage_env_file else {},
-        target_env_exists=env_file.exists(),
-        local_env_exists=layout.local_env_file.exists(),
-        global_env_exists=layout.global_env_file.exists(),
-    )
+    try:
+        label_plan = build_init_plan_for_scope(
+            selected_services=(service_selection,),
+            scope_choice=scope,
+            pycastle_dir=layout.pycastle_dir,
+            pycastle_home=layout.pycastle_home,
+            manage_env_file=manage_env_file,
+            prompted_env_values=prompted_values if manage_env_file else {},
+            target_env_exists=env_file.exists(),
+            local_env_exists=layout.local_env_file.exists(),
+            global_env_exists=layout.global_env_file.exists(),
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     if label_plan.label_prompt_eligibility.should_prompt and click.confirm(
         "Create GitHub labels?", default=False
     ):
