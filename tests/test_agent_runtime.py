@@ -1851,6 +1851,24 @@ def test_runtime_prompt_surface_import_keeps_application_ownership_unloaded(
     assert imported == []
 
 
+@pytest.mark.parametrize(
+    "attr_name",
+    [
+        "ResidentSessionPlan",
+        "ResidentSessionPlanRequest",
+        "plan_resident_session",
+    ],
+)
+def test_runtime_resident_session_surface_import_keeps_application_ownership_unloaded(
+    attr_name: str,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    imported = _runtime_attr_imported_application_modules(repo_root, attr_name)
+
+    assert imported == []
+
+
 def test_runtime_orchestration_surface_is_not_exported_in_standalone_runtime() -> None:
     repo_root = Path(__file__).resolve().parents[1]
 
@@ -1915,7 +1933,10 @@ def test_runtime_top_level_surface_is_accessible_standalone_without_pycastle() -
             "RunKind",
             "ProviderRunStatePlan",
             "ProviderRunStatePlanRequest",
+            "ResidentSessionPlan",
+            "ResidentSessionPlanRequest",
             "plan_provider_run_state",
+            "plan_resident_session",
             "ContinueNow",
             "SleepUntil",
             "Stop",
@@ -1948,6 +1969,21 @@ def test_runtime_top_level_star_export_includes_one_shot_surface() -> None:
             "OneShotRuntimeMetadata",
             "WorktreeMount",
             "run_one_shot",
+        ],
+    )
+
+    assert exported == {attr_name: True for attr_name in exported}
+
+
+def test_runtime_top_level_star_export_includes_resident_session_surface() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    exported = _standalone_runtime_star_import_names(
+        repo_root,
+        [
+            "ResidentSessionPlan",
+            "ResidentSessionPlanRequest",
+            "plan_resident_session",
         ],
     )
 
@@ -2686,6 +2722,87 @@ def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_
     assert plan.auth_seed_action is not None
     assert plan.auth_seed_action.source == Path.home() / ".codex" / "auth.json"
     assert plan.auth_seed_action.destination == state_dir / "auth.json"
+
+
+def test_runtime_resident_session_plan_exposes_provider_metadata_without_persistence_policy(
+    tmp_path: Path,
+) -> None:
+    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
+    from pycastle_agent_runtime.session_planning import (
+        AuthSeedingRequirement,
+        LocalAuthSeedAction,
+        ResidentSessionPlanRequest,
+        plan_resident_session,
+    )
+
+    selected_state_dir = tmp_path / "custom" / "generic-state"
+    host_auth = tmp_path / "host" / "generic-creds.json"
+    host_auth.parent.mkdir(parents=True)
+    host_auth.write_text("token", encoding="utf-8")
+    auth_seed_action = LocalAuthSeedAction(
+        source=host_auth,
+        destination=selected_state_dir / "generic-creds.json",
+    )
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=tmp_path
+            / ".pycastle-session"
+            / "implementer"
+            / "main"
+            / "generic",
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/main/generic/",
+        )
+    )
+    provider_state = ProviderSessionState(
+        RunKind.RESUME,
+        "persisted-session-id",
+        state_dir_relpath="custom/generic-state/",
+        state_dir_path=selected_state_dir,
+        exact_transcript_match=True,
+        persist_provider_session_id=True,
+        auth_seeding_requirement=AuthSeedingRequirement.REQUIRED,
+        auth_seed_action=auth_seed_action,
+    )
+    service = _PlanRecordingRuntimeService("generic", provider_state)
+    adapter = _RecordingProviderSessionAdapter(provider_state, service_name="generic")
+
+    plan = plan_resident_session(
+        ResidentSessionPlanRequest(
+            worktree=tmp_path,
+            role=RuntimeAgentRole.IMPLEMENTER,
+            namespace="main",
+            service=service,
+            role_session=role_session,
+            provider_session_adapter=adapter,
+        )
+    )
+
+    assert plan.run_kind is RunKind.RESUME
+    assert plan.service_state_dir == (
+        tmp_path / ".pycastle-session" / "implementer" / "main" / "generic"
+    )
+    assert plan.provider_state_dir_relpath == "custom/generic-state/"
+    assert plan.host_provider_state_dir == selected_state_dir
+    assert plan.provider_session_id == "persisted-session-id"
+    assert plan.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+    assert plan.auth_seed_action == auth_seed_action
+    assert plan.exact_transcript_match is True
+    assert not hasattr(plan, "recovered_session_id_persistence")
+
+    plan.prepare_provider_state_dir()
+    prepared_session_id = plan.prepared_provider_session_id()
+    plan.record_provider_session_id("runtime-session-id")
+    plan.record_successful_run()
+
+    assert adapter.prepare_calls == [(selected_state_dir, auth_seed_action)]
+    assert prepared_session_id == "persisted-session-id"
+    assert role_session.saved_service_session_ids == [
+        ("generic", "persisted-session-id"),
+        ("generic", "runtime-session-id"),
+    ]
+    assert role_session.recorded_success_metadata == [("generic", "runtime-session-id")]
 
 
 def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy(
