@@ -38,6 +38,7 @@ class ProviderSessionStateRequest:
     service: AgentService
     provider_run_state_plan: ProviderRunStatePlan | None = None
     provider_session_decision: ProviderSessionDecision | None = None
+    require_exact_transcript_for_strict_resume: bool = False
 
 
 @dataclasses.dataclass
@@ -124,6 +125,9 @@ def prepare_provider_session_state(
             session_namespace=request.session_namespace,
             service=request.service,
             run_session_plan=run_session_plan,
+            require_exact_transcript_for_strict_resume=(
+                request.require_exact_transcript_for_strict_resume
+            ),
         )
     )
     return PreparedProviderSessionState(

@@ -23,6 +23,7 @@ class AgentRunSessionStateRequest:
     session_namespace: str
     service: AgentService
     run_session_plan: RunSessionPlan | None = None
+    require_exact_transcript_for_strict_resume: bool = False
 
 
 @dataclasses.dataclass
@@ -35,6 +36,11 @@ class AgentRunSessionState:
     _plan: RunSessionPlan = dataclasses.field(repr=False)
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
+    require_exact_transcript_for_strict_resume: bool = False
+    _observed_provider_session_id: bool = dataclasses.field(
+        default=False,
+        repr=False,
+    )
 
     @property
     def provider_state_dir_relpath(self) -> str | None:
@@ -94,6 +100,7 @@ class AgentRunSessionState:
 
     def record_provider_session_id(self, provider_session_id: str) -> None:
         self.provider_session_id = provider_session_id
+        self._observed_provider_session_id = True
         self._plan.capture_provider_session_id(provider_session_id)
 
     def record_successful_run(self) -> None:
@@ -114,13 +121,29 @@ class AgentRunSessionState:
         return host_provider_state_dir / "auth.json"
 
     def _resume_provider_session_state(self) -> ProviderSessionState:
-        if self.provider_session_id is not None:
+        if self.provider_session_id is not None and (
+            self._observed_provider_session_id
+            or self.exact_transcript_match
+            or not self.require_exact_transcript_for_strict_resume
+        ):
             return ProviderSessionState(
                 run_kind=RunKind.RESUME,
                 provider_session_id=self.provider_session_id,
                 state_dir_relpath=self.provider_state_dir_relpath,
                 state_dir_path=self.service_state_dir_path,
                 exact_transcript_match=self.exact_transcript_match,
+            )
+        if (
+            self.require_exact_transcript_for_strict_resume
+            and self.provider_session_id is not None
+            and not self.exact_transcript_match
+        ):
+            return ProviderSessionState(
+                run_kind=RunKind.FRESH,
+                provider_session_id=None,
+                state_dir_relpath=self.provider_state_dir_relpath,
+                state_dir_path=self.service_state_dir_path,
+                allow_protocol_reprompt=False,
             )
         service_state = self.role_session.service_session_state(self._plan.service)
         return self._plan.service.provider_session_state(
@@ -188,6 +211,9 @@ def prepare_agent_run_session_state(
         service_state_dir_path=plan.host_provider_state_dir,
         auth_seed_action=auth_seed_action,
         exact_transcript_match=plan.exact_transcript_match,
+        require_exact_transcript_for_strict_resume=(
+            request.require_exact_transcript_for_strict_resume
+        ),
         _plan=plan,
     )
 

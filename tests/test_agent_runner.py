@@ -53,6 +53,10 @@ from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import ProviderRunState, RoleSession, RunKind
+from pycastle.session._provider_session_plan import (
+    ProviderRunStatePlanRequest,
+    plan_provider_run_state,
+)
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
@@ -2624,6 +2628,123 @@ def test_work_invocation_passes_runtime_run_session_plan_to_prepare_session(
     assert observed_plan.container_workspace == "/home/agent/workspace"
     assert observed_plan.run_session_plan is None
     assert isinstance(observed_plan.service, ClaudeService)
+
+
+@pytest.mark.parametrize(
+    ("seed_resumable_state", "expected_run_kind"),
+    [
+        (False, RunKind.FRESH),
+        (True, RunKind.RESUME),
+    ],
+)
+def test_agent_runner_prepare_session_accepts_runtime_provider_run_state_plan_for_fresh_and_resume(
+    tmp_path: Path,
+    seed_resumable_state: bool,
+    expected_run_kind: RunKind,
+):
+    if seed_resumable_state:
+        state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
+        state_dir.mkdir(parents=True)
+        (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    service = ClaudeService()
+    provider_run_state_plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            namespace="",
+            service=service,
+        )
+    )
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+    dependencies = runner.build_work_dependencies(
+        name="Runtime Consumer",
+        model="sonnet",
+        effort="high",
+        service=service,
+    )
+
+    prepared_session = cast(
+        Any,
+        dependencies.prepare_session(
+            RuntimeRunSessionPlan(
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                session_namespace="",
+                service=service,
+                container_workspace="/home/agent/workspace",
+                run_session_plan=provider_run_state_plan,
+            )
+        ),
+    )
+
+    assert prepared_session.run_kind is expected_run_kind
+    assert (
+        prepared_session.provider_session_id
+        == provider_run_state_plan.provider_session_id
+    )
+
+
+def test_agent_runner_prepare_session_restarts_strict_resume_when_exact_transcript_identity_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    auth_path = home / ".codex" / "auth.json"
+    auth_path.parent.mkdir(parents=True)
+    auth_path.write_text("{}", encoding="utf-8")
+
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    sessions_dir = state_dir / "sessions" / "2026" / "06" / "16"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-recovered"}\n',
+        encoding="utf-8",
+    )
+
+    service = CodexService()
+    provider_run_state_plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPLEMENTER,
+            namespace="",
+            service=service,
+        )
+    )
+    runner = AgentRunner(
+        {"CODEX_HOME": str(home / ".codex")},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        service_registry={"codex": service},
+    )
+    dependencies = runner.build_work_dependencies(
+        name="Runtime Consumer",
+        model="gpt-5.4",
+        effort="medium",
+        service=service,
+    )
+
+    prepared_session = cast(
+        Any,
+        dependencies.prepare_session(
+            RuntimeRunSessionPlan(
+                mount_path=tmp_path,
+                role=AgentRole.IMPLEMENTER,
+                session_namespace="",
+                service=service,
+                container_workspace="/home/agent/workspace",
+                run_session_plan=provider_run_state_plan,
+            )
+        ),
+    )
+    strict_resume = prepared_session.resumable_provider_run_session()
+
+    assert prepared_session.run_kind is RunKind.RESUME
+    assert prepared_session.provider_session_id == "thread-recovered"
+    assert provider_run_state_plan.exact_transcript_match is False
+    assert strict_resume.run_kind is RunKind.FRESH
+    assert strict_resume.provider_session_id is None
 
 
 def test_work_invocation_wraps_configured_setup_error_and_skips_work_adapter(

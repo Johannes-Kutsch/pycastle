@@ -43,6 +43,12 @@ from ..prompts.dispatch import (
 from ..prompts.pipeline import PromptRenderer
 from ..session import RunKind
 from ..session.agent import RunSessionPlan
+from ..session._provider_session_decision import ProviderSessionDecision
+from ..session._provider_session_plan import ProviderRunStatePlan
+from ..session._provider_session_state import (
+    ProviderSessionStateRequest,
+    prepare_provider_session_state,
+)
 from ..session.resume import provider_state_relpath
 from ..session.run_dispatch import RunSessionRequest, prepare_run_session
 from ..services import GitService
@@ -264,6 +270,29 @@ class AgentRunner:
         def _prepare_session(
             run_session_plan: RuntimeRunSessionPlan,
         ):
+            plan_payload = run_session_plan.run_session_plan
+            if isinstance(plan_payload, ProviderRunStatePlan) or isinstance(
+                plan_payload, ProviderSessionDecision
+            ):
+                return prepare_provider_session_state(
+                    ProviderSessionStateRequest(
+                        worktree=run_session_plan.mount_path,
+                        role=cast(AgentRole, run_session_plan.role),
+                        session_namespace=run_session_plan.session_namespace,
+                        service=cast(AgentService, run_session_plan.service),
+                        require_exact_transcript_for_strict_resume=True,
+                        provider_run_state_plan=(
+                            plan_payload
+                            if isinstance(plan_payload, ProviderRunStatePlan)
+                            else None
+                        ),
+                        provider_session_decision=(
+                            plan_payload
+                            if isinstance(plan_payload, ProviderSessionDecision)
+                            else None
+                        ),
+                    )
+                )
             return prepare_run_session(
                 RunSessionRequest(
                     worktree=run_session_plan.mount_path,
