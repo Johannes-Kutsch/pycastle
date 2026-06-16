@@ -124,6 +124,11 @@ __all__ = [
     "OneShotRuntime",
     "OneShotRuntimeExecutionAdapter",
     "OneShotRuntimeMetadata",
+    "ResidentRunRequest",
+    "ResidentRunResult",
+    "ResidentRuntime",
+    "ResidentRuntimeExecutionAdapter",
+    "ResidentRuntimeMetadata",
     "chain_entries",
     "ContinueNow",
     "configured_candidate_chain",
@@ -150,6 +155,7 @@ __all__ = [
     "WorktreeMount",
     "run_one_shot",
     "run_prompt",
+    "run_resident_prompt",
 ]
 
 
@@ -160,6 +166,11 @@ def __getattr__(name: str):
         "OneShotRuntime",
         "OneShotRuntimeExecutionAdapter",
         "OneShotRuntimeMetadata",
+        "ResidentRunRequest",
+        "ResidentRunResult",
+        "ResidentRuntime",
+        "ResidentRuntimeExecutionAdapter",
+        "ResidentRuntimeMetadata",
         "PromptRunRequest",
         "PromptRunSession",
         "PromptRuntimeExecutionAdapter",
@@ -167,6 +178,7 @@ def __getattr__(name: str):
         "WorktreeMount",
         "run_one_shot",
         "run_prompt",
+        "run_resident_prompt",
     }:
         if name in {
             "OneShotRunRequest",
@@ -174,9 +186,15 @@ def __getattr__(name: str):
             "OneShotRuntime",
             "OneShotRuntimeExecutionAdapter",
             "OneShotRuntimeMetadata",
+            "ResidentRunRequest",
+            "ResidentRunResult",
+            "ResidentRuntime",
+            "ResidentRuntimeExecutionAdapter",
+            "ResidentRuntimeMetadata",
             "PromptRuntime",
             "run_one_shot",
             "run_prompt",
+            "run_resident_prompt",
         }:
             from pycastle_agent_runtime import runtime
 
