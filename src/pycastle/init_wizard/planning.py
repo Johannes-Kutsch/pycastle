@@ -96,6 +96,7 @@ class InitWizardPlanningInputs:
     selected_services: tuple[str, ...]
     scope_choice: InitWizardScopeChoice
     layout: InitWizardLayoutFacts
+    existing_env_keys: tuple[str, ...] = ()
     existing_env_values: dict[str, str] = field(default_factory=dict)
     host_auth: HostAuthFacts = field(default_factory=lambda: HostAuthFacts(False))
     scaffold_stage_chains: ScaffoldStageChainFacts = field(
@@ -175,6 +176,7 @@ def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
     selected_services = _normalize_selected_services(inputs.selected_services)
     managed_env_keys = _managed_env_keys(selected_services)
     prompted_env_keys = set(_prompted_env_keys(selected_services))
+    existing_keys = set(inputs.existing_env_keys) | set(inputs.existing_env_values)
     existing_values = {
         key: value for key, value in inputs.existing_env_values.items() if value
     }
@@ -187,7 +189,7 @@ def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
             path=inputs.layout.target_env_file,
             should_manage=True,
             missing_keys=tuple(
-                key for key in managed_env_keys if key not in existing_values
+                key for key in managed_env_keys if key not in existing_keys
             ),
         ),
         env_key_actions=tuple(

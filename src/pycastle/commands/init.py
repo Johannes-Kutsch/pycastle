@@ -9,17 +9,13 @@ from typing import Literal
 import click
 
 from ..config.loader import derive_docker_image_name
+from ..init_wizard import (
+    InitWizardLayoutFacts,
+    InitWizardPlanningInputs,
+    build_init_plan,
+)
 from ..layout import resolve_layout
 from ..scaffold import InitScaffold
-
-_ENV_TEMPLATE = "CLAUDE_CODE_OAUTH_TOKEN=\nGH_TOKEN=\n"
-_OPENCODE_ENV_TEMPLATE = "OPENCODE_GO_API_KEY=\n"
-_SUPPORTED_SERVICE_SELECTIONS: dict[str, tuple[str, ...]] = {
-    "claude": ("claude",),
-    "codex": ("codex",),
-    "opencode": ("opencode",),
-    "all": ("claude", "codex", "opencode"),
-}
 
 
 def _write_env_key(env_file: Path, key: str, value: str) -> None:
@@ -54,36 +50,66 @@ def _read_env_values(env_file: Path) -> dict[str, str]:
     return out
 
 
-def _merge_env_template(env_file: Path, template: str) -> None:
-    """Add any keys from template that are missing from env_file (with empty values)."""
-    content = env_file.read_text()
-    for line in template.splitlines():
-        if not line or "=" not in line:
+def _read_env_keys(env_file: Path) -> tuple[str, ...]:
+    if not env_file.exists():
+        return ()
+    keys: list[str] = []
+    for line in env_file.read_text().splitlines():
+        if not line or line.lstrip().startswith("#") or "=" not in line:
             continue
         key = line.partition("=")[0].strip()
-        if not re.search(rf"^{re.escape(key)}=", content, flags=re.MULTILINE):
-            if not content.endswith("\n"):
-                content += "\n"
-            content += f"{key}=\n"
+        if key:
+            keys.append(key)
+    return tuple(keys)
+
+
+def _merge_missing_env_keys(env_file: Path, missing_keys: tuple[str, ...]) -> None:
+    """Add any missing keys to env_file with empty values."""
+    content = env_file.read_text()
+    for key in missing_keys:
+        if not content.endswith("\n"):
+            content += "\n"
+        content += f"{key}=\n"
     env_file.write_text(content)
 
 
-def _parse_service_selection(selection: str) -> tuple[str, ...]:
-    normalized = selection.strip().lower() or "all"
-    service_set = _SUPPORTED_SERVICE_SELECTIONS.get(normalized)
-    if service_set is None:
-        choices = "/".join(_SUPPORTED_SERVICE_SELECTIONS)
-        raise click.ClickException(
-            f"Invalid service selection {selection!r}. Choose one of: {choices}."
+def _plan_layout(
+    layout,
+    scope: Literal["global", "local"],
+) -> InitWizardLayoutFacts:
+    scoped_dir = layout.pycastle_home if scope == "global" else layout.pycastle_dir
+    return InitWizardLayoutFacts(
+        pycastle_dir=layout.pycastle_dir,
+        pycastle_home=layout.pycastle_home,
+        target_config_file=scoped_dir / "config.py",
+        target_env_file=scoped_dir / ".env",
+        local_env_file=layout.local_env_file,
+        global_env_file=layout.global_env_file,
+    )
+
+
+def _build_click_init_plan(
+    *,
+    layout,
+    scope: Literal["global", "local"],
+    service_selection: str,
+    existing_env_keys: tuple[str, ...] = (),
+    existing_env_values: dict[str, str] | None = None,
+):
+    try:
+        return build_init_plan(
+            InitWizardPlanningInputs(
+                selected_services=(service_selection,),
+                scope_choice=scope,
+                layout=_plan_layout(layout, scope),
+                existing_env_keys=existing_env_keys,
+                existing_env_values=(
+                    {} if existing_env_values is None else existing_env_values
+                ),
+            )
         )
-    return service_set
-
-
-def _managed_env_template(service_set: tuple[str, ...]) -> str:
-    template = _ENV_TEMPLATE
-    if "opencode" in service_set:
-        template += _OPENCODE_ENV_TEMPLATE
-    return template
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _selected_services_cover_bundled_default_stage_chains(
@@ -182,7 +208,12 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         "Which agent services do you want to use? [claude/codex/opencode/all]",
         default="all",
     )
-    service_set = _parse_service_selection(service_selection)
+    service_plan = _build_click_init_plan(
+        layout=layout,
+        scope="local",
+        service_selection=service_selection,
+    )
+    service_set = service_plan.selected_services
     _warn_for_uncovered_bundled_default_stage_chains(service_set, scaffold)
     _warn_for_missing_host_codex_auth(service_set)
 
@@ -194,7 +225,6 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         scope = "global" if use_global else "local"
 
     pycastle_home = scaffold.pycastle_home
-    scoped_dir = pycastle_home if scope == "global" else layout.pycastle_dir
     local_env_file = layout.local_env_file
     manage_env_file = True
 
@@ -222,7 +252,8 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
         sys.exit(1)
 
-    config_file = scoped_dir / "config.py"
+    plan_layout = _plan_layout(layout, scope)
+    config_file = plan_layout.target_config_file
     if config_file.exists():
         if scope == "global":
             click.echo(
@@ -253,17 +284,33 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             )
             sys.exit(1)
 
-    env_file = scoped_dir / ".env"
+    env_file = plan_layout.target_env_file
     gh_token = ""
     claude_token = ""
     if manage_env_file:
-        env_template = _managed_env_template(service_set)
         if env_file.exists():
-            _merge_env_template(env_file, env_template)
+            existing_env_keys = _read_env_keys(env_file)
+            init_plan = _build_click_init_plan(
+                layout=layout,
+                scope=scope,
+                service_selection=service_selection,
+                existing_env_keys=existing_env_keys,
+                existing_env_values=_read_env_values(env_file),
+            )
+            _merge_missing_env_keys(env_file, init_plan.planned_env_file.missing_keys)
         else:
+            init_plan = _build_click_init_plan(
+                layout=layout,
+                scope=scope,
+                service_selection=service_selection,
+            )
             env_file.parent.mkdir(parents=True, exist_ok=True)
             try:
-                env_file.write_text(env_template)
+                env_file.write_text(
+                    "".join(
+                        f"{key}=\n" for key in init_plan.planned_env_file.missing_keys
+                    )
+                )
             except Exception as e:
                 click.echo(
                     click.style(f"Error: could not write {env_file} — {e}", fg="red"),
@@ -272,31 +319,36 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                 sys.exit(1)
 
         existing_env = _read_env_values(env_file)
-
-        gh_token = _prompt_credential_with_overwrite(
-            env_file, "GH_TOKEN", "GitHub token (press Enter to skip)", existing_env
+        init_plan = _build_click_init_plan(
+            layout=layout,
+            scope=scope,
+            service_selection=service_selection,
+            existing_env_keys=_read_env_keys(env_file),
+            existing_env_values=existing_env,
         )
 
-        if "claude" in service_set:
-            claude_token = _prompt_credential_with_overwrite(
-                env_file,
-                "CLAUDE_CODE_OAUTH_TOKEN",
-                "Claude OAuth token (run `claude setup-token` to generate one; press Enter to skip)",
-                existing_env,
-            )
-
-            if not claude_token:
-                click.echo(
-                    f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
-                    "Run `claude setup-token` to generate a token."
+        prompted_values: dict[str, str] = {}
+        for credential_prompt in init_plan.credential_prompts:
+            if credential_prompt.allow_overwrite:
+                value = _prompt_credential_with_overwrite(
+                    env_file,
+                    credential_prompt.key,
+                    credential_prompt.prompt_text,
+                    existing_env,
                 )
+            else:
+                value = _prompt_and_save_credential(
+                    env_file, credential_prompt.key, credential_prompt.prompt_text
+                )
+            prompted_values[credential_prompt.key] = value
 
-        if "opencode" in service_set:
-            _prompt_credential_with_overwrite(
-                env_file,
-                "OPENCODE_GO_API_KEY",
-                "OpenCode Go API key (press Enter to skip)",
-                existing_env,
+        gh_token = prompted_values.get("GH_TOKEN", "")
+        claude_token = prompted_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+
+        if "claude" in init_plan.selected_services and not claude_token:
+            click.echo(
+                f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
+                "Run `claude setup-token` to generate a token."
             )
 
     click.echo()
