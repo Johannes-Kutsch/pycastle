@@ -52,7 +52,10 @@ if TYPE_CHECKING:
     from pycastle_agent_runtime.session_planning import (
         ProviderRunStatePlan,
         ProviderRunStatePlanRequest,
+        ResidentSessionPlan,
+        ResidentSessionPlanRequest,
         plan_provider_run_state,
+        plan_resident_session,
     )
     from pycastle_agent_runtime.service_registry import ServiceRegistry
     from pycastle_agent_runtime.stage_priority_chain import (
@@ -109,6 +112,8 @@ __all__ = [
     "RunKind",
     "ProviderRunStatePlan",
     "ProviderRunStatePlanRequest",
+    "ResidentSessionPlan",
+    "ResidentSessionPlanRequest",
     "ServiceRegistry",
     "SleepUntil",
     "Stop",
@@ -128,6 +133,7 @@ __all__ = [
     "referenced_service_names",
     "render_chain_label",
     "select_configured_candidate_chain",
+    "plan_resident_session",
     "UsageLimitContinuationDecision",
     "UsageLimitOutcome",
     "ToolPolicy",
@@ -211,7 +217,10 @@ def __getattr__(name: str):
     if name in {
         "ProviderRunStatePlan",
         "ProviderRunStatePlanRequest",
+        "ResidentSessionPlan",
+        "ResidentSessionPlanRequest",
         "plan_provider_run_state",
+        "plan_resident_session",
     }:
         from pycastle_agent_runtime import session_planning
 

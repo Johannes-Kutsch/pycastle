@@ -4,21 +4,18 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from ...agents.output_protocol import AgentRole
-from .._provider_session_decision import (
+from pycastle_agent_runtime.session_planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
     RecoveredSessionIdPersistence,
+    ResidentSessionPlan,
 )
+
+from ...agents.output_protocol import AgentRole
 from .._provider_session_plan import (
-    ProviderRunStatePlan,
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
-    provider_session_adapter_for_service_name,
-    record_observed_provider_session_id,
-    record_successful_provider_session_metadata,
 )
-from ..resume import RoleSession, RunKind
 
 if TYPE_CHECKING:
     from ...services.agent_service import AgentService
@@ -29,110 +26,19 @@ class RunSessionPlanRequest:
     role: AgentRole
     worktree: Path
     namespace: str
-    service: AgentService
+    service: "AgentService"
 
 
 @dataclasses.dataclass(frozen=True)
-class RunSessionPlan:
-    role: AgentRole
-    worktree: Path
-    namespace: str
-    service: AgentService
-    run_kind: RunKind
-    service_state_dir: Path | None
-    provider_state_dir_relpath: str | None
-    host_provider_state_dir: Path | None
-    provider_session_id: str | None
-    auth_seeding_requirement: AuthSeedingRequirement
-    recovered_session_id_persistence: RecoveredSessionIdPersistence
+class RunSessionPlan(ResidentSessionPlan):
+    service: "AgentService"
     auth_seed_action: LocalAuthSeedAction | None = None
-    exact_transcript_match: bool = False
-    use_service_state_dir_for_container: bool = False
-    _provider_run_state_plan: ProviderRunStatePlan | None = dataclasses.field(
-        default=None,
-        repr=False,
-        compare=False,
+    recovered_session_id_persistence: RecoveredSessionIdPersistence = (
+        RecoveredSessionIdPersistence.SKIP
     )
 
-    def __post_init__(self) -> None:
-        provider_run_state_plan = self._provider_run_state_plan
-        if provider_run_state_plan is None:
-            provider_run_state_plan = ProviderRunStatePlan(
-                role_session=RoleSession(self.worktree, self.role, self.namespace),
-                provider_session_adapter=provider_session_adapter_for_service_name(
-                    self.service.name
-                ),
-                service_name=self.service.name,
-                run_kind=self.run_kind,
-                provider_state_dir=self.host_provider_state_dir,
-                provider_state_dir_relpath=self.provider_state_dir_relpath,
-                provider_session_id=self.provider_session_id,
-                auth_seeding_requirement=self.auth_seeding_requirement,
-                recovered_session_id_persistence=(
-                    self.recovered_session_id_persistence
-                ),
-                service_state_dir=self.service_state_dir,
-                exact_transcript_match=self.exact_transcript_match,
-                auth_seed_action=self.auth_seed_action,
-                use_service_state_dir_for_container=(
-                    self.use_service_state_dir_for_container
-                ),
-            )
-            object.__setattr__(
-                self,
-                "_provider_run_state_plan",
-                provider_run_state_plan,
-            )
-
-    def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
-        provider_run_state_plan = self._provider_run_state_plan
-        if provider_run_state_plan is None:
-            return None
-        return provider_run_state_plan.provider_state_dir_container_path(
-            worktree=self.worktree,
-            container_workspace=container_workspace,
-        )
-
-    def prepared_provider_session_id(self) -> str | None:
-        provider_run_state_plan = self._provider_run_state_plan
-        if provider_run_state_plan is None:
-            return None
-        provider_session_id = provider_run_state_plan.prepared_provider_session_id()
-        object.__setattr__(self, "provider_session_id", provider_session_id)
-        return provider_session_id
-
     def prepare_host_provider_state_dir(self) -> None:
-        provider_run_state_plan = self._provider_run_state_plan
-        if provider_run_state_plan is None:
-            return
-        provider_run_state_plan.prepare_provider_state_dir()
-
-    def capture_provider_session_id(self, provider_session_id: str) -> None:
-        object.__setattr__(self, "provider_session_id", provider_session_id)
-        provider_run_state_plan = self._provider_run_state_plan
-        if provider_run_state_plan is not None:
-            provider_run_state_plan.remember_provider_session_id(provider_session_id)
-            return
-        record_observed_provider_session_id(
-            worktree=self.worktree,
-            role=self.role,
-            namespace=self.namespace,
-            service_name=self.service.name,
-            service_state_dir=self.service_state_dir,
-            provider_session_id=provider_session_id,
-        )
-
-    def record_successful_run(self, provider_session_id: str | None = None) -> None:
-        session_id = provider_session_id or self.provider_session_id
-        if provider_session_id is not None:
-            self.capture_provider_session_id(provider_session_id)
-        record_successful_provider_session_metadata(
-            worktree=self.worktree,
-            role=self.role,
-            namespace=self.namespace,
-            service_name=self.service.name,
-            provider_session_id=session_id,
-        )
+        self.prepare_provider_state_dir()
 
     @classmethod
     def for_service(
@@ -141,8 +47,8 @@ class RunSessionPlan:
         role: AgentRole,
         worktree: Path,
         namespace: str,
-        service: AgentService,
-    ) -> RunSessionPlan:
+        service: "AgentService",
+    ) -> "RunSessionPlan":
         return plan_run_session(
             RunSessionPlanRequest(
                 role=role,
