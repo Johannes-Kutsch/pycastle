@@ -232,7 +232,7 @@ def _plan_config_file_action(
     config_exists = config_file.exists()
     hints: tuple[ConfigHintAction, ...] = ()
     message: str | None = None
-    if not config_exists and inputs.scope_choice == "local":
+    if inputs.scope_choice == "local":
         hints = (
             ConfigHintAction(
                 key="docker_image_name",

@@ -702,6 +702,29 @@ def test_init_writes_commented_docker_image_name_hint_from_cwd(tmp_path, monkeyp
         )
 
 
+def test_init_local_rerun_updates_commented_docker_image_name_hint_in_existing_config(
+    tmp_path, monkeypatch
+):
+    """Local init keeps applying the commented docker_image_name hint on rerun."""
+    from pycastle.commands.init import main
+
+    project_dir = tmp_path / "My Cool Project"
+    project_dir.mkdir()
+    monkeypatch.chdir(project_dir)
+
+    config_file = project_dir / "pycastle" / "config.py"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('# docker_image_name = ""\n')
+
+    with (
+        patch("click.prompt", return_value=""),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
+
+    assert config_file.read_text() == '# docker_image_name = "my-cool-project"\n'
+
+
 # ── Cycle 5: scaffolded config.py contains StageOverride import and overrides ──
 
 

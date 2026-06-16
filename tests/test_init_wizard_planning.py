@@ -254,6 +254,49 @@ def test_build_init_plan_global_missing_config_plans_creation_without_docker_ima
     assert not config_file.exists()
 
 
+def test_build_init_plan_existing_local_config_keeps_docker_image_hint_action(
+    tmp_path, monkeypatch
+):
+    from pycastle.init_wizard import (
+        ConfigHintAction,
+        InitWizardLayoutFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    repo_root = tmp_path / "My Cool Project"
+    repo_root.mkdir()
+    monkeypatch.chdir(repo_root)
+
+    config_file = repo_root / "pycastle" / "config.py"
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('# docker_image_name = ""\n')
+    before = config_file.read_text()
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="local",
+            layout=InitWizardLayoutFacts(
+                pycastle_dir=repo_root / "pycastle",
+                pycastle_home=tmp_path / "home",
+                target_config_file=config_file,
+                target_env_file=repo_root / "pycastle" / ".env",
+                local_env_file=repo_root / "pycastle" / ".env",
+                global_env_file=tmp_path / "home" / ".env",
+            ),
+        )
+    )
+
+    assert plan.config_file_action is not None
+    assert plan.config_file_action.path == config_file
+    assert plan.config_file_action.should_create is False
+    assert plan.config_file_action.hints == (
+        ConfigHintAction(key="docker_image_name", value="my-cool-project"),
+    )
+    assert config_file.read_text() == before
+
+
 def test_build_init_plan_existing_global_config_preserves_file_with_untouched_message(
     tmp_path, monkeypatch
 ):

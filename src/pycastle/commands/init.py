@@ -8,7 +8,6 @@ from typing import Literal
 
 import click
 
-from ..config.loader import derive_docker_image_name
 from ..init_wizard import (
     HostAuthFacts,
     InitPlan,
@@ -96,6 +95,8 @@ def _build_click_init_plan(
     layout,
     scope: Literal["global", "local"],
     service_selection: str,
+    manage_env_file: bool = False,
+    prompted_env_values: dict[str, str] | None = None,
     existing_env_keys: tuple[str, ...] = (),
     existing_env_values: dict[str, str] | None = None,
     target_env_exists: bool | None = None,
@@ -110,6 +111,10 @@ def _build_click_init_plan(
                 selected_services=(service_selection,),
                 scope_choice=scope,
                 layout=_plan_layout(layout, scope),
+                manage_env_file=manage_env_file,
+                prompted_env_values=(
+                    {} if prompted_env_values is None else prompted_env_values
+                ),
                 existing_env_keys=existing_env_keys,
                 existing_env_values=(
                     {} if existing_env_values is None else existing_env_values
@@ -269,11 +274,10 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         sys.exit(1)
 
     config_file = init_plan.target_config_file
-    if config_file.exists():
-        if scope == "global":
-            click.echo(
-                f"global config.py already exists at {config_file}; leaving it untouched"
-            )
+    config_action = init_plan.config_file_action
+    if config_action is not None and not config_action.should_create:
+        if config_action.message is not None:
+            click.echo(config_action.message)
     else:
         try:
             config_file.parent.mkdir(parents=True, exist_ok=True)
@@ -285,14 +289,13 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             )
             sys.exit(1)
 
-    if scope == "local":
-        image_name = derive_docker_image_name(Path.cwd().name)
+    for hint in () if config_action is None else config_action.hints:
         try:
-            _fill_commented_hint(config_file, "docker_image_name", image_name)
+            _fill_commented_hint(config_file, hint.key, hint.value)
         except Exception as e:
             click.echo(
                 click.style(
-                    f"Error: could not set docker_image_name in {config_file} — {e}",
+                    f"Error: could not set {hint.key} in {config_file} — {e}",
                     fg="red",
                 ),
                 err=True,
