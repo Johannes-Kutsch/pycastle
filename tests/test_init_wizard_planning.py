@@ -17,6 +17,22 @@ def _layout():
     )
 
 
+def _layout_for_scope(scope: str):
+    from pycastle.init_wizard import InitWizardLayoutFacts
+
+    pycastle_dir = Path("pycastle")
+    pycastle_home = Path("/tmp/home")
+    scoped_dir = pycastle_home if scope == "global" else pycastle_dir
+    return InitWizardLayoutFacts(
+        pycastle_dir=pycastle_dir,
+        pycastle_home=pycastle_home,
+        target_config_file=scoped_dir / "config.py",
+        target_env_file=scoped_dir / ".env",
+        local_env_file=pycastle_dir / ".env",
+        global_env_file=pycastle_home / ".env",
+    )
+
+
 def test_init_wizard_exports_init_plan_public_names():
     from pycastle import init_wizard
 
@@ -32,6 +48,7 @@ def test_init_wizard_exports_init_plan_public_names():
         "InitWizardPlanningInputs",
         "InitWizardScopeChoice",
         "LabelPromptEligibility",
+        "PlannedEnvFileAction",
         "PlannedEnvFile",
         "PlannedWarning",
         "ScaffoldStageChainFacts",
@@ -50,10 +67,13 @@ def test_init_plan_types_capture_init_wizard_planning_facts():
         InitWizardLayoutFacts,
         InitWizardPlanningInputs,
         LabelPromptEligibility,
+        PlannedEnvFileAction,
         PlannedEnvFile,
         PlannedWarning,
         ScaffoldStageChainFacts,
     )
+
+    planned_env_action: PlannedEnvFileAction = "merge"
 
     layout = InitWizardLayoutFacts(
         pycastle_dir=Path("pycastle"),
@@ -80,6 +100,7 @@ def test_init_plan_types_capture_init_wizard_planning_facts():
         planned_env_file=PlannedEnvFile(
             path=layout.target_env_file,
             should_manage=True,
+            action=planned_env_action,
             missing_keys=("CLAUDE_CODE_OAUTH_TOKEN",),
         ),
         env_key_actions=(EnvKeyAction(key="GH_TOKEN", action="keep"),),
@@ -109,6 +130,7 @@ def test_init_plan_types_capture_init_wizard_planning_facts():
         planned_env_file=PlannedEnvFile(
             path=Path("pycastle/.env"),
             should_manage=True,
+            action="merge",
             missing_keys=("CLAUDE_CODE_OAUTH_TOKEN",),
         ),
         env_key_actions=(EnvKeyAction(key="GH_TOKEN", action="keep"),),
@@ -188,6 +210,207 @@ def test_build_init_plan_normalizes_service_selection_aliases(
     )
 
     assert plan.selected_services == expected_services
+
+
+@pytest.mark.parametrize(
+    ("scope_choice", "expected_config_file", "expected_env_file"),
+    [
+        ("global", Path("/tmp/home/config.py"), Path("/tmp/home/.env")),
+        ("local", Path("pycastle/config.py"), Path("pycastle/.env")),
+    ],
+)
+def test_build_init_plan_targets_scope_specific_config_and_env_files(
+    scope_choice, expected_config_file, expected_env_file
+):
+    from pycastle.init_wizard import InitWizardPlanningInputs, build_init_plan
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice=scope_choice,
+            layout=_layout_for_scope(scope_choice),
+        )
+    )
+
+    assert plan.target_config_file == expected_config_file
+    assert plan.planned_env_file.path == expected_env_file
+
+
+def test_build_init_plan_marks_delete_local_env_as_optional_when_global_scope_has_local_env(
+    tmp_path,
+):
+    from pycastle.init_wizard import (
+        InitWizardLayoutFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    pycastle_dir = tmp_path / "pycastle"
+    local_env_file = pycastle_dir / ".env"
+    local_env_file.parent.mkdir(parents=True)
+    local_env_file.write_text("GH_TOKEN=local-token\n")
+    before = local_env_file.read_text()
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="global",
+            layout=InitWizardLayoutFacts(
+                pycastle_dir=pycastle_dir,
+                pycastle_home=tmp_path / "home",
+                target_config_file=tmp_path / "home" / "config.py",
+                target_env_file=tmp_path / "home" / ".env",
+                local_env_file=local_env_file,
+                global_env_file=tmp_path / "home" / ".env",
+            ),
+        )
+    )
+
+    assert plan.planned_env_file.should_delete_local_env is True
+    assert local_env_file.read_text() == before
+
+
+@pytest.mark.parametrize(
+    (
+        "existing_env_keys",
+        "existing_env_values",
+        "expected_env_file_action",
+        "expected_missing_keys",
+    ),
+    [
+        ((), {}, "create", ("GH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")),
+        (
+            ("GH_TOKEN",),
+            {"GH_TOKEN": "existing-gh"},
+            "merge",
+            ("CLAUDE_CODE_OAUTH_TOKEN",),
+        ),
+        (
+            ("GH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"),
+            {
+                "GH_TOKEN": "existing-gh",
+                "CLAUDE_CODE_OAUTH_TOKEN": "existing-claude",
+            },
+            "preserve",
+            (),
+        ),
+    ],
+    ids=["create", "merge", "preserve"],
+)
+def test_build_init_plan_exposes_target_env_file_action(
+    existing_env_keys,
+    existing_env_values,
+    expected_env_file_action,
+    expected_missing_keys,
+):
+    from pycastle.init_wizard import InitWizardPlanningInputs, build_init_plan
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="local",
+            layout=_layout_for_scope("local"),
+            existing_env_keys=existing_env_keys,
+            existing_env_values=existing_env_values,
+        )
+    )
+
+    assert plan.planned_env_file.action == expected_env_file_action
+    assert plan.planned_env_file.missing_keys == expected_missing_keys
+
+
+def test_build_init_plan_marks_create_local_env_as_optional_when_local_scope_has_only_global_env(
+    tmp_path,
+):
+    from pycastle.init_wizard import (
+        InitWizardLayoutFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    pycastle_dir = tmp_path / "pycastle"
+    local_env_file = pycastle_dir / ".env"
+    global_env_file = tmp_path / "home" / ".env"
+    global_env_file.parent.mkdir(parents=True)
+    global_env_file.write_text("GH_TOKEN=global-token\n")
+    before = global_env_file.read_text()
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="local",
+            layout=InitWizardLayoutFacts(
+                pycastle_dir=pycastle_dir,
+                pycastle_home=tmp_path / "home",
+                target_config_file=pycastle_dir / "config.py",
+                target_env_file=local_env_file,
+                local_env_file=local_env_file,
+                global_env_file=global_env_file,
+            ),
+        )
+    )
+
+    assert plan.planned_env_file.should_manage is False
+    assert plan.planned_env_file.should_create_local_env is True
+    assert global_env_file.read_text() == before
+
+
+def test_build_init_plan_uses_local_env_without_cross_scope_action_when_both_env_files_exist(
+    tmp_path,
+):
+    from pycastle.init_wizard import (
+        InitWizardLayoutFacts,
+        InitWizardPlanningInputs,
+        build_init_plan,
+    )
+
+    pycastle_dir = tmp_path / "pycastle"
+    local_env_file = pycastle_dir / ".env"
+    global_env_file = tmp_path / "home" / ".env"
+    local_env_file.parent.mkdir(parents=True)
+    global_env_file.parent.mkdir(parents=True)
+    local_env_file.write_text("GH_TOKEN=local-token\n")
+    global_env_file.write_text("GH_TOKEN=global-token\n")
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="local",
+            layout=InitWizardLayoutFacts(
+                pycastle_dir=pycastle_dir,
+                pycastle_home=tmp_path / "home",
+                target_config_file=pycastle_dir / "config.py",
+                target_env_file=local_env_file,
+                local_env_file=local_env_file,
+                global_env_file=global_env_file,
+            ),
+            existing_env_keys=("GH_TOKEN",),
+            existing_env_values={"GH_TOKEN": "local-token"},
+        )
+    )
+
+    assert plan.planned_env_file.path == local_env_file
+    assert plan.planned_env_file.should_manage is True
+    assert plan.planned_env_file.should_create_local_env is False
+    assert plan.planned_env_file.should_delete_local_env is False
+
+
+def test_build_init_plan_accepts_explicit_env_existence_facts_without_reading_paths():
+    from pycastle.init_wizard import InitWizardPlanningInputs, build_init_plan
+
+    plan = build_init_plan(
+        InitWizardPlanningInputs(
+            selected_services=("claude",),
+            scope_choice="local",
+            layout=_layout_for_scope("local"),
+            target_env_exists=False,
+            local_env_exists=False,
+            global_env_exists=True,
+        )
+    )
+
+    assert plan.planned_env_file.should_manage is False
+    assert plan.planned_env_file.should_create_local_env is True
 
 
 def test_build_init_plan_rejects_invalid_service_selection_with_init_wording():

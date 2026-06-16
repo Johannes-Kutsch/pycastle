@@ -6,6 +6,7 @@ from typing import Literal
 
 InitWizardScopeChoice = Literal["global", "local"]
 EnvKeyActionKind = Literal["keep", "prompt", "overwrite_prompt", "add_missing"]
+PlannedEnvFileAction = Literal["create", "merge", "preserve"]
 
 _SUPPORTED_SERVICE_SELECTIONS: dict[str, tuple[str, ...]] = {
     "claude": ("claude",),
@@ -50,7 +51,9 @@ class ScaffoldStageChainFacts:
 class PlannedEnvFile:
     path: Path
     should_manage: bool
+    action: PlannedEnvFileAction = "create"
     should_delete_local_env: bool = False
+    should_create_local_env: bool = False
     missing_keys: tuple[str, ...] = ()
 
 
@@ -98,6 +101,9 @@ class InitWizardPlanningInputs:
     layout: InitWizardLayoutFacts
     existing_env_keys: tuple[str, ...] = ()
     existing_env_values: dict[str, str] = field(default_factory=dict)
+    target_env_exists: bool | None = None
+    local_env_exists: bool | None = None
+    global_env_exists: bool | None = None
     host_auth: HostAuthFacts = field(default_factory=lambda: HostAuthFacts(False))
     scaffold_stage_chains: ScaffoldStageChainFacts = field(
         default_factory=ScaffoldStageChainFacts
@@ -172,6 +178,12 @@ def _prompted_env_keys(selected_services: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(keys)
 
 
+def _resolve_env_exists(explicit_fact: bool | None, path: Path) -> bool:
+    if explicit_fact is not None:
+        return explicit_fact
+    return path.exists()
+
+
 def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
     selected_services = _normalize_selected_services(inputs.selected_services)
     managed_env_keys = _managed_env_keys(selected_services)
@@ -180,6 +192,33 @@ def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
     existing_values = {
         key: value for key, value in inputs.existing_env_values.items() if value
     }
+    target_env_exists = _resolve_env_exists(
+        inputs.target_env_exists, inputs.layout.target_env_file
+    )
+    local_env_exists = _resolve_env_exists(
+        inputs.local_env_exists, inputs.layout.local_env_file
+    )
+    global_env_exists = _resolve_env_exists(
+        inputs.global_env_exists, inputs.layout.global_env_file
+    )
+    should_delete_local_env = inputs.scope_choice == "global" and local_env_exists
+    should_create_local_env = (
+        inputs.scope_choice == "local"
+        and global_env_exists
+        and not local_env_exists
+        and not target_env_exists
+    )
+    should_manage = not should_create_local_env
+    planned_missing_keys = tuple(
+        key for key in managed_env_keys if key not in existing_keys
+    )
+    planned_env_action: PlannedEnvFileAction
+    if not target_env_exists and not existing_keys:
+        planned_env_action = "create"
+    elif planned_missing_keys:
+        planned_env_action = "merge"
+    else:
+        planned_env_action = "preserve"
 
     return InitPlan(
         selected_services=selected_services,
@@ -187,10 +226,11 @@ def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
         target_config_file=inputs.layout.target_config_file,
         planned_env_file=PlannedEnvFile(
             path=inputs.layout.target_env_file,
-            should_manage=True,
-            missing_keys=tuple(
-                key for key in managed_env_keys if key not in existing_keys
-            ),
+            should_manage=should_manage,
+            action=planned_env_action,
+            should_delete_local_env=should_delete_local_env,
+            should_create_local_env=should_create_local_env,
+            missing_keys=planned_missing_keys,
         ),
         env_key_actions=tuple(
             EnvKeyAction(

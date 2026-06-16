@@ -95,6 +95,9 @@ def _build_click_init_plan(
     service_selection: str,
     existing_env_keys: tuple[str, ...] = (),
     existing_env_values: dict[str, str] | None = None,
+    target_env_exists: bool | None = None,
+    local_env_exists: bool | None = None,
+    global_env_exists: bool | None = None,
 ):
     try:
         return build_init_plan(
@@ -106,6 +109,9 @@ def _build_click_init_plan(
                 existing_env_values=(
                     {} if existing_env_values is None else existing_env_values
                 ),
+                target_env_exists=target_env_exists,
+                local_env_exists=local_env_exists,
+                global_env_exists=global_env_exists,
             )
         )
     except ValueError as exc:
@@ -212,6 +218,9 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         layout=layout,
         scope="local",
         service_selection=service_selection,
+        target_env_exists=layout.local_env_file.exists(),
+        local_env_exists=layout.local_env_file.exists(),
+        global_env_exists=layout.global_env_file.exists(),
     )
     service_set = service_plan.selected_services
     _warn_for_uncovered_bundled_default_stage_chains(service_set, scaffold)
@@ -224,20 +233,27 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
         scope = "global" if use_global else "local"
 
-    pycastle_home = scaffold.pycastle_home
     local_env_file = layout.local_env_file
-    manage_env_file = True
+    local_env_exists = local_env_file.exists()
+    global_env_exists = layout.global_env_file.exists()
+    plan_layout = _plan_layout(layout, scope)
+    initial_env_plan = _build_click_init_plan(
+        layout=layout,
+        scope=scope,
+        service_selection=service_selection,
+        target_env_exists=plan_layout.target_env_file.exists(),
+        local_env_exists=local_env_exists,
+        global_env_exists=global_env_exists,
+    )
+    manage_env_file = initial_env_plan.planned_env_file.should_manage
 
-    if scope == "global" and local_env_file.exists():
+    if initial_env_plan.planned_env_file.should_delete_local_env:
         if click.confirm(
             "Delete local .env? (Global will be used instead)", default=False
         ):
             local_env_file.unlink()
-    if (
-        scope == "local"
-        and (pycastle_home / ".env").exists()
-        and not local_env_file.exists()
-    ):
+            local_env_exists = False
+    if initial_env_plan.planned_env_file.should_create_local_env:
         manage_env_file = click.confirm(
             "Create local .env? (Global stays unchanged, local takes priority)",
             default=False,
@@ -252,7 +268,6 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         )
         sys.exit(1)
 
-    plan_layout = _plan_layout(layout, scope)
     config_file = plan_layout.target_config_file
     if config_file.exists():
         if scope == "global":
@@ -296,6 +311,9 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                 service_selection=service_selection,
                 existing_env_keys=existing_env_keys,
                 existing_env_values=_read_env_values(env_file),
+                target_env_exists=True,
+                local_env_exists=local_env_exists,
+                global_env_exists=global_env_exists,
             )
             _merge_missing_env_keys(env_file, init_plan.planned_env_file.missing_keys)
         else:
@@ -303,6 +321,9 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                 layout=layout,
                 scope=scope,
                 service_selection=service_selection,
+                target_env_exists=False,
+                local_env_exists=local_env_exists,
+                global_env_exists=global_env_exists,
             )
             env_file.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -325,6 +346,9 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
             service_selection=service_selection,
             existing_env_keys=_read_env_keys(env_file),
             existing_env_values=existing_env,
+            target_env_exists=True,
+            local_env_exists=local_env_exists or env_file == layout.local_env_file,
+            global_env_exists=global_env_exists or env_file == layout.global_env_file,
         )
 
         prompted_values: dict[str, str] = {}
