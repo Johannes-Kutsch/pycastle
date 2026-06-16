@@ -179,6 +179,49 @@ def _runtime_attr_imported_application_modules(
     return json.loads(result.stdout)
 
 
+def _runtime_module_imported_application_modules(
+    repo_root: Path, module_name: str
+) -> list[str]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                f"""
+                import importlib
+                import json
+                import sys
+
+                importlib.import_module({module_name!r})
+
+                forbidden_prefixes = (
+                    "pycastle.agents",
+                    "pycastle.infrastructure",
+                    "pycastle.iteration",
+                    "pycastle.prompts",
+                    "pycastle.services",
+                    "pycastle.session",
+                )
+                imported = sorted(
+                    name
+                    for name in sys.modules
+                    if any(
+                        name == prefix or name.startswith(f"{{prefix}}.")
+                        for prefix in forbidden_prefixes
+                    )
+                )
+                print(json.dumps(imported))
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def _standalone_runtime_attr_access_result(
     repo_root: Path, attr_name: str
 ) -> dict[str, str]:
@@ -1737,6 +1780,19 @@ def test_runtime_package_surface_import_keeps_application_ownership_unloaded() -
     assert imported == []
 
 
+def test_runtime_execution_contract_module_import_keeps_application_ownership_unloaded() -> (
+    None
+):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    imported = _runtime_module_imported_application_modules(
+        repo_root,
+        "pycastle_agent_runtime.execution_contracts",
+    )
+
+    assert imported == []
+
+
 @pytest.mark.parametrize("attr_name", ["PromptRunRequest", "run_prompt"])
 def test_runtime_prompt_surface_import_keeps_application_ownership_unloaded(
     attr_name: str,
@@ -1776,12 +1832,24 @@ def test_runtime_top_level_surface_is_accessible_standalone_without_pycastle() -
             "PromptRunRequest",
             "PromptRunSession",
             "PromptRuntime",
+            "PromptRuntimeExecutionAdapter",
             "WorktreeMount",
             "run_prompt",
             "CancellationToken",
+            "PreparedProviderRunSession",
+            "PreparedSession",
+            "PrepareSessionAdapter",
+            "SetupFailureTranslator",
+            "StatusDisplayFactory",
+            "StatusRowFactory",
             "TextOutputAdapter",
+            "WorkExecutionAdapter",
             "WorkInvocationDependencies",
             "WorkInvocationRequest",
+            "WorkModelDisplayMetadata",
+            "WorkOutputAdapter",
+            "WorkStatusDisplay",
+            "WorkStatusRow",
             "invoke_work",
             "ServiceRegistry",
             "ChainEntry",
