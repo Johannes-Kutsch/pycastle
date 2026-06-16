@@ -17,6 +17,13 @@ _SUPPORTED_SERVICE_SELECTIONS: dict[str, tuple[str, ...]] = {
 _GITHUB_KEY = "GH_TOKEN"
 _CLAUDE_KEY = "CLAUDE_CODE_OAUTH_TOKEN"
 _OPENCODE_KEY = "OPENCODE_GO_API_KEY"
+_CODEX_HOST_AUTH_WARNING = (
+    "Codex authentication missing: run `codex login` on the host."
+)
+_BUNDLED_STAGE_COVERAGE_WARNING = (
+    "selected services do not cover every bundled default stage priority chain. "
+    "Define your own stage overrides in config.py before running pycastle."
+)
 _PROMPT_TEXT_BY_KEY = {
     _GITHUB_KEY: "GitHub token (press Enter to skip)",
     _CLAUDE_KEY: (
@@ -184,6 +191,32 @@ def _resolve_env_exists(explicit_fact: bool | None, path: Path) -> bool:
     return path.exists()
 
 
+def _covers_bundled_default_stage_chains(
+    selected_services: tuple[str, ...],
+    scaffold_stage_chains: ScaffoldStageChainFacts,
+) -> bool:
+    selected = set(selected_services)
+    return all(
+        any(service in selected for service in stage)
+        for stage in scaffold_stage_chains.bundled_default_stage_chains
+    )
+
+
+def _plan_warnings(inputs: InitWizardPlanningInputs) -> tuple[PlannedWarning, ...]:
+    selected_services = _normalize_selected_services(inputs.selected_services)
+    warnings: list[PlannedWarning] = []
+
+    if "codex" in selected_services and not inputs.host_auth.has_host_codex_auth:
+        warnings.append(PlannedWarning(message=_CODEX_HOST_AUTH_WARNING))
+
+    if not _covers_bundled_default_stage_chains(
+        selected_services, inputs.scaffold_stage_chains
+    ):
+        warnings.append(PlannedWarning(message=_BUNDLED_STAGE_COVERAGE_WARNING))
+
+    return tuple(warnings)
+
+
 def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
     selected_services = _normalize_selected_services(inputs.selected_services)
     managed_env_keys = _managed_env_keys(selected_services)
@@ -256,4 +289,5 @@ def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
             for key in managed_env_keys
             if key in prompted_env_keys
         ),
+        warnings=_plan_warnings(inputs),
     )
