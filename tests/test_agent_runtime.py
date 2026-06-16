@@ -3277,6 +3277,124 @@ def test_runtime_package_one_shot_entrypoint_preserves_resume_runtime_metadata(
     )
 
 
+def test_runtime_package_one_shot_entrypoint_reports_no_fallback_for_unset_primary_service(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    codex_service = _RecordingRuntimeService("codex")
+
+    class _UnsetPrimaryAdapter:
+        def resolve_service(self, service_name: str = "") -> _RecordingRuntimeService:
+            assert service_name == "codex"
+            return codex_service
+
+        def build_work_dependencies(
+            self,
+            *,
+            name: str,
+            model: str,
+            effort: str,
+            service: _RecordingRuntimeService,
+        ) -> WorkInvocationDependencies:
+            assert name == "Runtime Consumer"
+            assert model == "gpt-5.4"
+            assert effort == "medium"
+            assert service is codex_service
+
+            class _Runner:
+                async def setup(
+                    self,
+                    git_name: str,
+                    git_email: str,
+                    work_body: str = "",
+                ) -> None:
+                    del git_name, git_email, work_body
+
+                async def work(
+                    self,
+                    role: AgentRole,
+                    prompt: str,
+                    *,
+                    run_kind: RunKind = RunKind.FRESH,
+                    session_uuid: str | None = None,
+                    on_provider_session_id: Callable[[str], None] | None = None,
+                ) -> dict[str, object]:
+                    del (
+                        role,
+                        prompt,
+                        run_kind,
+                        session_uuid,
+                        on_provider_session_id,
+                    )
+                    return {"service": service.name}
+
+                async def work_text(
+                    self,
+                    prompt: str,
+                    *,
+                    role: AgentRole = AgentRole.IMPLEMENTER,
+                    tool_policy: object = "full",
+                    run_kind: RunKind = RunKind.FRESH,
+                    session_uuid: str | None = None,
+                    on_provider_session_id: Callable[[str], None] | None = None,
+                ) -> str:
+                    del (
+                        prompt,
+                        role,
+                        tool_policy,
+                        run_kind,
+                        session_uuid,
+                        on_provider_session_id,
+                    )
+                    raise AssertionError("one-shot runtime should preserve raw output")
+
+            return WorkInvocationDependencies(
+                container_workspace="/home/agent/workspace",
+                timeout_retries=0,
+                stage_key_for_role=lambda role: role.value,
+                prepare_session=lambda _plan: _PreparedRuntimeSessionStandIn(),
+                build_session=lambda *_args: _RuntimeSessionStandIn(),
+                build_runner=lambda *_args: cast(Any, _Runner()),
+                get_git_identity=lambda: ("Alice", "alice@example.com"),
+            )
+
+    request = runtime.OneShotRunRequest(
+        name="Runtime Consumer",
+        worktree=runtime.WorktreeMount(tmp_path),
+        prompt="Return JSON only.",
+        override=runtime.StageOverride(
+            fallback=runtime.StageOverride(
+                service="codex",
+                model="gpt-5.4",
+                effort="medium",
+            )
+        ),
+    )
+
+    result = asyncio.run(
+        runtime.run_one_shot(
+            runner=cast(Any, _UnsetPrimaryAdapter()),
+            service_registry=runtime.ServiceRegistry({"codex": codex_service}),
+            request=request,
+        )
+    )
+
+    assert result == runtime.OneShotRunResult(
+        selected_service="codex",
+        selected_model="gpt-5.4",
+        selected_effort="medium",
+        used_fallback=False,
+        selected_service_path=("codex",),
+        raw_output={"service": "codex"},
+        runtime_metadata=runtime.OneShotRuntimeMetadata(
+            provider_session_id=None,
+            run_kind=runtime.RunKind.FRESH,
+            session_namespace="",
+        ),
+    )
+
+
 def test_runtime_package_one_shot_entrypoint_falls_through_on_usage_limit_with_shared_cancellation_token(
     tmp_path: Path,
 ) -> None:

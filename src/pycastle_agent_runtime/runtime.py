@@ -351,15 +351,16 @@ async def run_one_shot(
                 continue
             raise
 
+        selected_service_path = _selected_service_path(
+            request.override,
+            selected_service=resolved_service.name,
+        )
         return OneShotRunResult(
             selected_service=resolved_service.name,
             selected_model=resolved_override.model,
             selected_effort=resolved_override.effort,
-            used_fallback=resolved_service.name != request.override.service,
-            selected_service_path=_selected_service_path(
-                request.override,
-                selected_service=resolved_service.name,
-            ),
+            used_fallback=len(selected_service_path) > 1,
+            selected_service_path=selected_service_path,
             raw_output=raw_output,
             runtime_metadata=output_adapter.runtime_metadata,
         )
