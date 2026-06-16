@@ -2477,6 +2477,53 @@ def test_init_warns_from_the_same_bundled_defaults_used_for_config_example(
     )
 
 
+def test_init_emits_planned_warnings_before_the_scope_prompt(
+    tmp_path, monkeypatch, capsys
+):
+    """`pycastle init` must print planned warnings before asking where to scaffold config.py and .env."""
+    from pycastle.commands.init import main
+
+    bundled_pkg = tmp_path / "bundled-pycastle"
+    defaults_dir = bundled_pkg / "defaults"
+    (defaults_dir / "setup").mkdir(parents=True)
+    (defaults_dir / "config.py").write_text(
+        "from pycastle import StageOverride\n\n"
+        "plan_override = StageOverride(\n"
+        '    service="claude",\n'
+        '    model="sonnet",\n'
+        '    effort="medium",\n'
+        ")\n"
+    )
+    (defaults_dir / ".gitignore").write_text(".env\nsetup/\n")
+    (defaults_dir / "setup" / "cron.sh").write_text("#!/bin/sh\necho cron\n")
+    (defaults_dir / "setup" / "cron-install.sh").write_text("#!/bin/sh\necho install\n")
+    (defaults_dir / "setup" / "cron-uninstall.sh").write_text(
+        "#!/bin/sh\necho uninstall\n"
+    )
+    monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
+    monkeypatch.chdir(tmp_path)
+
+    output_before_scope_prompt: list[str] = []
+
+    def capture_confirm(message: str, *args: object, **kwargs: object) -> bool:
+        if "global pycastle home" in message.lower():
+            output_before_scope_prompt.append(capsys.readouterr().out.lower())
+        return False
+
+    with (
+        patch("click.prompt", side_effect=["codex", "my-gh-token"]),
+        patch("click.confirm", side_effect=capture_confirm),
+    ):
+        main()
+
+    assert output_before_scope_prompt, "The scope prompt was not reached"
+    assert "codex authentication missing" in output_before_scope_prompt[0]
+    assert (
+        "selected services do not cover every bundled default stage priority chain"
+        in output_before_scope_prompt[0]
+    )
+
+
 @pytest.mark.parametrize("selection", ["both", "unknown"])
 def test_init_invalid_service_selection_exits_with_clear_error(
     tmp_path, monkeypatch, selection

@@ -152,6 +152,27 @@ def test_init_plan_types_capture_init_wizard_planning_facts():
             reason="GH_TOKEN present",
         ),
     )
+    assert init_plan.warning_messages() == ("warning",)
+
+
+def test_init_plan_warning_messages_preserve_warning_order():
+    from pycastle.init_wizard import InitPlan, PlannedEnvFile, PlannedWarning
+
+    plan = InitPlan(
+        selected_services=("codex",),
+        scope_choice="local",
+        target_config_file=Path("pycastle/config.py"),
+        planned_env_file=PlannedEnvFile(
+            path=Path("pycastle/.env"),
+            should_manage=True,
+        ),
+        warnings=(
+            PlannedWarning(message="first warning"),
+            PlannedWarning(message="second warning"),
+        ),
+    )
+
+    assert plan.warning_messages() == ("first warning", "second warning")
 
 
 def test_init_wizard_planning_module_has_no_click_imports():
