@@ -182,10 +182,22 @@ class ProviderRunStatePlan:
         worktree: Path,
         container_workspace: str,
     ) -> str | None:
-        return self.provider_session_decision().container_state_dir_path(
-            worktree=worktree,
-            container_workspace=container_workspace,
-        )
+        container_state_dir = self.provider_state_dir
+        if (
+            self.use_service_state_dir_for_container
+            and self.service_state_dir is not None
+        ):
+            container_state_dir = self.service_state_dir
+        if container_state_dir is not None:
+            try:
+                container_relpath = container_state_dir.relative_to(worktree)
+            except ValueError:
+                pass
+            else:
+                return f"{container_workspace}/{container_relpath.as_posix()}/"
+        if self.provider_state_dir_relpath is None:
+            return None
+        return f"{container_workspace}/{self.provider_state_dir_relpath}"
 
     def prepare_provider_state_dir(self) -> None:
         self.provider_session_adapter.prepare_local_provider_run_state(
