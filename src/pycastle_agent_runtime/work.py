@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import inspect
 from collections.abc import Awaitable, Callable, Iterable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
@@ -23,7 +22,7 @@ WorkResultT = TypeVar("WorkResultT")
 
 
 @dataclasses.dataclass(frozen=True)
-class PrepareSessionRequest:
+class RunSessionPlan:
     mount_path: Path
     role: AgentRole
     session_namespace: str
@@ -99,7 +98,7 @@ class PreparedSession(Protocol):
     ) -> PreparedProviderRunSession | None: ...
 
 
-PrepareSessionAdapter = Callable[..., PreparedSession]
+PrepareSessionAdapter = Callable[[RunSessionPlan], PreparedSession]
 StatusRowFactory = Callable[..., AbstractAsyncContextManager[Any]]
 SetupFailureTranslator = Callable[[AgentRole, BaseException], BaseException | None]
 ProviderAccountExhaustionHandler = Callable[[AgentService, UsageLimitError], None]
@@ -299,7 +298,7 @@ def _invoke_prepare_session(
     container_workspace: str,
     run_session_plan: Any,
 ) -> PreparedSession:
-    request = PrepareSessionRequest(
+    plan = RunSessionPlan(
         mount_path=mount_path,
         role=role,
         session_namespace=session_namespace,
@@ -307,22 +306,7 @@ def _invoke_prepare_session(
         container_workspace=container_workspace,
         run_session_plan=run_session_plan,
     )
-    parameters = tuple(inspect.signature(prepare_session).parameters.values())
-    if (
-        not any(
-            parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters
-        )
-        and len(parameters) == 1
-    ):
-        return prepare_session(request)
-    return prepare_session(
-        mount_path=request.mount_path,
-        role=request.role,
-        session_namespace=request.session_namespace,
-        service=request.service,
-        container_workspace=request.container_workspace,
-        run_session_plan=request.run_session_plan,
-    )
+    return prepare_session(plan)
 
 
 @dataclasses.dataclass
@@ -811,10 +795,10 @@ def _build_model_display_metadata(
 
 __all__ = [
     "CancellationToken",
-    "PrepareSessionRequest",
     "PreparedProviderRunSession",
     "PreparedSession",
     "PrepareSessionAdapter",
+    "RunSessionPlan",
     "ProviderAccountExhaustionHandler",
     "SetupFailureTranslator",
     "TextOutputAdapter",

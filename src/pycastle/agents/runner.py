@@ -11,6 +11,7 @@ from pycastle_agent_runtime.errors import (
     UsageLimitError as RuntimeUsageLimitError,
 )
 from pycastle_agent_runtime.work import (
+    RunSessionPlan as RuntimeRunSessionPlan,
     WorkModelDisplayMetadata,
     WorkInvocationDependencies,
     WorkInvocationRequest,
@@ -260,17 +261,19 @@ class AgentRunner:
                 model_display=pycastle_model_display,
             )
 
-        def _prepare_session(**kwargs: object):
+        def _prepare_session(
+            run_session_plan: RuntimeRunSessionPlan,
+        ):
             return prepare_run_session(
                 RunSessionRequest(
-                    worktree=cast(Path, kwargs["mount_path"]),
-                    role=cast(AgentRole, kwargs["role"]),
-                    session_namespace=cast(str, kwargs["session_namespace"]),
-                    service=cast(AgentService, kwargs["service"]),
-                    container_workspace=cast(str, kwargs["container_workspace"]),
+                    worktree=run_session_plan.mount_path,
+                    role=cast(AgentRole, run_session_plan.role),
+                    session_namespace=run_session_plan.session_namespace,
+                    service=cast(AgentService, run_session_plan.service),
+                    container_workspace=run_session_plan.container_workspace,
                     run_session_plan=cast(
                         RunSessionPlan | None,
-                        kwargs["run_session_plan"],
+                        run_session_plan.run_session_plan,
                     ),
                 )
             )

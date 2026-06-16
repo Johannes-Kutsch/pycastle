@@ -23,6 +23,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents._work_invocation import (
     ProtocolOutputAdapter,
+    RunSessionPlan as RuntimeRunSessionPlan,
     TextOutputAdapter,
     WorkInvocationDependencies,
     WorkInvocationRequest,
@@ -2551,7 +2552,7 @@ def test_work_invocation_wraps_setup_docker_error_and_skips_work_adapter(
     assert ("remove", "Planner", "failed", "error") in status_display.calls
 
 
-def test_work_invocation_accepts_keyword_prepare_session_adapter_contract(
+def test_work_invocation_passes_runtime_run_session_plan_to_prepare_session(
     tmp_path: Path,
 ):
     prepared_session = _PreparedRunSessionStandIn(
@@ -2559,7 +2560,7 @@ def test_work_invocation_accepts_keyword_prepare_session_adapter_contract(
         initial_provider_session_id="provider-fresh",
         provider_state_dir_container_path="/workspace/provider-state",
     )
-    observed_kwargs: dict[str, object] = {}
+    observed_plan: RuntimeRunSessionPlan | None = None
 
     class _FakeSession:
         def exec_simple(self, cmd: str) -> str:
@@ -2585,8 +2586,11 @@ def test_work_invocation_accepts_keyword_prepare_session_adapter_contract(
             del role, tool_policy, run_kind, session_uuid, on_provider_session_id
             return prompt
 
-    def _prepare_session(**kwargs: object) -> _PreparedRunSessionStandIn:
-        observed_kwargs.update(kwargs)
+    def _prepare_session(
+        run_session_plan: RuntimeRunSessionPlan,
+    ) -> _PreparedRunSessionStandIn:
+        nonlocal observed_plan
+        observed_plan = run_session_plan
         return prepared_session
 
     result = asyncio.run(
@@ -2613,12 +2617,13 @@ def test_work_invocation_accepts_keyword_prepare_session_adapter_contract(
     )
 
     assert result == "already-rendered prompt"
-    assert observed_kwargs["mount_path"] == tmp_path
-    assert observed_kwargs["role"] is AgentRole.IMPLEMENTER
-    assert observed_kwargs["session_namespace"] == ""
-    assert observed_kwargs["container_workspace"] == "/home/agent/workspace"
-    assert observed_kwargs["run_session_plan"] is None
-    assert isinstance(observed_kwargs["service"], ClaudeService)
+    assert observed_plan is not None
+    assert observed_plan.mount_path == tmp_path
+    assert observed_plan.role is AgentRole.IMPLEMENTER
+    assert observed_plan.session_namespace == ""
+    assert observed_plan.container_workspace == "/home/agent/workspace"
+    assert observed_plan.run_session_plan is None
+    assert isinstance(observed_plan.service, ClaudeService)
 
 
 def test_work_invocation_wraps_configured_setup_error_and_skips_work_adapter(
