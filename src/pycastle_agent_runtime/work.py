@@ -10,6 +10,7 @@ from .contracts import AgentService, ParsedTurn
 from .execution_contracts import (
     CancellationToken,
     PreparedProviderRunSession,
+    PreparedRunSessionState,
     PreparedSession,
     PrepareSessionAdapter,
     ProviderAccountExhaustionHandler,
@@ -518,6 +519,7 @@ def _build_model_display_metadata(
 __all__ = [
     "CancellationToken",
     "PreparedProviderRunSession",
+    "PreparedRunSessionState",
     "PreparedSession",
     "PrepareSessionAdapter",
     "RunSessionPlan",

@@ -2816,7 +2816,7 @@ def test_agent_runner_prepare_session_keeps_ambiguous_codex_recovery_fresh_for_o
     assert initial_run.provider_session_id is None
 
 
-def test_agent_runner_prepare_session_accepts_runtime_provider_session_decision_for_strict_resume_restart(
+def test_agent_runner_prepare_session_accepts_runtime_provider_run_state_plan_for_strict_resume_restart(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -2865,7 +2865,7 @@ def test_agent_runner_prepare_session_accepts_runtime_provider_session_decision_
                 session_namespace="",
                 service=service,
                 container_workspace="/home/agent/workspace",
-                run_session_plan=provider_run_state_plan.provider_session_decision(),
+                run_session_plan=provider_run_state_plan,
             )
         ),
     )

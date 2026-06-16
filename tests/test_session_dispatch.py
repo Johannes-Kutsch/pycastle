@@ -24,12 +24,14 @@ from pycastle.session.run_dispatch import (
 from pycastle.session import RoleSession, RunKind
 from pycastle.session._provider_session_sidecars import service_session_metadata_path
 from pycastle.session._provider_session_decision import (
-    ProviderSessionDecision,
+    AuthSeedingRequirement,
     RecoveredSessionIdPersistence,
 )
 from pycastle.session._provider_session_plan import (
+    ProviderRunStatePlan,
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
+    provider_session_adapter_for_service_name,
 )
 from pycastle.session._provider_session_state import (
     ProviderSessionStateRequest as PreparedProviderSessionStateRequest,
@@ -1276,7 +1278,7 @@ def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_wi
     assert resumable_run.provider_session_id == "sess-planned"
 
 
-def test_prepare_provider_session_state_uses_supplied_provider_session_decision_for_opencode_resume_container_path(
+def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_for_opencode_resume_container_path(
     tmp_path: Path,
 ):
     selected_state_dir = tmp_path / "custom" / "opencode-state"
@@ -1284,11 +1286,17 @@ def test_prepare_provider_session_state_uses_supplied_provider_session_decision_
         tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
     )
     service = _NoRecomputeOpenCodeService(fail_provider_session_state=True)
-    decision = ProviderSessionDecision(
+    plan = ProviderRunStatePlan(
+        role_session=RoleSession(tmp_path, AgentRole.IMPROVE, "main"),
+        provider_session_adapter=provider_session_adapter_for_service_name(
+            service.name
+        ),
+        service_name=service.name,
         run_kind=RunKind.RESUME,
         provider_session_id="sess-planned",
-        state_dir_relpath="custom/opencode-state/",
-        state_dir_path=selected_state_dir,
+        provider_state_dir_relpath="custom/opencode-state/",
+        provider_state_dir=selected_state_dir,
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
         recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
         service_state_dir=role_service_state_dir,
         use_service_state_dir_for_container=True,
@@ -1300,7 +1308,7 @@ def test_prepare_provider_session_state_uses_supplied_provider_session_decision_
             role=AgentRole.IMPROVE,
             session_namespace="main",
             service=cast(AgentService, service),
-            provider_session_decision=decision,
+            provider_run_state_plan=plan,
         )
     )
 

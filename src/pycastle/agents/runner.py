@@ -43,7 +43,6 @@ from ..prompts.dispatch import (
 from ..prompts.pipeline import PromptRenderer
 from ..session import RunKind
 from ..session.agent import RunSessionPlan
-from ..session._provider_session_decision import ProviderSessionDecision
 from ..session._provider_session_plan import ProviderRunStatePlan
 from ..session._provider_session_state import (
     ProviderSessionStateRequest,
@@ -271,9 +270,7 @@ class AgentRunner:
             run_session_plan: RuntimeRunSessionPlan,
         ):
             plan_payload = run_session_plan.run_session_plan
-            if isinstance(plan_payload, ProviderRunStatePlan) or isinstance(
-                plan_payload, ProviderSessionDecision
-            ):
+            if isinstance(plan_payload, ProviderRunStatePlan):
                 return prepare_provider_session_state(
                     ProviderSessionStateRequest(
                         worktree=run_session_plan.mount_path,
@@ -281,16 +278,7 @@ class AgentRunner:
                         session_namespace=run_session_plan.session_namespace,
                         service=cast(AgentService, run_session_plan.service),
                         require_exact_transcript_for_strict_resume=True,
-                        provider_run_state_plan=(
-                            plan_payload
-                            if isinstance(plan_payload, ProviderRunStatePlan)
-                            else None
-                        ),
-                        provider_session_decision=(
-                            plan_payload
-                            if isinstance(plan_payload, ProviderSessionDecision)
-                            else None
-                        ),
+                        provider_run_state_plan=plan_payload,
                     )
                 )
             return prepare_run_session(

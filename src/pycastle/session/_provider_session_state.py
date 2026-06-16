@@ -15,16 +15,14 @@ from ._agent_run_session_state import (
 from ._provider_session_decision import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
-    ProviderSessionDecision,
 )
 from ._provider_session_plan import (
     ProviderRunStatePlan,
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
-    provider_session_adapter_for_service_name,
 )
 from .agent import RunSessionPlan, RunSessionPlanRequest, plan_run_session
-from .resume import RoleSession, RunKind
+from .resume import RunKind, RoleSession
 
 if TYPE_CHECKING:
     from ..services.agent_service import AgentService
@@ -37,7 +35,6 @@ class ProviderSessionStateRequest:
     session_namespace: str
     service: AgentService
     provider_run_state_plan: ProviderRunStatePlan | None = None
-    provider_session_decision: ProviderSessionDecision | None = None
     require_exact_transcript_for_strict_resume: bool = False
 
 
@@ -152,49 +149,20 @@ def _run_session_plan_for_request(
 ) -> RunSessionPlan:
     provider_run_state_plan = request.provider_run_state_plan
     if provider_run_state_plan is None:
-        decision = request.provider_session_decision
-        if decision is not None:
-            provider_run_state_plan = ProviderRunStatePlan(
-                role_session=RoleSession(
-                    request.worktree,
-                    request.role,
-                    request.session_namespace,
-                ),
-                provider_session_adapter=provider_session_adapter_for_service_name(
-                    request.service.name
-                ),
-                service_name=request.service.name,
-                run_kind=decision.run_kind,
-                provider_state_dir=decision.state_dir_path,
-                provider_state_dir_relpath=decision.state_dir_relpath,
-                provider_session_id=decision.provider_session_id,
-                auth_seeding_requirement=decision.auth_seeding_requirement,
-                recovered_session_id_persistence=(
-                    decision.recovered_session_id_persistence
-                ),
-                service_state_dir=decision.service_state_dir,
-                exact_transcript_match=decision.exact_transcript_match,
-                auth_seed_action=decision.auth_seed_action,
-                use_service_state_dir_for_container=(
-                    decision.use_service_state_dir_for_container
-                ),
+        return plan_run_session(
+            RunSessionPlanRequest(
+                role=request.role,
+                worktree=request.worktree,
+                namespace=request.session_namespace,
+                service=request.service,
             )
-        else:
-            return plan_run_session(
-                RunSessionPlanRequest(
-                    role=request.role,
-                    worktree=request.worktree,
-                    namespace=request.session_namespace,
-                    service=request.service,
-                )
-            )
+        )
 
     return RunSessionPlan(
         role=request.role,
         worktree=request.worktree,
         namespace=request.session_namespace,
         service=request.service,
-        provider_session_plan=provider_run_state_plan.provider_session_decision(),
         run_kind=provider_run_state_plan.run_kind,
         service_state_dir=provider_run_state_plan.service_state_dir,
         provider_state_dir_relpath=provider_run_state_plan.provider_state_dir_relpath,

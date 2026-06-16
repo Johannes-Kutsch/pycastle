@@ -304,7 +304,7 @@ class PreparedProviderRunSession(Protocol):
     def record_successful_run(self) -> None: ...
 
 
-class PreparedSession(Protocol):
+class PreparedRunSessionState(Protocol):
     provider_state_dir_container_path: str | None
 
     def prepare_for_run(self) -> None: ...
@@ -318,7 +318,8 @@ class PreparedSession(Protocol):
     ) -> PreparedProviderRunSession | None: ...
 
 
-PrepareSessionAdapter = Callable[[RunSessionPlan], PreparedSession]
+PreparedSession = PreparedRunSessionState
+PrepareSessionAdapter = Callable[[RunSessionPlan], PreparedRunSessionState]
 StatusRowFactory = Callable[..., AbstractAsyncContextManager[Any]]
 SetupFailureTranslator = Callable[[AgentRole, BaseException], BaseException | None]
 ProviderAccountExhaustionHandler = Callable[[AgentService, Any], None]
@@ -536,6 +537,7 @@ class TextOutputAdapter:
 __all__ = [
     "CancellationToken",
     "PreparedProviderRunSession",
+    "PreparedRunSessionState",
     "PreparedSession",
     "PrepareSessionAdapter",
     "PromptRunRequest",

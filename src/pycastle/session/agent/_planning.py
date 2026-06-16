@@ -13,7 +13,6 @@ from .._provider_session_decision import (
 from .._provider_session_plan import (
     ProviderRunStatePlan,
     ProviderRunStatePlanRequest,
-    ProviderSessionDecision,
     plan_provider_run_state,
     provider_session_adapter_for_service_name,
     record_observed_provider_session_id,
@@ -46,7 +45,6 @@ class RunSessionPlan:
     provider_session_id: str | None
     auth_seeding_requirement: AuthSeedingRequirement
     recovered_session_id_persistence: RecoveredSessionIdPersistence
-    provider_session_plan: ProviderSessionDecision | None = None
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
     use_service_state_dir_for_container: bool = False
@@ -84,12 +82,6 @@ class RunSessionPlan:
                 self,
                 "_provider_run_state_plan",
                 provider_run_state_plan,
-            )
-        if self.provider_session_plan is None:
-            object.__setattr__(
-                self,
-                "provider_session_plan",
-                provider_run_state_plan.provider_session_decision(),
             )
 
     def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
@@ -175,7 +167,6 @@ def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
         worktree=request.worktree,
         namespace=request.namespace,
         service=request.service,
-        provider_session_plan=provider_run_state_plan.provider_session_decision(),
         run_kind=provider_run_state_plan.run_kind,
         service_state_dir=provider_run_state_plan.service_state_dir,
         provider_state_dir_relpath=provider_run_state_plan.provider_state_dir_relpath,
