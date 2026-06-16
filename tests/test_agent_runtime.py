@@ -322,6 +322,53 @@ def _standalone_runtime_attr_access_results(
     return json.loads(result.stdout)
 
 
+def _standalone_runtime_star_import_names(
+    repo_root: Path, attr_names: list[str]
+) -> dict[str, bool]:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                f"""
+                import importlib.abc
+                import json
+                import sys
+
+                class _BlockPycastle(importlib.abc.MetaPathFinder):
+                    def find_spec(self, fullname, path=None, target=None):
+                        del path, target
+                        if fullname == "pycastle" or fullname.startswith("pycastle."):
+                            raise ModuleNotFoundError(
+                                f"blocked test import: {{fullname}}"
+                            )
+                        return None
+
+                sys.meta_path.insert(0, _BlockPycastle())
+
+                namespace = {{}}
+                exec("from pycastle_agent_runtime import *", namespace)
+
+                print(
+                    json.dumps(
+                        {{
+                            attr_name: attr_name in namespace
+                            for attr_name in {attr_names!r}
+                        }},
+                        sort_keys=True,
+                    )
+                )
+                """
+            ),
+        ],
+        cwd=repo_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return json.loads(result.stdout)
+
+
 def _standalone_runtime_surface_behavior_result(
     repo_root: Path,
 ) -> dict[str, object]:
@@ -1829,11 +1876,17 @@ def test_runtime_top_level_surface_is_accessible_standalone_without_pycastle() -
     results = _standalone_runtime_attr_access_results(
         repo_root,
         [
+            "OneShotRunRequest",
+            "OneShotRunResult",
+            "OneShotRuntime",
+            "OneShotRuntimeExecutionAdapter",
+            "OneShotRuntimeMetadata",
             "PromptRunRequest",
             "PromptRunSession",
             "PromptRuntime",
             "PromptRuntimeExecutionAdapter",
             "WorktreeMount",
+            "run_one_shot",
             "run_prompt",
             "CancellationToken",
             "PreparedProviderRunSession",
@@ -1880,6 +1933,25 @@ def test_runtime_top_level_surface_is_accessible_standalone_without_pycastle() -
     assert results == {
         attr_name: {"type": "ok", "message": ""} for attr_name in results
     }
+
+
+def test_runtime_top_level_star_export_includes_one_shot_surface() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    exported = _standalone_runtime_star_import_names(
+        repo_root,
+        [
+            "OneShotRunRequest",
+            "OneShotRunResult",
+            "OneShotRuntime",
+            "OneShotRuntimeExecutionAdapter",
+            "OneShotRuntimeMetadata",
+            "WorktreeMount",
+            "run_one_shot",
+        ],
+    )
+
+    assert exported == {attr_name: True for attr_name in exported}
 
 
 def test_runtime_surface_behaviors_run_standalone_without_pycastle() -> None:

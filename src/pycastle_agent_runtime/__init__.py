@@ -99,6 +99,10 @@ __all__ = [
     "ProviderSessionStateRequest",
     "ProviderStatePreparationAction",
     "PromptTokens",
+    "PromptRunRequest",
+    "PromptRunSession",
+    "PromptRuntime",
+    "PromptRuntimeExecutionAdapter",
     "Result",
     "RunSessionPlan",
     "RuntimeConfigurationError",
@@ -110,6 +114,11 @@ __all__ = [
     "Stop",
     "StageOverride",
     "TextOutputAdapter",
+    "OneShotRunRequest",
+    "OneShotRunResult",
+    "OneShotRuntime",
+    "OneShotRuntimeExecutionAdapter",
+    "OneShotRuntimeMetadata",
     "chain_entries",
     "ContinueNow",
     "configured_candidate_chain",
@@ -132,6 +141,9 @@ __all__ = [
     "WorkInvocationDependencies",
     "WorkInvocationRequest",
     "WorkInvocationLog",
+    "WorktreeMount",
+    "run_one_shot",
+    "run_prompt",
 ]
 
 

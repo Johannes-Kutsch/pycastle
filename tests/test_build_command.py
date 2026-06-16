@@ -562,13 +562,20 @@ def test_agent_runtime_package_exports_the_runtime_surface():
     assert runtime.UsageLimit is UsageLimit
     assert "AgentRunner" not in runtime.__all__
     assert "AgentRunnerProtocol" not in runtime.__all__
-    assert "PromptRunRequest" not in runtime.__all__
-    assert "PromptRunSession" not in runtime.__all__
-    assert "PromptRuntime" not in runtime.__all__
     assert "RunRequest" not in runtime.__all__
-    assert "WorktreeMount" not in runtime.__all__
     assert "run" not in runtime.__all__
-    assert "run_prompt" not in runtime.__all__
+    assert "OneShotRunRequest" in runtime.__all__
+    assert "OneShotRunResult" in runtime.__all__
+    assert "OneShotRuntime" in runtime.__all__
+    assert "OneShotRuntimeExecutionAdapter" in runtime.__all__
+    assert "OneShotRuntimeMetadata" in runtime.__all__
+    assert "PromptRunRequest" in runtime.__all__
+    assert "PromptRunSession" in runtime.__all__
+    assert "PromptRuntime" in runtime.__all__
+    assert "PromptRuntimeExecutionAdapter" in runtime.__all__
+    assert "WorktreeMount" in runtime.__all__
+    assert "run_one_shot" in runtime.__all__
+    assert "run_prompt" in runtime.__all__
     assert runtime.decide_usage_limit_continuation is decide_usage_limit_continuation
 
 
