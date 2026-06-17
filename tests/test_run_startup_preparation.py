@@ -1,11 +1,54 @@
+from typing import cast
+
+from pycastle_agent_runtime.service_registry import ServiceRegistry
+
 from pycastle.config import Config, StageOverride
 from pycastle.run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
+    RunStartupPreparation,
+    StageOverrideValidationFailure,
     prepare_run_startup,
 )
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services.opencode_service import OpenCodeService
 from unittest.mock import patch
+
+
+def test_run_startup_preparation_returns_none_validation_error_message_without_failures():
+    startup = RunStartupPreparation(
+        validation_failures=(),
+        configured_provider_adapters={},
+        runtime_registry=cast(ServiceRegistry, object()),
+        shared_container_env={},
+        effective_improve_mode=None,
+    )
+
+    assert startup.validation_error_message is None
+
+
+def test_run_startup_preparation_renders_validation_error_message_in_existing_cli_format():
+    startup = RunStartupPreparation(
+        validation_failures=(
+            StageOverrideValidationFailure(
+                code="missing_service",
+                stage_label="plan",
+            ),
+            StageOverrideValidationFailure(
+                code="missing_effort",
+                stage_label="implement",
+            ),
+        ),
+        configured_provider_adapters={},
+        runtime_registry=cast(ServiceRegistry, object()),
+        shared_container_env={},
+        effective_improve_mode=None,
+    )
+
+    assert startup.validation_error_message == (
+        "Config validation errors:\n"
+        "  stage='plan': service is required\n"
+        "  stage='implement': effort is required"
+    )
 
 
 def test_prepare_run_startup_uses_none_effective_improve_mode_when_unset_and_unflagged():
