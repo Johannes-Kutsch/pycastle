@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import enum
+import dataclasses
 from typing import Protocol
 
 from .agents.output_protocol import IssueOutput
@@ -8,9 +8,19 @@ from .config import Config
 from .issue_readiness import issue_readiness_error_for_issue, resolve_issue_readiness
 
 
-class DiagnosticIssueReportValidationOutcome(enum.Enum):
-    AFK = "afk"
-    HITL = "hitl"
+@dataclasses.dataclass(frozen=True)
+class DiagnosticIssueReportValidationAFK:
+    issue_number: int
+
+
+@dataclasses.dataclass(frozen=True)
+class DiagnosticIssueReportValidationHITL:
+    issue_number: int
+
+
+DiagnosticIssueReportValidationOutcome = (
+    DiagnosticIssueReportValidationAFK | DiagnosticIssueReportValidationHITL
+)
 
 
 class FiledIssueReader(Protocol):
@@ -38,7 +48,7 @@ def validate_diagnostic_issue_report(
         cfg,
     )
     if reported_readiness.is_hitl_exempt:
-        return DiagnosticIssueReportValidationOutcome.HITL
+        return DiagnosticIssueReportValidationHITL(issue_number=issue_output.number)
 
     filed_issue = filed_issue_reader.get_issue(issue_output.number)
     filed_labels = (
@@ -56,4 +66,4 @@ def validate_diagnostic_issue_report(
     )
     if readiness_error is not None:
         raise RuntimeError(readiness_error)
-    return DiagnosticIssueReportValidationOutcome.AFK
+    return DiagnosticIssueReportValidationAFK(issue_number=issue_output.number)

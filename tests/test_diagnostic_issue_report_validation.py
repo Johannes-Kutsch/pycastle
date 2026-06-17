@@ -3,7 +3,8 @@ import pytest
 from pycastle.agents.output_protocol import IssueOutput
 from pycastle.config import Config
 from pycastle.diagnostic_issue_report_validation import (
-    DiagnosticIssueReportValidationOutcome,
+    DiagnosticIssueReportValidationAFK,
+    DiagnosticIssueReportValidationHITL,
     validate_diagnostic_issue_report,
 )
 
@@ -18,6 +19,20 @@ class RecordingFiledIssueReader:
         return self.issue
 
 
+def test_diagnostic_issue_report_validation_returns_typed_hitl_for_configured_label_without_reading_filed_issue():
+    reader = RecordingFiledIssueReader({"body": "x" * 100})
+
+    outcome = validate_diagnostic_issue_report(
+        caller="Pre-Flight Reporter",
+        issue_output=IssueOutput(number=41, labels=["bug", "needs-human"]),
+        cfg=Config(hitl_label="needs-human"),
+        filed_issue_reader=reader,
+    )
+
+    assert outcome == DiagnosticIssueReportValidationHITL(issue_number=41)
+    assert reader.calls == []
+
+
 def test_diagnostic_issue_report_validation_returns_hitl_without_reading_filed_issue():
     reader = RecordingFiledIssueReader({"body": "x" * 100})
 
@@ -28,7 +43,7 @@ def test_diagnostic_issue_report_validation_returns_hitl_without_reading_filed_i
         filed_issue_reader=reader,
     )
 
-    assert outcome is DiagnosticIssueReportValidationOutcome.HITL
+    assert outcome == DiagnosticIssueReportValidationHITL(issue_number=41)
     assert reader.calls == []
 
 
@@ -45,7 +60,7 @@ def test_diagnostic_issue_report_validation_returns_afk_with_reported_label_fall
         filed_issue_reader=reader,
     )
 
-    assert outcome is DiagnosticIssueReportValidationOutcome.AFK
+    assert outcome == DiagnosticIssueReportValidationAFK(issue_number=42)
     assert reader.calls == [42]
 
 

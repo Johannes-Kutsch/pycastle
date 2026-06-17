@@ -26,6 +26,7 @@ from ..services import (
 from ..session import RoleSession
 from ..errors import SetupPhaseError
 from ..diagnostic_issue_report_validation import (
+    DiagnosticIssueReportValidationHITL,
     DiagnosticIssueReportValidationOutcome,
     FiledIssueReader,
     validate_diagnostic_issue_report,
@@ -238,9 +239,9 @@ class PreflightCache:
             cfg=deps.cfg,
             github_svc=deps.github_svc,
         )
-        if validation is DiagnosticIssueReportValidationOutcome.HITL:
-            return PreflightHITL(sha=sha, issue_number=agent_result.number)
-        return PreflightAFK(sha=sha, issue_number=agent_result.number)
+        if isinstance(validation, DiagnosticIssueReportValidationHITL):
+            return PreflightHITL(sha=sha, issue_number=validation.issue_number)
+        return PreflightAFK(sha=sha, issue_number=validation.issue_number)
 
     @staticmethod
     def _setup_error_for_missing_declared_tool(
