@@ -3,6 +3,7 @@ from pycastle.run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
     prepare_run_startup,
 )
+from pycastle.services.claude_service import ClaudeService
 from pycastle.services.opencode_service import OpenCodeService
 from unittest.mock import patch
 
@@ -57,6 +58,55 @@ def test_prepare_run_startup_preserves_passed_shared_container_credential_facts(
         "GH_TOKEN": "gh",
         "SHARED_CONTAINER_TOKEN": "shared",
     }
+
+
+def test_prepare_run_startup_keeps_provider_credentials_behind_provider_adapters():
+    cfg = Config(docker_image_name="img", improve_mode="until_sleep")
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "CLAUDE_CODE_OAUTH_TOKEN": "primary",
+            "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY": "secondary",
+            "OPENCODE_GO_API_KEY": "opencode",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    claude = startup.configured_provider_adapters["claude"]
+    opencode = startup.configured_provider_adapters["opencode"]
+
+    assert isinstance(claude, ClaudeService)
+    assert claude.account_names() == ["secondary", "primary"]
+    assert claude.build_env()["CLAUDE_CODE_OAUTH_TOKEN"] == "secondary"
+    assert opencode.build_env()["OPENCODE_GO_API_KEY"] == "opencode"
+    assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in startup.shared_container_env
+    assert "OPENCODE_GO_API_KEY" not in startup.shared_container_env
+
+
+def test_prepare_run_startup_uses_only_passed_credential_env_facts(monkeypatch):
+    cfg = Config(docker_image_name="img", improve_mode="until_sleep")
+    monkeypatch.setenv("GH_TOKEN", "ambient-gh")
+    monkeypatch.setenv("SHARED_CONTAINER_TOKEN", "ambient-shared")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "ambient-primary")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "ambient-secondary")
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "ambient-opencode")
+
+    startup = prepare_run_startup(
+        cfg,
+        {},
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.shared_container_env == {}
+    assert startup.configured_provider_adapters.keys() == {"codex"}
 
 
 def test_prepare_run_startup_omits_services_absent_from_resolved_stage_chains():
