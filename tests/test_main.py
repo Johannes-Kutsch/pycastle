@@ -1852,6 +1852,96 @@ def test_run_cmd_reports_missing_fields_and_invalid_models_together(
     assert not build_called
 
 
+def test_run_cmd_exits_nonzero_on_provider_model_mismatch_before_docker_build(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    class _AcceptingAdapter:
+        def __init__(self, models: frozenset[str]) -> None:
+            self._models = models
+
+        def valid_models(self) -> frozenset[str]:
+            return self._models
+
+        def valid_efforts(self) -> frozenset[str]:
+            return frozenset({"medium"})
+
+    class _ConfiguredAdapter:
+        def valid_models(self) -> frozenset[str]:
+            return frozenset({"gpt-5.4"})
+
+        def valid_efforts(self) -> frozenset[str]:
+            return frozenset({"medium"})
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", raising=False)
+
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+            fallback=StageOverride(
+                service="codex",
+                model="gpt-5.4-mini",
+                effort="medium",
+            ),
+        ),
+        implement_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+        review_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+        merge_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+        preflight_issue_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+        improve_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+        ),
+    )
+    build_called = []
+    fake_svc = MagicMock()
+    fake_svc.build.side_effect = lambda *a, **kw: build_called.append(True)
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch(
+            "pycastle.run_startup_preparation.configured_provider_adapters_for_run",
+            return_value={
+                "claude": _AcceptingAdapter(frozenset({"sonnet"})),
+                "codex": _ConfiguredAdapter(),
+            },
+        ),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "stage='plan fallback'" in result.output
+    assert "model='gpt-5.4-mini' is invalid" in result.output
+    assert 'Did you mean "gpt-5.4"?' in result.output
+    assert not build_called
+
+
 def test_run_cmd_valid_config_passes_validation_silently(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
