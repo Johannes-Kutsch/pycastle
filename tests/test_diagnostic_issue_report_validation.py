@@ -145,6 +145,29 @@ def test_diagnostic_issue_report_validation_raises_when_filed_issue_labels_field
     assert reader.calls == [42]
 
 
+def test_diagnostic_issue_report_validation_treats_present_none_labels_as_authoritative():
+    reader = RecordingFiledIssueReader({"body": "x" * 100, "labels": None})
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Pre-Flight Reporter filed issue #42 on the AFK branch without "
+            "exactly one slice-mode label"
+        ),
+    ):
+        validate_diagnostic_issue_report(
+            caller="Pre-Flight Reporter",
+            issue_output=IssueOutput(
+                number=42,
+                labels=["bug", "ready-for-agent", "behavior-slice"],
+            ),
+            cfg=Config(),
+            filed_issue_reader=reader,
+        )
+
+    assert reader.calls == [42]
+
+
 def test_diagnostic_issue_report_validation_raises_when_filed_issue_body_is_below_floor():
     reader = RecordingFiledIssueReader(
         {"body": "short", "labels": ["bug", "behavior-slice"]}
