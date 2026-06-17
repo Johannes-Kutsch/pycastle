@@ -8,6 +8,76 @@ from pycastle.services.opencode_service import OpenCodeService
 from unittest.mock import patch
 
 
+def test_prepare_run_startup_uses_none_effective_improve_mode_when_unset_and_unflagged():
+    startup = prepare_run_startup(
+        Config(docker_image_name="img"),
+        {"GH_TOKEN": "gh"},
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.effective_improve_mode is None
+
+
+def test_prepare_run_startup_uses_config_effective_improve_mode_when_unflagged():
+    startup = prepare_run_startup(
+        Config(docker_image_name="img", improve_mode="endless"),
+        {"GH_TOKEN": "gh"},
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.effective_improve_mode == "endless"
+
+
+def test_prepare_run_startup_explicit_improve_flag_overrides_config():
+    startup = prepare_run_startup(
+        Config(docker_image_name="img", improve_mode="endless"),
+        {"GH_TOKEN": "gh"},
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag="until_sleep",
+        ),
+    )
+
+    assert startup.effective_improve_mode == "until_sleep"
+
+
+def test_prepare_run_startup_explicit_no_improve_overrides_other_improve_facts():
+    startup = prepare_run_startup(
+        Config(docker_image_name="img", improve_mode="endless"),
+        {"GH_TOKEN": "gh"},
+        RunStartupImproveModeFlagFacts(
+            no_improve=True,
+            improve_mode_flag="until_sleep",
+        ),
+    )
+
+    assert startup.effective_improve_mode is None
+
+
+def test_prepare_run_startup_uses_only_passed_improve_flag_facts(monkeypatch):
+    def _unexpected_click_state() -> None:
+        raise AssertionError("prepare_run_startup must not read Click state")
+
+    monkeypatch.setattr("click.get_current_context", _unexpected_click_state)
+
+    startup = prepare_run_startup(
+        Config(docker_image_name="img", improve_mode="endless"),
+        {"GH_TOKEN": "gh"},
+        RunStartupImproveModeFlagFacts(
+            no_improve=True,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.effective_improve_mode is None
+
+
 def test_prepare_run_startup_returns_explicit_startup_preparation_fields():
     cfg = Config(docker_image_name="img", improve_mode="until_sleep")
 
