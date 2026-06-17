@@ -166,6 +166,20 @@ def _make_cfg(tmp_path: Path, **kwargs) -> Config:
     return Config(logs_dir=tmp_path, **kwargs)
 
 
+def _managed_mount(repo_root: Path, name: str = "issue-1") -> Path:
+    if not repo_root.exists():
+        return repo_root
+    if (
+        repo_root.parent.name == ".worktrees"
+        and repo_root.parent.parent.name == "pycastle"
+    ):
+        repo_root.mkdir(parents=True, exist_ok=True)
+        return repo_root
+    mount_path = repo_root / "pycastle" / ".worktrees" / name
+    mount_path.mkdir(parents=True, exist_ok=True)
+    return mount_path
+
+
 def _run_request(*, service: str = "claude", **kwargs) -> RunRequest:
     template = kwargs.pop("template")
     scope_args = kwargs.pop(
@@ -173,6 +187,9 @@ def _run_request(*, service: str = "claude", **kwargs) -> RunRequest:
         {placeholder: "" for placeholder in template.scope.placeholders},
     )
     send_role_prompt_on_resume = kwargs.pop("send_role_prompt_on_resume", False)
+    mount_path = kwargs.get("mount_path")
+    if isinstance(mount_path, Path):
+        kwargs["mount_path"] = _managed_mount(mount_path)
     return RunRequest(
         service=service,
         prompt=build_prompt_invocation(
@@ -619,7 +636,7 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
             )
         )
     )
@@ -646,7 +663,7 @@ def test_agent_runner_dispatches_with_explicit_claude_service(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
             )
         )
     )
@@ -673,7 +690,7 @@ def test_agent_runner_uses_requested_service_from_registry(tmp_path):
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 service="codex",
             )
         )
@@ -703,7 +720,7 @@ def test_agent_runner_does_not_fall_back_to_claude_for_unknown_requested_service
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     service="codex",
                 )
             )
@@ -732,7 +749,7 @@ def test_agent_runner_uses_universal_image_for_requested_service(
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 service=service_name,
             )
         )
@@ -764,7 +781,7 @@ def test_agent_runner_requires_explicit_resolved_service_for_dispatch(tmp_path):
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     service="",
                 )
             )
@@ -794,7 +811,7 @@ def test_agent_runner_requires_explicit_resolved_service_for_whitespace_only_ser
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     service="   ",
                 )
             )
@@ -822,7 +839,7 @@ def test_agent_runner_fails_when_no_explicit_service_even_if_default_service_is_
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     service="",
                 )
             )
@@ -849,7 +866,7 @@ def test_agent_runner_run_raises_usage_limit_error_when_token_pre_cancelled(tmp_
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     token=token,
                 )
             )
@@ -877,7 +894,7 @@ def test_agent_runner_run_cancels_token_and_raises_on_usage_limit_in_stream(tmp_
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     token=token,
                 )
             )
@@ -909,7 +926,7 @@ def test_agent_runner_run_raises_agent_timeout_error_when_retries_exhausted(tmp_
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                 )
             )
         )
@@ -923,7 +940,7 @@ def test_agent_runner_run_raises_agent_failed_error_for_non_typed_crash(tmp_path
         name="Test",
         template=_PLAN_TEMPLATE,
         scope_args=_PLAN_SCOPE_ARGS,
-        mount_path=tmp_path,
+        mount_path=_managed_mount(tmp_path),
         role=AgentRole.IMPLEMENTER,
         session_namespace="test-ns",
     )
@@ -939,7 +956,7 @@ def test_agent_runner_run_raises_agent_failed_error_for_non_typed_crash(tmp_path
     err = exc_info.value
     assert err.failure_class == "non_typed_crash"
     assert err.role_value == AgentRole.IMPLEMENTER.value
-    assert err.worktree_path == tmp_path
+    assert err.worktree_path == _managed_mount(tmp_path)
     assert err.namespace == "test-ns"
 
 
@@ -951,7 +968,7 @@ def test_agent_runner_run_raises_agent_failed_error_for_protocol_error(tmp_path)
         name="Test",
         template=_PLAN_TEMPLATE,
         scope_args=_PLAN_SCOPE_ARGS,
-        mount_path=tmp_path,
+        mount_path=_managed_mount(tmp_path),
         role=AgentRole.PLANNER,
         session_namespace="",
     )
@@ -967,7 +984,7 @@ def test_agent_runner_run_raises_agent_failed_error_for_protocol_error(tmp_path)
     err = exc_info.value
     assert err.failure_class == "protocol_error"
     assert err.role_value == AgentRole.PLANNER.value
-    assert err.worktree_path == tmp_path
+    assert err.worktree_path == _managed_mount(tmp_path)
     assert err.namespace == ""
     assert err.service_name == "claude"
     assert err.session_dir == ".pycastle-session/planner/claude"
@@ -986,7 +1003,7 @@ def test_agent_runner_failed_output_reports_selected_service_session_dir(tmp_pat
         name="Test",
         template=_PLAN_TEMPLATE,
         scope_args=_PLAN_SCOPE_ARGS,
-        mount_path=tmp_path,
+        mount_path=_managed_mount(tmp_path),
         role=AgentRole.PLANNER,
         service="opencode",
     )
@@ -1031,7 +1048,7 @@ def test_agent_runner_run_raises_setup_phase_error_when_setup_fails_before_work(
         name="Role Agent",
         template=template,
         scope_args=scope_args,
-        mount_path=tmp_path,
+        mount_path=_managed_mount(tmp_path),
         role=role,
     )
 
@@ -1065,7 +1082,7 @@ def test_agent_runner_run_raises_setup_phase_error_when_container_start_fails(
                         "COMMAND": "pytest",
                         "OUTPUT": "docker start failed",
                     },
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PREFLIGHT_ISSUE,
                 )
             )
@@ -1091,7 +1108,7 @@ def test_agent_runner_run_propagates_work_failures_after_setup_starts(tmp_path):
                     name="Plan Agent",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                 )
             )
@@ -1111,7 +1128,7 @@ def test_agent_runner_propagates_git_user_name_error(tmp_path):
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                 )
             )
         )
@@ -1142,7 +1159,9 @@ def test_agent_runner_run_preflight_returns_empty_list_when_no_checks_configured
     cfg = _make_cfg(tmp_path, preflight_checks=())
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == []
 
@@ -1159,7 +1178,9 @@ def test_agent_runner_run_preflight_does_not_require_resolved_service(tmp_path):
         service_registry={"codex": CodexService()},
     )
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == []
 
@@ -1169,7 +1190,9 @@ def test_agent_runner_run_preflight_returns_empty_list_when_all_checks_pass(tmp_
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == []
 
@@ -1185,7 +1208,11 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_when_setup_fails(
     )
 
     with pytest.raises(SetupPhaseError) as exc_info:
-        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+        asyncio.run(
+            runner.run_preflight(
+                name="plan-sandbox", mount_path=_managed_mount(tmp_path)
+            )
+        )
 
     assert exc_info.value.phase == "preflight"
     assert "pip install failed" in str(exc_info.value)
@@ -1204,7 +1231,11 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_when_container_star
     )
 
     with pytest.raises(SetupPhaseError) as exc_info:
-        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+        asyncio.run(
+            runner.run_preflight(
+                name="plan-sandbox", mount_path=_managed_mount(tmp_path)
+            )
+        )
 
     assert exc_info.value.phase == "preflight"
     assert "pycastle-test" in str(exc_info.value)
@@ -1218,7 +1249,9 @@ def test_agent_runner_run_preflight_returns_typed_failure_when_check_fails(tmp_p
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert len(result) == 1
     assert result[0].check_name == "ruff"
@@ -1236,7 +1269,9 @@ def test_agent_runner_run_preflight_collects_all_failures_when_multiple_checks_f
     )
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert len(result) == 2
     assert result[0].check_name == "ruff"
@@ -1248,7 +1283,9 @@ def test_agent_runner_run_preflight_stops_container_after_checks_pass(tmp_path):
     cfg = _make_cfg(tmp_path)
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     mock_client.containers.run.return_value.stop.assert_called()
 
@@ -1258,7 +1295,9 @@ def test_agent_runner_run_preflight_stops_container_when_check_fails(tmp_path):
     cfg = _make_cfg(tmp_path, preflight_checks=(("lint", "lint ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     mock_client.containers.run.return_value.stop.assert_called()
 
@@ -1287,7 +1326,11 @@ def test_agent_runner_run_preflight_raises_setup_phase_error_when_pip_install_fa
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
     with pytest.raises(SetupPhaseError) as exc_info:
-        asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+        asyncio.run(
+            runner.run_preflight(
+                name="plan-sandbox", mount_path=_managed_mount(tmp_path)
+            )
+        )
 
     assert exc_info.value.phase == "preflight"
 
@@ -1304,7 +1347,9 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_pyproject_
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == [
         PreflightCommandFailure(
@@ -1328,7 +1373,9 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_requiremen
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == [
         PreflightCommandFailure(
@@ -1349,7 +1396,9 @@ def test_agent_runner_run_preflight_ignores_malformed_pyproject_and_returns_raw_
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == [
         PreflightCommandFailure(
@@ -1372,7 +1421,9 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_missing_undeclared
     cfg = _make_cfg(tmp_path, preflight_checks=(("black", "black --check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == [
         PreflightCommandFailure(
@@ -1393,7 +1444,9 @@ def test_agent_runner_run_preflight_keeps_missing_tool_without_python_declaratio
     cfg = _make_cfg(tmp_path, preflight_checks=(("shellcheck", "shellcheck ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == [
         PreflightCommandFailure(
@@ -1416,7 +1469,9 @@ def test_agent_runner_run_preflight_returns_failure_tuple_for_declared_tool_proj
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == [
         PreflightCommandFailure(
@@ -1458,7 +1513,9 @@ def test_agent_runner_run_preflight_returns_all_failures_after_running_later_che
     )
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     ruff_idx = next(i for i, call in enumerate(exec_calls) if "ruff check ." in call)
     mypy_idx = next(i for i, call in enumerate(exec_calls) if "mypy ." in call)
@@ -1509,7 +1566,9 @@ def test_agent_runner_run_preflight_returns_all_ordinary_failures_in_configured_
     )
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == [
         PreflightCommandFailure(
@@ -1556,7 +1615,9 @@ def test_agent_runner_run_preflight_passes_checks_that_require_installed_tools(
     cfg = _make_cfg(tmp_path, preflight_checks=(("ruff", "ruff check ."),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == []
 
@@ -1592,7 +1653,9 @@ def test_agent_runner_run_preflight_preserves_agent_user_console_script_path(
     cfg = _make_cfg(tmp_path, preflight_checks=(("demo-tool", "demo-tool --version"),))
     runner = AgentRunner({}, cfg, _make_git_service(), docker_client=mock_client)
 
-    result = asyncio.run(runner.run_preflight(name="plan-sandbox", mount_path=tmp_path))
+    result = asyncio.run(
+        runner.run_preflight(name="plan-sandbox", mount_path=_managed_mount(tmp_path))
+    )
 
     assert result == []
 
@@ -1610,7 +1673,9 @@ def test_agent_runner_run_preflight_registers_and_removes_status_row_on_success(
 
     asyncio.run(
         runner.run_preflight(
-            name="preflight-checks", mount_path=tmp_path, status_display=display
+            name="preflight-checks",
+            mount_path=_managed_mount(tmp_path),
+            status_display=display,
         )
     )
 
@@ -1639,7 +1704,9 @@ def test_agent_runner_run_preflight_updates_phase_for_each_check(tmp_path):
 
     asyncio.run(
         runner.run_preflight(
-            name="preflight-checks", mount_path=tmp_path, status_display=display
+            name="preflight-checks",
+            mount_path=_managed_mount(tmp_path),
+            status_display=display,
         )
     )
 
@@ -1657,7 +1724,9 @@ def test_agent_runner_run_preflight_removes_status_row_when_checks_fail(tmp_path
 
     asyncio.run(
         runner.run_preflight(
-            name="preflight-checks", mount_path=tmp_path, status_display=display
+            name="preflight-checks",
+            mount_path=_managed_mount(tmp_path),
+            status_display=display,
         )
     )
 
@@ -1685,7 +1754,9 @@ def test_agent_runner_run_preflight_removes_status_row_when_exception_propagates
     with pytest.raises(RuntimeError, match="unexpected container error"):
         asyncio.run(
             runner.run_preflight(
-                name="preflight-checks", mount_path=tmp_path, status_display=display
+                name="preflight-checks",
+                mount_path=_managed_mount(tmp_path),
+                status_display=display,
             )
         )
 
@@ -1700,7 +1771,9 @@ def test_agent_runner_run_preflight_renders_all_tests_green_when_checks_pass(tmp
 
     asyncio.run(
         runner.run_preflight(
-            name="preflight-checks", mount_path=tmp_path, status_display=display
+            name="preflight-checks",
+            mount_path=_managed_mount(tmp_path),
+            status_display=display,
         )
     )
 
@@ -1718,7 +1791,11 @@ def test_agent_runner_run_preflight_propagates_git_user_name_error(tmp_path):
     runner = AgentRunner({}, _make_cfg(tmp_path), mock_git, docker_client=MagicMock())
 
     with pytest.raises(GitCommandError):
-        asyncio.run(runner.run_preflight(name="preflight-checks", mount_path=tmp_path))
+        asyncio.run(
+            runner.run_preflight(
+                name="preflight-checks", mount_path=_managed_mount(tmp_path)
+            )
+        )
 
 
 # ── RunRequest: core interface ────────────────────────────────────────────────
@@ -1803,7 +1880,7 @@ def test_agent_runner_injects_picked_token_into_container_env(tmp_path):
                 name="Test",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
             )
         )
     )
@@ -1850,13 +1927,15 @@ def test_agent_runner_filters_host_env_before_container_startup(tmp_path):
                 name="Implement",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.IMPLEMENTER,
                 service="claude",
             )
         )
     )
-    asyncio.run(runner.run_preflight(name="preflight", mount_path=tmp_path))
+    asyncio.run(
+        runner.run_preflight(name="preflight", mount_path=_managed_mount(tmp_path))
+    )
 
     agent_env, preflight_env = started_envs
     assert agent_env["GH_TOKEN"] == "gh-token"
@@ -1944,7 +2023,7 @@ def test_agent_runner_keeps_service_env_across_preflight_issue_review_and_failur
                     "COMMAND": "pytest tests/host",
                     "OUTPUT": "failed",
                 },
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PREFLIGHT_ISSUE,
                 service="opencode",
             )
@@ -1956,7 +2035,7 @@ def test_agent_runner_keeps_service_env_across_preflight_issue_review_and_failur
                 name="Review",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.REVIEWER,
                 service="codex",
             )
@@ -1972,7 +2051,7 @@ def test_agent_runner_keeps_service_env_across_preflight_issue_review_and_failur
                     "FAILED_ROLE": "reviewer",
                     "FAILURE_CLASS": "protocol_error",
                 },
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.FAILURE_REPORT,
                 service="claude",
             )
@@ -2034,7 +2113,7 @@ def test_agent_runner_cancels_token_and_raises_on_transient_agent_error(tmp_path
                     name="Implement Agent #42",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     token=token,
                 )
             )
@@ -2069,7 +2148,7 @@ def test_agent_runner_does_not_call_mark_exhausted_on_transient_agent_error(tmp_
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                 )
             )
         )
@@ -2106,7 +2185,7 @@ def test_agent_runner_marks_picked_token_exhausted_on_usage_limit(tmp_path):
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                 )
             )
         )
@@ -2154,7 +2233,7 @@ def test_agent_runner_routes_subscription_access_denial_to_agent_credential_fail
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                 )
             )
         )
@@ -2207,7 +2286,7 @@ def test_agent_runner_routes_subscription_access_denial_variant_to_agent_credent
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                 )
             )
         )
@@ -2243,7 +2322,7 @@ def test_agent_runner_treats_unrelated_403_as_hard_error(tmp_path):
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                 )
             )
         )
@@ -2270,7 +2349,7 @@ def test_agent_runner_codex_missing_host_auth_fails_before_container_setup(
                     name="Codex",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                     service="codex",
                 )
@@ -2350,7 +2429,7 @@ def test_work_invocation_resume_non_typed_retry_raises_agent_failed_error(
             invoke_work(
                 WorkInvocationRequest(
                     name="Impl",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.IMPLEMENTER,
                     service=service,
                     model="sonnet",
@@ -2441,7 +2520,7 @@ def test_work_invocation_typed_fresh_success_returns_adapter_output_and_forwarde
         invoke_work(
             WorkInvocationRequest(
                 name="Planner",
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
                 service=service,
                 model="sonnet",
@@ -2516,7 +2595,7 @@ def test_work_invocation_wraps_setup_docker_error_and_skips_work_adapter(
             invoke_work(
                 WorkInvocationRequest(
                     name="Planner",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                     service=ClaudeService(),
                     model="sonnet",
@@ -2601,7 +2680,7 @@ def test_work_invocation_passes_runtime_run_session_plan_to_prepare_session(
         invoke_work(
             WorkInvocationRequest(
                 name="Runtime Consumer",
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.IMPLEMENTER,
                 service=ClaudeService(),
                 model="sonnet",
@@ -2622,7 +2701,7 @@ def test_work_invocation_passes_runtime_run_session_plan_to_prepare_session(
 
     assert result == "already-rendered prompt"
     assert observed_plan is not None
-    assert observed_plan.mount_path == tmp_path
+    assert observed_plan.mount_path == _managed_mount(tmp_path)
     assert observed_plan.role is AgentRole.IMPLEMENTER
     assert observed_plan.session_namespace == ""
     assert observed_plan.container_workspace == "/home/agent/workspace"
@@ -2668,7 +2747,7 @@ def test_agent_runner_prepare_session_accepts_runtime_provider_run_state_plan_fo
         Any,
         dependencies.prepare_session(
             RuntimeRunSessionPlan(
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.IMPLEMENTER,
                 session_namespace="",
                 service=service,
@@ -2729,7 +2808,7 @@ def test_agent_runner_prepare_session_restarts_strict_resume_when_exact_transcri
         Any,
         dependencies.prepare_session(
             RuntimeRunSessionPlan(
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.IMPLEMENTER,
                 session_namespace="",
                 service=service,
@@ -2797,7 +2876,7 @@ def test_agent_runner_prepare_session_keeps_ambiguous_codex_recovery_fresh_for_o
         Any,
         dependencies.prepare_session(
             RuntimeRunSessionPlan(
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.IMPLEMENTER,
                 session_namespace="",
                 service=service,
@@ -2860,7 +2939,7 @@ def test_agent_runner_prepare_session_accepts_runtime_provider_run_state_plan_fo
         Any,
         dependencies.prepare_session(
             RuntimeRunSessionPlan(
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.IMPLEMENTER,
                 session_namespace="",
                 service=service,
@@ -2926,7 +3005,7 @@ def test_work_invocation_wraps_configured_setup_error_and_skips_work_adapter(
             invoke_work(
                 WorkInvocationRequest(
                     name="Runtime Consumer",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.IMPLEMENTER,
                     service=ClaudeService(),
                     model="sonnet",
@@ -3017,7 +3096,7 @@ def test_work_invocation_opens_status_row_with_caller_metadata_before_setup(
         invoke_work(
             WorkInvocationRequest(
                 name="Planner",
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
                 service=ClaudeService(),
                 model="sonnet",
@@ -3096,7 +3175,7 @@ def test_work_invocation_pre_cancelled_token_raises_usage_limit_before_setup(
             invoke_work(
                 WorkInvocationRequest(
                     name="Runtime Consumer",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.IMPLEMENTER,
                     service=ClaudeService(),
                     model="sonnet",
@@ -3168,7 +3247,7 @@ def test_work_invocation_sets_missing_stage_key_on_provider_usage_limit(
             invoke_work(
                 WorkInvocationRequest(
                     name="Planner",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                     service=service,
                     model="gpt-5.4",
@@ -3250,7 +3329,7 @@ def test_work_invocation_text_usage_limit_marks_exhaustion_cancels_token_and_ski
             invoke_work(
                 WorkInvocationRequest(
                     name="Runtime Consumer",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.IMPLEMENTER,
                     service=service,
                     model="gpt-5.4",
@@ -3342,7 +3421,7 @@ def test_work_invocation_text_transient_provider_failure_cancels_token_keeps_ser
             invoke_work(
                 WorkInvocationRequest(
                     name="Runtime Consumer",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.IMPLEMENTER,
                     service=service,
                     model="gpt-5.4",
@@ -3428,7 +3507,7 @@ def test_work_invocation_text_hard_provider_failure_cancels_token_annotates_cont
             invoke_work(
                 WorkInvocationRequest(
                     name="Runtime Consumer",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.IMPLEMENTER,
                     service=service,
                     model="gpt-5.4",
@@ -3532,7 +3611,7 @@ def test_work_invocation_permanent_claude_usage_limit_marks_account_and_skips_su
             invoke_work(
                 WorkInvocationRequest(
                     name="Planner",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                     service=service,
                     model="sonnet",
@@ -3673,7 +3752,7 @@ def test_work_invocation_exits_container_session_once_across_work_outcomes(
 
         request: WorkInvocationRequest[Any] = WorkInvocationRequest(
             name=f"Planner {scenario_name}",
-            mount_path=tmp_path,
+            mount_path=_managed_mount(tmp_path),
             role=AgentRole.PLANNER,
             service=ClaudeService(),
             model="sonnet",
@@ -3794,7 +3873,7 @@ def test_work_invocation_closes_failed_work_rows_consistently_for_typed_and_text
             invoke_work(
                 WorkInvocationRequest(
                     name="Planner",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                     service=ClaudeService(),
                     model="sonnet",
@@ -3871,7 +3950,7 @@ def test_work_invocation_typed_resume_success_uses_prepared_run_kind_and_provide
         invoke_work(
             WorkInvocationRequest(
                 name="Planner",
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
                 service=ClaudeService(),
                 model="sonnet",
@@ -3951,7 +4030,7 @@ def test_work_invocation_text_success_returns_exact_str_and_records_provider_ses
         invoke_work(
             WorkInvocationRequest(
                 name="Runtime Consumer",
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.IMPLEMENTER,
                 service=ClaudeService(),
                 model="sonnet",
@@ -4043,7 +4122,7 @@ def test_work_invocation_typed_success_records_provider_session_metadata_through
         invoke_work(
             WorkInvocationRequest(
                 name="Planner",
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
                 service=ClaudeService(),
                 model="sonnet",
@@ -4122,7 +4201,7 @@ def test_work_invocation_protocol_reprompt_success_records_metadata_on_successfu
         invoke_work(
             WorkInvocationRequest(
                 name="Planner",
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
                 service=ClaudeService(),
                 model="sonnet",
@@ -4205,7 +4284,7 @@ def test_work_invocation_protocol_reprompt_exhaustion_raises_protocol_error_and_
             invoke_work(
                 WorkInvocationRequest(
                     name="Planner",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                     service=ClaudeService(),
                     model="sonnet",
@@ -4281,7 +4360,7 @@ def test_work_invocation_text_output_has_no_protocol_reprompt_path(
             invoke_work(
                 WorkInvocationRequest(
                     name="Prompt",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                     service=ClaudeService(),
                     model="sonnet",
@@ -4361,7 +4440,7 @@ def test_work_invocation_timeout_retry_uses_resumable_provider_run_state_and_suc
         invoke_work(
             WorkInvocationRequest(
                 name="Planner",
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
                 service=ClaudeService(),
                 model="sonnet",
@@ -4450,7 +4529,7 @@ def test_work_invocation_timeout_exhaustion_preserves_agent_timeout_context(
             invoke_work(
                 WorkInvocationRequest(
                     name="Runtime Consumer",
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.IMPLEMENTER,
                     service=ClaudeService(),
                     model="sonnet",
@@ -4476,7 +4555,7 @@ def test_work_invocation_timeout_exhaustion_preserves_agent_timeout_context(
 
     err = exc_info.value
     assert err.role_value == AgentRole.IMPLEMENTER.value
-    assert err.worktree_path == tmp_path
+    assert err.worktree_path == _managed_mount(tmp_path)
 
 
 def test_work_invocation_translates_runtime_usage_limit_to_pycastle_compatibility_error(
@@ -4603,7 +4682,7 @@ def test_agent_runner_run_delegates_work_prompt_rendering_to_prompt_dispatch(
                 name="Planner",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
                 send_role_prompt_on_resume=False,
             )
@@ -4669,7 +4748,7 @@ def test_agent_runner_run_expands_shell_expressions_via_container_exec(
                 name="Planner",
                 template=PromptTemplate.RESUME,
                 scope_args={},
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
             ),
         )
@@ -4712,7 +4791,7 @@ def test_agent_runner_run_builds_runtime_work_invocation_with_agent_output_proto
                 name="Planner",
                 template=_PLAN_TEMPLATE,
                 scope_args=_PLAN_SCOPE_ARGS,
-                mount_path=tmp_path,
+                mount_path=_managed_mount(tmp_path),
                 role=AgentRole.PLANNER,
                 model="sonnet",
                 effort="high",
@@ -4726,7 +4805,7 @@ def test_agent_runner_run_builds_runtime_work_invocation_with_agent_output_proto
         captured["request"],
     )
     assert work_request.name == "Planner"
-    assert work_request.mount_path == tmp_path
+    assert work_request.mount_path == _managed_mount(tmp_path)
     assert work_request.role is AgentRole.PLANNER
     assert work_request.service.name == "claude"
     assert work_request.model == "sonnet"
@@ -4936,7 +5015,7 @@ def test_agent_runner_run_prompt_passes_pycastle_adapter_contract_to_runtime_pac
         runner.run_prompt(
             name="Runtime Consumer",
             prompt="Return the final answer only.",
-            mount_path=tmp_path,
+            mount_path=_managed_mount(tmp_path),
             model="gpt-5.4",
             effort="medium",
             service="codex",
@@ -4954,7 +5033,7 @@ def test_agent_runner_run_prompt_passes_pycastle_adapter_contract_to_runtime_pac
     prompt_request = cast(runtime.PromptRunRequest, captured["request"])
     assert prompt_request.name == "Runtime Consumer"
     assert prompt_request.prompt == "Return the final answer only."
-    assert prompt_request.mount_path == tmp_path
+    assert prompt_request.mount_path == _managed_mount(tmp_path)
     assert prompt_request.override == runtime.StageOverride(
         service="codex",
         model="gpt-5.4",
@@ -4988,7 +5067,7 @@ def test_agent_runner_cancels_token_on_hard_agent_error(tmp_path):
                     name="Implement Agent #42",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     token=token,
                 )
             )
@@ -5023,7 +5102,7 @@ def test_agent_runner_does_not_call_mark_exhausted_on_hard_agent_error(tmp_path)
                     name="Test",
                     template=_PLAN_TEMPLATE,
                     scope_args=_PLAN_SCOPE_ARGS,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                 )
             )
         )
@@ -5050,7 +5129,7 @@ def test_translate_run_outcome_translates_runtime_timeout_to_pycastle_compatibil
                 _run_request(
                     name="Planner",
                     template=_PLAN_TEMPLATE,
-                    mount_path=tmp_path,
+                    mount_path=_managed_mount(tmp_path),
                     role=AgentRole.PLANNER,
                     service="codex",
                 ),
@@ -5059,7 +5138,7 @@ def test_translate_run_outcome_translates_runtime_timeout_to_pycastle_compatibil
 
     assert type(exc_info.value) is AgentTimeoutError
     assert exc_info.value.role_value == AgentRole.PLANNER.value
-    assert exc_info.value.worktree_path == tmp_path
+    assert exc_info.value.worktree_path == _managed_mount(tmp_path)
 
 
 def _make_setup_docker_client() -> MagicMock:

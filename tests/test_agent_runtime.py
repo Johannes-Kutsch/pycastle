@@ -83,6 +83,18 @@ def _make_docker_client(chunks: list[bytes]) -> MagicMock:
     return mock_client
 
 
+def _managed_mount(repo_root: Path, name: str = "issue-1") -> Path:
+    if (
+        repo_root.parent.name == ".worktrees"
+        and repo_root.parent.parent.name == "pycastle"
+    ):
+        repo_root.mkdir(parents=True, exist_ok=True)
+        return repo_root
+    mount_path = repo_root / "pycastle" / ".worktrees" / name
+    mount_path.mkdir(parents=True, exist_ok=True)
+    return mount_path
+
+
 def _runtime_imported_application_modules(repo_root: Path) -> list[str]:
     result = subprocess.run(
         [
@@ -1658,6 +1670,7 @@ class _PromptRuntimeExecutionAdapterStandIn:
 def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: Path):
     import pycastle_agent_runtime as runtime
 
+    managed_mount = _managed_mount(tmp_path)
     service = _RecordingRuntimeService("codex")
     runner = AgentRunner(
         {},
@@ -1669,7 +1682,7 @@ def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: P
     registry = runtime.ServiceRegistry({"codex": service})
     request = runtime.PromptRunRequest(
         name="Runtime Consumer",
-        worktree=runtime.WorktreeMount(tmp_path),
+        worktree=runtime.WorktreeMount(managed_mount),
         prompt="Return the final answer only.",
         override=runtime.StageOverride(
             service="missing",
@@ -3083,6 +3096,7 @@ def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
 ):
     import pycastle_agent_runtime as runtime
 
+    managed_mount = _managed_mount(tmp_path)
     service = _RecordingRuntimeService(
         "codex",
         events=(
@@ -3099,7 +3113,7 @@ def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
     )
     registry = runtime.ServiceRegistry({"codex": service})
     request = runtime.PromptRunRequest(
-        worktree=runtime.WorktreeMount(tmp_path),
+        worktree=runtime.WorktreeMount(managed_mount),
         prompt="Return the final answer only.",
         override=runtime.StageOverride(
             service="codex",
@@ -4670,6 +4684,12 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
 ):
     import pycastle_agent_runtime as runtime
 
+    managed_mount = tmp_path / "pycastle" / ".worktrees" / "issue-1"
+    managed_mount.mkdir(parents=True)
+    (
+        tmp_path / ".pycastle-session" / "implementer" / "codex" / "ignored-session"
+    ).mkdir(parents=True)
+
     fake_home = tmp_path / "home"
     (fake_home / ".codex").mkdir(parents=True)
     (fake_home / ".codex" / "auth.json").write_text(
@@ -4709,7 +4729,7 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
     )
     request = runtime.PromptRunRequest(
         name="Runtime Consumer",
-        worktree=runtime.WorktreeMount(tmp_path),
+        worktree=runtime.WorktreeMount(managed_mount),
         prompt="Return the final answer only.",
         override=runtime.StageOverride(
             service="claude",
@@ -4735,12 +4755,115 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
     assert state_dir_container_path.rstrip("/") == (
         "/home/agent/workspace/.pycastle-session/implementer/codex"
     )
-    assert (tmp_path / ".pycastle-session" / "implementer" / "codex").is_dir()
+    assert (managed_mount / ".pycastle-session" / "implementer" / "codex").is_dir()
 
     [log_path] = list(tmp_path.glob("runtime-consumer-*.log"))
     log_text = log_path.read_text(encoding="utf-8")
     assert '"prompt": "Return the final answer only."' in log_text
     assert '"result":"runtime result"' in log_text
+
+
+def test_agent_runner_run_prompt_rejects_non_managed_mount_before_provider_setup(
+    tmp_path: Path,
+) -> None:
+    requested_service = _StateDirRecordingRuntimeService(
+        "codex",
+        relpath=".pycastle-session/implementer/codex/",
+    )
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([b'{"result":"runtime result"}\n']),
+        service_registry={"codex": requested_service},
+    )
+
+    with pytest.raises(Exception) as excinfo:
+        asyncio.run(
+            runner.run_prompt(
+                name="Runtime Consumer",
+                prompt="Return the final answer only.",
+                mount_path=tmp_path,
+                model="gpt-5.4",
+                effort="medium",
+                service="codex",
+            )
+        )
+
+    assert type(excinfo.value).__name__ == "ManagedWorktreeMountPreconditionError"
+    assert "Runtime Consumer" in str(excinfo.value)
+    assert "role 'implementer'" in str(excinfo.value)
+    assert "pycastle/.worktrees" in str(excinfo.value)
+    assert requested_service.tool_policies == []
+    assert requested_service.state_dir_container_paths == []
+
+
+def test_runtime_package_resident_entrypoint_rejects_non_managed_mount_before_provider_setup(
+    tmp_path: Path,
+) -> None:
+    import pycastle_agent_runtime as runtime
+
+    provider_state_dir = (
+        tmp_path / ".pycastle-session" / "implementer" / "main" / "codex"
+    )
+    role_session = _RuntimeRoleSessionStandIn(
+        _RuntimeServiceSessionState(
+            state_dir=provider_state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/main/codex/",
+        )
+    )
+    provider_state = runtime.ProviderSessionState(
+        runtime.RunKind.RESUME,
+        "persisted-session-id",
+        state_dir_relpath=".pycastle-session/implementer/main/codex/",
+        state_dir_path=provider_state_dir,
+        exact_transcript_match=True,
+        persist_provider_session_id=True,
+    )
+    service = _PlanRecordingRuntimeService("codex", provider_state)
+    provider_session_adapter = _RecordingProviderSessionAdapter(
+        provider_state,
+        service_name="codex",
+    )
+    execution_adapter = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([b'{"result":"runtime result"}\n']),
+        service_registry={"codex": service},
+    )
+    plan = runtime.plan_resident_session(
+        runtime.ResidentSessionPlanRequest(
+            worktree=tmp_path,
+            role=runtime.AgentRole.IMPLEMENTER,
+            namespace="main",
+            service=service,
+            role_session=role_session,
+            provider_session_adapter=provider_session_adapter,
+        )
+    )
+
+    with pytest.raises(Exception) as excinfo:
+        asyncio.run(
+            runtime.run_resident_prompt(
+                runner=execution_adapter,
+                request=runtime.ResidentRunRequest(
+                    name="Runtime Consumer",
+                    prompt="Continue from prior context.",
+                    worktree=runtime.WorktreeMount(tmp_path),
+                    model="gpt-5.4",
+                    effort="medium",
+                    session_plan=plan,
+                ),
+            )
+        )
+
+    assert type(excinfo.value).__name__ == "ManagedWorktreeMountPreconditionError"
+    assert "Runtime Consumer" in str(excinfo.value)
+    assert "role 'implementer'" in str(excinfo.value)
+    assert service.build_env_state_dir_args == []
+    assert provider_session_adapter.prepare_calls == []
 
 
 def test_runtime_package_ships_standalone_distribution_metadata() -> None:

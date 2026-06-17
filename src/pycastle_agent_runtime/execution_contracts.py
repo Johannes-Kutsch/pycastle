@@ -324,6 +324,7 @@ StatusRowFactory = Callable[..., AbstractAsyncContextManager[Any]]
 SetupFailureTranslator = Callable[[AgentRole, BaseException], BaseException | None]
 ProviderAccountExhaustionHandler = Callable[[AgentService, Any], None]
 StatusDisplayFactory = Callable[[], WorkStatusDisplay]
+MountPreconditionValidator = Callable[[str, Path, AgentRole], None]
 
 
 def _default_provider_account_exhaustion_handler(
@@ -429,6 +430,7 @@ class WorkInvocationDependencies:
     status_row_factory: StatusRowFactory = _default_status_row_factory
     translate_setup_failure: SetupFailureTranslator | None = None
     build_model_display_metadata: Callable[[str, str, str], Any | None] | None = None
+    validate_mount_preconditions: MountPreconditionValidator | None = None
     handle_provider_account_exhaustion: ProviderAccountExhaustionHandler = (
         _default_provider_account_exhaustion_handler
     )

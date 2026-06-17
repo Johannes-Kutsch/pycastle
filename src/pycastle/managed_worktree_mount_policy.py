@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
 
+from .errors import ManagedWorktreeMountPreconditionError
 from .infrastructure.worktree import PROJECT_LOCAL_PYCASTLE_DIR
 
 
@@ -106,3 +107,36 @@ def should_reject_managed_worktree_mount(
     if not isinstance(decision, ManagedWorktreeMountRejected):
         return False
     return decision.expected_worktrees_dir.exists() and decision.mount_path.exists()
+
+
+def infer_repo_root_for_mount_path(mount_path: Path) -> Path:
+    resolved = mount_path.resolve(strict=False)
+    if (
+        resolved.parent.name == ".worktrees"
+        and resolved.parent.parent.name == PROJECT_LOCAL_PYCASTLE_DIR
+    ):
+        return resolved.parent.parent.parent
+    for candidate in (resolved, *resolved.parents):
+        if (candidate / PROJECT_LOCAL_PYCASTLE_DIR / ".worktrees").exists():
+            return candidate
+    return resolved if resolved.is_dir() else resolved.parent
+
+
+def enforce_managed_worktree_mount(
+    *,
+    mount_path: Path,
+    caller: str,
+    role: str | None = None,
+) -> ManagedWorktreeMountAccepted:
+    decision = decide_managed_worktree_mount(
+        repo_root=infer_repo_root_for_mount_path(mount_path),
+        mount_path=mount_path,
+        caller=caller,
+        role=role,
+    )
+    if isinstance(decision, ManagedWorktreeMountRejected):
+        raise ManagedWorktreeMountPreconditionError(
+            describe_managed_worktree_mount_rejection(decision),
+            rejection_code=decision.rejection_code,
+        )
+    return decision
