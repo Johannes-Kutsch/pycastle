@@ -209,6 +209,50 @@ def test_diagnostic_issue_report_validation_raises_when_filed_issue_body_is_belo
     assert reader.calls == [42]
 
 
+def test_diagnostic_issue_report_validation_reclassifies_filed_issue_body_floor_instead_of_trusting_carried_readiness():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    carried_ready = IssueReadiness(
+        slice_status=WellFormed(mode=SliceMode.BEHAVIOR, label="behavior-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.BEHAVIOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    reader = RecordingFiledIssueReader(
+        {
+            "body": "short",
+            "labels": ["bug", "behavior-slice"],
+            "readiness": carried_ready,
+        }
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Pre-Flight Reporter filed issue #42 whose body is below the minimum "
+            "length floor"
+        ),
+    ):
+        validate_diagnostic_issue_report(
+            caller="Pre-Flight Reporter",
+            issue_output=IssueOutput(
+                number=42,
+                labels=["bug", "ready-for-agent", "behavior-slice"],
+            ),
+            cfg=Config(),
+            filed_issue_reader=reader,
+        )
+
+    assert reader.calls == [42]
+
+
 def test_diagnostic_issue_report_validation_raises_readiness_error_for_malformed_afk_issue():
     reader = RecordingFiledIssueReader(
         {"body": "x" * 100, "labels": ["behavior-slice", "docs-slice"]}
