@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 _NAMESPACE = uuid.NAMESPACE_DNS
 SESSION_DIR_NAME = ".pycastle-session"
+_SESSION_UUID_SEED_FILENAME = "_session_uuid_seed"
 
 
 def _force_remove_readonly(func, path, _exc_info):
@@ -124,8 +125,25 @@ class RoleSession:
             else f"pycastle.{self._role.value}"
         )
         role_ns = uuid.uuid5(_NAMESPACE, role_key)
-        session_id = uuid.uuid5(role_ns, str(self._worktree.resolve()))
+        session_id = uuid.uuid5(
+            role_ns,
+            f"{self._worktree.resolve()}:{self._ensure_session_uuid_seed()}",
+        )
         return str(session_id)
+
+    def _session_uuid_seed_path(self) -> Path:
+        return self.path / _SESSION_UUID_SEED_FILENAME
+
+    def _ensure_session_uuid_seed(self) -> str:
+        path = self._session_uuid_seed_path()
+        if path.is_file():
+            seed = path.read_text(encoding="utf-8").strip()
+            if seed:
+                return seed
+        seed = str(uuid.uuid4())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(seed, encoding="utf-8")
+        return seed
 
     def provider_state_dir(self, provider_name: str) -> Path:
         return self._worktree / self.provider_state_relpath(provider_name)
@@ -274,7 +292,9 @@ class RoleSession:
 
     def is_resumable(self) -> bool:
         return self.path.is_dir() and any(
-            f.is_file() and not is_service_session_metadata_path(f)
+            f.is_file()
+            and not is_service_session_metadata_path(f)
+            and f.name != _SESSION_UUID_SEED_FILENAME
             for f in self.path.rglob("*")
         )
 
@@ -285,9 +305,11 @@ class RoleSession:
         return RunKind.RESUME if self.is_resumable() else RunKind.FRESH
 
     def start_fresh(self) -> None:
+        seed = self._ensure_session_uuid_seed()
         if self.path.is_dir():
             shutil.rmtree(self.path, onerror=_force_remove_readonly)
         self.path.mkdir(parents=True, exist_ok=True)
+        self._session_uuid_seed_path().write_text(seed, encoding="utf-8")
 
     def mark_done(self) -> None:
         if not self.path.is_dir():

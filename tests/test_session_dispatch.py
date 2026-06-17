@@ -424,6 +424,7 @@ def test_prepare_provider_session_state_fresh_prepare_for_run_preserves_wipe_bef
     ) == [
         ".pycastle-session",
         ".pycastle-session/implementer",
+        ".pycastle-session/implementer/_session_uuid_seed",
         ".pycastle-session/implementer/claude",
     ]
 
