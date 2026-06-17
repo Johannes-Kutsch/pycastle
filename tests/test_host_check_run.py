@@ -15,6 +15,7 @@ from pycastle.commands.host_check_run import (
 )
 from pycastle.config import StageOverride
 from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.run_startup_preparation import RunStartupPreparation
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
 
 
@@ -107,8 +108,8 @@ def test_run_host_check_command_builds_default_issue_filing_deps_when_host_check
     )
     monkeypatch.setattr(
         run_mod,
-        "_prepare_host_check_reporter_startup",
-        lambda cfg, env: run_mod.RunStartupPreparation(
+        "prepare_run_startup",
+        lambda cfg, env, improve_mode_flags: RunStartupPreparation(
             validation_failures=(),
             configured_provider_adapters={},
             runtime_registry=run_mod.ServiceRegistry({}),
@@ -208,8 +209,8 @@ def test_run_host_check_command_normalizes_in_memory_failed_command_outcome_thro
     )
     monkeypatch.setattr(
         run_mod,
-        "_prepare_host_check_reporter_startup",
-        lambda cfg, env: run_mod.RunStartupPreparation(
+        "prepare_run_startup",
+        lambda cfg, env, improve_mode_flags: RunStartupPreparation(
             validation_failures=(),
             configured_provider_adapters={},
             runtime_registry=run_mod.ServiceRegistry({}),
@@ -366,8 +367,8 @@ def test_resolve_host_check_issue_deps_uses_startup_runtime_registry_for_reporte
     )
     monkeypatch.setattr(
         run_mod,
-        "_prepare_host_check_reporter_startup",
-        lambda cfg, env: run_mod.RunStartupPreparation(
+        "prepare_run_startup",
+        lambda cfg, env, improve_mode_flags: RunStartupPreparation(
             validation_failures=(),
             configured_provider_adapters=configured_provider_adapters,
             runtime_registry=runtime_registry,
@@ -427,8 +428,8 @@ def test_run_host_check_command_preserves_raw_failed_command_diagnostic_payload(
     )
     monkeypatch.setattr(
         run_mod,
-        "_prepare_host_check_reporter_startup",
-        lambda cfg, env: run_mod.RunStartupPreparation(
+        "prepare_run_startup",
+        lambda cfg, env, improve_mode_flags: RunStartupPreparation(
             validation_failures=(),
             configured_provider_adapters={},
             runtime_registry=run_mod.ServiceRegistry({}),
