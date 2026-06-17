@@ -311,6 +311,10 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
             stage_key=request.dependencies.stage_key_for_role(request.role),
         )
 
+    validate_mount_preconditions = request.dependencies.validate_mount_preconditions
+    if validate_mount_preconditions is not None:
+        validate_mount_preconditions(request.name, request.mount_path, request.role)
+
     run_session = request.run_session
     assert run_session is not None
     prepared_session = request.dependencies.prepare_session(run_session)

@@ -180,6 +180,55 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
     assert result.sha == "abc123"
 
 
+def test_get_safe_sha_files_fallback_issue_when_preflight_reporter_mount_is_invalid(
+    tmp_path, git_svc, github_svc
+):
+    (tmp_path / "pycastle" / ".worktrees").mkdir(parents=True, exist_ok=True)
+    invalid_mount = tmp_path / "outside-worktrees" / "preflight-sandbox"
+    invalid_mount.mkdir(parents=True, exist_ok=True)
+
+    fake = FakeAgentRunner(
+        [],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
+    )
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 654
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    class _InvalidTransientWorktree:
+        async def __aenter__(self):
+            return invalid_mount
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+    with patch(
+        "pycastle.infrastructure.worktree.detached_transient_worktree",
+        return_value=_InvalidTransientWorktree(),
+    ):
+        result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 654
+    assert len(fake.preflight_calls) == 1
+    assert fake.calls == []
+    github_svc.create_issue_in.assert_called_once()
+    repo, title, body, labels = github_svc.create_issue_in.call_args.args
+    assert repo == github_svc.repo
+    assert "Pre-Flight Reporter" in title
+    assert labels == ["bug", "needs-triage"]
+    assert "No diagnostic agent ran." in body
+    assert "Role: preflight_issue" in body
+    assert (
+        f"Expected mount path: {tmp_path / 'pycastle' / '.worktrees' / 'preflight-sandbox'}"
+        in body
+    )
+    assert "Reason: invalid_mount_path" in body
+    assert "Preflight check 'ruff' failed while running 'ruff check .'" in body
+
+
 def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure(
     tmp_path, git_svc, github_svc
 ):

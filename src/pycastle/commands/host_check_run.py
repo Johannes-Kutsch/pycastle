@@ -24,6 +24,10 @@ from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config, StageOverride, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
+from ..diagnostic_mount_fallback import (
+    DiagnosticMountFallbackIssue,
+    decide_diagnostic_mount_dispatch,
+)
 from ..diagnostic_issue_report_validation import (
     validate_diagnostic_issue_report,
 )
@@ -185,12 +189,27 @@ async def _file_host_check_issue(
     *,
     payload: HostCheckIssuePayload,
     mount_path: Path,
+    repo_root: Path,
     cfg: Config,
     github_svc: GithubService,
     agent_runner: AgentRunnerProtocol,
     status_display: StatusDisplay,
     reporter_override: StageOverride | None,
 ) -> int:
+    mount_decision = decide_diagnostic_mount_dispatch(
+        repo_root=repo_root,
+        mount_path=mount_path,
+        caller="Host-Check Reporter",
+        diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+        role_name=AgentRole.PREFLIGHT_ISSUE.value,
+        original_failure_summary=(
+            f"Host check {payload.check_name!r} failed while running "
+            f"{payload.command!r}."
+        ),
+        github_svc=github_svc,
+    )
+    if isinstance(mount_decision, DiagnosticMountFallbackIssue):
+        return mount_decision.issue_number
     override = reporter_override or cfg.preflight_issue_override
     agent_result = await agent_runner.run(
         RunRequest(
@@ -231,6 +250,7 @@ async def _file_host_check_issue(
 
 def create_host_check_issue_filer(
     *,
+    repo_root: Path,
     cfg: Config,
     github_svc: GithubService,
     agent_runner: AgentRunnerProtocol,
@@ -244,6 +264,7 @@ def create_host_check_issue_filer(
             return await _file_host_check_issue(
                 payload=payload,
                 mount_path=mount_path,
+                repo_root=repo_root,
                 cfg=cfg,
                 github_svc=github_svc,
                 agent_runner=agent_runner,
@@ -333,6 +354,7 @@ async def run_host_check_run(
         and status_display is not None
     ):
         file_issue_for_failure = create_host_check_issue_filer(
+            repo_root=resolved_repo_root,
             cfg=cfg,
             github_svc=github_svc,
             agent_runner=agent_runner,
@@ -353,6 +375,7 @@ async def run_host_check_run(
         ) -> int:
             issue_deps = get_issue_deps()
             return await create_host_check_issue_filer(
+                repo_root=resolved_repo_root,
                 cfg=issue_deps.cfg,
                 github_svc=issue_deps.github_svc,
                 agent_runner=issue_deps.agent_runner,

@@ -2736,6 +2736,57 @@ def test_run_iteration_failure_report_crash_logs_warning_and_error(
     assert logged_cause is original_error
 
 
+def test_run_iteration_files_fallback_issue_when_failure_report_mount_is_invalid(
+    tmp_path, git_svc, logger
+):
+    invalid_mount = tmp_path / "outside-worktrees" / "improve-sandbox"
+    invalid_mount.mkdir(parents=True, exist_ok=True)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.get_open_issues.return_value = []
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 321
+
+    observed_requests: list[RunRequest] = []
+
+    async def agent_fn(req: RunRequest):
+        observed_requests.append(req)
+        raise _make_agent_failed_error(AgentRole.IMPROVE, invalid_mount)
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+        ),
+        improve_mode="endless",
+    )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.failed_role == "improve"
+    assert result.issue_number == 321
+    assert observed_requests
+    assert all(req.name != "Failure Report Agent" for req in observed_requests)
+    github_svc.create_issue_in.assert_called_once()
+    repo, title, body, labels = github_svc.create_issue_in.call_args.args
+    assert repo == github_svc.repo
+    assert "Failure Report Agent" in title
+    assert labels == ["bug", "needs-triage"]
+    assert "No diagnostic agent ran." in body
+    assert "Role: improve" in body
+    assert (
+        f"Expected mount path: {tmp_path / 'pycastle' / '.worktrees' / 'improve-sandbox'}"
+        in body
+    )
+    assert "Reason: invalid_mount_path" in body
+
+
 def test_run_iteration_routes_failure_report_credential_failure_through_shared_terminal_path(
     tmp_path, git_svc, logger
 ):

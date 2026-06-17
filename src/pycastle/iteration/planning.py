@@ -19,6 +19,13 @@ from ..infrastructure.worktree import (
     DetachedTransientWorktreeIntent,
     detached_transient_worktree,
 )
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
+)
+from ..errors import SetupPhaseError
 from ._rows import status_row
 from .implement import branch_for
 from .planning_issue_intake import PlanReady, PreparedPlanningIssueSet
@@ -137,6 +144,19 @@ async def planning_phase(
             sha=sha,
             deps=deps,
         ) as wt:
+            mount_decision = decide_managed_worktree_mount(
+                repo_root=deps.repo_root,
+                mount_path=wt,
+                caller="Plan Agent",
+                role=AgentRole.PLANNER.value,
+            )
+            if isinstance(
+                mount_decision, ManagedWorktreeMountRejected
+            ) and should_reject_managed_worktree_mount(mount_decision):
+                raise SetupPhaseError(
+                    AgentRole.PLANNER.value,
+                    describe_managed_worktree_mount_rejection(mount_decision),
+                )
             try:
                 output = await deps.agent_runner.run(
                     RunRequest(

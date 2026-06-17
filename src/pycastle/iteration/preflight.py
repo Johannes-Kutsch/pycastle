@@ -25,10 +25,20 @@ from ..services import (
 )
 from ..session import RoleSession
 from ..errors import SetupPhaseError
+from ..diagnostic_mount_fallback import (
+    DiagnosticMountFallbackIssue,
+    decide_diagnostic_mount_dispatch,
+)
 from ..diagnostic_issue_report_validation import (
     DiagnosticIssueReportValidationAFK,
     DiagnosticIssueReportValidationHITL,
     validate_diagnostic_issue_report,
+)
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
 )
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import (
@@ -144,6 +154,19 @@ class BranchRefreshBoundary:
                     sha=current_sha,
                     deps=deps,
                 ) as sandbox_path:
+                    mount_decision = decide_managed_worktree_mount(
+                        repo_root=deps.repo_root,
+                        mount_path=sandbox_path,
+                        caller="Divergence Resolver",
+                        role=AgentRole.DIVERGENCE_RESOLVER.value,
+                    )
+                    if isinstance(
+                        mount_decision, ManagedWorktreeMountRejected
+                    ) and should_reject_managed_worktree_mount(mount_decision):
+                        raise SetupPhaseError(
+                            AgentRole.DIVERGENCE_RESOLVER.value,
+                            describe_managed_worktree_mount_rejection(mount_decision),
+                        )
                     await deps.agent_runner.run(
                         RunRequest(
                             name="Divergence Resolver",
@@ -192,6 +215,20 @@ class PreflightCache:
         mount_path: Path,
         sha: str,
     ) -> PreflightHITL | PreflightAFK:
+        mount_decision = decide_diagnostic_mount_dispatch(
+            repo_root=deps.repo_root,
+            mount_path=mount_path,
+            caller="Pre-Flight Reporter",
+            diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+            role_name=AgentRole.PREFLIGHT_ISSUE.value,
+            original_failure_summary=(
+                f"Preflight check {failure.check_name!r} failed while running "
+                f"{failure.command!r}."
+            ),
+            github_svc=deps.github_svc,
+        )
+        if isinstance(mount_decision, DiagnosticMountFallbackIssue):
+            return PreflightHITL(sha=sha, issue_number=mount_decision.issue_number)
         override = self._resolved_preflight_issue_override(deps)
         agent_result = await deps.agent_runner.run(
             RunRequest(

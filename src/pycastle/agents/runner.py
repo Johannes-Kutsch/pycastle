@@ -36,6 +36,7 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from ..managed_worktree_mount_policy import enforce_managed_worktree_mount
 from ..prompts.dispatch import (
     PromptInvocation,
     render_prompt_invocation,
@@ -348,6 +349,13 @@ class AgentRunner:
                     effort=effort_name,
                 )
             ),
+            validate_mount_preconditions=lambda name, mount_path, role: (
+                self._enforce_role_mount_precondition(
+                    name=name,
+                    mount_path=mount_path,
+                    role=role,
+                )
+            ),
             handle_provider_account_exhaustion=cast(
                 Callable[[RuntimeAgentService, Any], None],
                 _handle_provider_account_exhaustion,
@@ -366,7 +374,25 @@ class AgentRunner:
             auto_overlay=auto_overlay,
         )
 
+    def _enforce_role_mount_precondition(
+        self,
+        *,
+        name: str,
+        mount_path: Path,
+        role: AgentRole,
+    ) -> None:
+        enforce_managed_worktree_mount(
+            mount_path=mount_path,
+            caller=name,
+            role=role.value,
+        )
+
     async def run(self, request: RunRequest) -> AgentSuccessOutput:
+        self._enforce_role_mount_precondition(
+            name=request.name,
+            mount_path=request.mount_path,
+            role=request.role,
+        )
         return await translate_run_outcome(self._run(request), request)
 
     async def run_prompt(
@@ -393,6 +419,11 @@ class AgentRunner:
             run_prompt as run_runtime_prompt,
         )
 
+        self._enforce_role_mount_precondition(
+            name=name,
+            mount_path=mount_path,
+            role=AgentRole.IMPLEMENTER,
+        )
         return await run_runtime_prompt(
             runner=cast(Any, self),
             service_registry=self._runtime_service_registry(),

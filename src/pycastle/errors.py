@@ -14,6 +14,12 @@ class PycastleError(AgentRuntimeError):
     pass
 
 
+class ManagedWorktreeMountPreconditionError(PycastleError):
+    def __init__(self, message: str, *, rejection_code: str) -> None:
+        self.rejection_code = rejection_code
+        super().__init__(message)
+
+
 class AgentTimeoutError(PycastleError, RuntimeAgentTimeoutError):
     pass
 
@@ -175,6 +181,7 @@ __all__ = [
     "DockerServiceError",
     "DockerTimeoutError",
     "HardAgentError",
+    "ManagedWorktreeMountPreconditionError",
     "PycastleError",
     "SetupPhaseError",
     "TransientAgentError",

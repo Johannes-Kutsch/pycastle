@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -711,6 +712,57 @@ def test_run_session_plan_uses_namespaced_claude_provider_state_dir_paths(
     )
     assert issues_plan.provider_session_id == (
         RoleSession(tmp_path, AgentRole.IMPROVE, "issues").session_uuid()
+    )
+
+
+def test_run_session_plan_rotates_claude_provider_session_identity_when_role_session_evidence_is_missing(
+    tmp_path: Path,
+) -> None:
+    worktree = tmp_path / "pycastle" / ".worktrees" / "issue-1"
+    worktree.mkdir(parents=True)
+    (worktree / "pyproject.toml").write_text("[project]\nname='t'\n", encoding="utf-8")
+    service = ClaudeService()
+    role_session = RoleSession(worktree, AgentRole.IMPLEMENTER)
+
+    initial_plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=worktree,
+        namespace="",
+        service=service,
+    )
+    assert initial_plan.provider_session_id is not None
+
+    state_dir = worktree / ".pycastle-session" / "implementer" / "claude"
+    state_dir.mkdir(parents=True)
+    (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+    role_session.save_service_session_metadata(
+        "claude", initial_plan.provider_session_id
+    )
+
+    resumed_plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=worktree,
+        namespace="",
+        service=service,
+    )
+
+    shutil.rmtree(worktree)
+    worktree.mkdir(parents=True)
+    (worktree / "pyproject.toml").write_text("[project]\nname='t'\n", encoding="utf-8")
+
+    recovered_branch_only_plan = RunSessionPlan.for_service(
+        role=AgentRole.IMPLEMENTER,
+        worktree=worktree,
+        namespace="",
+        service=service,
+    )
+
+    assert resumed_plan.run_kind is RunKind.RESUME
+    assert resumed_plan.provider_session_id == initial_plan.provider_session_id
+    assert recovered_branch_only_plan.run_kind is RunKind.FRESH
+    assert (
+        recovered_branch_only_plan.provider_session_id
+        != initial_plan.provider_session_id
     )
 
 

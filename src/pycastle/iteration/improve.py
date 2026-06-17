@@ -16,9 +16,16 @@ from ..services.agent_service import AgentService
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
 from ..display.status_display import StatusDisplay
+from ..errors import SetupPhaseError
 from ..infrastructure.worktree import (
     ReusableSandboxWorktreeIntent,
     reusable_sandbox_worktree,
+)
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
 )
 from ._rows import status_row
 from .improve_preparation import (
@@ -306,6 +313,19 @@ async def improve_phase(
                     github_port=deps.github_svc,
                     short_sid=short_sid,
                 )
+                mount_decision = decide_managed_worktree_mount(
+                    repo_root=deps.repo_root,
+                    mount_path=sandbox_path,
+                    caller=prepared_step.name,
+                    role=AgentRole.IMPROVE.value,
+                )
+                if isinstance(
+                    mount_decision, ManagedWorktreeMountRejected
+                ) and should_reject_managed_worktree_mount(mount_decision):
+                    raise SetupPhaseError(
+                        AgentRole.IMPROVE.value,
+                        describe_managed_worktree_mount_rejection(mount_decision),
+                    )
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name=prepared_step.name,
