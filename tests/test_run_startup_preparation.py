@@ -307,3 +307,63 @@ def test_prepare_run_startup_returns_structured_provider_model_mismatch_failure(
         "  stage='plan fallback': model='gpt-5.4-mini' is invalid for "
         "service='codex'. Did you mean \"gpt-5.4\"?"
     ]
+
+
+def test_prepare_run_startup_reports_local_configured_chain_failures_alongside_provider_mismatches():
+    class _ConfiguredCodexAdapter:
+        def valid_models(self) -> frozenset[str]:
+            return frozenset({"gpt-5.4"})
+
+        def valid_efforts(self) -> frozenset[str]:
+            return frozenset({"medium"})
+
+    absent_chain = StageOverride(
+        service="claude",
+        model="sonnet",
+        effort="medium",
+        fallback=StageOverride(
+            service="opencode",
+            model="kimi-k2.6",
+            effort="medium",
+        ),
+    )
+    codex = StageOverride(service="codex", model="gpt-5.4", effort="medium")
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="medium",
+        ),
+        implement_override=absent_chain,
+        review_override=codex,
+        merge_override=codex,
+        preflight_issue_override=codex,
+        improve_override=codex,
+    )
+
+    with patch(
+        "pycastle.run_startup_preparation.configured_provider_adapters_for_run",
+        return_value={
+            "codex": _ConfiguredCodexAdapter(),
+        },
+    ):
+        startup = prepare_run_startup(
+            cfg,
+            {"GH_TOKEN": "gh"},
+            RunStartupImproveModeFlagFacts(
+                no_improve=False,
+                improve_mode_flag=None,
+            ),
+        )
+
+    assert [failure.code for failure in startup.validation_failures] == [
+        "provider_model_mismatch",
+        "no_configured_service",
+    ]
+    assert [failure.render() for failure in startup.validation_failures] == [
+        "  stage='plan': model='gpt-5.4-mini' is invalid for service='codex'."
+        ' Did you mean "gpt-5.4"?',
+        "  stage='implement': no locally configured service in priority chain "
+        "'claude -> opencode'",
+    ]

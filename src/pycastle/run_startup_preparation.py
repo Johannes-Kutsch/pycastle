@@ -93,6 +93,7 @@ def prepare_run_startup(
     configured_provider_adapters = configured_provider_adapters_for_run(
         cfg, credential_env
     )
+    runtime_registry = ServiceRegistry(configured_provider_adapters)
     validation_services = _validation_services()
     validation_failures = tuple(
         _validate_stage_overrides(
@@ -112,17 +113,11 @@ def prepare_run_startup(
             _validate_configured_provider_stage_overrides(
                 cfg, configured_provider_adapters
             )
-        )
-    if not validation_failures:
-        validation_failures = tuple(
-            _validate_locally_configured_stage_overrides(
-                cfg, configured_provider_adapters
-            )
-        )
+        ) + tuple(_validate_locally_configured_stage_overrides(cfg, runtime_registry))
     return RunStartupPreparation(
         validation_failures=tuple(validation_failures),
         configured_provider_adapters=configured_provider_adapters,
-        runtime_registry=ServiceRegistry(configured_provider_adapters),
+        runtime_registry=runtime_registry,
         shared_container_env=_shared_container_env(credential_env),
         effective_improve_mode=_effective_improve_mode(cfg, improve_mode_flags),
     )
@@ -256,12 +251,11 @@ def _validate_stage_overrides(
 
 
 def _validate_locally_configured_stage_overrides(
-    cfg: Config, configured_provider_adapters: dict[str, "AgentService"]
+    cfg: Config, runtime_registry: ServiceRegistry
 ) -> list[StageOverrideValidationFailure]:
-    registry = ServiceRegistry(configured_provider_adapters)
     violations: list[StageOverrideValidationFailure] = []
     for stage_name, override in _stage_overrides(cfg):
-        if registry.has_configured_candidate(override):
+        if runtime_registry.has_configured_candidate(override):
             continue
         violations.append(
             StageOverrideValidationFailure(
