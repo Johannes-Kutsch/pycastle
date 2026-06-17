@@ -20,6 +20,57 @@ RunImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
 
 
 @dataclass(frozen=True)
+class StageOverrideValidationFailure:
+    code: Literal[
+        "missing_service",
+        "missing_effort",
+        "unknown_service",
+        "invalid_effort",
+        "invalid_model",
+        "provider_model_mismatch",
+        "no_configured_service",
+    ]
+    stage_label: str
+    service: str | None = None
+    effort: str | None = None
+    model: str | None = None
+    known_services: tuple[str, ...] = ()
+    valid_values: tuple[str, ...] = ()
+    suggestion: str | None = None
+    chain_label: str | None = None
+
+    def render(self) -> str:
+        if self.code == "missing_service":
+            return f"  stage={self.stage_label!r}: service is required"
+        if self.code == "missing_effort":
+            return f"  stage={self.stage_label!r}: effort is required"
+        if self.code == "unknown_service":
+            return (
+                f"  stage={self.stage_label!r}: service={self.service!r} is not a known service"
+                f" (known: {list(self.known_services)!r})"
+            )
+        if self.code == "invalid_effort":
+            return (
+                f"  stage={self.stage_label!r}: effort={self.effort!r} is invalid"
+                f" for service={self.service!r} (valid: {list(self.valid_values)!r})"
+            )
+        if self.code in {"invalid_model", "provider_model_mismatch"}:
+            detail = (
+                f' Did you mean "{self.suggestion}"?'
+                if self.suggestion
+                else f" (valid: {list(self.valid_values)!r})"
+            )
+            return (
+                f"  stage={self.stage_label!r}: model={self.model!r} is invalid"
+                f" for service={self.service!r}.{detail}"
+            )
+        return (
+            f"  stage={self.stage_label!r}: no locally configured service in priority chain "
+            f"{self.chain_label!r}"
+        )
+
+
+@dataclass(frozen=True)
 class RunStartupImproveModeFlagFacts:
     no_improve: bool
     improve_mode_flag: RunImproveMode
@@ -27,7 +78,7 @@ class RunStartupImproveModeFlagFacts:
 
 @dataclass(frozen=True)
 class RunStartupPreparation:
-    validation_failures: tuple[str, ...]
+    validation_failures: tuple[StageOverrideValidationFailure, ...]
     configured_provider_adapters: dict[str, "AgentService"]
     runtime_registry: ServiceRegistry
     shared_container_env: dict[str, str]
@@ -56,6 +107,12 @@ def prepare_run_startup(
             },
         )
     )
+    if not validation_failures:
+        validation_failures = tuple(
+            _validate_configured_provider_stage_overrides(
+                cfg, configured_provider_adapters
+            )
+        )
     if not validation_failures:
         validation_failures = tuple(
             _validate_locally_configured_stage_overrides(
@@ -132,10 +189,10 @@ def _validate_stage_overrides(
     cfg: Config,
     valid_efforts_by_service: dict[str, frozenset[str]],
     valid_models_by_service: dict[str, frozenset[str]] | None = None,
-) -> list[str]:
+) -> list[StageOverrideValidationFailure]:
     if valid_models_by_service is None:
         valid_models_by_service = {}
-    violations: list[str] = []
+    violations: list[StageOverrideValidationFailure] = []
     for stage_name, override in _stage_overrides(cfg):
         for stage_label, entry in zip(
             agent_runtime.validation_labels(stage_name, override),
@@ -145,20 +202,39 @@ def _validate_stage_overrides(
             svc_name = entry.service
             valid_efforts: frozenset[str] | None = None
             if not svc_name:
-                violations.append(f"  stage={stage_label!r}: service is required")
+                violations.append(
+                    StageOverrideValidationFailure(
+                        code="missing_service",
+                        stage_label=stage_label,
+                    )
+                )
             else:
                 valid_efforts = valid_efforts_by_service.get(svc_name)
                 if valid_efforts is None:
                     violations.append(
-                        f"  stage={stage_label!r}: service={svc_name!r} is not a known service"
-                        f" (known: {sorted(_KNOWN_SERVICES)})"
+                        StageOverrideValidationFailure(
+                            code="unknown_service",
+                            stage_label=stage_label,
+                            service=svc_name,
+                            known_services=tuple(sorted(_KNOWN_SERVICES)),
+                        )
                     )
             if not entry.effort:
-                violations.append(f"  stage={stage_label!r}: effort is required")
+                violations.append(
+                    StageOverrideValidationFailure(
+                        code="missing_effort",
+                        stage_label=stage_label,
+                    )
+                )
             elif valid_efforts is not None and entry.effort not in valid_efforts:
                 violations.append(
-                    f"  stage={stage_label!r}: effort={entry.effort!r} is invalid"
-                    f" for service={svc_name!r} (valid: {sorted(valid_efforts)})"
+                    StageOverrideValidationFailure(
+                        code="invalid_effort",
+                        stage_label=stage_label,
+                        service=svc_name,
+                        effort=entry.effort,
+                        valid_values=tuple(sorted(valid_efforts)),
+                    )
                 )
             if svc_name and entry.model:
                 valid_models = valid_models_by_service.get(svc_name)
@@ -166,30 +242,66 @@ def _validate_stage_overrides(
                     suggestion = difflib.get_close_matches(
                         entry.model, sorted(valid_models), n=1
                     )
-                    detail = (
-                        f' Did you mean "{suggestion[0]}"?'
-                        if suggestion
-                        else f" (valid: {sorted(valid_models)})"
-                    )
                     violations.append(
-                        f"  stage={stage_label!r}: model={entry.model!r} is invalid"
-                        f" for service={svc_name!r}.{detail}"
+                        StageOverrideValidationFailure(
+                            code="invalid_model",
+                            stage_label=stage_label,
+                            service=svc_name,
+                            model=entry.model,
+                            valid_values=tuple(sorted(valid_models)),
+                            suggestion=suggestion[0] if suggestion else None,
+                        )
                     )
     return violations
 
 
 def _validate_locally_configured_stage_overrides(
     cfg: Config, configured_provider_adapters: dict[str, "AgentService"]
-) -> list[str]:
+) -> list[StageOverrideValidationFailure]:
     registry = ServiceRegistry(configured_provider_adapters)
-    violations: list[str] = []
+    violations: list[StageOverrideValidationFailure] = []
     for stage_name, override in _stage_overrides(cfg):
         if registry.has_configured_candidate(override):
             continue
         violations.append(
-            f"  stage={stage_name!r}: no locally configured service in priority chain "
-            f"{agent_runtime.render_chain_label(override)!r}"
+            StageOverrideValidationFailure(
+                code="no_configured_service",
+                stage_label=stage_name,
+                chain_label=agent_runtime.render_chain_label(override),
+            )
         )
+    return violations
+
+
+def _validate_configured_provider_stage_overrides(
+    cfg: Config, configured_provider_adapters: Mapping[str, "AgentService"]
+) -> list[StageOverrideValidationFailure]:
+    violations: list[StageOverrideValidationFailure] = []
+    for stage_name, override in _stage_overrides(cfg):
+        for stage_label, entry in zip(
+            agent_runtime.validation_labels(stage_name, override),
+            agent_runtime.chain_entries(override),
+            strict=True,
+        ):
+            if not entry.model:
+                continue
+            service = configured_provider_adapters.get(entry.service)
+            if service is None:
+                continue
+            valid_models = tuple(sorted(service.valid_models()))
+            if entry.model in valid_models:
+                continue
+            suggestion = difflib.get_close_matches(entry.model, valid_models, n=1)
+            violations.append(
+                StageOverrideValidationFailure(
+                    code="provider_model_mismatch",
+                    stage_label=stage_label,
+                    service=entry.service,
+                    model=entry.model,
+                    valid_values=valid_models,
+                    suggestion=suggestion[0] if suggestion else None,
+                )
+            )
     return violations
 
 

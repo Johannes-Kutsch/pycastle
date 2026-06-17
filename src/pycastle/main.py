@@ -217,7 +217,8 @@ def _do_run(
     )
     if startup.validation_failures:
         click.echo(
-            "Config validation errors:\n" + "\n".join(startup.validation_failures),
+            "Config validation errors:\n"
+            + "\n".join(failure.render() for failure in startup.validation_failures),
             err=True,
         )
         sys.exit(1)
