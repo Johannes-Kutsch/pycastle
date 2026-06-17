@@ -35,6 +35,74 @@ def test_prepare_run_startup_returns_explicit_startup_preparation_fields():
     assert startup.effective_improve_mode == "until_sleep"
 
 
+def test_prepare_run_startup_omits_services_absent_from_resolved_stage_chains():
+    codex = StageOverride(service="codex", model="gpt-5.4", effort="medium")
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=codex,
+        implement_override=codex,
+        review_override=codex,
+        merge_override=codex,
+        preflight_issue_override=codex,
+        improve_override=codex,
+    )
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "CLAUDE_CODE_OAUTH_TOKEN": "primary",
+            "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY": "secondary",
+            "OPENCODE_GO_API_KEY": "opencode",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.validation_failures == ()
+    assert startup.configured_provider_adapters.keys() == {"codex"}
+    assert startup.runtime_registry.services == startup.configured_provider_adapters
+
+
+def test_prepare_run_startup_requires_claude_primary_token_to_build_adapter():
+    claude = StageOverride(service="claude", model="sonnet", effort="medium")
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=claude,
+        implement_override=claude,
+        review_override=claude,
+        merge_override=claude,
+        preflight_issue_override=claude,
+        improve_override=claude,
+    )
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY": "secondary",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.configured_provider_adapters == {}
+    assert startup.runtime_registry.services == startup.configured_provider_adapters
+    assert startup.shared_container_env == {"GH_TOKEN": "gh"}
+    assert [failure.render() for failure in startup.validation_failures] == [
+        "  stage='plan': no locally configured service in priority chain 'claude'",
+        "  stage='implement': no locally configured service in priority chain 'claude'",
+        "  stage='review': no locally configured service in priority chain 'claude'",
+        "  stage='merge': no locally configured service in priority chain 'claude'",
+        "  stage='preflight_issue': no locally configured service in priority chain 'claude'",
+        "  stage='improve': no locally configured service in priority chain 'claude'",
+    ]
+
+
 def test_prepare_run_startup_short_circuits_before_local_priority_chain_validation():
     cfg = Config(
         docker_image_name="img",
