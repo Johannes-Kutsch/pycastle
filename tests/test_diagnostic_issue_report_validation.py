@@ -66,8 +66,64 @@ def test_diagnostic_issue_report_validation_returns_typed_afk_when_filed_issue_i
     assert reader.calls == [42]
 
 
-def test_diagnostic_issue_report_validation_raises_when_filed_issue_is_missing_slice_mode_labels():
+def test_diagnostic_issue_report_validation_uses_filed_labels_when_present():
+    reader = RecordingFiledIssueReader(
+        {"body": "x" * 100, "labels": ["bug", "refactor-slice"]}
+    )
+
+    outcome = validate_diagnostic_issue_report(
+        caller="Pre-Flight Reporter",
+        issue_output=IssueOutput(
+            number=42,
+            labels=["bug", "ready-for-agent", "behavior-slice"],
+        ),
+        cfg=Config(),
+        filed_issue_reader=reader,
+    )
+
+    assert outcome == DiagnosticIssueReportValidationAFK(issue_number=42)
+    assert reader.calls == [42]
+
+
+def test_diagnostic_issue_report_validation_falls_back_to_reported_labels_when_filed_issue_omits_them():
     reader = RecordingFiledIssueReader({"body": "x" * 100})
+
+    outcome = validate_diagnostic_issue_report(
+        caller="Pre-Flight Reporter",
+        issue_output=IssueOutput(
+            number=42,
+            labels=["bug", "ready-for-agent", "behavior-slice"],
+        ),
+        cfg=Config(),
+        filed_issue_reader=reader,
+    )
+
+    assert outcome == DiagnosticIssueReportValidationAFK(issue_number=42)
+    assert reader.calls == [42]
+
+
+def test_diagnostic_issue_report_validation_fallback_to_reported_labels_still_enforces_body_floor():
+    reader = RecordingFiledIssueReader({"body": "short"})
+
+    with pytest.raises(
+        RuntimeError,
+        match="whose body is below the minimum length floor",
+    ):
+        validate_diagnostic_issue_report(
+            caller="Pre-Flight Reporter",
+            issue_output=IssueOutput(
+                number=42,
+                labels=["bug", "ready-for-agent", "behavior-slice"],
+            ),
+            cfg=Config(),
+            filed_issue_reader=reader,
+        )
+
+    assert reader.calls == [42]
+
+
+def test_diagnostic_issue_report_validation_raises_when_filed_issue_labels_field_is_present_but_missing_slice_mode_labels():
+    reader = RecordingFiledIssueReader({"body": "x" * 100, "labels": []})
 
     with pytest.raises(
         RuntimeError,
