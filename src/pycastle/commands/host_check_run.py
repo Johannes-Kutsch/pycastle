@@ -27,10 +27,14 @@ from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import detached_transient_worktree
 from ..issue_readiness import issue_readiness_error_for_issue, resolve_issue_readiness
-from ..main import _configured_service_registry
 from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts import scope_args as prompt_scope_args
+from ..run_startup_preparation import (
+    RunStartupImproveModeFlagFacts,
+    RunStartupPreparation,
+    prepare_run_startup,
+)
 from ..services import GitService, GithubService, ServiceRegistry
 
 
@@ -74,11 +78,25 @@ def _resolve_agent_runner(
     from ..agents.runner import AgentRunner
 
     env = load_credential_env()
-    configured_services = _configured_service_registry(cfg, env)
-    service_registry = ServiceRegistry(configured_services)
+    startup = _prepare_host_check_reporter_startup(cfg, env)
+    configured_services = startup.configured_provider_adapters
+    service_registry = startup.runtime_registry
     return (
         AgentRunner(env, cfg, git_svc, service_registry=configured_services),
         service_registry,
+    )
+
+
+def _prepare_host_check_reporter_startup(
+    cfg: Config, env: dict[str, str]
+) -> RunStartupPreparation:
+    return prepare_run_startup(
+        cfg,
+        env,
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
     )
 
 

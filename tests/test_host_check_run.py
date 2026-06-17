@@ -105,7 +105,17 @@ def test_run_host_check_command_builds_default_issue_filing_deps_when_host_check
         "load_credential_env",
         lambda **kwargs: {"GH_TOKEN": "token"},
     )
-    monkeypatch.setattr(run_mod, "_configured_service_registry", lambda cfg, env: {})
+    monkeypatch.setattr(
+        run_mod,
+        "_prepare_host_check_reporter_startup",
+        lambda cfg, env: run_mod.RunStartupPreparation(
+            validation_failures=(),
+            configured_provider_adapters={},
+            runtime_registry=run_mod.ServiceRegistry({}),
+            shared_container_env={},
+            effective_improve_mode=None,
+        ),
+    )
 
     class _FakeGithubService:
         def __init__(self, repo: str, token: str, cfg: Config) -> None:
@@ -196,7 +206,17 @@ def test_run_host_check_command_normalizes_in_memory_failed_command_outcome_thro
         "load_credential_env",
         lambda **kwargs: {"GH_TOKEN": "token"},
     )
-    monkeypatch.setattr(run_mod, "_configured_service_registry", lambda cfg, env: {})
+    monkeypatch.setattr(
+        run_mod,
+        "_prepare_host_check_reporter_startup",
+        lambda cfg, env: run_mod.RunStartupPreparation(
+            validation_failures=(),
+            configured_provider_adapters={},
+            runtime_registry=run_mod.ServiceRegistry({}),
+            shared_container_env={},
+            effective_improve_mode=None,
+        ),
+    )
 
     class _FakeGithubService:
         def __init__(self, repo: str, token: str, cfg: Config) -> None:
@@ -340,7 +360,17 @@ def test_run_host_check_command_preserves_raw_failed_command_diagnostic_payload(
         "load_credential_env",
         lambda **kwargs: {"GH_TOKEN": "token"},
     )
-    monkeypatch.setattr(run_mod, "_configured_service_registry", lambda cfg, env: {})
+    monkeypatch.setattr(
+        run_mod,
+        "_prepare_host_check_reporter_startup",
+        lambda cfg, env: run_mod.RunStartupPreparation(
+            validation_failures=(),
+            configured_provider_adapters={},
+            runtime_registry=run_mod.ServiceRegistry({}),
+            shared_container_env={},
+            effective_improve_mode=None,
+        ),
+    )
 
     class _FakeGithubService:
         def __init__(self, repo: str, token: str, cfg: Config) -> None:

@@ -2,7 +2,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import click
 import pycastle_agent_runtime as runtime_package
@@ -22,14 +22,10 @@ from .layout import describe_config_layers, resolve_layout
 from . import orchestration as pycastle_orchestration
 from .run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
-    configured_provider_adapters_for_run,
     prepare_run_startup,
 )
 from ._universal_image_build import UniversalImageBuildOptions
 from .display.status_display import PlainStatusDisplay
-
-if TYPE_CHECKING:
-    from .services.agent_service import AgentService
 
 
 class _AgentRuntimeAdapter:
@@ -52,12 +48,6 @@ def _load_env(cfg: Config | None = None) -> dict[str, str]:
     if cfg is None:
         load_config()
     return load_credential_env()
-
-
-def _configured_service_registry(
-    cfg: Config, env: dict[str, str]
-) -> dict[str, "AgentService"]:
-    return configured_provider_adapters_for_run(cfg, env)
 
 
 def _print_layer_summary() -> None:
