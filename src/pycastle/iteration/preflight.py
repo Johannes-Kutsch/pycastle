@@ -26,9 +26,8 @@ from ..services import (
 from ..session import RoleSession
 from ..errors import SetupPhaseError
 from ..diagnostic_issue_report_validation import (
+    DiagnosticIssueReportValidationAFK,
     DiagnosticIssueReportValidationHITL,
-    DiagnosticIssueReportValidationOutcome,
-    FiledIssueReader,
     validate_diagnostic_issue_report,
 )
 from ..display.status_display import StatusDisplay
@@ -74,21 +73,6 @@ class _PreflightDeps(Protocol):
     status_display: StatusDisplay
     agent_runner: AgentRunnerProtocol
     repo_root: Path
-
-
-def validate_issue_report(
-    *,
-    caller: str,
-    issue_output: IssueOutput,
-    cfg: Config,
-    github_svc: FiledIssueReader,
-) -> DiagnosticIssueReportValidationOutcome:
-    return validate_diagnostic_issue_report(
-        caller=caller,
-        issue_output=issue_output,
-        cfg=cfg,
-        filed_issue_reader=github_svc,
-    )
 
 
 class BranchRefreshBoundary:
@@ -233,14 +217,15 @@ class PreflightCache:
             raise RuntimeError(
                 f"Preflight-issue agent returned unexpected output type: {type(agent_result).__name__}"
             )
-        validation = validate_issue_report(
+        validation = validate_diagnostic_issue_report(
             caller="Pre-Flight Reporter",
             issue_output=agent_result,
             cfg=deps.cfg,
-            github_svc=deps.github_svc,
+            filed_issue_reader=deps.github_svc,
         )
         if isinstance(validation, DiagnosticIssueReportValidationHITL):
             return PreflightHITL(sha=sha, issue_number=validation.issue_number)
+        assert isinstance(validation, DiagnosticIssueReportValidationAFK)
         return PreflightAFK(sha=sha, issue_number=validation.issue_number)
 
     @staticmethod
