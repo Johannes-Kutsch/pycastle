@@ -24,7 +24,10 @@ from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config, StageOverride, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
-from ..diagnostic_issue_report_validation import validate_diagnostic_issue_report
+from ..diagnostic_issue_report_validation import (
+    FiledIssueReader,
+    validate_diagnostic_issue_report,
+)
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import detached_transient_worktree
 from ..prompts.dispatch import build_prompt_invocation
@@ -183,13 +186,13 @@ def _validate_host_check_issue_report(
     *,
     issue_output: IssueOutput,
     cfg: Config,
-    github_svc: GithubService,
+    filed_issue_reader: FiledIssueReader,
 ) -> None:
     validate_diagnostic_issue_report(
         caller="Host-Check Reporter",
         issue_output=issue_output,
         cfg=cfg,
-        filed_issue_reader=github_svc,
+        filed_issue_reader=filed_issue_reader,
     )
 
 
@@ -235,7 +238,7 @@ async def _file_host_check_issue(
     _validate_host_check_issue_report(
         issue_output=agent_result,
         cfg=cfg,
-        github_svc=github_svc,
+        filed_issue_reader=github_svc,
     )
     return agent_result.number
 

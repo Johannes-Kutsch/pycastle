@@ -189,7 +189,11 @@ def test_get_safe_sha_returns_afk_when_checks_fail_with_afk_label(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
         preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
-    github_svc.get_issue.return_value = {"number": 42, "body": "x" * 100}
+    github_svc.get_issue.return_value = {
+        "number": 42,
+        "body": "x" * 100,
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
@@ -239,7 +243,11 @@ def test_get_safe_sha_raises_for_short_body_on_afk_issue(tmp_path, git_svc, gith
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
         preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
-    github_svc.get_issue.return_value = {"number": 42, "body": "short"}
+    github_svc.get_issue.return_value = {
+        "number": 42,
+        "body": "short",
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
@@ -301,7 +309,11 @@ def test_get_safe_sha_preserves_first_ordinary_declared_tool_failure_routing_whe
             ]
         ],
     )
-    github_svc.get_issue.return_value = {"number": 55, "body": "x" * 100}
+    github_svc.get_issue.return_value = {
+        "number": 55,
+        "body": "x" * 100,
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
@@ -507,7 +519,11 @@ def test_get_safe_sha_preserves_original_first_failure_details_after_analysis_an
             ]
         ],
     )
-    github_svc.get_issue.return_value = {"number": 77, "body": "x" * 100}
+    github_svc.get_issue.return_value = {
+        "number": 77,
+        "body": "x" * 100,
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
@@ -595,7 +611,11 @@ def test_get_safe_sha_failure_cached_on_second_call_at_same_sha(
         [IssueOutput(number=99, labels=["ready-for-agent", "refactor-slice"])],
         preflight_responses=[[_preflight_failure("mypy", "mypy .", "error")]],
     )
-    github_svc.get_issue.return_value = {"number": 99, "body": "x" * 100}
+    github_svc.get_issue.return_value = {
+        "number": 99,
+        "body": "x" * 100,
+        "labels": ["refactor-slice"],
+    }
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
@@ -835,7 +855,11 @@ def test_get_safe_sha_returns_afk_when_filed_body_meets_floor(
         [IssueOutput(number=42, labels=["bug", "ready-for-agent", "behavior-slice"])],
         preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
     )
-    github_svc.get_issue.return_value = {"number": 42, "body": "x" * 100}
+    github_svc.get_issue.return_value = {
+        "number": 42,
+        "body": "x" * 100,
+        "labels": ["behavior-slice"],
+    }
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 

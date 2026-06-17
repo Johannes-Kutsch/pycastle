@@ -297,7 +297,10 @@ def test_run_host_check_command_uses_service_registry_for_reporter_override(
 
     git_svc.is_working_tree_clean.return_value = True
     git_svc.get_head_sha.return_value = "checked-sha"
-    github_svc.get_issue.return_value = {"body": "x" * 100}
+    github_svc.get_issue.return_value = {
+        "body": "x" * 100,
+        "labels": ["behavior-slice"],
+    }
     agent_runner = FakeAgentRunner(
         [run_mod.IssueOutput(number=41, labels=["bug", "ready-for-human"])]
     )
@@ -549,7 +552,10 @@ def test_run_host_check_command_uses_in_memory_reporter_adapters_with_exact_host
         [IssueOutput(number=41, labels=["bug", "ready-for-human"])]
     )
     github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"body": "x" * 100}
+    github_svc.get_issue.return_value = {
+        "body": "x" * 100,
+        "labels": ["behavior-slice"],
+    }
 
     result = asyncio.run(
         run_mod.run_host_check_command(
@@ -1197,7 +1203,10 @@ def test_run_host_check_run_files_and_validates_one_issue_per_failed_check_in_or
         ]
     )
     github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"body": "x" * 100}
+    github_svc.get_issue.return_value = {
+        "body": "x" * 100,
+        "labels": ["behavior-slice"],
+    }
     status_display = MagicMock()
 
     result = asyncio.run(

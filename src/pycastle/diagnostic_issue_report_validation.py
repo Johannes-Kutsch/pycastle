@@ -51,13 +51,9 @@ def validate_diagnostic_issue_report(
         return DiagnosticIssueReportValidationHITL(issue_number=issue_output.number)
 
     filed_issue = filed_issue_reader.get_issue(issue_output.number)
-    filed_labels = (
-        filed_issue["labels"] if "labels" in filed_issue else list(issue_output.labels)
-    )
     filed_issue_with_labels = {
         **filed_issue,
         "number": issue_output.number,
-        "labels": filed_labels,
     }
     readiness_error = issue_readiness_error_for_issue(
         caller=caller,

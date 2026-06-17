@@ -3,6 +3,7 @@ import pytest
 from pycastle.agents.output_protocol import IssueOutput
 from pycastle.config import Config
 from pycastle.diagnostic_issue_report_validation import (
+    DiagnosticIssueReportValidationAFK,
     DiagnosticIssueReportValidationHITL,
     validate_diagnostic_issue_report,
 )
@@ -46,6 +47,25 @@ def test_diagnostic_issue_report_validation_returns_hitl_without_reading_filed_i
     assert reader.calls == []
 
 
+def test_diagnostic_issue_report_validation_returns_typed_afk_when_filed_issue_is_ready():
+    reader = RecordingFiledIssueReader(
+        {"body": "x" * 100, "labels": ["bug", "behavior-slice"]}
+    )
+
+    outcome = validate_diagnostic_issue_report(
+        caller="Pre-Flight Reporter",
+        issue_output=IssueOutput(
+            number=42,
+            labels=["bug", "ready-for-agent", "behavior-slice"],
+        ),
+        cfg=Config(),
+        filed_issue_reader=reader,
+    )
+
+    assert outcome == DiagnosticIssueReportValidationAFK(issue_number=42)
+    assert reader.calls == [42]
+
+
 def test_diagnostic_issue_report_validation_raises_when_filed_issue_is_missing_slice_mode_labels():
     reader = RecordingFiledIssueReader({"body": "x" * 100})
 
@@ -55,6 +75,28 @@ def test_diagnostic_issue_report_validation_raises_when_filed_issue_is_missing_s
             "Pre-Flight Reporter filed issue #42 on the AFK branch without "
             "exactly one slice-mode label"
         ),
+    ):
+        validate_diagnostic_issue_report(
+            caller="Pre-Flight Reporter",
+            issue_output=IssueOutput(
+                number=42,
+                labels=["bug", "ready-for-agent", "behavior-slice"],
+            ),
+            cfg=Config(),
+            filed_issue_reader=reader,
+        )
+
+    assert reader.calls == [42]
+
+
+def test_diagnostic_issue_report_validation_raises_when_filed_issue_body_is_below_floor():
+    reader = RecordingFiledIssueReader(
+        {"body": "short", "labels": ["bug", "behavior-slice"]}
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="whose body is below the minimum length floor",
     ):
         validate_diagnostic_issue_report(
             caller="Pre-Flight Reporter",
