@@ -90,6 +90,30 @@ def test_get_safe_sha_returns_hitl_when_checks_fail_with_hitl_label(
     assert result.sha == "abc123"
 
 
+def test_get_safe_sha_returns_hitl_for_configured_hitl_label_without_reading_filed_issue(
+    tmp_path, git_svc, github_svc
+):
+    fake = FakeAgentRunner(
+        [IssueOutput(number=58, labels=["bug", "needs-human"])],
+        preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
+    )
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=Config(hitl_label="needs-human"),
+    )
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightHITL)
+    assert result.issue_number == 58
+    assert result.sha == "abc123"
+    github_svc.get_issue.assert_not_called()
+
+
 def test_get_safe_sha_preflight_issue_uses_preflight_issue_override_service(
     tmp_path, git_svc, github_svc
 ):
