@@ -59,9 +59,13 @@ def validate_diagnostic_issue_report(
         "number": issue_output.number,
         "labels": effective_labels,
     }
+    filed_readiness = resolve_issue_readiness(filed_issue_with_labels, cfg)
+    if filed_readiness.is_hitl_exempt:
+        return DiagnosticIssueReportValidationHITL(issue_number=issue_output.number)
+
     readiness_error = issue_readiness_error_for_issue(
         caller=caller,
-        issue=filed_issue_with_labels,
+        issue={**filed_issue_with_labels, "readiness": filed_readiness},
         cfg=cfg,
     )
     if readiness_error is not None:

@@ -47,6 +47,25 @@ def test_diagnostic_issue_report_validation_returns_hitl_without_reading_filed_i
     assert reader.calls == []
 
 
+def test_diagnostic_issue_report_validation_returns_hitl_when_filed_issue_is_hitl():
+    reader = RecordingFiledIssueReader(
+        {"body": "x" * 100, "labels": ["bug", "ready-for-human"]}
+    )
+
+    outcome = validate_diagnostic_issue_report(
+        caller="Pre-Flight Reporter",
+        issue_output=IssueOutput(
+            number=42,
+            labels=["bug", "ready-for-agent", "behavior-slice"],
+        ),
+        cfg=Config(),
+        filed_issue_reader=reader,
+    )
+
+    assert outcome == DiagnosticIssueReportValidationHITL(issue_number=42)
+    assert reader.calls == [42]
+
+
 def test_diagnostic_issue_report_validation_returns_typed_afk_when_filed_issue_is_ready():
     reader = RecordingFiledIssueReader(
         {"body": "x" * 100, "labels": ["bug", "behavior-slice"]}
