@@ -3,7 +3,6 @@ import pytest
 from pycastle.agents.output_protocol import IssueOutput
 from pycastle.config import Config
 from pycastle.diagnostic_issue_report_validation import (
-    DiagnosticIssueReportValidationAFK,
     DiagnosticIssueReportValidationHITL,
     validate_diagnostic_issue_report,
 )
@@ -47,20 +46,26 @@ def test_diagnostic_issue_report_validation_returns_hitl_without_reading_filed_i
     assert reader.calls == []
 
 
-def test_diagnostic_issue_report_validation_returns_afk_with_reported_label_fallback():
+def test_diagnostic_issue_report_validation_raises_when_filed_issue_is_missing_slice_mode_labels():
     reader = RecordingFiledIssueReader({"body": "x" * 100})
 
-    outcome = validate_diagnostic_issue_report(
-        caller="Pre-Flight Reporter",
-        issue_output=IssueOutput(
-            number=42,
-            labels=["bug", "ready-for-agent", "behavior-slice"],
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Pre-Flight Reporter filed issue #42 on the AFK branch without "
+            "exactly one slice-mode label"
         ),
-        cfg=Config(),
-        filed_issue_reader=reader,
-    )
+    ):
+        validate_diagnostic_issue_report(
+            caller="Pre-Flight Reporter",
+            issue_output=IssueOutput(
+                number=42,
+                labels=["bug", "ready-for-agent", "behavior-slice"],
+            ),
+            cfg=Config(),
+            filed_issue_reader=reader,
+        )
 
-    assert outcome == DiagnosticIssueReportValidationAFK(issue_number=42)
     assert reader.calls == [42]
 
 
