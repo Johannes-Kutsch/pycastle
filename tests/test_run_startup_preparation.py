@@ -31,10 +31,7 @@ def test_prepare_run_startup_returns_explicit_startup_preparation_fields():
         "opencode",
     }
     assert startup.runtime_registry.services == startup.configured_provider_adapters
-    assert startup.shared_container_env == {
-        "GH_TOKEN": "gh",
-        "CLAUDE_CODE_OAUTH_TOKEN": "primary",
-    }
+    assert startup.shared_container_env == {"GH_TOKEN": "gh"}
     assert startup.effective_improve_mode == "until_sleep"
 
 

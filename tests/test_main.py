@@ -1002,6 +1002,40 @@ def test_run_cmd_routes_opencode_go_key_through_service_env_only(tmp_path, monke
     assert registry["opencode"].build_env()["OPENCODE_GO_API_KEY"] == "go-key"
 
 
+def test_run_cmd_routes_claude_oauth_tokens_through_service_env_only(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "primary-tok")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "secondary-tok")
+    monkeypatch.setenv("GH_TOKEN", "gh")
+
+    captured: dict = {}
+    fake_svc = MagicMock()
+    fake_svc.build.return_value = None
+
+    async def _fake_run(env, repo_root, **kwargs):
+        captured["env"] = env
+        captured["registry"] = kwargs.get("service_registry")
+
+    with (
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in captured["env"]
+    assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in captured["env"]
+    registry = captured["registry"]
+    svc = registry["claude"]
+    assert svc.account_names() == ["secondary", "primary"]
+    assert svc.build_env()["CLAUDE_CODE_OAUTH_TOKEN"] == "secondary-tok"
+
+
 def test_run_cmd_seeds_pool_with_primary_only_when_secondary_absent(
     tmp_path, monkeypatch
 ):

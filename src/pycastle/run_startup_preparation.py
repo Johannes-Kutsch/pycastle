@@ -312,7 +312,12 @@ def _shared_container_env(credential_env: Mapping[str, str]) -> dict[str, str]:
         key: value
         for key, value in credential_env.items()
         if key in KNOWN_CREDENTIAL_ENV_KEYS
-        and key not in {"CLAUDE_CODE_OAUTH_TOKEN_SECONDARY", "OPENCODE_GO_API_KEY"}
+        and key
+        not in {
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
+            "OPENCODE_GO_API_KEY",
+        }
     }
 
 
