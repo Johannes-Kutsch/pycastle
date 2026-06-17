@@ -253,6 +253,55 @@ def test_prepare_run_startup_omits_services_absent_from_resolved_stage_chains():
     assert startup.runtime_registry.services == startup.configured_provider_adapters
 
 
+def test_prepare_run_startup_default_stage_chains_keep_remaining_configured_services():
+    startup = prepare_run_startup(
+        Config(docker_image_name="img"),
+        {"GH_TOKEN": "gh"},
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.validation_failures == ()
+    assert startup.configured_provider_adapters.keys() == {"codex"}
+    assert startup.runtime_registry.services == startup.configured_provider_adapters
+
+
+def test_prepare_run_startup_accepts_opencode_priority_chain_when_claude_fallback_is_configured():
+    opencode_then_claude = StageOverride(
+        service="opencode",
+        model="kimi-k2.6",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+    )
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=opencode_then_claude,
+        implement_override=opencode_then_claude,
+        review_override=opencode_then_claude,
+        merge_override=opencode_then_claude,
+        preflight_issue_override=opencode_then_claude,
+        improve_override=opencode_then_claude,
+    )
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "CLAUDE_CODE_OAUTH_TOKEN": "primary",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.validation_failures == ()
+    assert startup.configured_provider_adapters.keys() == {"claude"}
+    assert startup.runtime_registry.services == startup.configured_provider_adapters
+
+
 def test_prepare_run_startup_requires_claude_primary_token_to_build_adapter():
     claude = StageOverride(service="claude", model="sonnet", effort="medium")
     cfg = Config(
