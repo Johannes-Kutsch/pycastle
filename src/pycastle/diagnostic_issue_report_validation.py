@@ -5,7 +5,11 @@ from typing import Protocol
 
 from .agents.output_protocol import IssueOutput
 from .config import Config
-from .issue_readiness import issue_readiness_error_for_issue, resolve_issue_readiness
+from .issue_readiness import (
+    classify_issue_readiness,
+    issue_readiness_error_for_issue,
+    resolve_issue_readiness,
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -59,7 +63,7 @@ def validate_diagnostic_issue_report(
         "number": issue_output.number,
         "labels": effective_labels,
     }
-    filed_readiness = resolve_issue_readiness(filed_issue_with_labels, cfg)
+    filed_readiness = classify_issue_readiness(filed_issue_with_labels, cfg)
     if filed_readiness.is_hitl_exempt:
         return DiagnosticIssueReportValidationHITL(issue_number=issue_output.number)
 
