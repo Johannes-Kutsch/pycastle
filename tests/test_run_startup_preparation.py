@@ -223,6 +223,69 @@ def test_prepare_run_startup_reports_missing_configured_provider_adapter_in_prio
     assert startup.effective_improve_mode == "endless"
 
 
+def test_prepare_run_startup_accepts_priority_chain_when_later_service_is_configured():
+    class _ConfiguredCodexAdapter:
+        def valid_models(self) -> frozenset[str]:
+            return frozenset({"gpt-5.4"})
+
+        def valid_efforts(self) -> frozenset[str]:
+            return frozenset({"medium"})
+
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+            fallback=StageOverride(
+                service="codex",
+                model="gpt-5.4",
+                effort="medium",
+            ),
+        ),
+        implement_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        review_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        merge_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        preflight_issue_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        improve_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+    )
+
+    with patch(
+        "pycastle.run_startup_preparation.configured_provider_adapters_for_run",
+        return_value={"codex": _ConfiguredCodexAdapter()},
+    ):
+        startup = prepare_run_startup(
+            cfg,
+            {"GH_TOKEN": "gh"},
+            RunStartupImproveModeFlagFacts(
+                no_improve=False,
+                improve_mode_flag=None,
+            ),
+        )
+
+    assert startup.validation_failures == ()
+
+
 def test_prepare_run_startup_returns_structured_provider_model_mismatch_failure():
     class _AcceptingAdapter:
         def __init__(self, models: frozenset[str]) -> None:
@@ -366,4 +429,64 @@ def test_prepare_run_startup_reports_local_configured_chain_failures_alongside_p
         ' Did you mean "gpt-5.4"?',
         "  stage='implement': no locally configured service in priority chain "
         "'claude -> opencode'",
+    ]
+
+
+def test_prepare_run_startup_preserves_full_priority_chain_label_for_repeated_services():
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=StageOverride(
+            service="claude",
+            model="sonnet",
+            effort="medium",
+            fallback=StageOverride(
+                service="opencode",
+                model="kimi-k2.6",
+                effort="medium",
+                fallback=StageOverride(
+                    service="claude",
+                    model="haiku",
+                    effort="medium",
+                ),
+            ),
+        ),
+        implement_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        review_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        merge_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        preflight_issue_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+        improve_override=StageOverride(
+            service="codex",
+            model="gpt-5.4",
+            effort="medium",
+        ),
+    )
+
+    startup = prepare_run_startup(
+        cfg,
+        {"GH_TOKEN": "gh"},
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert [failure.render() for failure in startup.validation_failures] == [
+        "  stage='plan': no locally configured service in priority chain "
+        "'claude -> opencode -> claude'"
     ]
