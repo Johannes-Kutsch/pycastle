@@ -24,9 +24,9 @@ from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config, StageOverride, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
+from ..diagnostic_issue_report_validation import validate_diagnostic_issue_report
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import detached_transient_worktree
-from ..issue_readiness import issue_readiness_error_for_issue, resolve_issue_readiness
 from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts import scope_args as prompt_scope_args
@@ -185,27 +185,12 @@ def _validate_host_check_issue_report(
     cfg: Config,
     github_svc: GithubService,
 ) -> None:
-    reported_readiness = resolve_issue_readiness(
-        {"labels": list(issue_output.labels)}, cfg
-    )
-    if reported_readiness.is_hitl_exempt:
-        return
-
-    filed_issue = github_svc.get_issue(issue_output.number)
-    filed_labels = (
-        filed_issue["labels"] if "labels" in filed_issue else list(issue_output.labels)
-    )
-    readiness_error = issue_readiness_error_for_issue(
+    validate_diagnostic_issue_report(
         caller="Host-Check Reporter",
-        issue={
-            **filed_issue,
-            "number": issue_output.number,
-            "labels": filed_labels,
-        },
+        issue_output=issue_output,
         cfg=cfg,
+        filed_issue_reader=github_svc,
     )
-    if readiness_error is not None:
-        raise RuntimeError(readiness_error)
 
 
 async def _file_host_check_issue(

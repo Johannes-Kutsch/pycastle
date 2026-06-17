@@ -25,9 +25,10 @@ from ..services import (
 )
 from ..session import RoleSession
 from ..errors import SetupPhaseError
-from ..issue_readiness import (
-    issue_readiness_error_for_issue,
-    resolve_issue_readiness,
+from ..diagnostic_issue_report_validation import (
+    DiagnosticIssueReportValidationOutcome,
+    FiledIssueReader,
+    validate_diagnostic_issue_report,
 )
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import (
@@ -79,31 +80,14 @@ def validate_issue_report(
     caller: str,
     issue_output: IssueOutput,
     cfg: Config,
-    github_svc: GithubService,
-) -> str:
-    reported_readiness = resolve_issue_readiness(
-        {"labels": list(issue_output.labels)},
-        cfg,
-    )
-    if reported_readiness.is_hitl_exempt:
-        return "hitl"
-    filed_issue = github_svc.get_issue(issue_output.number)
-    filed_labels = (
-        filed_issue["labels"] if "labels" in filed_issue else list(issue_output.labels)
-    )
-    filed_issue_with_labels = {
-        **filed_issue,
-        "number": issue_output.number,
-        "labels": filed_labels,
-    }
-    readiness_error = issue_readiness_error_for_issue(
+    github_svc: FiledIssueReader,
+) -> DiagnosticIssueReportValidationOutcome:
+    return validate_diagnostic_issue_report(
         caller=caller,
-        issue=filed_issue_with_labels,
+        issue_output=issue_output,
         cfg=cfg,
+        filed_issue_reader=github_svc,
     )
-    if readiness_error is not None:
-        raise RuntimeError(readiness_error)
-    return "afk"
 
 
 class BranchRefreshBoundary:
@@ -254,7 +238,7 @@ class PreflightCache:
             cfg=deps.cfg,
             github_svc=deps.github_svc,
         )
-        if validation == "hitl":
+        if validation is DiagnosticIssueReportValidationOutcome.HITL:
             return PreflightHITL(sha=sha, issue_number=agent_result.number)
         return PreflightAFK(sha=sha, issue_number=agent_result.number)
 
