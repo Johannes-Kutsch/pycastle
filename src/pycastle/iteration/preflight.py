@@ -30,6 +30,12 @@ from ..diagnostic_issue_report_validation import (
     DiagnosticIssueReportValidationHITL,
     validate_diagnostic_issue_report,
 )
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
+)
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import (
     ReusableSandboxWorktreeIntent,
@@ -144,6 +150,19 @@ class BranchRefreshBoundary:
                     sha=current_sha,
                     deps=deps,
                 ) as sandbox_path:
+                    mount_decision = decide_managed_worktree_mount(
+                        repo_root=deps.repo_root,
+                        mount_path=sandbox_path,
+                        caller="Divergence Resolver",
+                        role=AgentRole.DIVERGENCE_RESOLVER.value,
+                    )
+                    if isinstance(
+                        mount_decision, ManagedWorktreeMountRejected
+                    ) and should_reject_managed_worktree_mount(mount_decision):
+                        raise SetupPhaseError(
+                            AgentRole.DIVERGENCE_RESOLVER.value,
+                            describe_managed_worktree_mount_rejection(mount_decision),
+                        )
                     await deps.agent_runner.run(
                         RunRequest(
                             name="Divergence Resolver",
@@ -192,6 +211,19 @@ class PreflightCache:
         mount_path: Path,
         sha: str,
     ) -> PreflightHITL | PreflightAFK:
+        mount_decision = decide_managed_worktree_mount(
+            repo_root=deps.repo_root,
+            mount_path=mount_path,
+            caller="Pre-Flight Reporter",
+            role=AgentRole.PREFLIGHT_ISSUE.value,
+        )
+        if isinstance(
+            mount_decision, ManagedWorktreeMountRejected
+        ) and should_reject_managed_worktree_mount(mount_decision):
+            raise SetupPhaseError(
+                AgentRole.PREFLIGHT_ISSUE.value,
+                describe_managed_worktree_mount_rejection(mount_decision),
+            )
         override = self._resolved_preflight_issue_override(deps)
         agent_result = await deps.agent_runner.run(
             RunRequest(

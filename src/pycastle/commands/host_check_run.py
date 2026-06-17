@@ -37,6 +37,12 @@ from ..run_startup_preparation import (
     prepare_run_startup,
 )
 from ..services import GitService, GithubService, ServiceRegistry
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
+)
 
 
 @dataclass(frozen=True)
@@ -185,12 +191,26 @@ async def _file_host_check_issue(
     *,
     payload: HostCheckIssuePayload,
     mount_path: Path,
+    repo_root: Path,
     cfg: Config,
     github_svc: GithubService,
     agent_runner: AgentRunnerProtocol,
     status_display: StatusDisplay,
     reporter_override: StageOverride | None,
 ) -> int:
+    mount_decision = decide_managed_worktree_mount(
+        repo_root=repo_root,
+        mount_path=mount_path,
+        caller="Host-Check Reporter",
+        role=AgentRole.PREFLIGHT_ISSUE.value,
+    )
+    if isinstance(
+        mount_decision, ManagedWorktreeMountRejected
+    ) and should_reject_managed_worktree_mount(mount_decision):
+        raise SetupPhaseError(
+            AgentRole.PREFLIGHT_ISSUE.value,
+            describe_managed_worktree_mount_rejection(mount_decision),
+        )
     override = reporter_override or cfg.preflight_issue_override
     agent_result = await agent_runner.run(
         RunRequest(
@@ -231,6 +251,7 @@ async def _file_host_check_issue(
 
 def create_host_check_issue_filer(
     *,
+    repo_root: Path,
     cfg: Config,
     github_svc: GithubService,
     agent_runner: AgentRunnerProtocol,
@@ -244,6 +265,7 @@ def create_host_check_issue_filer(
             return await _file_host_check_issue(
                 payload=payload,
                 mount_path=mount_path,
+                repo_root=repo_root,
                 cfg=cfg,
                 github_svc=github_svc,
                 agent_runner=agent_runner,
@@ -333,6 +355,7 @@ async def run_host_check_run(
         and status_display is not None
     ):
         file_issue_for_failure = create_host_check_issue_filer(
+            repo_root=resolved_repo_root,
             cfg=cfg,
             github_svc=github_svc,
             agent_runner=agent_runner,
@@ -353,6 +376,7 @@ async def run_host_check_run(
         ) -> int:
             issue_deps = get_issue_deps()
             return await create_host_check_issue_filer(
+                repo_root=resolved_repo_root,
                 cfg=issue_deps.cfg,
                 github_svc=issue_deps.github_svc,
                 agent_runner=issue_deps.agent_runner,

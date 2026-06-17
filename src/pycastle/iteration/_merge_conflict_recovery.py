@@ -9,6 +9,7 @@ from ..display.status_display import StatusDisplay
 from ..errors import (
     AgentTimeoutError,
     HardAgentError,
+    SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
     WorktreeError,
@@ -24,6 +25,12 @@ from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import build_merge_scope_args
 from ..services import GitCommandError, GitService, GithubService
 from ..session import RoleSession
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
+)
 from ._merge_reporting import MergeProgressReporter
 from .implement import branch_for
 
@@ -144,6 +151,19 @@ async def _recover_active_conflict(
             deps=deps,
         ) as sandbox_path:
             deps.git_svc.start_merge(sandbox_path, branch_for(active_issue["number"]))
+            mount_decision = decide_managed_worktree_mount(
+                repo_root=deps.repo_root,
+                mount_path=sandbox_path,
+                caller="Merge Agent",
+                role=AgentRole.MERGER.value,
+            )
+            if isinstance(
+                mount_decision, ManagedWorktreeMountRejected
+            ) and should_reject_managed_worktree_mount(mount_decision):
+                raise SetupPhaseError(
+                    AgentRole.MERGER.value,
+                    describe_managed_worktree_mount_rejection(mount_decision),
+                )
             result = await deps.agent_runner.run(
                 RunRequest(
                     name="Merge Agent",

@@ -30,6 +30,12 @@ from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import build_failure_report_scope_args
 from ._deps import Deps
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
+)
 from ._rows import StatusRow as StatusRow
 from ._rows import status_row as status_row
 from .implement import branch_for, implement_phase
@@ -303,6 +309,19 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         issue_number: int | None = None
         if deps.cfg.diagnose_on_failure:
             try:
+                mount_decision = decide_managed_worktree_mount(
+                    repo_root=deps.repo_root,
+                    mount_path=err.worktree_path,
+                    caller="Failure Report Agent",
+                    role=AgentRole.FAILURE_REPORT.value,
+                )
+                if isinstance(
+                    mount_decision, ManagedWorktreeMountRejected
+                ) and should_reject_managed_worktree_mount(mount_decision):
+                    raise SetupPhaseError(
+                        AgentRole.FAILURE_REPORT.value,
+                        describe_managed_worktree_mount_rejection(mount_decision),
+                    )
                 result = await deps.agent_runner.run(
                     RunRequest(
                         name="Failure Report Agent",

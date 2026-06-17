@@ -14,8 +14,15 @@ from ..errors import (
     AgentFailedError,
     BranchCollisionError,
     HardAgentError,
+    SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
+)
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
 )
 from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
@@ -153,6 +160,19 @@ async def run_issue(
                 _impl_scope_args = _scope_args_for(
                     impl_mount_path, AgentRole.IMPLEMENTER
                 )
+                mount_decision = decide_managed_worktree_mount(
+                    repo_root=deps.repo_root,
+                    mount_path=impl_mount_path,
+                    caller=f"Implement Agent #{issue['number']}",
+                    role=AgentRole.IMPLEMENTER.value,
+                )
+                if isinstance(
+                    mount_decision, ManagedWorktreeMountRejected
+                ) and should_reject_managed_worktree_mount(mount_decision):
+                    raise SetupPhaseError(
+                        AgentRole.IMPLEMENTER.value,
+                        describe_managed_worktree_mount_rejection(mount_decision),
+                    )
                 result = await _bounded_run_agent(
                     RunRequest(
                         name=f"Implement Agent #{issue['number']}",
@@ -189,6 +209,19 @@ async def run_issue(
             ) as review_mount_path,
         ):
             _review_scope_args = _scope_args_for(review_mount_path, AgentRole.REVIEWER)
+            mount_decision = decide_managed_worktree_mount(
+                repo_root=deps.repo_root,
+                mount_path=review_mount_path,
+                caller=f"Review Agent #{issue['number']}",
+                role=AgentRole.REVIEWER.value,
+            )
+            if isinstance(
+                mount_decision, ManagedWorktreeMountRejected
+            ) and should_reject_managed_worktree_mount(mount_decision):
+                raise SetupPhaseError(
+                    AgentRole.REVIEWER.value,
+                    describe_managed_worktree_mount_rejection(mount_decision),
+                )
             review_result = await _bounded_run_agent(
                 RunRequest(
                     name=f"Review Agent #{issue['number']}",
