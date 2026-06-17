@@ -24,6 +24,10 @@ from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config, StageOverride, load_credential_env
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
+from ..diagnostic_mount_fallback import (
+    DiagnosticMountFallbackIssue,
+    decide_diagnostic_mount_dispatch,
+)
 from ..diagnostic_issue_report_validation import (
     validate_diagnostic_issue_report,
 )
@@ -37,12 +41,6 @@ from ..run_startup_preparation import (
     prepare_run_startup,
 )
 from ..services import GitService, GithubService, ServiceRegistry
-from ..managed_worktree_mount_policy import (
-    ManagedWorktreeMountRejected,
-    decide_managed_worktree_mount,
-    describe_managed_worktree_mount_rejection,
-    should_reject_managed_worktree_mount,
-)
 
 
 @dataclass(frozen=True)
@@ -198,19 +196,20 @@ async def _file_host_check_issue(
     status_display: StatusDisplay,
     reporter_override: StageOverride | None,
 ) -> int:
-    mount_decision = decide_managed_worktree_mount(
+    mount_decision = decide_diagnostic_mount_dispatch(
         repo_root=repo_root,
         mount_path=mount_path,
         caller="Host-Check Reporter",
-        role=AgentRole.PREFLIGHT_ISSUE.value,
+        diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+        role_name=AgentRole.PREFLIGHT_ISSUE.value,
+        original_failure_summary=(
+            f"Host check {payload.check_name!r} failed while running "
+            f"{payload.command!r}."
+        ),
+        github_svc=github_svc,
     )
-    if isinstance(
-        mount_decision, ManagedWorktreeMountRejected
-    ) and should_reject_managed_worktree_mount(mount_decision):
-        raise SetupPhaseError(
-            AgentRole.PREFLIGHT_ISSUE.value,
-            describe_managed_worktree_mount_rejection(mount_decision),
-        )
+    if isinstance(mount_decision, DiagnosticMountFallbackIssue):
+        return mount_decision.issue_number
     override = reporter_override or cfg.preflight_issue_override
     agent_result = await agent_runner.run(
         RunRequest(

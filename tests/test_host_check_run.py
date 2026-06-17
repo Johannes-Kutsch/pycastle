@@ -343,6 +343,91 @@ def test_run_host_check_command_uses_service_registry_for_reporter_override(
     provided_service_registry.resolve.assert_called_once()
 
 
+def test_run_host_check_run_files_fallback_issue_when_reporter_mount_is_invalid(
+    tmp_path,
+):
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_head_sha.return_value = "checked-sha"
+
+    github_svc = MagicMock()
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 777
+    (tmp_path / "pycastle" / ".worktrees").mkdir(parents=True, exist_ok=True)
+
+    class _RecordingAgentRunner:
+        def __init__(self) -> None:
+            self.calls: list[object] = []
+
+        async def run(self, request):
+            self.calls.append(request)
+            return object()
+
+    agent_runner = _RecordingAgentRunner()
+    invalid_mount = tmp_path / "outside-worktrees" / "host-check-sandbox"
+    invalid_mount.mkdir(parents=True, exist_ok=True)
+
+    class _InvalidTransientWorktree:
+        async def __aenter__(self) -> Path:
+            return invalid_mount
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
+        raise run_mod.HostCheckFailedError(
+            name=name,
+            command=command,
+            output="tests broke",
+        )
+
+    result = asyncio.run(
+        run_mod.run_host_check_run(
+            host_checks=(("pytest-host", "pytest tests/host"),),
+            git_svc=git_svc,
+            repo_root=tmp_path,
+            cfg=Config(),
+            github_svc=github_svc,
+            agent_runner=agent_runner,
+            status_display=MagicMock(),
+            run_host_check=fake_run_host_check,
+            transient_worktree_factory=lambda *args, **kwargs: (
+                _InvalidTransientWorktree()
+            ),
+        )
+    )
+
+    assert result == run_mod.HostCheckRunFailed(
+        checked_sha="checked-sha",
+        failures=(
+            run_mod.HostCheckFailure(
+                name="pytest-host",
+                command="pytest tests/host",
+                output="tests broke",
+            ),
+        ),
+        issue_numbers=(777,),
+    )
+    assert agent_runner.calls == []
+    github_svc.create_issue_in.assert_called_once()
+    repo, title, body, labels = github_svc.create_issue_in.call_args.args
+    assert repo == github_svc.repo
+    assert "Host-Check Reporter" in title
+    assert labels == ["bug", "needs-triage"]
+    assert "No diagnostic agent ran." in body
+    assert "Role: preflight_issue" in body
+    assert (
+        f"Expected mount path: {tmp_path / 'pycastle' / '.worktrees' / 'host-check-sandbox'}"
+        in body
+    )
+    assert "Reason: invalid_mount_path" in body
+    assert "Host check 'pytest-host' failed while running 'pytest tests/host'." in body
+
+
 def test_resolve_host_check_issue_deps_uses_startup_runtime_registry_for_reporter_override(
     tmp_path, monkeypatch
 ):
