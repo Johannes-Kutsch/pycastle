@@ -339,6 +339,71 @@ def test_run_host_check_command_uses_service_registry_for_reporter_override(
     provided_service_registry.resolve.assert_called_once()
 
 
+def test_resolve_host_check_issue_deps_uses_startup_runtime_registry_for_reporter_override(
+    tmp_path, monkeypatch
+):
+    from pycastle.commands import host_check_run as run_mod
+    from pycastle.config import Config
+
+    git_svc = MagicMock()
+    git_svc.get_github_remote_repo.return_value = ("owner", "repo")
+    cfg = Config()
+    status_display = RecordingStatusDisplay()
+    configured_provider_adapters = {"codex": object()}
+    runtime_registry = MagicMock()
+    reporter_override = StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="medium",
+    )
+    runtime_registry.resolve.return_value = reporter_override
+    created_runner_kwargs: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        run_mod,
+        "load_credential_env",
+        lambda **kwargs: {"GH_TOKEN": "token"},
+    )
+    monkeypatch.setattr(
+        run_mod,
+        "_prepare_host_check_reporter_startup",
+        lambda cfg, env: run_mod.RunStartupPreparation(
+            validation_failures=(),
+            configured_provider_adapters=configured_provider_adapters,
+            runtime_registry=runtime_registry,
+            shared_container_env={},
+            effective_improve_mode=None,
+        ),
+    )
+
+    class _FakeGithubService:
+        def __init__(self, repo: str, token: str, cfg: Config) -> None:
+            self.repo = repo
+
+    class _FakeAgentRunner:
+        def __init__(self, env, cfg, git_svc, *, service_registry) -> None:
+            created_runner_kwargs["env"] = env
+            created_runner_kwargs["cfg"] = cfg
+            created_runner_kwargs["git_svc"] = git_svc
+            created_runner_kwargs["service_registry"] = service_registry
+
+    monkeypatch.setattr(run_mod, "GithubService", _FakeGithubService)
+    monkeypatch.setattr(
+        sys.modules["pycastle.agents.runner"], "AgentRunner", _FakeAgentRunner
+    )
+
+    deps = run_mod.resolve_host_check_issue_deps(
+        cfg=cfg,
+        git_svc=git_svc,
+        repo_root=tmp_path,
+        status_display=status_display,
+    )
+
+    assert deps.reporter_override == reporter_override
+    assert created_runner_kwargs["service_registry"] is configured_provider_adapters
+    runtime_registry.resolve.assert_called_once()
+
+
 def test_run_host_check_command_preserves_raw_failed_command_diagnostic_payload(
     tmp_path, monkeypatch
 ):
