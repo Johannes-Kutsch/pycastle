@@ -205,12 +205,8 @@ def _do_run(
             improve_mode_flag=cast(RunImproveMode, improve_mode_flag),
         ),
     )
-    if startup.validation_failures:
-        click.echo(
-            "Config validation errors:\n"
-            + "\n".join(failure.render() for failure in startup.validation_failures),
-            err=True,
-        )
+    if startup.validation_error_message is not None:
+        click.echo(startup.validation_error_message, err=True)
         sys.exit(1)
 
     try:

@@ -84,6 +84,14 @@ class RunStartupPreparation:
     shared_container_env: dict[str, str]
     effective_improve_mode: RunImproveMode
 
+    @property
+    def validation_error_message(self) -> str | None:
+        if not self.validation_failures:
+            return None
+        return "Config validation errors:\n" + "\n".join(
+            failure.render() for failure in self.validation_failures
+        )
+
 
 def prepare_run_startup(
     cfg: Config,
