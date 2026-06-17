@@ -77,6 +77,19 @@ def decide_managed_worktree_mount(
             detail="Expected managed worktree path does not exist.",
             actual_parent=actual_parent,
         )
+    if not mount_path.is_dir():
+        return ManagedWorktreeMountRejected(
+            caller=caller,
+            role=role,
+            repo_root=repo_root,
+            mount_path=mount_path,
+            expected_worktrees_dir=expected_worktrees_dir,
+            expected_mount_path=mount_path,
+            rejection_code="mount_path_not_directory",
+            invariant=_MANAGED_WORKTREE_INVARIANT,
+            detail="Expected managed worktree path to be a directory.",
+            actual_parent=actual_parent,
+        )
     return ManagedWorktreeMountAccepted(
         caller=caller,
         role=role,

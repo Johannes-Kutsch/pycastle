@@ -4798,6 +4798,44 @@ def test_agent_runner_run_prompt_rejects_non_managed_mount_before_provider_setup
     assert requested_service.state_dir_container_paths == []
 
 
+def test_agent_runner_run_prompt_rejects_non_directory_managed_mount_before_provider_setup(
+    tmp_path: Path,
+) -> None:
+    mount_path = tmp_path / "pycastle" / ".worktrees" / "issue-1"
+    mount_path.parent.mkdir(parents=True)
+    mount_path.write_text("not a directory", encoding="utf-8")
+
+    requested_service = _StateDirRecordingRuntimeService(
+        "codex",
+        relpath=".pycastle-session/implementer/codex/",
+    )
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client([b'{"result":"runtime result"}\n']),
+        service_registry={"codex": requested_service},
+    )
+
+    with pytest.raises(Exception) as excinfo:
+        asyncio.run(
+            runner.run_prompt(
+                name="Runtime Consumer",
+                prompt="Return the final answer only.",
+                mount_path=mount_path,
+                model="gpt-5.4",
+                effort="medium",
+                service="codex",
+            )
+        )
+
+    assert type(excinfo.value).__name__ == "ManagedWorktreeMountPreconditionError"
+    assert "Runtime Consumer" in str(excinfo.value)
+    assert "mount_path_not_directory" in str(excinfo.value)
+    assert requested_service.tool_policies == []
+    assert requested_service.state_dir_container_paths == []
+
+
 def test_runtime_package_resident_entrypoint_rejects_non_managed_mount_before_provider_setup(
     tmp_path: Path,
 ) -> None:
