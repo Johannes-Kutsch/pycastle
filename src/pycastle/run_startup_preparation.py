@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Literal, TypeAlias
 import pycastle_agent_runtime as agent_runtime
 from pycastle_agent_runtime.service_registry import ServiceRegistry
 
-from .config import Config, KNOWN_CREDENTIAL_ENV_KEYS, StageOverride
+from .config import Config, StageOverride
 from .config.loader import referenced_services
 
 if TYPE_CHECKING:
@@ -305,8 +305,7 @@ def _shared_container_env(credential_env: Mapping[str, str]) -> dict[str, str]:
     return {
         key: value
         for key, value in credential_env.items()
-        if key in KNOWN_CREDENTIAL_ENV_KEYS
-        and key
+        if key
         not in {
             "CLAUDE_CODE_OAUTH_TOKEN",
             "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
