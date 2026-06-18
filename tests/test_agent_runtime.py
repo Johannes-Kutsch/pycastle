@@ -1853,6 +1853,19 @@ def test_runtime_execution_contract_module_import_keeps_application_ownership_un
     assert imported == []
 
 
+def test_runtime_parsed_event_reducer_module_import_keeps_application_ownership_unloaded() -> (
+    None
+):
+    repo_root = Path(__file__).resolve().parents[1]
+
+    imported = _runtime_module_imported_application_modules(
+        repo_root,
+        "pycastle_agent_runtime.parsed_event_reducer",
+    )
+
+    assert imported == []
+
+
 @pytest.mark.parametrize("attr_name", ["PromptRunRequest", "run_prompt"])
 def test_runtime_prompt_surface_import_keeps_application_ownership_unloaded(
     attr_name: str,
