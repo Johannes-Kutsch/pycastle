@@ -191,13 +191,26 @@ def teardown_worktree(svc: GitService, repo_root: Path, path: Path) -> None:
         remove_worktrees_dir_if_empty(path.parent)
 
 
+def _is_harmless_stale_worktree_error(exc: GitCommandError) -> bool:
+    text = str(exc).lower()
+    return "not a registered worktree" in text
+
+
 def cleanup_durable_issue_worktree_after_success(
     svc: GitService, repo_root: Path, path: Path
 ) -> None:
     """Tear down a durable issue worktree after its branch was verified merged."""
     if path not in svc.list_worktrees(repo_root):
         return
-    teardown_worktree(svc, repo_root, path)
+    prune_needed = not path.exists()
+    try:
+        teardown_worktree(svc, repo_root, path)
+    except GitCommandError as exc:
+        if not _is_harmless_stale_worktree_error(exc):
+            raise
+        prune_needed = True
+    if prune_needed:
+        svc.prune_worktrees(repo_root)
 
 
 def _has_project_files(path: Path) -> bool:

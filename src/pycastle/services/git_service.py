@@ -120,6 +120,13 @@ class GitService(_SubprocessService):
                 paths.append(Path(line[len("worktree ") :]))
         return paths
 
+    def prune_worktrees(self, repo_path: Path) -> None:
+        self._run_or_raise(
+            ["git", "worktree", "prune"],
+            "git worktree prune failed",
+            cwd=repo_path,
+        )
+
     def get_remote_url(self, remote: str = "origin", cwd: Path | None = None) -> str:
         result = self._run_or_raise(
             ["git", "remote", "get-url", remote],
