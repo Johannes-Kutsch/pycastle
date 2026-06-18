@@ -195,6 +195,8 @@ def cleanup_durable_issue_worktree_after_success(
     svc: GitService, repo_root: Path, path: Path
 ) -> None:
     """Tear down a durable issue worktree after its branch was verified merged."""
+    if path not in svc.list_worktrees(repo_root):
+        return
     teardown_worktree(svc, repo_root, path)
 
 
