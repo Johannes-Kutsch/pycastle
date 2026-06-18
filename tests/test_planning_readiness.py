@@ -897,6 +897,27 @@ def test_resolve_planner_blocked_intake_uses_prepared_ready_titles():
     assert result == [{"number": 11, "title": "Canonical ready title"}]
 
 
+def test_resolve_planner_blocked_intake_hydrates_ready_number_only_entries():
+    from pycastle.iteration.planning_issue_intake import (
+        prepare_planning_issue_set,
+        resolve_planner_blocked_intake,
+    )
+
+    cfg = Config()
+    ready_issue = {
+        "number": 11,
+        "title": "Canonical ready title",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    prepared = prepare_planning_issue_set([ready_issue], cfg)
+
+    result = resolve_planner_blocked_intake([{"number": 11}], prepared)
+
+    assert result == [{"number": 11, "title": "Canonical ready title"}]
+
+
 def test_resolve_planner_blocked_intake_keeps_only_tolerated_fields_for_unknown_numbers():
     from pycastle.iteration.planning_issue_intake import (
         prepare_planning_issue_set,

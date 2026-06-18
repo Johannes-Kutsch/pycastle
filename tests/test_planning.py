@@ -851,6 +851,45 @@ def test_planning_phase_all_blocked_does_not_hydrate_titles_for_non_ready_candid
     assert plan_removes[0][2].endswith("\n  #6")
 
 
+def test_planning_phase_uses_resolved_blocked_entries_when_planner_selections_are_stale(
+    tmp_path, git_svc
+):
+    recording = RecordingStatusDisplay()
+    output = PlannerOutput(
+        issues=[{"number": 99, "title": "Hallucinated"}],
+        blocked=[{"number": 5, "blocked_by": 3, "reason": "depends on #3"}],
+    )
+    issues = [
+        {
+            "number": 5,
+            "title": "Unblock planner parsing",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+        {
+            "number": 3,
+            "title": "Planner blocker",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["ready-for-agent", "behavior-slice"],
+        },
+    ]
+    fake = FakeAgentRunner([output])
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, status_display=recording)
+    result = asyncio.run(planning_phase(deps, issues, []))
+
+    assert isinstance(result, AllBlocked)
+    assert result.blocked == [{"number": 5, "title": "Unblock planner parsing"}]
+    plan_removes = [c for c in recording.calls if c[0] == "remove" and c[1] == "Plan"]
+    assert plan_removes, "Plan row must be removed"
+    assert (
+        plan_removes[0][2]
+        == "All ready-for-agent issues are blocked:\n  #5: Unblock planner parsing"
+    )
+
+
 def test_planning_phase_ignores_stale_planner_issue_and_keeps_valid_ones(
     tmp_path, git_svc
 ):
