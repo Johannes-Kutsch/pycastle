@@ -30,7 +30,8 @@ def resolve_planner_issue_intake(
         issue["number"]: issue for issue in prepared_issue_set.ready_candidates
     }
     sorted_planner_issues = sorted(
-        plan_result.issues, key=lambda issue: issue["number"]
+        (issue for issue in plan_result.issues if isinstance(issue.get("number"), int)),
+        key=lambda issue: issue["number"],
     )
     ready_readiness_by_number = prepared_issue_set.ready_readiness_by_number
     resolved_issues = []
