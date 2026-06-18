@@ -239,6 +239,53 @@ def test_planning_phase_multi_issue_planner_populates_readiness_by_number(
     assert result.readiness_by_number[2].selected_mode == SliceMode.REFACTOR
 
 
+def test_planning_phase_multi_issue_planner_uses_prepared_issue_shape_and_drops_malformed_numbers(
+    tmp_path, git_svc
+):
+    issue_a = {
+        "number": 1,
+        "title": "Canonical title",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": None,
+        "labels": ["behavior-slice"],
+    }
+    issue_b = {
+        "number": 2,
+        "title": "Second ready issue",
+        "body": "y" * 140,
+        "comments": [],
+        "labels": ["docs-slice"],
+    }
+    fake = FakeAgentRunner(
+        [
+            PlannerOutput(
+                issues=[
+                    {"number": True, "title": "Malformed bool selection"},
+                    {"number": 1, "title": "Planner title"},
+                    {"number": 99, "title": "Hallucinated"},
+                ]
+            )
+        ]
+    )
+
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+    result = asyncio.run(planning_phase(deps, [issue_a, issue_b], [issue_a, issue_b]))
+
+    assert isinstance(result, PlanReady)
+    assert result.sha == "abc123"
+    assert result.issues == [
+        {
+            "number": 1,
+            "title": "Canonical title",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "readiness": result.readiness_by_number[1],
+        }
+    ]
+    assert set(result.readiness_by_number) == {1}
+
+
 def test_planning_phase_malformed_issue_absent_from_readiness_by_number(
     tmp_path, git_svc
 ):

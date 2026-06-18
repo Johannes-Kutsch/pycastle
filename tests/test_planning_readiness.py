@@ -826,6 +826,46 @@ def test_resolve_planner_issue_intake_drops_malformed_selected_issue_numbers():
     assert set(result.readiness_by_number) == {11}
 
 
+def test_resolve_planner_issue_intake_drops_bool_selected_issue_numbers():
+    from pycastle.iteration.planning_issue_intake import (
+        PlanReady,
+        prepare_planning_issue_set,
+        resolve_planner_issue_intake,
+    )
+
+    cfg = Config()
+    ready_issue = {
+        "number": 1,
+        "title": "Canonical ready title",
+        "body": "Summary\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    prepared = prepare_planning_issue_set([ready_issue], cfg)
+    planner_output = PlanReady(
+        issues=[
+            {"number": True, "title": "Malformed bool selection"},
+            {"number": 1, "title": "Valid selection"},
+        ],
+        sha="plan-sha",
+    )
+
+    result = resolve_planner_issue_intake(planner_output, prepared)
+
+    assert result.sha == "plan-sha"
+    assert result.issues == [
+        {
+            "number": 1,
+            "title": "Canonical ready title",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "readiness": result.readiness_by_number[1],
+        }
+    ]
+    assert set(result.readiness_by_number) == {1}
+
+
 def test_resolve_planner_blocked_intake_uses_prepared_ready_titles():
     from pycastle.iteration.planning_issue_intake import (
         prepare_planning_issue_set,
