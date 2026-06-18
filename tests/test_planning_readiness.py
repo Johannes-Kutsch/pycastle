@@ -316,6 +316,34 @@ def test_evaluate_planning_readiness_exposes_ready_readiness_by_number():
     assert result.ready_readiness_by_number[9].selected_mode == SliceMode.DOCS
 
 
+def test_prepare_planning_issue_set_ignores_hitl_exempt_issues_for_label_sync_and_blocker_summary():
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+
+    cfg = Config()
+    ready = {
+        "number": 1,
+        "title": "Ready",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["docs-slice"],
+    }
+    hitl_exempt = {
+        "number": 2,
+        "title": "Human-owned",
+        "body": "short",
+        "comments": [],
+        "labels": ["ready-for-human"],
+    }
+
+    prepared = prepare_planning_issue_set([ready, hitl_exempt], cfg)
+
+    assert prepared.ready_candidates == (ready,)
+    assert prepared.label_sync_actions == ()
+    assert prepared.malformed_body_issues == ()
+    assert prepared.malformed_slice_mode_issues == ()
+    assert planning_blocker_summary(prepared.blocker_summary_inputs) is None
+
+
 def test_planning_blocker_summary_uses_readiness_groups():
     from pycastle.issue_readiness import (
         IssueReadiness,

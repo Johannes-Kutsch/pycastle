@@ -5,11 +5,11 @@ from typing import Literal, TypeAlias
 from ..agents.output_protocol import PlannerOutput
 from ..config import Config
 from ..issue_readiness import (
-    AFKBlockedOutcome,
-    AFKReadyOutcome,
     BODY_FLOOR,
     IssueReadiness,
-    evaluate_issue_afk_readiness,
+    IssueReadinessKind,
+    Malformed,
+    MalformedBody,
     resolve_issue_readiness,
 )
 
@@ -171,16 +171,18 @@ The implement phase skips this issue until the labeling is fixed.
 
 
 def _needs_info_actions(
-    issues_with_outcomes: list[tuple[dict, AFKReadyOutcome | AFKBlockedOutcome]],
+    issues_with_readiness: list[tuple[dict, IssueReadiness]],
     cfg: Config,
 ) -> tuple[LabelSyncAction, ...]:
     flag = cfg.needs_info_label
     blocked_actions: list[LabelSyncAction] = []
     well_formed_actions: list[LabelSyncAction] = []
 
-    for issue, outcome in issues_with_outcomes:
+    for issue, readiness in issues_with_readiness:
         labels: list[str] = issue.get("labels") or []
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_short_body:
+        if readiness.is_hitl_exempt:
+            continue
+        if isinstance(readiness.body_floor_status, MalformedBody):
             if flag in labels:
                 continue
             blocked_actions.append(
@@ -204,18 +206,18 @@ def _needs_info_actions(
 
 
 def _needs_slice_type_actions(
-    issues_with_outcomes: list[tuple[dict, AFKReadyOutcome | AFKBlockedOutcome]],
+    issues_with_readiness: list[tuple[dict, IssueReadiness]],
     cfg: Config,
 ) -> tuple[LabelSyncAction, ...]:
     flag = cfg.needs_slice_type_label
     malformed_actions: list[LabelSyncAction] = []
     well_formed_actions: list[LabelSyncAction] = []
 
-    for issue, outcome in issues_with_outcomes:
+    for issue, readiness in issues_with_readiness:
         labels: list[str] = issue.get("labels") or []
-        if not (
-            isinstance(outcome, AFKBlockedOutcome) and outcome.has_invalid_slice_mode
-        ):
+        if readiness.is_hitl_exempt:
+            continue
+        if not isinstance(readiness.slice_status, Malformed):
             if flag in labels:
                 well_formed_actions.append(
                     LabelSyncAction(
@@ -230,7 +232,7 @@ def _needs_slice_type_actions(
             continue
 
         current_slice = (
-            ", ".join(f"`{label}`" for label in outcome.current_slice_labels) or "none"
+            ", ".join(f"`{label}`" for label in readiness.slice_status.found) or "none"
         )
         malformed_actions.append(
             LabelSyncAction(
@@ -256,7 +258,7 @@ def _classify_planning_issue_set(
         else issue
         for issue in issues
     )
-    issues_with_outcomes: list[tuple[dict, AFKReadyOutcome | AFKBlockedOutcome]] = []
+    issues_with_readiness: list[tuple[dict, IssueReadiness]] = []
     slice_malformed: list[dict] = []
     slice_malformed_readiness: list[IssueReadiness] = []
     body_malformed: list[dict] = []
@@ -266,18 +268,20 @@ def _classify_planning_issue_set(
 
     for issue in prepared_issues:
         readiness = resolve_issue_readiness(issue, cfg)
-        outcome = evaluate_issue_afk_readiness({**issue, "readiness": readiness}, cfg)
-        issues_with_outcomes.append((issue, outcome))
+        issues_with_readiness.append((issue, readiness))
 
-        if isinstance(outcome, AFKReadyOutcome):
+        if readiness.kind is IssueReadinessKind.READY_AFK:
             ready_candidates.append(issue)
             ready_readiness_by_number[issue["number"]] = readiness
             continue
 
-        if outcome.has_invalid_slice_mode:
+        if readiness.is_hitl_exempt:
+            continue
+
+        if isinstance(readiness.slice_status, Malformed):
             slice_malformed.append(issue)
             slice_malformed_readiness.append(readiness)
-        if outcome.has_short_body:
+        if isinstance(readiness.body_floor_status, MalformedBody):
             body_malformed.append(issue)
             body_malformed_readiness.append(readiness)
 
@@ -288,8 +292,8 @@ def _classify_planning_issue_set(
         malformed_body_issues=tuple(body_malformed),
         malformed_slice_mode_issues=tuple(slice_malformed),
         label_sync_actions=(
-            _needs_info_actions(issues_with_outcomes, cfg)
-            + _needs_slice_type_actions(issues_with_outcomes, cfg)
+            _needs_info_actions(issues_with_readiness, cfg)
+            + _needs_slice_type_actions(issues_with_readiness, cfg)
         ),
         blocker_summary_inputs=BlockerSummaryInputs(
             malformed_slice_mode_issues=tuple(slice_malformed),
