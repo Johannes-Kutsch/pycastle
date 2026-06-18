@@ -595,6 +595,45 @@ def test_prepare_planning_issue_set_recomputes_readiness_from_normalized_prepare
     assert prepared.malformed_slice_mode_issues == ()
 
 
+def test_prepare_planning_issue_set_drops_stale_ready_readiness_for_normalized_malformed_issue():
+    from pycastle.issue_readiness import classify_issue_readiness
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+
+    cfg = Config()
+    raw_issue = {
+        "number": 35,
+        "title": "Malformed after normalization",
+        "body": "Blocked by #99\n\n" + ("x" * 95),
+        "comments": None,
+        "labels": None,
+        "readiness": classify_issue_readiness(
+            {
+                "number": 35,
+                "title": "Malformed after normalization",
+                "body": "x" * 120,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            },
+            cfg,
+        ),
+    }
+
+    prepared = prepare_planning_issue_set([raw_issue], cfg)
+
+    normalized_issue = {
+        "number": 35,
+        "title": "Malformed after normalization",
+        "body": "\n" + ("x" * 95),
+        "comments": [],
+        "labels": [],
+    }
+    assert prepared.prepared_issues == (normalized_issue,)
+    assert prepared.ready_candidates == ()
+    assert prepared.ready_readiness_by_number == {}
+    assert prepared.malformed_body_issues == (normalized_issue,)
+    assert prepared.malformed_slice_mode_issues == (normalized_issue,)
+
+
 def test_resolve_planner_issue_intake_drops_non_ready_numbers_and_uses_prepared_issue_shape():
     from pycastle.iteration.planning_issue_intake import (
         PlanReady,
