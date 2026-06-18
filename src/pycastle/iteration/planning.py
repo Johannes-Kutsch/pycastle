@@ -189,22 +189,7 @@ async def planning_phase(
                 blocked = planning_issue_intake.resolve_planner_all_blocked_intake(
                     output, issue_set
                 )
-                blocker_summary = planning_issue_intake.planning_blocker_summary(
-                    issue_set.blocker_summary_inputs
-                )
-                blocked_lines = [
-                    _format_blocked_issue_line(blocked_issue)
-                    for blocked_issue in blocked
-                ]
-                lines = [
-                    "All ready-for-agent issues are blocked:"
-                    if blocked_lines
-                    else "All ready-for-agent issues are blocked."
-                ]
-                if blocker_summary:
-                    lines.append(blocker_summary)
-                lines.extend(blocked_lines)
-                row.close("\n".join(lines))
+                _close_all_blocked_row(row, issue_set, blocked)
                 return AllBlocked(blocked=blocked)
 
             resolved = planning_issue_intake.resolve_planner_issue_intake(
@@ -215,22 +200,7 @@ async def planning_phase(
                 blocked = planning_issue_intake.resolve_planner_all_blocked_intake(
                     output, issue_set
                 )
-                blocker_summary = planning_issue_intake.planning_blocker_summary(
-                    issue_set.blocker_summary_inputs
-                )
-                blocked_lines = [
-                    _format_blocked_issue_line(blocked_issue)
-                    for blocked_issue in blocked
-                ]
-                lines = [
-                    "All ready-for-agent issues are blocked:"
-                    if blocked_lines
-                    else "All ready-for-agent issues are blocked."
-                ]
-                if blocker_summary:
-                    lines.append(blocker_summary)
-                lines.extend(blocked_lines)
-                row.close("\n".join(lines))
+                _close_all_blocked_row(row, issue_set, blocked)
                 return AllBlocked(blocked=blocked)
             issue_lines = [
                 f"  #{i['number']}: {i['title']} → {branch_for(i['number'])}"
@@ -252,3 +222,23 @@ def _format_blocked_issue_line(blocked_issue: dict) -> str:
     if "title" in blocked_issue:
         return f"  #{number}: {blocked_issue['title']}"
     return f"  #{number}"
+
+
+def _close_all_blocked_row(
+    row, issue_set: PreparedPlanningIssueSet, blocked: list[dict]
+) -> None:
+    blocker_summary = planning_issue_intake.planning_blocker_summary(
+        issue_set.blocker_summary_inputs
+    )
+    blocked_lines = [
+        _format_blocked_issue_line(blocked_issue) for blocked_issue in blocked
+    ]
+    lines = [
+        "All ready-for-agent issues are blocked:"
+        if blocked_lines
+        else "All ready-for-agent issues are blocked."
+    ]
+    if blocker_summary:
+        lines.append(blocker_summary)
+    lines.extend(blocked_lines)
+    row.close("\n".join(lines))
