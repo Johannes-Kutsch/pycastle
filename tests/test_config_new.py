@@ -73,7 +73,7 @@ def test_load_config_uses_universal_default_stage_priority_chains(tmp_path):
     cfg = load_config(repo_root=tmp_path)
     assert cfg.plan_override == StageOverride(
         service="opencode",
-        model="deepseek-v4-flash",
+        model="kimi-k2.6",
         effort="medium",
         fallback=StageOverride(
             service="codex",

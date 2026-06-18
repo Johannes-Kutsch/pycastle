@@ -799,6 +799,7 @@ def test_init_config_contains_stage_override_import_and_defaults(tmp_path, monke
     assert "from pycastle import StageOverride" in content
     assert 'service="codex"' in content
     assert 'model="gpt-5.4-mini"' in content
+    assert 'model="kimi-k2.6"' in content
     assert (
         'fallback=StageOverride(service="claude", model="haiku", effort="low")'
         in content
@@ -833,7 +834,7 @@ def test_init_scaffolds_universal_stage_priority_chains_into_config_files(
     expected = {
         "plan_override": StageOverride(
             service="opencode",
-            model="deepseek-v4-flash",
+            model="kimi-k2.6",
             effort="medium",
             fallback=StageOverride(
                 service="codex",
@@ -899,7 +900,7 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     cfg = load_config(repo_root=tmp_path)
     assert cfg.plan_override == StageOverride(
         service="opencode",
-        model="deepseek-v4-flash",
+        model="kimi-k2.6",
         effort="medium",
         fallback=StageOverride(
             service="codex",
@@ -967,7 +968,7 @@ def test_init_service_selection_writes_same_stage_chains(
     cfg = load_config(repo_root=workspace)
     assert cfg.plan_override == StageOverride(
         service="opencode",
-        model="deepseek-v4-flash",
+        model="kimi-k2.6",
         effort="medium",
         fallback=StageOverride(
             service="codex",
@@ -1102,7 +1103,7 @@ def test_init_opencode_selection_adds_env_key_without_changing_stage_policy(
     assert "OPENCODE_GO_API_KEY=\n" in env_content
     assert cfg.plan_override == StageOverride(
         service="opencode",
-        model="deepseek-v4-flash",
+        model="kimi-k2.6",
         effort="medium",
         fallback=StageOverride(
             service="codex",
@@ -2580,6 +2581,10 @@ def test_init_emits_planned_warnings_before_the_scope_prompt(
         "#!/bin/sh\necho uninstall\n"
     )
     monkeypatch.setattr("pycastle.commands.init.files", lambda _pkg: bundled_pkg)
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     monkeypatch.chdir(tmp_path)
 
     output_before_scope_prompt: list[str] = []

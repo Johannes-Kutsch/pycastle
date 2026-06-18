@@ -121,7 +121,7 @@ class Config:
     plan_override: StageOverride = dataclasses.field(
         default_factory=lambda: StageOverride(
             service="opencode",
-            model="deepseek-v4-flash",
+            model="kimi-k2.6",
             effort="medium",
             fallback=StageOverride(
                 service="codex",

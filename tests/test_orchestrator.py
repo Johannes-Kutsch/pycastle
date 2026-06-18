@@ -710,7 +710,7 @@ def test_default_planner_stage_override_passes_configured_model_and_effort(tmp_p
     )
 
     planner_call = next(c for c in captured if c["name"] == "Plan Agent")
-    assert planner_call["model"] == "deepseek-v4-flash"
+    assert planner_call["model"] == "kimi-k2.6"
     assert planner_call["effort"] == "medium"
 
 
