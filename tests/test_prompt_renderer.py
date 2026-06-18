@@ -1465,6 +1465,14 @@ def test_shipped_improve_scan_prompt_defines_novelty_gate_contract():
     )
 
 
+def test_shipped_improve_scan_prompt_checks_size_pressure():
+    text = (_SHIPPED_PROMPTS_DIR / "improve/01-scan.md").read_text(encoding="utf-8")
+
+    assert "files over 500 lines" in text
+    assert "crowded same-level directories" in text
+    assert "hard to navigate" in text
+
+
 def test_shipped_improve_prd_prompt_requires_durable_novelty_check():
     prd_text = (_SHIPPED_PROMPTS_DIR / "improve/02-prd.md").read_text(encoding="utf-8")
     issues_text = (_SHIPPED_PROMPTS_DIR / "improve/03-issues.md").read_text(
