@@ -1057,6 +1057,28 @@ def test_stale_registered_durable_issue_worktree_cleanup_is_quiet_after_merge(
     assert result.clean == [issue]
 
 
+def test_missing_registered_durable_issue_worktree_is_pruned_quietly_after_merge(
+    recording_deps, git_svc
+):
+    deps, recording = recording_deps
+    issue = {"number": 1, "title": "Fix A"}
+    worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
+    git_svc.list_worktrees.return_value = [worktree_path]
+
+    result = _run([issue], deps)
+
+    warning_messages = [
+        str(call[2])
+        for call in recording.calls
+        if call[0] == "print" and call[3] == "warning"
+    ]
+
+    git_svc.prune_worktrees.assert_called_once_with(deps.repo_root)
+    git_svc.delete_branch.assert_called_once_with("pycastle/issue-1", deps.repo_root)
+    assert all("could not remove worktree" not in msg for msg in warning_messages)
+    assert result.clean == [issue]
+
+
 def test_stale_registered_durable_issue_worktree_prune_failure_warns(
     recording_deps, git_svc
 ):
