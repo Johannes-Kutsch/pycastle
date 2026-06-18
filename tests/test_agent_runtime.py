@@ -20,6 +20,7 @@ from pycastle.agents._work_invocation import (
 )
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole
+from pycastle_agent_runtime import parsed_event_reducer
 from pycastle_agent_runtime.provider_session_adapter import (
     ProviderSessionPlanningFacts,
     ProviderSessionPlanningRequest,
@@ -1724,6 +1725,31 @@ def test_runtime_package_text_output_reducer_returns_result_text() -> None:
     assert turns == ["first turn"]
 
 
+def test_runtime_parsed_event_reducer_success_surface_prefers_result_and_stops_consuming() -> (
+    None
+):
+    turns: list[str] = []
+    consumed_events: list[str] = []
+
+    def tracking_events() -> Iterator[ParsedTurn]:
+        for label, event in (
+            ("first", AssistantTurn(text="first turn")),
+            ("result", Result(text="exact text from result")),
+            ("later", AssistantTurn(text="ignored after result")),
+        ):
+            consumed_events.append(label)
+            yield event
+
+    result = parsed_event_reducer.reduce_successful_text_output_events(
+        tracking_events(),
+        turns.append,
+    )
+
+    assert result == "exact text from result"
+    assert turns == ["first turn"]
+    assert consumed_events == ["first", "result"]
+
+
 def test_runtime_package_text_output_reducer_returns_joined_assistant_turns() -> None:
     turns: list[str] = []
 
@@ -1734,6 +1760,21 @@ def test_runtime_package_text_output_reducer_returns_joined_assistant_turns() ->
         ),
         turns.append,
         provider="codex",
+    )
+
+    assert result == "first turn\nsecond turn"
+    assert turns == ["first turn", "second turn"]
+
+
+def test_runtime_parsed_event_reducer_success_surface_joins_assistant_turns() -> None:
+    turns: list[str] = []
+
+    result = parsed_event_reducer.reduce_successful_text_output_events(
+        (
+            AssistantTurn(text="first turn"),
+            AssistantTurn(text="second turn"),
+        ),
+        turns.append,
     )
 
     assert result == "first turn\nsecond turn"
@@ -1760,6 +1801,39 @@ def test_runtime_package_text_output_reducer_updates_prompt_tokens_and_ignores_u
     assert result == "assistant turn"
     assert turns == ["assistant turn"]
     assert token_counts == [42_000]
+
+
+def test_runtime_parsed_event_reducer_success_surface_updates_prompt_tokens_and_ignores_unsupported_tokens() -> (
+    None
+):
+    turns: list[str] = []
+    token_counts: list[int] = []
+
+    result = parsed_event_reducer.reduce_successful_text_output_events(
+        (
+            PromptTokens(count=42_000),
+            UnsupportedTokens(count=99, source="codex.turn.completed.usage"),
+            AssistantTurn(text="assistant turn"),
+            Result(text="exact text from result"),
+        ),
+        turns.append,
+        token_counts.append,
+    )
+
+    assert result == "exact text from result"
+    assert turns == ["assistant turn"]
+    assert token_counts == [42_000]
+
+
+def test_runtime_parsed_event_reducer_success_surface_returns_empty_string_for_no_events() -> (
+    None
+):
+    result = parsed_event_reducer.reduce_successful_text_output_events(
+        (),
+        lambda _turn: None,
+    )
+
+    assert result == ""
 
 
 def test_runtime_package_text_output_reducer_raises_runtime_owned_usage_limit() -> None:
