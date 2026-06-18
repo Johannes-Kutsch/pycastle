@@ -8,7 +8,10 @@ from ..agents.runner import AgentRunnerProtocol
 from ..config import Config
 from ..services import GitCommandError, GitService, GithubService
 from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import teardown_worktree, worktree_identity
+from ..infrastructure.worktree import (
+    cleanup_durable_issue_worktree_after_success,
+    worktree_identity,
+)
 from ._merge_conflict_recovery import (
     recover_conflicts,
 )
@@ -99,7 +102,10 @@ async def _delete_merged_branches(
             if worktree_path_ in registered_worktrees:
                 try:
                     await asyncio.to_thread(
-                        teardown_worktree, deps.git_svc, deps.repo_root, worktree_path_
+                        cleanup_durable_issue_worktree_after_success,
+                        deps.git_svc,
+                        deps.repo_root,
+                        worktree_path_,
                     )
                 except Exception as e:
                     deps.status_display.print(

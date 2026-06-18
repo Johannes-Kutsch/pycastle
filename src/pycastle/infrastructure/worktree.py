@@ -191,6 +191,13 @@ def teardown_worktree(svc: GitService, repo_root: Path, path: Path) -> None:
         remove_worktrees_dir_if_empty(path.parent)
 
 
+def cleanup_durable_issue_worktree_after_success(
+    svc: GitService, repo_root: Path, path: Path
+) -> None:
+    """Tear down a durable issue worktree after its branch was verified merged."""
+    teardown_worktree(svc, repo_root, path)
+
+
 def _has_project_files(path: Path) -> bool:
     return (path / "pyproject.toml").exists() or (path / "requirements.txt").exists()
 
