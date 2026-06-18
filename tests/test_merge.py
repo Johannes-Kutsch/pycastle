@@ -1012,6 +1012,23 @@ def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
     assert result.clean == issues
 
 
+def test_unregistered_durable_issue_worktree_is_cleaned_up_without_warning(
+    recording_deps, git_svc
+):
+    deps, recording = recording_deps
+    worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
+    worktree_path.mkdir(parents=True)
+    (worktree_path / "pyproject.toml").write_text("[project]\nname='t'\n")
+    git_svc.list_worktrees.return_value = []
+
+    _run([{"number": 1, "title": "Fix A"}], deps)
+
+    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, worktree_path)
+    git_svc.delete_branch.assert_called_once_with("pycastle/issue-1", deps.repo_root)
+    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
+    assert all("could not remove worktree" not in str(msg) for msg in print_msgs)
+
+
 # ── StatusDisplay routing ─────────────────────────────────────────────────────
 
 

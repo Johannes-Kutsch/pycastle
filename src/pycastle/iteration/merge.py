@@ -99,7 +99,7 @@ async def _delete_merged_branches(
             if not deps.git_svc.is_ancestor(branch, deps.repo_root):
                 return
             worktree_path_ = worktree_identity(branch, deps.repo_root).path
-            if worktree_path_ in registered_worktrees:
+            if worktree_path_ in registered_worktrees or worktree_path_.exists():
                 try:
                     await asyncio.to_thread(
                         cleanup_durable_issue_worktree_after_success,
