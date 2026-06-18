@@ -485,6 +485,68 @@ def test_prepare_planning_issue_set_normalizes_missing_fields_and_preserves_bloc
     )
 
 
+def test_prepare_planning_issue_set_matches_compatibility_readiness_on_normalized_issue_facts():
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+
+    cfg = Config()
+    ready_issue = {
+        "number": 31,
+        "title": "Ready",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["docs-slice"],
+    }
+    malformed_issue = {
+        "number": 32,
+        "title": "Malformed",
+        "body": "short",
+        "comments": [],
+        "labels": [],
+    }
+
+    prepared = prepare_planning_issue_set([ready_issue, malformed_issue], cfg)
+    legacy = evaluate_planning_readiness(list(prepared.prepared_issues), cfg)
+
+    assert prepared.ready_candidates == legacy.ready_candidates
+    assert prepared.ready_readiness_by_number == legacy.ready_readiness_by_number
+    assert prepared.malformed_body_issues == legacy.malformed_body_issues
+    assert prepared.malformed_slice_mode_issues == legacy.malformed_slice_mode_issues
+    assert prepared.label_sync_actions == legacy.label_sync_actions
+    assert prepared.blocker_summary_inputs == legacy.blocker_summary_inputs
+
+
+def test_prepare_planning_issue_set_reuses_compatibility_readiness_after_stale_blocker_stripping():
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+
+    cfg = Config()
+    raw_issue = {
+        "number": 33,
+        "title": "Ready after stale blocker stripping",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": None,
+        "labels": ["behavior-slice"],
+    }
+
+    prepared = prepare_planning_issue_set([raw_issue], cfg)
+    legacy = evaluate_planning_readiness(list(prepared.prepared_issues), cfg)
+
+    assert prepared.prepared_issues == (
+        {
+            "number": 33,
+            "title": "Ready after stale blocker stripping",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    )
+    assert prepared.ready_candidates == legacy.ready_candidates
+    assert prepared.ready_readiness_by_number == legacy.ready_readiness_by_number
+    assert prepared.malformed_body_issues == legacy.malformed_body_issues
+    assert prepared.malformed_slice_mode_issues == legacy.malformed_slice_mode_issues
+    assert prepared.label_sync_actions == legacy.label_sync_actions
+    assert prepared.blocker_summary_inputs == legacy.blocker_summary_inputs
+
+
 def test_resolve_planner_issue_intake_drops_non_ready_numbers_and_uses_prepared_issue_shape():
     from pycastle.iteration.planning_issue_intake import (
         PlanReady,

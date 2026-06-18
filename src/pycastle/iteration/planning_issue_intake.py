@@ -256,60 +256,40 @@ def _classify_planning_issue_set(
         else issue
         for issue in issues
     )
-    classified_issues = [
-        (issue, resolve_issue_readiness(issue, cfg)) for issue in prepared_issues
-    ]
-    issues_with_outcomes = [
-        (
-            issue,
-            readiness,
-            evaluate_issue_afk_readiness({**issue, "readiness": readiness}, cfg),
-        )
-        for issue, readiness in classified_issues
-    ]
-    slice_malformed = [
-        issue
-        for issue, _, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_invalid_slice_mode
-    ]
-    slice_malformed_readiness = [
-        readiness
-        for _, readiness, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_invalid_slice_mode
-    ]
-    body_malformed = [
-        issue
-        for issue, _, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_short_body
-    ]
-    body_malformed_readiness = [
-        readiness
-        for _, readiness, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_short_body
-    ]
-    ready_candidates = tuple(
-        issue
-        for issue, _, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKReadyOutcome)
-    )
-    ready_readiness_by_number = {
-        issue["number"]: readiness
-        for issue, readiness, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKReadyOutcome)
-    }
+    issues_with_outcomes: list[tuple[dict, AFKReadyOutcome | AFKBlockedOutcome]] = []
+    slice_malformed: list[dict] = []
+    slice_malformed_readiness: list[IssueReadiness] = []
+    body_malformed: list[dict] = []
+    body_malformed_readiness: list[IssueReadiness] = []
+    ready_candidates: list[dict] = []
+    ready_readiness_by_number: dict[int, IssueReadiness] = {}
+
+    for issue in prepared_issues:
+        readiness = resolve_issue_readiness(issue, cfg)
+        outcome = evaluate_issue_afk_readiness({**issue, "readiness": readiness}, cfg)
+        issues_with_outcomes.append((issue, outcome))
+
+        if isinstance(outcome, AFKReadyOutcome):
+            ready_candidates.append(issue)
+            ready_readiness_by_number[issue["number"]] = readiness
+            continue
+
+        if outcome.has_invalid_slice_mode:
+            slice_malformed.append(issue)
+            slice_malformed_readiness.append(readiness)
+        if outcome.has_short_body:
+            body_malformed.append(issue)
+            body_malformed_readiness.append(readiness)
+
     return PreparedPlanningIssueSet(
         prepared_issues=prepared_issues,
-        ready_candidates=ready_candidates,
+        ready_candidates=tuple(ready_candidates),
         ready_readiness_by_number=ready_readiness_by_number,
         malformed_body_issues=tuple(body_malformed),
         malformed_slice_mode_issues=tuple(slice_malformed),
         label_sync_actions=(
-            _needs_info_actions(
-                [(issue, outcome) for issue, _, outcome in issues_with_outcomes], cfg
-            )
-            + _needs_slice_type_actions(
-                [(issue, outcome) for issue, _, outcome in issues_with_outcomes], cfg
-            )
+            _needs_info_actions(issues_with_outcomes, cfg)
+            + _needs_slice_type_actions(issues_with_outcomes, cfg)
         ),
         blocker_summary_inputs=BlockerSummaryInputs(
             malformed_slice_mode_issues=tuple(slice_malformed),
