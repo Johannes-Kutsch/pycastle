@@ -246,78 +246,15 @@ def _needs_slice_type_actions(
     return tuple(malformed_actions + well_formed_actions)
 
 
-def evaluate_planning_readiness(
-    issues: list[dict], cfg: Config
-) -> PlanningReadinessResult:
-    classified_issues = [
-        (issue, resolve_issue_readiness(issue, cfg)) for issue in issues
-    ]
-    issues_with_outcomes = [
-        (
-            issue,
-            readiness,
-            evaluate_issue_afk_readiness({**issue, "readiness": readiness}, cfg),
-        )
-        for issue, readiness in classified_issues
-    ]
-    slice_malformed = [
-        issue
-        for issue, _, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_invalid_slice_mode
-    ]
-    slice_malformed_readiness = [
-        readiness
-        for _, readiness, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_invalid_slice_mode
-    ]
-    body_malformed = [
-        issue
-        for issue, _, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_short_body
-    ]
-    body_malformed_readiness = [
-        readiness
-        for _, readiness, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKBlockedOutcome) and outcome.has_short_body
-    ]
-    ready_candidates = tuple(
-        issue
-        for issue, _, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKReadyOutcome)
-    )
-    ready_readiness_by_number = {
-        issue["number"]: readiness
-        for issue, readiness, outcome in issues_with_outcomes
-        if isinstance(outcome, AFKReadyOutcome)
-    }
-    return PlanningReadinessResult(
-        ready_candidates=ready_candidates,
-        ready_readiness_by_number=ready_readiness_by_number,
-        malformed_body_issues=tuple(body_malformed),
-        malformed_slice_mode_issues=tuple(slice_malformed),
-        label_sync_actions=(
-            _needs_info_actions(
-                [(issue, outcome) for issue, _, outcome in issues_with_outcomes], cfg
-            )
-            + _needs_slice_type_actions(
-                [(issue, outcome) for issue, _, outcome in issues_with_outcomes], cfg
-            )
-        ),
-        blocker_summary_inputs=BlockerSummaryInputs(
-            malformed_slice_mode_issues=tuple(slice_malformed),
-            malformed_body_issues=tuple(body_malformed),
-            malformed_slice_mode_readiness=tuple(slice_malformed_readiness),
-            malformed_body_readiness=tuple(body_malformed_readiness),
-        ),
-    )
-
-
-def prepare_planning_issue_set(
-    issues: list[dict], cfg: Config
+def _classify_planning_issue_set(
+    issues: list[dict], cfg: Config, *, prepare: bool
 ) -> PreparedPlanningIssueSet:
     open_issue_numbers = {issue["number"] for issue in issues}
     prepared_issues = tuple(
-        _prepare_issue(issue, open_issue_numbers=open_issue_numbers) for issue in issues
+        _prepare_issue(issue, open_issue_numbers=open_issue_numbers)
+        if prepare
+        else issue
+        for issue in issues
     )
     classified_issues = [
         (issue, resolve_issue_readiness(issue, cfg)) for issue in prepared_issues
@@ -381,6 +318,26 @@ def prepare_planning_issue_set(
             malformed_body_readiness=tuple(body_malformed_readiness),
         ),
     )
+
+
+def evaluate_planning_readiness(
+    issues: list[dict], cfg: Config
+) -> PlanningReadinessResult:
+    classified = _classify_planning_issue_set(issues, cfg, prepare=False)
+    return PlanningReadinessResult(
+        ready_candidates=classified.ready_candidates,
+        ready_readiness_by_number=classified.ready_readiness_by_number,
+        malformed_body_issues=classified.malformed_body_issues,
+        malformed_slice_mode_issues=classified.malformed_slice_mode_issues,
+        label_sync_actions=classified.label_sync_actions,
+        blocker_summary_inputs=classified.blocker_summary_inputs,
+    )
+
+
+def prepare_planning_issue_set(
+    issues: list[dict], cfg: Config
+) -> PreparedPlanningIssueSet:
+    return _classify_planning_issue_set(issues, cfg, prepare=True)
 
 
 def _prepare_issue(issue: dict, *, open_issue_numbers: set[int]) -> dict:
