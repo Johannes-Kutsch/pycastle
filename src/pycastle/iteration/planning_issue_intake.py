@@ -321,8 +321,11 @@ def prepare_planning_issue_set(
 
 
 def _prepare_issue(issue: dict, *, open_issue_numbers: set[int]) -> dict:
+    normalized_issue = {
+        key: value for key, value in issue.items() if key != "readiness"
+    }
     return {
-        **issue,
+        **normalized_issue,
         "body": _strip_stale_blocker_lines(issue.get("body"), open_issue_numbers),
         "comments": issue.get("comments") or [],
         "labels": issue.get("labels") or [],

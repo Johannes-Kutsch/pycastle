@@ -547,6 +547,54 @@ def test_prepare_planning_issue_set_reuses_compatibility_readiness_after_stale_b
     assert prepared.blocker_summary_inputs == legacy.blocker_summary_inputs
 
 
+def test_prepare_planning_issue_set_recomputes_readiness_from_normalized_prepared_issue():
+    from pycastle.issue_readiness import classify_issue_readiness
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+
+    cfg = Config()
+    raw_issue = {
+        "number": 34,
+        "title": "Ready after normalization",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": None,
+        "labels": ["behavior-slice"],
+        "readiness": classify_issue_readiness(
+            {
+                "number": 34,
+                "title": "Ready after normalization",
+                "body": "short",
+                "comments": [],
+                "labels": [],
+            },
+            cfg,
+        ),
+    }
+
+    prepared = prepare_planning_issue_set([raw_issue], cfg)
+
+    assert prepared.prepared_issues == (
+        {
+            "number": 34,
+            "title": "Ready after normalization",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    )
+    assert prepared.ready_candidates == (
+        {
+            "number": 34,
+            "title": "Ready after normalization",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    )
+    assert 34 in prepared.ready_readiness_by_number
+    assert prepared.malformed_body_issues == ()
+    assert prepared.malformed_slice_mode_issues == ()
+
+
 def test_resolve_planner_issue_intake_drops_non_ready_numbers_and_uses_prepared_issue_shape():
     from pycastle.iteration.planning_issue_intake import (
         PlanReady,
