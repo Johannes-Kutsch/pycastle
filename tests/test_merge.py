@@ -969,6 +969,20 @@ def test_active_worktree_removed_when_merged_branch_is_cleaned_up(deps, git_svc)
     assert "pycastle/issue-1" in deleted
 
 
+def test_merged_durable_issue_branch_routes_cleanup_through_post_success_helper(
+    deps, git_svc
+):
+    worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
+    git_svc.list_worktrees.return_value = [worktree_path]
+
+    with patch(
+        "pycastle.iteration.merge.cleanup_durable_issue_worktree_after_success"
+    ) as cleanup:
+        _run([{"number": 1, "title": "Fix A"}], deps)
+
+    cleanup.assert_called_once_with(git_svc, deps.repo_root, worktree_path)
+
+
 def test_worktree_unregistered_before_branch_deletion(deps, git_svc):
     worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]

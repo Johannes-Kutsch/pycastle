@@ -24,6 +24,7 @@ from pycastle.infrastructure.worktree import (
     DetachedTransientWorktreeIntent,
     DurableIssueWorktreeIntent,
     ReusableSandboxWorktreeIntent,
+    cleanup_durable_issue_worktree_after_success,
     detached_transient_worktree,
     durable_issue_worktree,
     managed_worktree,
@@ -258,6 +259,27 @@ def test_durable_issue_worktree_reviewer_ignores_planner_sha(branch_deps):
     asyncio.run(_run())
 
     assert branch_deps.git_svc.create_worktree.call_args[0][3] is None
+
+
+def test_cleanup_durable_issue_worktree_after_success_matches_teardown(
+    real_branch_deps,
+):
+    identity = worktree_identity("pycastle/issue-42", real_branch_deps.repo_root)
+    real_branch_deps.git_svc.create_worktree(
+        real_branch_deps.repo_root,
+        identity.path,
+        identity.branch,
+        None,
+    )
+
+    cleanup_durable_issue_worktree_after_success(
+        real_branch_deps.git_svc,
+        real_branch_deps.repo_root,
+        identity.path,
+    )
+
+    assert not identity.path.exists()
+    assert not identity.path.parent.exists()
 
 
 def test_managed_worktree_creates_new_branch_in_repo(real_branch_deps):
