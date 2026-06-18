@@ -1848,6 +1848,30 @@ def test_runtime_package_text_output_reducer_raises_runtime_owned_usage_limit() 
     assert excinfo.value.provider == "codex"
 
 
+def test_runtime_package_text_output_reducer_raises_usage_limit_after_success_events() -> (
+    None
+):
+    turns: list[str] = []
+    token_counts: list[int] = []
+
+    with pytest.raises(UsageLimitError) as excinfo:
+        reduce_text_output_events(
+            (
+                PromptTokens(count=42_000),
+                AssistantTurn(text="first turn"),
+                UsageLimit(reset_time=None, raw_message="rate limited"),
+            ),
+            turns.append,
+            token_counts.append,
+            provider="codex",
+        )
+
+    assert turns == ["first turn"]
+    assert token_counts == [42_000]
+    assert excinfo.value.raw_message == "rate limited"
+    assert excinfo.value.provider == "codex"
+
+
 def test_runtime_package_text_output_reducer_raises_runtime_owned_transient_error() -> (
     None
 ):
@@ -1858,6 +1882,33 @@ def test_runtime_package_text_output_reducer_raises_runtime_owned_transient_erro
             provider="codex",
         )
 
+    assert str(excinfo.value) == "API Error: 529 Overloaded"
+    assert excinfo.value.status_code == 529
+
+
+def test_runtime_package_text_output_reducer_raises_transient_error_after_success_events() -> (
+    None
+):
+    turns: list[str] = []
+    token_counts: list[int] = []
+
+    with pytest.raises(TransientAgentError) as excinfo:
+        reduce_text_output_events(
+            (
+                PromptTokens(count=42_000),
+                AssistantTurn(text="first turn"),
+                TransientError(
+                    status_code=529,
+                    raw_message="API Error: 529 Overloaded",
+                ),
+            ),
+            turns.append,
+            token_counts.append,
+            provider="codex",
+        )
+
+    assert turns == ["first turn"]
+    assert token_counts == [42_000]
     assert str(excinfo.value) == "API Error: 529 Overloaded"
     assert excinfo.value.status_code == 529
 
@@ -1882,6 +1933,36 @@ def test_runtime_package_text_output_reducer_raises_runtime_owned_hard_error() -
     assert excinfo.value.classification == "permission_denied"
 
 
+def test_runtime_package_text_output_reducer_raises_hard_error_after_success_events() -> (
+    None
+):
+    turns: list[str] = []
+    token_counts: list[int] = []
+
+    with pytest.raises(HardAgentError) as excinfo:
+        reduce_text_output_events(
+            (
+                PromptTokens(count=42_000),
+                AssistantTurn(text="first turn"),
+                HardError(
+                    status_code=403,
+                    raw_message="API Error: 403 Forbidden",
+                    classification="permission_denied",
+                ),
+            ),
+            turns.append,
+            token_counts.append,
+            provider="codex",
+        )
+
+    assert turns == ["first turn"]
+    assert token_counts == [42_000]
+    assert str(excinfo.value) == "API Error: 403 Forbidden"
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.service_name == "codex"
+    assert excinfo.value.classification == "permission_denied"
+
+
 def test_runtime_package_text_output_reducer_raises_runtime_owned_credential_failure() -> (
     None
 ):
@@ -1900,6 +1981,38 @@ def test_runtime_package_text_output_reducer_raises_runtime_owned_credential_fai
             provider="claude",
         )
 
+    assert str(excinfo.value) == "credential failure from provider adapter"
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.service_name == "codex"
+    assert excinfo.value.classification == "operator_actionable_credential_failure"
+
+
+def test_runtime_package_text_output_reducer_raises_credential_failure_after_success_events() -> (
+    None
+):
+    turns: list[str] = []
+    token_counts: list[int] = []
+
+    with pytest.raises(AgentCredentialFailureError) as excinfo:
+        reduce_text_output_events(
+            (
+                PromptTokens(count=42_000),
+                AssistantTurn(text="first turn"),
+                CredentialFailure(
+                    raw_message="credential failure from provider adapter",
+                    service_name="codex",
+                    classification="operator_actionable_credential_failure",
+                    source_observations=(),
+                    status_code=401,
+                ),
+            ),
+            turns.append,
+            token_counts.append,
+            provider="claude",
+        )
+
+    assert turns == ["first turn"]
+    assert token_counts == [42_000]
     assert str(excinfo.value) == "credential failure from provider adapter"
     assert excinfo.value.status_code == 401
     assert excinfo.value.service_name == "codex"

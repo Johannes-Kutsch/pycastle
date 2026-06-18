@@ -26,25 +26,11 @@ def reduce_successful_text_output_events(
     on_turn: Callable[[str], None],
     on_tokens: Callable[[int], None] | None = None,
 ) -> str:
-    result_text: str | None = None
-    collected_turns: list[str] = []
+    reducer = _SuccessfulTextOutputReducer(on_turn, on_tokens)
     for event in events:
-        if isinstance(event, PromptTokens):
-            if on_tokens is not None:
-                on_tokens(event.count)
-            continue
-        if isinstance(event, UnsupportedTokens):
-            continue
-        if isinstance(event, AssistantTurn):
-            on_turn(event.text)
-            collected_turns.append(event.text)
-            continue
-        if isinstance(event, Result):
-            result_text = event.text
+        if reducer.consume(event):
             break
-    if result_text is not None:
-        return result_text
-    return "\n".join(collected_turns)
+    return reducer.finish()
 
 
 def reduce_text_output_events(
@@ -54,8 +40,8 @@ def reduce_text_output_events(
     *,
     provider: str,
 ) -> str:
-    event_iter = iter(events)
-    for event in event_iter:
+    reducer = _SuccessfulTextOutputReducer(on_turn, on_tokens)
+    for event in events:
         if isinstance(event, UsageLimit):
             raise UsageLimitError(
                 reset_time=event.reset_time,
@@ -84,21 +70,39 @@ def reduce_text_output_events(
                 classification=event.classification,
                 observations=event.source_observations,
             )
-        if isinstance(
-            event,
-            PromptTokens | UnsupportedTokens | AssistantTurn | Result,
-        ):
-            return reduce_successful_text_output_events(
-                _prepend_event(event, event_iter),
-                on_turn,
-                on_tokens,
-            )
-    return ""
+        if reducer.consume(event):
+            break
+    return reducer.finish()
 
 
-def _prepend_event(
-    first_event: ParsedTurn,
-    remaining_events: Iterable[ParsedTurn],
-) -> Iterable[ParsedTurn]:
-    yield first_event
-    yield from remaining_events
+class _SuccessfulTextOutputReducer:
+    def __init__(
+        self,
+        on_turn: Callable[[str], None],
+        on_tokens: Callable[[int], None] | None,
+    ) -> None:
+        self._on_turn = on_turn
+        self._on_tokens = on_tokens
+        self._result_text: str | None = None
+        self._collected_turns: list[str] = []
+
+    def consume(self, event: ParsedTurn) -> bool:
+        if isinstance(event, PromptTokens):
+            if self._on_tokens is not None:
+                self._on_tokens(event.count)
+            return False
+        if isinstance(event, UnsupportedTokens):
+            return False
+        if isinstance(event, AssistantTurn):
+            self._on_turn(event.text)
+            self._collected_turns.append(event.text)
+            return False
+        if isinstance(event, Result):
+            self._result_text = event.text
+            return True
+        return False
+
+    def finish(self) -> str:
+        if self._result_text is not None:
+            return self._result_text
+        return "\n".join(self._collected_turns)
