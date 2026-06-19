@@ -73,10 +73,6 @@ After all behaviors are green, look for refactor candidates:
 
 <output>
 
-### Output
-
-Before finishing, run `{{FEEDBACK_COMMANDS}}` to ensure all tests pass.
-
-{{IMPLEMENT_OUTPUT_RULES}}
+{{EXPECTED_OUTPUT_SHAPE}}
 
 </output>

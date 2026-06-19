@@ -23,6 +23,6 @@ Rules:
 
 <output>
 
-{{IMPLEMENT_OUTPUT_RULES}}
+{{EXPECTED_OUTPUT_SHAPE}}
 
 </output>

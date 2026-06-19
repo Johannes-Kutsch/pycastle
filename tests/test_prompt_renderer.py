@@ -338,10 +338,14 @@ def test_template_enum_has_fifteen_variants():
 
 def test_shipped_plan_prompt_requests_concise_blocked_entries():
     text = (_SHIPPED_PROMPTS_DIR / "coordination/plan.md").read_text(encoding="utf-8")
+    shape = (
+        _SHIPPED_PROMPTS_DIR / "coordination/_expected-output-shape-plan.md"
+    ).read_text(encoding="utf-8")
 
-    assert "Each entry should include only:" in text
-    assert "`number`: the blocked issue's number" in text
-    assert "`title`: the blocked issue's title" in text
+    assert "{{EXPECTED_OUTPUT_SHAPE}}" in text
+    assert "Each entry should include only:" in shape
+    assert "`number`: the blocked issue's number" in shape
+    assert "`title`: the blocked issue's title" in shape
     assert "`blocked_by`" not in text
     assert "`reason`" not in text
 
@@ -1806,7 +1810,12 @@ _DIVERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "coordination/diverge.md").read_text()
 
 
 def test_merge_prompt_uses_commit_message_contract():
-    assert "<commit_message>...</commit_message>" in _MERGE_PROMPT
+    merge_shape = (
+        _SHIPPED_PROMPTS_DIR / "coordination/_expected-output-shape-merge.md"
+    ).read_text(encoding="utf-8")
+
+    assert "{{EXPECTED_OUTPUT_SHAPE}}" in _MERGE_PROMPT
+    assert "<commit_message>...</commit_message>" in merge_shape
     assert "<promise>COMPLETE</promise>" not in _MERGE_PROMPT
 
 
@@ -1823,14 +1832,23 @@ def test_diverge_prompt_instructs_resolver_not_to_run_preflight_checks():
 
 
 def test_diverge_prompt_defines_complete_as_merge_committed_cleanly():
-    assert "<promise>COMPLETE</promise>" in _DIVERGE_PROMPT
-    complete_idx = _DIVERGE_PROMPT.index("<promise>COMPLETE</promise>")
-    context = _DIVERGE_PROMPT[max(0, complete_idx - 120) : complete_idx + 120].lower()
+    shape = (
+        _SHIPPED_PROMPTS_DIR / "coordination/_expected-output-shape-diverge.md"
+    ).read_text(encoding="utf-8")
+
+    assert "{{EXPECTED_OUTPUT_SHAPE}}" in _DIVERGE_PROMPT
+    assert "<promise>COMPLETE</promise>" in shape
+    complete_idx = shape.index("<promise>COMPLETE</promise>")
+    context = shape[max(0, complete_idx - 120) : complete_idx + 120].lower()
     assert "clean" in context
 
 
 def test_diverge_prompt_defines_failed_as_conflicts_cannot_be_resolved_textually():
-    assert "<promise>FAILED</promise>" in _DIVERGE_PROMPT
-    failed_idx = _DIVERGE_PROMPT.index("<promise>FAILED</promise>")
-    context = _DIVERGE_PROMPT[max(0, failed_idx - 120) : failed_idx + 120].lower()
+    shape = (
+        _SHIPPED_PROMPTS_DIR / "coordination/_expected-output-shape-diverge.md"
+    ).read_text(encoding="utf-8")
+
+    assert "<promise>FAILED</promise>" in shape
+    failed_idx = shape.index("<promise>FAILED</promise>")
+    context = shape[max(0, failed_idx - 120) : failed_idx + 120].lower()
     assert "textual" in context or "conflict" in context

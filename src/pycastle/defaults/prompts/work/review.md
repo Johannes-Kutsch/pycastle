@@ -60,6 +60,6 @@ Run `{{FEEDBACK_COMMANDS}}` to ensure nothing is broken.
 
 <output>
 
-{{IMPLEMENT_OUTPUT_RULES}}
+{{EXPECTED_OUTPUT_SHAPE}}
 
 </output>

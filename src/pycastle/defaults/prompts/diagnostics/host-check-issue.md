@@ -114,12 +114,6 @@ If you applied `{{READY_FOR_HUMAN_LABEL}}`, do **not** apply any slice-mode labe
 
 <output>
 
-Output the issue number and labels:
-
-```
-<issue>
-{"number": NUMBER, "labels": ["LABEL 1", "LABEL 2"]}
-</issue>
-```
+{{EXPECTED_OUTPUT_SHAPE}}
 
 </output>

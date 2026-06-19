@@ -184,6 +184,56 @@ class PromptRenderer:
         "WORK_SHARED_INSTRUCTIONS": PromptReference(
             "WORK_SHARED_INSTRUCTIONS", "work/_shared-instructions.md"
         ),
+        "EXPECTED_OUTPUT_SHAPE": PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "work/_expected-output-shape-implementation.md"
+        ),
+    }
+    _EXPECTED_OUTPUT_SHAPES: dict[PromptTemplate, PromptReference] = {
+        PromptTemplate.IMPLEMENT_BEHAVIOR: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "work/_expected-output-shape-behavior.md"
+        ),
+        PromptTemplate.IMPLEMENT_REFACTOR: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "work/_expected-output-shape-implementation.md"
+        ),
+        PromptTemplate.IMPLEMENT_DOCS: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "work/_expected-output-shape-implementation.md"
+        ),
+        PromptTemplate.REVIEW: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "work/_expected-output-shape-implementation.md"
+        ),
+        PromptTemplate.MERGE: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "coordination/_expected-output-shape-merge.md"
+        ),
+        PromptTemplate.PLAN: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "coordination/_expected-output-shape-plan.md"
+        ),
+        PromptTemplate.PREFLIGHT_ISSUE: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE",
+            "diagnostics/_expected-output-shape-preflight-issue.md",
+        ),
+        PromptTemplate.HOST_CHECK_ISSUE: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE",
+            "diagnostics/_expected-output-shape-host-check-issue.md",
+        ),
+        PromptTemplate.IMPROVE_SCAN: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-01-scan.md"
+        ),
+        PromptTemplate.IMPROVE_PRD: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-02-prd.md"
+        ),
+        PromptTemplate.IMPROVE_ISSUES: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-03-issues.md"
+        ),
+        PromptTemplate.DIVERGENCE_RESOLVE: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "coordination/_expected-output-shape-diverge.md"
+        ),
+        PromptTemplate.FAILURE_REPORT: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE",
+            "diagnostics/_expected-output-shape-failure-report.md",
+        ),
+        PromptTemplate.IMPROVE_NO_CANDIDATE: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-03-issues.md"
+        ),
     }
 
     def __init__(self, cfg: Config | PromptRendererConfig) -> None:
@@ -214,6 +264,7 @@ class PromptRenderer:
         *,
         allowed_args: dict[str, str],
         required: bool,
+        template: PromptTemplate | None = None,
     ) -> str | None:
         if prompt_file is None:
             if required:
@@ -235,19 +286,47 @@ class PromptRenderer:
         *,
         allowed_args: dict[str, str],
         cache: dict[str, str],
+        template: PromptTemplate | None = None,
         stack: tuple[str, ...] = (),
     ) -> str:
-        if key in cache:
-            return cache[key]
-        if key in stack:
-            cycle = " -> ".join((*stack, key))
+        if key == "EXPECTED_OUTPUT_SHAPE" and template is None:
+            raise PromptRenderError(
+                f"Template context is required to resolve placeholder {key!r}"
+            )
+
+        if key == "EXPECTED_OUTPUT_SHAPE":
+            if template is None:
+                raise PromptRenderError(
+                    f"Template context is required to resolve placeholder {key!r}"
+                )
+            stack_key = f"{template.filename}:{key}"
+        else:
+            stack_key = key
+        if stack_key in cache:
+            return cache[stack_key]
+        if stack_key in stack:
+            cycle = " -> ".join((*stack, stack_key))
             raise PromptRenderError(f"Prompt fragment cycle detected: {cycle}")
 
-        reference = self._SHARED_FILES[key]
+        if key == "EXPECTED_OUTPUT_SHAPE":
+            if template is None:
+                raise PromptRenderError(
+                    f"Template context is required to resolve placeholder {key!r}"
+                )
+            try:
+                reference = self._EXPECTED_OUTPUT_SHAPES[template]
+            except KeyError:
+                raise PromptRenderError(
+                    f"Expected-output-shape fragment is not configured for template "
+                    f"{template.filename!r}"
+                ) from None
+        else:
+            reference = self._SHARED_FILES[key]
+
         prompt_file = self._prompt_source.maybe_lookup_reference(reference)
         if prompt_file is None:
             if key in self._OPTIONAL_SHARED_FILES:
-                cache[key] = ""
+                cache[stack_key] = ""
                 return ""
             if key == "ISSUE_TRACKER":
                 raise PromptRenderError(
@@ -266,15 +345,17 @@ class PromptRenderer:
                 nested_key,
                 allowed_args=allowed_args,
                 cache=cache,
-                stack=(*stack, key),
+                template=template,
+                stack=(*stack, stack_key),
             )
         rendered = self._render_effective_file(
             prompt_file,
             allowed_args=resolved_args,
             required=True,
+            template=template,
         )
         assert rendered is not None
-        cache[key] = rendered
+        cache[stack_key] = rendered
         return rendered
 
     @staticmethod
@@ -321,6 +402,7 @@ class PromptRenderer:
                     key,
                     allowed_args=validation_args,
                     cache=shared_cache,
+                    template=template,
                 )
 
     async def render(
@@ -342,5 +424,6 @@ class PromptRenderer:
                 key,
                 allowed_args=all_args,
                 cache=shared_cache,
+                template=template,
             )
         return _render(preprocessed, all_args)

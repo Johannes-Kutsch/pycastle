@@ -26,6 +26,6 @@ Run `{{FEEDBACK_COMMANDS}}` after the refactor to confirm all existing tests sti
 
 <output>
 
-{{IMPLEMENT_OUTPUT_RULES}}
+{{EXPECTED_OUTPUT_SHAPE}}
 
 </output>

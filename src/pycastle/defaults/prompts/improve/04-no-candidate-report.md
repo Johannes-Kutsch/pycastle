@@ -109,8 +109,6 @@ _Filed by improve session [improve-{{IMPROVE_SHORT_SID}}]._
 
 <output>
 
-Output each filed issue number as `<issue>N</issue>`.
-
-Then emit `<promise>COMPLETE</promise>`.
+{{EXPECTED_OUTPUT_SHAPE}}
 
 </output>
