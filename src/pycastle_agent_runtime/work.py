@@ -454,7 +454,10 @@ async def _invoke_work_attempt(
             if next_run_session is None:
                 row.close("failed", shutdown_style="error")
                 return protocol_error_result, work_run_session
-            work_prompt = reprompt_message
+            latest_reprompt_message = request.output_adapter.protocol_reprompt_message()
+            if latest_reprompt_message is None:
+                raise
+            work_prompt = latest_reprompt_message
             work_run_session = next_run_session
     row.close("failed", shutdown_style="error")
     assert protocol_error_result is not None

@@ -367,6 +367,22 @@ class PromptRenderer:
             **{placeholder: "" for placeholder in scope_placeholders},
         }
 
+    def render_expected_output_shape(
+        self,
+        template: PromptTemplate,
+        scope_args: dict[str, str],
+    ) -> str:
+        from .scope_args import validated_scope_args_for_template
+
+        validated_scope_args_for_template(template, scope_args)
+        all_args = {**self._global_args, **scope_args}
+        return self._resolve_shared_file(
+            "EXPECTED_OUTPUT_SHAPE",
+            allowed_args=all_args,
+            cache={},
+            template=template,
+        )
+
     def _build_global_args(self, cfg: Config | PromptRendererConfig) -> dict[str, str]:
         checks = " && ".join(cmd for _, cmd in cfg.preflight_checks)
         return {

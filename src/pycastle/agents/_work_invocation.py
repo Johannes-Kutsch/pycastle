@@ -50,7 +50,8 @@ class WorkPromptFactory(Protocol):
 @dataclasses.dataclass(frozen=True)
 class ProtocolOutputAdapter:
     prompt_factory: WorkPromptFactory = dataclasses.field(repr=False)
-    reprompt_message: str
+    reprompt_message: str | Callable[[str | None], str]
+    _last_protocol_error: str | None = dataclasses.field(init=False, default=None)
 
     async def build_prompt(
         self,
@@ -73,19 +74,25 @@ class ProtocolOutputAdapter:
         session_uuid: str | None,
         on_provider_session_id: Callable[[str], None],
     ) -> AgentOutput:
-        return await runner.work(
-            role,
-            prompt,
-            run_kind=run_kind,
-            session_uuid=session_uuid,
-            on_provider_session_id=on_provider_session_id,
-        )
+        try:
+            return await runner.work(
+                role,
+                prompt,
+                run_kind=run_kind,
+                session_uuid=session_uuid,
+                on_provider_session_id=on_provider_session_id,
+            )
+        except AgentOutputProtocolError as exc:
+            object.__setattr__(self, "_last_protocol_error", str(exc))
+            raise
 
     def is_successful_result(self, result: AgentOutput) -> bool:
         return not isinstance(result, FailedOutput)
 
     def protocol_reprompt_message(self) -> str | None:
-        return self.reprompt_message
+        if isinstance(self.reprompt_message, str):
+            return self.reprompt_message
+        return self.reprompt_message(self._last_protocol_error)
 
     def protocol_error_result(self) -> AgentOutput | None:
         return FailedOutput(failure_class="protocol_error")

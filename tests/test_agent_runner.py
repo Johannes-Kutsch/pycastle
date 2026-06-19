@@ -19,6 +19,7 @@ from pycastle.agents.output_protocol import (
     CompletionOutput,
     FailedOutput,
     IssueOutput,
+    PlanParseError,
     PlannerOutput,
 )
 from pycastle.agents._work_invocation import (
@@ -4236,6 +4237,102 @@ def test_work_invocation_protocol_reprompt_success_records_metadata_on_successfu
         "provider-resume-runtime"
     )
     assert prepared_session.reprompt_session.successful_run_calls == 1
+
+
+def test_work_invocation_protocol_reprompt_for_planner_includes_parser_error_and_shape(
+    tmp_path: Path,
+):
+    prepared_session = _PreparedRunSessionWithRepromptStandIn(
+        initial_run_kind=RunKind.FRESH,
+        initial_provider_session_id="provider-fresh",
+        reprompt_run_kind=RunKind.RESUME,
+        reprompt_provider_session_id="provider-resume",
+    )
+    work_calls: list[tuple[RunKind, str | None, str]] = []
+
+    expected_output_shape = (
+        Path(__file__).parent.parent
+        / "src/pycastle/defaults/prompts/coordination/_expected-output-shape-plan.md"
+    ).read_text(encoding="utf-8")
+    expected_output_shape = expected_output_shape.replace(
+        "{{READY_FOR_AGENT_LABEL}}", "ready-for-agent"
+    )
+    parser_error = "Planner produced malformed JSON inside <plan> tag: boom"
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> PlannerOutput:
+            del role, on_provider_session_id
+            work_calls.append((run_kind, session_uuid, prompt))
+            if len(work_calls) == 1:
+                raise PlanParseError(parser_error)
+            return PlannerOutput(issues=[])
+
+    def reprompt_message(error: str | None) -> str:
+        return "\n".join(
+            [
+                "Your last response did not include the required protocol output.",
+                "Please review the task requirements and try again, making sure to include the required output tag.",
+                f"The parser reported the following error: {error}",
+                "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).",
+                expected_output_shape,
+            ]
+        )
+
+    async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
+        del container_exec
+        return "caller-rendered prompt text"
+
+    asyncio.run(
+        invoke_work(
+            WorkInvocationRequest(
+                name="Planner",
+                mount_path=_managed_mount(tmp_path),
+                role=AgentRole.PLANNER,
+                service=ClaudeService(),
+                model="sonnet",
+                effort="high",
+                output_adapter=ProtocolOutputAdapter(
+                    prompt_factory=prompt_factory,
+                    reprompt_message=reprompt_message,
+                ),
+                dependencies=WorkInvocationDependencies(
+                    container_workspace="/home/agent/workspace",
+                    timeout_retries=0,
+                    stage_key_for_role=lambda role: role.value,
+                    prepare_session=lambda _request: prepared_session,
+                    build_session=lambda *_args: _FakeSession(),
+                    build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+                    get_git_identity=lambda: ("Test User", "test@example.com"),
+                ),
+            )
+        )
+    )
+
+    assert len(work_calls) == 2
+    assert work_calls[0][0] is RunKind.FRESH
+    assert work_calls[1][0] is RunKind.RESUME
+    reprompt_prompt = work_calls[1][2]
+    assert parser_error in reprompt_prompt
+    assert expected_output_shape in reprompt_prompt
+    assert "raw JSON object in a `<plan>` tag" in reprompt_prompt
 
 
 def test_work_invocation_protocol_reprompt_exhaustion_raises_protocol_error_and_closes_failed_status(

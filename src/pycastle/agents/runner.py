@@ -471,6 +471,28 @@ class AgentRunner:
                 exec_fn=container_exec,
             )
 
+        reprompt_message: str | Callable[[str | None], str]
+        if request.role is AgentRole.PLANNER:
+
+            def planner_reprompt_message(parser_error: str | None) -> str:
+                expected_shape = self._renderer.render_expected_output_shape(
+                    invocation.template,
+                    invocation.scope_args,
+                )
+                return (
+                    "Your last response did not include the required protocol output.\n"
+                    "Please review the task requirements and try again, making sure to include the required output tag.\n"
+                    "The parser reported the following error:\n"
+                    f"{parser_error if parser_error is not None else 'unknown'}\n"
+                    "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).\n"
+                    "Use this Planner output shape exactly:\n"
+                    f"{expected_shape}"
+                )
+
+            reprompt_message = planner_reprompt_message
+        else:
+            reprompt_message = REPROMPT_MESSAGE
+
         from pycastle_agent_runtime.work import invoke_work
 
         run_session = RuntimeRunSessionPlan(
@@ -492,7 +514,7 @@ class AgentRunner:
                 effort=request.effort,
                 output_adapter=ProtocolOutputAdapter(
                     prompt_factory=prompt_factory,
-                    reprompt_message=REPROMPT_MESSAGE,
+                    reprompt_message=reprompt_message,
                 ),
                 dependencies=dependencies,
                 status_display=request.status_display,
