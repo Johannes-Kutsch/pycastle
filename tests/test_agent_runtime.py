@@ -1803,14 +1803,85 @@ def test_runtime_parsed_event_reducer_protocol_surface_returns_early_output_and_
         extract_early_output=lambda turn: (
             CompletionOutput() if "<promise>COMPLETE</promise>" in turn else None
         ),
-        extract_final_output=lambda text: CompletionOutput(
-            issue_numbers=(len(text),)
-        ),
+        extract_final_output=lambda text: CompletionOutput(issue_numbers=(len(text),)),
     )
 
     assert result == CompletionOutput()
     assert turns == ["working", "<promise>COMPLETE</promise>"]
     assert consumed_events == ["first", "complete"]
+
+
+def test_runtime_parsed_event_reducer_protocol_surface_passes_result_text_to_final_extractor() -> (
+    None
+):
+    seen_final_text: list[str] = []
+
+    def extract_final_output(text: str) -> CompletionOutput:
+        seen_final_text.append(text)
+        return CompletionOutput(issue_numbers=(len(text),))
+
+    result = parsed_event_reducer.reduce_successful_text_output_events(
+        (
+            AssistantTurn(text="working"),
+            Result(text="final result envelope"),
+        ),
+        lambda _turn: None,
+        extract_early_output=lambda _turn: None,
+        extract_final_output=extract_final_output,
+    )
+
+    assert result == CompletionOutput(issue_numbers=(21,))
+    assert seen_final_text == ["final result envelope"]
+
+
+def test_runtime_parsed_event_reducer_protocol_surface_passes_joined_transcript_to_final_extractor_without_result() -> (
+    None
+):
+    seen_final_text: list[str] = []
+
+    def extract_final_output(text: str) -> CompletionOutput:
+        seen_final_text.append(text)
+        return CompletionOutput(issue_numbers=(len(text),))
+
+    result = parsed_event_reducer.reduce_successful_text_output_events(
+        (
+            AssistantTurn(text="first turn"),
+            AssistantTurn(text="second turn"),
+        ),
+        lambda _turn: None,
+        extract_early_output=lambda _turn: None,
+        extract_final_output=extract_final_output,
+    )
+
+    assert result == CompletionOutput(issue_numbers=(22,))
+    assert seen_final_text == ["first turn\nsecond turn"]
+
+
+def test_runtime_parsed_event_reducer_protocol_surface_passes_consumed_transcript_to_post_processing() -> (
+    None
+):
+    seen_post_process: list[tuple[CompletionOutput, str]] = []
+
+    def post_process_output(
+        output: CompletionOutput, transcript: str
+    ) -> CompletionOutput:
+        seen_post_process.append((output, transcript))
+        return CompletionOutput(issue_numbers=(len(transcript),))
+
+    result = parsed_event_reducer.reduce_successful_text_output_events(
+        (
+            AssistantTurn(text="first turn"),
+            AssistantTurn(text="second turn"),
+            Result(text="final result envelope"),
+        ),
+        lambda _turn: None,
+        extract_early_output=lambda _turn: None,
+        extract_final_output=lambda _text: CompletionOutput(),
+        post_process_output=post_process_output,
+    )
+
+    assert result == CompletionOutput(issue_numbers=(22,))
+    assert seen_post_process == [(CompletionOutput(), "first turn\nsecond turn")]
 
 
 def test_runtime_package_text_output_reducer_updates_prompt_tokens_and_ignores_unsupported_tokens() -> (
@@ -1923,6 +1994,44 @@ def test_runtime_package_text_output_reducer_raises_usage_limit_after_success_ev
     assert token_counts == [42_000]
     assert excinfo.value.raw_message == "rate limited"
     assert excinfo.value.provider == "codex"
+
+
+def test_runtime_package_text_output_reducer_protocol_surface_raises_usage_limit_before_final_extraction() -> (
+    None
+):
+    final_called = False
+    post_process_called = False
+
+    def extract_final_output(text: str) -> CompletionOutput:
+        nonlocal final_called
+        final_called = True
+        return CompletionOutput(issue_numbers=(len(text),))
+
+    def post_process_output(
+        output: CompletionOutput, transcript: str
+    ) -> CompletionOutput:
+        nonlocal post_process_called
+        post_process_called = True
+        return CompletionOutput(issue_numbers=(len(transcript),))
+
+    with pytest.raises(UsageLimitError) as excinfo:
+        reduce_text_output_events(
+            (
+                PromptTokens(count=42_000),
+                AssistantTurn(text="first turn"),
+                UsageLimit(reset_time=None, raw_message="rate limited"),
+            ),
+            lambda _turn: None,
+            provider="codex",
+            extract_early_output=lambda _turn: None,
+            extract_final_output=extract_final_output,
+            post_process_output=post_process_output,
+        )
+
+    assert excinfo.value.raw_message == "rate limited"
+    assert excinfo.value.provider == "codex"
+    assert final_called is False
+    assert post_process_called is False
 
 
 def test_runtime_parsed_event_reducer_failure_surface_raises_transient_agent_error() -> (

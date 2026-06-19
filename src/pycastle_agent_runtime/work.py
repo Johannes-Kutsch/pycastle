@@ -229,12 +229,18 @@ def reduce_text_output_events(
     on_tokens: Callable[[int], None] | None = None,
     *,
     provider: str,
-) -> str:
+    extract_early_output: Callable[[str], WorkResultT | None] | None = None,
+    extract_final_output: Callable[[str], WorkResultT] | None = None,
+    post_process_output: Callable[[WorkResultT, str], WorkResultT] | None = None,
+) -> WorkResultT | str:
     return reduce_text_output_events_from_parsed_events(
         events,
         on_turn,
         on_tokens,
         provider=provider,
+        extract_early_output=extract_early_output,
+        extract_final_output=extract_final_output,
+        post_process_output=post_process_output,
     )
 
 
