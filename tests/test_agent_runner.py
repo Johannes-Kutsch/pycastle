@@ -4983,6 +4983,133 @@ def test_agent_runner_run_planner_protocol_reprompt_uses_parser_error_and_expect
     )
 
 
+@pytest.mark.parametrize(
+    ("template", "scope_args", "error_text", "expected_snippets"),
+    [
+        (
+            PromptTemplate.IMPROVE_SCAN,
+            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            "Agent produced no <promise>COMPLETE</promise> or <promise>NO-CANDIDATE</promise> tag.",
+            (
+                "<promise>COMPLETE</promise>",
+                "<promise>NO-CANDIDATE</promise>",
+            ),
+        ),
+        (
+            PromptTemplate.IMPROVE_PRD,
+            {
+                "IMPROVE_SHORT_SID": "abc123",
+                "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+            },
+            "Malformed JSON inside <issue> tag: boom",
+            (
+                '<issue>{"number": N, "labels": []}</issue>',
+                "<promise>COMPLETE</promise>",
+            ),
+        ),
+        (
+            PromptTemplate.IMPROVE_ISSUES,
+            {
+                "IMPROVE_SHORT_SID": "abc123",
+                "ISSUE_NUMBER": "77",
+                "ISSUE_TITLE": "Improve PRD",
+                "ISSUE_BODY": "PRD body",
+                "ISSUE_COMMENTS": "No comments.",
+            },
+            "Agent produced no <promise>COMPLETE</promise> or <promise>NO-CANDIDATE</promise> tag.",
+            (
+                "Output each filed issue number as `<issue>N</issue>`.",
+                "<promise>COMPLETE</promise>",
+            ),
+        ),
+        (
+            PromptTemplate.IMPROVE_NO_CANDIDATE,
+            {
+                "IMPROVE_SHORT_SID": "abc123",
+                "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+            },
+            "Agent produced no <promise>COMPLETE</promise> or <promise>NO-CANDIDATE</promise> tag.",
+            (
+                "Output each filed issue number as `<issue>N</issue>`.",
+                "<promise>COMPLETE</promise>",
+            ),
+        ),
+    ],
+)
+def test_agent_runner_run_improve_protocol_reprompt_uses_phase_specific_expected_output_shape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    template: PromptTemplate,
+    scope_args: dict[str, str],
+    error_text: str,
+    expected_snippets: tuple[str, str],
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
+
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[CompletionOutput | IssueOutput],
+    ) -> CompletionOutput:
+        captured["request"] = request
+        return CompletionOutput()
+
+    class _ProtocolErrorRunner:
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id,
+        ) -> CompletionOutput:
+            del role, prompt, run_kind, session_uuid, on_provider_session_id
+            raise AgentOutputProtocolError(error_text)
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Improve Agent",
+                template=template,
+                scope_args=scope_args,
+                mount_path=_managed_mount(tmp_path),
+                role=AgentRole.IMPROVE,
+            )
+        )
+    )
+
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[CompletionOutput | IssueOutput],
+        captured["request"],
+    )
+
+    with pytest.raises(AgentOutputProtocolError, match=error_text):
+        asyncio.run(
+            work_request.output_adapter.invoke(
+                runner=cast(ContainerRunner, _ProtocolErrorRunner()),
+                role=AgentRole.IMPROVE,
+                prompt="unused",
+                run_kind=RunKind.FRESH,
+                session_uuid=None,
+                on_provider_session_id=lambda _provider_session_id: None,
+            )
+        )
+
+    reprompt = work_request.output_adapter.protocol_reprompt_message()
+    assert reprompt is not None
+    assert "Use this Improve output shape exactly:" in reprompt
+    assert error_text in reprompt
+    for snippet in expected_snippets:
+        assert snippet in reprompt
+    assert (
+        runner._renderer.render_expected_output_shape(template, scope_args) in reprompt
+    )
+
+
 def test_build_work_dependencies_marks_generic_permanent_service_exhaustion(
     tmp_path: Path,
 ) -> None:

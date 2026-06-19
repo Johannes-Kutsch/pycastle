@@ -41,7 +41,7 @@ from ..prompts.dispatch import (
     PromptInvocation,
     render_prompt_invocation,
 )
-from ..prompts.pipeline import PromptRenderer
+from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
 from ..session.agent import RunSessionPlan
 from ..session._provider_session_plan import ProviderRunStatePlan
@@ -69,6 +69,25 @@ REPROMPT_MESSAGE = (
     "Please review the task requirements and try again, making sure to "
     "include the required output tag."
 )
+
+
+def _protocol_reprompt_message_with_expected_shape(
+    *,
+    parser_error: str | None,
+    expected_shape: str,
+    retry_instruction: str | None = None,
+    shape_label: str = "Use this output shape exactly:",
+) -> str:
+    lines = [
+        "Your last response did not include the required protocol output.",
+        "Please review the task requirements and try again, making sure to include the required output tag.",
+        "The parser reported the following error:",
+        parser_error if parser_error is not None else "unknown",
+    ]
+    if retry_instruction is not None:
+        lines.append(retry_instruction)
+    lines.extend([shape_label, expected_shape])
+    return "\n".join(lines)
 
 
 def _stage_key_for_role(role: AgentRole) -> str | None:
@@ -479,17 +498,36 @@ class AgentRunner:
                     invocation.template,
                     invocation.scope_args,
                 )
-                return (
-                    "Your last response did not include the required protocol output.\n"
-                    "Please review the task requirements and try again, making sure to include the required output tag.\n"
-                    "The parser reported the following error:\n"
-                    f"{parser_error if parser_error is not None else 'unknown'}\n"
-                    "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).\n"
-                    "Use this Planner output shape exactly:\n"
-                    f"{expected_shape}"
+                return _protocol_reprompt_message_with_expected_shape(
+                    parser_error=parser_error,
+                    expected_shape=expected_shape,
+                    retry_instruction=(
+                        "On retry, return a raw JSON object in a `<plan>` tag "
+                        "(do not quote or escape the JSON)."
+                    ),
+                    shape_label="Use this Planner output shape exactly:",
                 )
 
             reprompt_message = planner_reprompt_message
+        elif invocation.template in {
+            PromptTemplate.IMPROVE_SCAN,
+            PromptTemplate.IMPROVE_PRD,
+            PromptTemplate.IMPROVE_ISSUES,
+            PromptTemplate.IMPROVE_NO_CANDIDATE,
+        }:
+
+            def improve_reprompt_message(parser_error: str | None) -> str:
+                expected_shape = self._renderer.render_expected_output_shape(
+                    invocation.template,
+                    invocation.scope_args,
+                )
+                return _protocol_reprompt_message_with_expected_shape(
+                    parser_error=parser_error,
+                    expected_shape=expected_shape,
+                    shape_label="Use this Improve output shape exactly:",
+                )
+
+            reprompt_message = improve_reprompt_message
         else:
             reprompt_message = REPROMPT_MESSAGE
 
