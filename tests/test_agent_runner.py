@@ -4912,6 +4912,77 @@ def test_agent_runner_run_builds_runtime_work_invocation_with_agent_output_proto
     assert work_request.allow_non_typed_resume_retry is True
 
 
+def test_agent_runner_run_planner_protocol_reprompt_uses_parser_error_and_expected_output_shape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
+
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[PlannerOutput],
+    ) -> PlannerOutput:
+        captured["request"] = request
+        return PlannerOutput(issues=[])
+
+    class _ProtocolErrorRunner:
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id,
+        ) -> PlannerOutput:
+            del role, prompt, run_kind, session_uuid, on_provider_session_id
+            raise PlanParseError(
+                "Planner produced malformed JSON inside <plan> tag: boom"
+            )
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Planner",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=_managed_mount(tmp_path),
+                role=AgentRole.PLANNER,
+            )
+        )
+    )
+
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[PlannerOutput],
+        captured["request"],
+    )
+
+    with pytest.raises(PlanParseError, match="malformed JSON inside <plan> tag: boom"):
+        asyncio.run(
+            work_request.output_adapter.invoke(
+                runner=cast(ContainerRunner, _ProtocolErrorRunner()),
+                role=AgentRole.PLANNER,
+                prompt="unused",
+                run_kind=RunKind.FRESH,
+                session_uuid=None,
+                on_provider_session_id=lambda _provider_session_id: None,
+            )
+        )
+
+    reprompt = work_request.output_adapter.protocol_reprompt_message()
+    assert reprompt is not None
+    assert "Planner produced malformed JSON inside <plan> tag: boom" in reprompt
+    assert "raw JSON object in a `<plan>` tag" in reprompt
+    assert (
+        runner._renderer.render_expected_output_shape(_PLAN_TEMPLATE, _PLAN_SCOPE_ARGS)
+        in reprompt
+    )
+
+
 def test_build_work_dependencies_marks_generic_permanent_service_exhaustion(
     tmp_path: Path,
 ) -> None:

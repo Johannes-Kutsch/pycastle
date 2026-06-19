@@ -291,6 +291,15 @@ def test_process_stream_planner_handles_json_with_leading_and_trailing_whitespac
     assert result.issues == [{"number": 2, "title": "A"}]
 
 
+def test_process_stream_planner_rejects_escaped_json_string_inside_plan_tag():
+    payload = json.dumps(
+        '{"issues": [{"number": 2, "title": "Escaped string"}], "blocked": []}'
+    )
+    lines = [_result_line(f"<plan>{payload}</plan>")]
+    with pytest.raises(PlanParseError, match=r"Plan JSON must be an object, got str\."):
+        process_stream(lines, on_turn=lambda t: None, role=AgentRole.PLANNER)
+
+
 def test_process_stream_planner_picks_last_plan_block_when_stray_tag_in_prose():
     payload = json.dumps(
         {
