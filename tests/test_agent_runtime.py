@@ -21,6 +21,7 @@ from pycastle.agents._work_invocation import (
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole
 from pycastle_agent_runtime import parsed_event_reducer
+from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
 from pycastle_agent_runtime.provider_session_adapter import (
     ProviderSessionPlanningFacts,
     ProviderSessionPlanningRequest,
@@ -1836,6 +1837,27 @@ def test_runtime_parsed_event_reducer_success_surface_returns_empty_string_for_n
     assert result == ""
 
 
+def test_runtime_parsed_event_reducer_failure_surface_raises_usage_limit_error() -> (
+    None
+):
+    reset_time = datetime(2026, 6, 19, 12, 0, 0)
+
+    with pytest.raises(UsageLimitError) as excinfo:
+        parsed_event_reducer.reduce_provider_failure(
+            UsageLimit(
+                reset_time=reset_time,
+                raw_message="provider rate limit exceeded",
+                is_permanent=True,
+            ),
+            provider="codex",
+        )
+
+    assert excinfo.value.reset_time == reset_time
+    assert excinfo.value.raw_message == "provider rate limit exceeded"
+    assert excinfo.value.is_permanent is True
+    assert excinfo.value.provider == "codex"
+
+
 def test_runtime_package_text_output_reducer_raises_runtime_owned_usage_limit() -> None:
     with pytest.raises(UsageLimitError) as excinfo:
         reduce_text_output_events(
@@ -1870,6 +1892,96 @@ def test_runtime_package_text_output_reducer_raises_usage_limit_after_success_ev
     assert token_counts == [42_000]
     assert excinfo.value.raw_message == "rate limited"
     assert excinfo.value.provider == "codex"
+
+
+def test_runtime_parsed_event_reducer_failure_surface_raises_transient_agent_error() -> (
+    None
+):
+    with pytest.raises(TransientAgentError) as excinfo:
+        parsed_event_reducer.reduce_provider_failure(
+            TransientError(
+                status_code=529,
+                raw_message="provider overloaded",
+            ),
+            provider="codex",
+        )
+
+    assert str(excinfo.value) == "provider overloaded"
+    assert excinfo.value.status_code == 529
+
+
+def test_runtime_parsed_event_reducer_failure_surface_raises_hard_agent_error() -> None:
+    observations = (
+        ProviderErrorObservation(
+            service_name="codex",
+            raw_provider_text="provider rejected request",
+            source_stream="stderr",
+            status_code=403,
+            error_name="permission_denied",
+        ),
+    )
+
+    with pytest.raises(HardAgentError) as excinfo:
+        parsed_event_reducer.reduce_provider_failure(
+            HardError(
+                status_code=403,
+                raw_message="provider rejected request",
+                classification="permission_denied",
+                observations=observations,
+            ),
+            provider="codex",
+        )
+
+    assert str(excinfo.value) == "provider rejected request"
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.classification == "permission_denied"
+    assert excinfo.value.observations == observations
+    assert excinfo.value.service_name == "codex"
+
+
+def test_runtime_parsed_event_reducer_failure_surface_keeps_empty_provider_identity() -> (
+    None
+):
+    with pytest.raises(HardAgentError) as excinfo:
+        parsed_event_reducer.reduce_provider_failure(
+            HardError(
+                status_code=400,
+                raw_message="provider rejected request",
+            )
+        )
+
+    assert excinfo.value.service_name == ""
+
+
+def test_runtime_parsed_event_reducer_failure_surface_raises_credential_failure() -> (
+    None
+):
+    observations = (
+        ProviderErrorObservation(
+            service_name="codex",
+            raw_provider_text="run `codex login`",
+            source_stream="stderr",
+            status_code=401,
+        ),
+    )
+
+    with pytest.raises(AgentCredentialFailureError) as excinfo:
+        parsed_event_reducer.reduce_provider_failure(
+            CredentialFailure(
+                raw_message="Codex authentication missing",
+                service_name="codex",
+                classification="operator_actionable_credential_failure",
+                source_observations=observations,
+                status_code=401,
+            ),
+            provider="claude",
+        )
+
+    assert str(excinfo.value) == "Codex authentication missing"
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.classification == "operator_actionable_credential_failure"
+    assert excinfo.value.observations == observations
+    assert excinfo.value.service_name == "codex"
 
 
 def test_runtime_package_text_output_reducer_raises_runtime_owned_transient_error() -> (

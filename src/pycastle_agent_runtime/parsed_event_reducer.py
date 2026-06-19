@@ -21,6 +21,40 @@ from .errors import (
 )
 
 
+def reduce_provider_failure(
+    event: UsageLimit | TransientError | HardError | CredentialFailure,
+    *,
+    provider: str | None = None,
+) -> None:
+    if isinstance(event, UsageLimit):
+        raise UsageLimitError(
+            reset_time=event.reset_time,
+            raw_message=event.raw_message,
+            provider=provider,
+            is_permanent=event.is_permanent,
+        )
+    if isinstance(event, TransientError):
+        raise TransientAgentError(
+            message=event.raw_message,
+            status_code=event.status_code,
+        )
+    if isinstance(event, HardError):
+        raise HardAgentError(
+            message=event.raw_message,
+            status_code=event.status_code,
+            service_name=provider or "",
+            classification=event.classification,
+            observations=event.observations,
+        )
+    raise AgentCredentialFailureError(
+        message=event.raw_message,
+        status_code=event.status_code,
+        service_name=event.service_name,
+        classification=event.classification,
+        observations=event.source_observations,
+    )
+
+
 def reduce_successful_text_output_events(
     events: Iterable[ParsedTurn],
     on_turn: Callable[[str], None],
@@ -42,34 +76,10 @@ def reduce_text_output_events(
 ) -> str:
     reducer = _SuccessfulTextOutputReducer(on_turn, on_tokens)
     for event in events:
-        if isinstance(event, UsageLimit):
-            raise UsageLimitError(
-                reset_time=event.reset_time,
-                raw_message=event.raw_message,
-                provider=provider,
-                is_permanent=event.is_permanent,
-            )
-        if isinstance(event, TransientError):
-            raise TransientAgentError(
-                message=event.raw_message,
-                status_code=event.status_code,
-            )
-        if isinstance(event, HardError):
-            raise HardAgentError(
-                message=event.raw_message,
-                status_code=event.status_code,
-                service_name=provider,
-                classification=event.classification,
-                observations=event.observations,
-            )
-        if isinstance(event, CredentialFailure):
-            raise AgentCredentialFailureError(
-                message=event.raw_message,
-                status_code=event.status_code,
-                service_name=event.service_name,
-                classification=event.classification,
-                observations=event.source_observations,
-            )
+        if isinstance(
+            event, (UsageLimit, TransientError, HardError, CredentialFailure)
+        ):
+            reduce_provider_failure(event, provider=provider)
         if reducer.consume(event):
             break
     return reducer.finish()

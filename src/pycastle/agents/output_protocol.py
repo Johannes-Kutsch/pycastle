@@ -4,6 +4,19 @@ import re
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
+from pycastle_agent_runtime.contracts import (
+    CredentialFailure as RuntimeCredentialFailure,
+    HardError as RuntimeHardError,
+    TransientError as RuntimeTransientError,
+    UsageLimit as RuntimeUsageLimit,
+)
+from pycastle_agent_runtime import parsed_event_reducer as runtime_parsed_event_reducer
+from pycastle_agent_runtime.errors import (
+    AgentCredentialFailureError as RuntimeAgentCredentialFailureError,
+    HardAgentError as RuntimeHardAgentError,
+    TransientAgentError as RuntimeTransientAgentError,
+    UsageLimitError as RuntimeUsageLimitError,
+)
 from pycastle_agent_runtime.roles import AgentRole
 
 if TYPE_CHECKING:
@@ -393,6 +406,51 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
 assert len(_HANDLERS) == len(AgentRole)
 
 
+def _raise_provider_failure(
+    event: (
+        RuntimeUsageLimit
+        | RuntimeTransientError
+        | RuntimeHardError
+        | RuntimeCredentialFailure
+    ),
+    *,
+    provider: str | None,
+) -> None:
+    try:
+        runtime_parsed_event_reducer.reduce_provider_failure(
+            event,
+            provider=provider,
+        )
+    except RuntimeUsageLimitError as err:
+        raise UsageLimitError(
+            reset_time=err.reset_time,
+            raw_message=err.raw_message,
+            provider=err.provider,
+            is_permanent=err.is_permanent,
+        ) from err
+    except RuntimeTransientAgentError as err:
+        raise TransientAgentError(
+            message=str(err),
+            status_code=err.status_code,
+        ) from err
+    except RuntimeAgentCredentialFailureError as err:
+        raise AgentCredentialFailureError(
+            message=str(err),
+            status_code=err.status_code,
+            service_name=err.service_name,
+            classification=err.classification,
+            observations=err.observations,
+        ) from err
+    except RuntimeHardAgentError as err:
+        raise HardAgentError(
+            message=str(err),
+            status_code=err.status_code,
+            service_name=err.service_name,
+            classification=err.classification,
+            observations=err.observations,
+        ) from err
+
+
 def _inject_behaviors(result: AgentOutput, text: str) -> AgentOutput:
     if not isinstance(result, CommitMessageOutput):
         return result
@@ -422,34 +480,10 @@ def process_stream_from_events(
     result_text: str | None = None
     collected_turns: list[str] = []
     for event in events:
-        if isinstance(event, UsageLimit):
-            raise UsageLimitError(
-                reset_time=event.reset_time,
-                raw_message=event.raw_message,
-                provider=provider,
-                is_permanent=event.is_permanent,
-            )
-        elif isinstance(event, TransientError):
-            raise TransientAgentError(
-                message=event.raw_message,
-                status_code=event.status_code,
-            )
-        elif isinstance(event, HardError):
-            raise HardAgentError(
-                message=event.raw_message,
-                status_code=event.status_code,
-                service_name=provider or "",
-                classification=event.classification,
-                observations=event.observations,
-            )
-        elif isinstance(event, CredentialFailure):
-            raise AgentCredentialFailureError(
-                message=event.raw_message,
-                status_code=event.status_code,
-                service_name=event.service_name,
-                classification=event.classification,
-                observations=event.source_observations,
-            )
+        if isinstance(
+            event, (UsageLimit, TransientError, HardError, CredentialFailure)
+        ):
+            _raise_provider_failure(event, provider=provider)
         elif isinstance(event, PromptTokens):
             if on_tokens is not None:
                 on_tokens(event.count)
