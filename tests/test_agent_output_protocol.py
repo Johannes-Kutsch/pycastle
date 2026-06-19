@@ -25,14 +25,17 @@ from pycastle.agents.output_protocol import (
 from pycastle.errors import (
     AgentCredentialFailureError,
     HardAgentError,
+    TransientAgentError,
     UsageLimitError,
 )
+from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
 from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
     HardError,
     PromptTokens,
     Result,
+    TransientError,
     UnsupportedTokens,
     UsageLimit,
 )
@@ -1143,30 +1146,94 @@ def test_process_stream_from_events_propagates_raw_message_to_usage_limit_error(
     assert exc_info.value.raw_message == "hit usage limit, no reset"
 
 
+def test_process_stream_from_events_preserves_usage_limit_provider_and_permanence():
+    reset_time = datetime(2026, 6, 19, 12, 0, 0, tzinfo=timezone.utc)
+    events = [
+        UsageLimit(
+            reset_time=reset_time,
+            raw_message="provider rate limit exceeded",
+            is_permanent=True,
+        )
+    ]
+
+    with pytest.raises(UsageLimitError) as exc_info:
+        process_stream_from_events(
+            iter(events),
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            provider="codex",
+        )
+
+    assert exc_info.value.reset_time == reset_time
+    assert exc_info.value.raw_message == "provider rate limit exceeded"
+    assert exc_info.value.is_permanent is True
+    assert exc_info.value.provider == "codex"
+
+
+def test_process_stream_from_events_raises_transient_agent_error():
+    events = [TransientError(status_code=529, raw_message="provider overloaded")]
+
+    with pytest.raises(TransientAgentError) as exc_info:
+        process_stream_from_events(
+            iter(events),
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            provider="codex",
+        )
+
+    assert str(exc_info.value) == "provider overloaded"
+    assert exc_info.value.status_code == 529
+
+
 def test_process_stream_from_events_raises_agent_credential_failure_error():
+    observations = (
+        ProviderErrorObservation(
+            service_name="codex",
+            raw_provider_text="run `codex login` on the host",
+            source_stream="stderr",
+            status_code=401,
+        ),
+    )
     events = [
         CredentialFailure(
             raw_message="Codex authentication missing: run `codex login` on the host.",
             service_name="codex",
-            source_observations=(),
+            source_observations=observations,
             status_code=401,
+            classification="operator_actionable_credential_failure",
         )
     ]
 
     with pytest.raises(AgentCredentialFailureError) as exc_info:
         process_stream_from_events(
-            iter(events), on_turn=lambda t: None, role=AgentRole.IMPLEMENTER
+            iter(events),
+            on_turn=lambda t: None,
+            role=AgentRole.IMPLEMENTER,
+            provider="claude",
         )
 
     assert exc_info.value.service_name == "codex"
     assert exc_info.value.status_code == 401
+    assert exc_info.value.classification == "operator_actionable_credential_failure"
+    assert exc_info.value.observations == observations
 
 
 def test_process_stream_from_events_preserves_opencode_service_name_for_hard_error():
+    observations = (
+        ProviderErrorObservation(
+            service_name="opencode",
+            raw_provider_text="Model not found: opencode-go/deepseek-v4-flash",
+            source_stream="stderr",
+            status_code=400,
+            error_name="model_not_found",
+        ),
+    )
     events = [
         HardError(
             status_code=400,
             raw_message="Model not found: opencode-go/deepseek-v4-flash",
+            classification="model_not_found",
+            observations=observations,
         )
     ]
 
@@ -1180,6 +1247,8 @@ def test_process_stream_from_events_preserves_opencode_service_name_for_hard_err
 
     assert exc_info.value.service_name == "opencode"
     assert exc_info.value.status_code == 400
+    assert exc_info.value.classification == "model_not_found"
+    assert exc_info.value.observations == observations
 
 
 def test_process_stream_from_events_does_not_default_missing_provider_to_claude():
