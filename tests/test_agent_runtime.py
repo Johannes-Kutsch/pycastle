@@ -1945,12 +1945,15 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_usage_limit_error()
     reset_time = datetime(2026, 6, 19, 12, 0, 0)
 
     with pytest.raises(UsageLimitError) as excinfo:
-        parsed_event_reducer.reduce_provider_failure(
-            UsageLimit(
-                reset_time=reset_time,
-                raw_message="provider rate limit exceeded",
-                is_permanent=True,
+        parsed_event_reducer.reduce_text_output_events(
+            (
+                UsageLimit(
+                    reset_time=reset_time,
+                    raw_message="provider rate limit exceeded",
+                    is_permanent=True,
+                ),
             ),
+            lambda _turn: None,
             provider="codex",
         )
 
@@ -1960,26 +1963,14 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_usage_limit_error()
     assert excinfo.value.provider == "codex"
 
 
-def test_runtime_package_text_output_reducer_raises_runtime_owned_usage_limit() -> None:
-    with pytest.raises(UsageLimitError) as excinfo:
-        reduce_text_output_events(
-            (UsageLimit(reset_time=None, raw_message="rate limited"),),
-            lambda _turn: None,
-            provider="codex",
-        )
-
-    assert excinfo.value.raw_message == "rate limited"
-    assert excinfo.value.provider == "codex"
-
-
-def test_runtime_package_text_output_reducer_raises_usage_limit_after_success_events() -> (
+def test_runtime_parsed_event_reducer_failure_surface_raises_usage_limit_after_success_events() -> (
     None
 ):
     turns: list[str] = []
     token_counts: list[int] = []
 
     with pytest.raises(UsageLimitError) as excinfo:
-        reduce_text_output_events(
+        parsed_event_reducer.reduce_text_output_events(
             (
                 PromptTokens(count=42_000),
                 AssistantTurn(text="first turn"),
@@ -1996,7 +1987,7 @@ def test_runtime_package_text_output_reducer_raises_usage_limit_after_success_ev
     assert excinfo.value.provider == "codex"
 
 
-def test_runtime_package_text_output_reducer_protocol_surface_raises_usage_limit_before_final_extraction() -> (
+def test_runtime_parsed_event_reducer_failure_surface_raises_usage_limit_before_final_extraction() -> (
     None
 ):
     final_called = False
@@ -2015,7 +2006,7 @@ def test_runtime_package_text_output_reducer_protocol_surface_raises_usage_limit
         return CompletionOutput(issue_numbers=(len(transcript),))
 
     with pytest.raises(UsageLimitError) as excinfo:
-        reduce_text_output_events(
+        parsed_event_reducer.reduce_text_output_events(
             (
                 PromptTokens(count=42_000),
                 AssistantTurn(text="first turn"),
@@ -2038,11 +2029,14 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_transient_agent_err
     None
 ):
     with pytest.raises(TransientAgentError) as excinfo:
-        parsed_event_reducer.reduce_provider_failure(
-            TransientError(
-                status_code=529,
-                raw_message="provider overloaded",
+        parsed_event_reducer.reduce_text_output_events(
+            (
+                TransientError(
+                    status_code=529,
+                    raw_message="provider overloaded",
+                ),
             ),
+            lambda _turn: None,
             provider="codex",
         )
 
@@ -2062,13 +2056,16 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_hard_agent_error() 
     )
 
     with pytest.raises(HardAgentError) as excinfo:
-        parsed_event_reducer.reduce_provider_failure(
-            HardError(
-                status_code=403,
-                raw_message="provider rejected request",
-                classification="permission_denied",
-                observations=observations,
+        parsed_event_reducer.reduce_text_output_events(
+            (
+                HardError(
+                    status_code=403,
+                    raw_message="provider rejected request",
+                    classification="permission_denied",
+                    observations=observations,
+                ),
             ),
+            lambda _turn: None,
             provider="codex",
         )
 
@@ -2083,11 +2080,15 @@ def test_runtime_parsed_event_reducer_failure_surface_keeps_empty_provider_ident
     None
 ):
     with pytest.raises(HardAgentError) as excinfo:
-        parsed_event_reducer.reduce_provider_failure(
-            HardError(
-                status_code=400,
-                raw_message="provider rejected request",
-            )
+        parsed_event_reducer.reduce_text_output_events(
+            (
+                HardError(
+                    status_code=400,
+                    raw_message="provider rejected request",
+                ),
+            ),
+            lambda _turn: None,
+            provider="",
         )
 
     assert excinfo.value.service_name == ""
@@ -2106,14 +2107,17 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_credential_failure(
     )
 
     with pytest.raises(AgentCredentialFailureError) as excinfo:
-        parsed_event_reducer.reduce_provider_failure(
-            CredentialFailure(
-                raw_message="Codex authentication missing",
-                service_name="codex",
-                classification="operator_actionable_credential_failure",
-                source_observations=observations,
-                status_code=401,
+        parsed_event_reducer.reduce_text_output_events(
+            (
+                CredentialFailure(
+                    raw_message="Codex authentication missing",
+                    service_name="codex",
+                    classification="operator_actionable_credential_failure",
+                    source_observations=observations,
+                    status_code=401,
+                ),
             ),
+            lambda _turn: None,
             provider="claude",
         )
 
@@ -2124,28 +2128,14 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_credential_failure(
     assert excinfo.value.service_name == "codex"
 
 
-def test_runtime_package_text_output_reducer_raises_runtime_owned_transient_error() -> (
-    None
-):
-    with pytest.raises(TransientAgentError) as excinfo:
-        reduce_text_output_events(
-            (TransientError(status_code=529, raw_message="API Error: 529 Overloaded"),),
-            lambda _turn: None,
-            provider="codex",
-        )
-
-    assert str(excinfo.value) == "API Error: 529 Overloaded"
-    assert excinfo.value.status_code == 529
-
-
-def test_runtime_package_text_output_reducer_raises_transient_error_after_success_events() -> (
+def test_runtime_parsed_event_reducer_failure_surface_raises_transient_error_after_success_events() -> (
     None
 ):
     turns: list[str] = []
     token_counts: list[int] = []
 
     with pytest.raises(TransientAgentError) as excinfo:
-        reduce_text_output_events(
+        parsed_event_reducer.reduce_text_output_events(
             (
                 PromptTokens(count=42_000),
                 AssistantTurn(text="first turn"),
@@ -2165,34 +2155,14 @@ def test_runtime_package_text_output_reducer_raises_transient_error_after_succes
     assert excinfo.value.status_code == 529
 
 
-def test_runtime_package_text_output_reducer_raises_runtime_owned_hard_error() -> None:
-    with pytest.raises(HardAgentError) as excinfo:
-        reduce_text_output_events(
-            (
-                HardError(
-                    status_code=403,
-                    raw_message="API Error: 403 Forbidden",
-                    classification="permission_denied",
-                ),
-            ),
-            lambda _turn: None,
-            provider="codex",
-        )
-
-    assert str(excinfo.value) == "API Error: 403 Forbidden"
-    assert excinfo.value.status_code == 403
-    assert excinfo.value.service_name == "codex"
-    assert excinfo.value.classification == "permission_denied"
-
-
-def test_runtime_package_text_output_reducer_raises_hard_error_after_success_events() -> (
+def test_runtime_parsed_event_reducer_failure_surface_raises_hard_error_after_success_events() -> (
     None
 ):
     turns: list[str] = []
     token_counts: list[int] = []
 
     with pytest.raises(HardAgentError) as excinfo:
-        reduce_text_output_events(
+        parsed_event_reducer.reduce_text_output_events(
             (
                 PromptTokens(count=42_000),
                 AssistantTurn(text="first turn"),
@@ -2215,38 +2185,14 @@ def test_runtime_package_text_output_reducer_raises_hard_error_after_success_eve
     assert excinfo.value.classification == "permission_denied"
 
 
-def test_runtime_package_text_output_reducer_raises_runtime_owned_credential_failure() -> (
-    None
-):
-    with pytest.raises(AgentCredentialFailureError) as excinfo:
-        reduce_text_output_events(
-            (
-                CredentialFailure(
-                    raw_message="credential failure from provider adapter",
-                    service_name="codex",
-                    classification="operator_actionable_credential_failure",
-                    source_observations=(),
-                    status_code=401,
-                ),
-            ),
-            lambda _turn: None,
-            provider="claude",
-        )
-
-    assert str(excinfo.value) == "credential failure from provider adapter"
-    assert excinfo.value.status_code == 401
-    assert excinfo.value.service_name == "codex"
-    assert excinfo.value.classification == "operator_actionable_credential_failure"
-
-
-def test_runtime_package_text_output_reducer_raises_credential_failure_after_success_events() -> (
+def test_runtime_parsed_event_reducer_failure_surface_raises_credential_failure_after_success_events() -> (
     None
 ):
     turns: list[str] = []
     token_counts: list[int] = []
 
     with pytest.raises(AgentCredentialFailureError) as excinfo:
-        reduce_text_output_events(
+        parsed_event_reducer.reduce_text_output_events(
             (
                 PromptTokens(count=42_000),
                 AssistantTurn(text="first turn"),
