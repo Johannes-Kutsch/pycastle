@@ -510,6 +510,28 @@ class AgentRunner:
 
             reprompt_message = planner_reprompt_message
         elif invocation.template in {
+            PromptTemplate.IMPLEMENT_BEHAVIOR,
+            PromptTemplate.IMPLEMENT_REFACTOR,
+            PromptTemplate.IMPLEMENT_DOCS,
+            PromptTemplate.REVIEW,
+            PromptTemplate.MERGE,
+            PromptTemplate.PREFLIGHT_ISSUE,
+            PromptTemplate.FAILURE_REPORT,
+            PromptTemplate.DIVERGENCE_RESOLVE,
+        }:
+
+            def host_parsed_template_reprompt_message(parser_error: str | None) -> str:
+                expected_shape = self._renderer.render_expected_output_shape(
+                    invocation.template,
+                    invocation.scope_args,
+                )
+                return _protocol_reprompt_message_with_expected_shape(
+                    parser_error=parser_error,
+                    expected_shape=expected_shape,
+                )
+
+            reprompt_message = host_parsed_template_reprompt_message
+        elif invocation.template in {
             PromptTemplate.IMPROVE_SCAN,
             PromptTemplate.IMPROVE_PRD,
             PromptTemplate.IMPROVE_ISSUES,

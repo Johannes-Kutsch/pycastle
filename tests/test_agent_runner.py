@@ -5110,6 +5110,284 @@ def test_agent_runner_run_improve_protocol_reprompt_uses_phase_specific_expected
     )
 
 
+@pytest.mark.parametrize(
+    ("role", "template", "scope_args", "error_text"),
+    [
+        (
+            AgentRole.PREFLIGHT_ISSUE,
+            PromptTemplate.PREFLIGHT_ISSUE,
+            {
+                "CHECK_NAME": "[PREFLIGHT] test",
+                "COMMAND": "pytest -q",
+                "OUTPUT": "tests fail",
+            },
+            "Malformed JSON in <issue> tag: boom",
+        ),
+        (
+            AgentRole.FAILURE_REPORT,
+            PromptTemplate.FAILURE_REPORT,
+            {
+                "FAILED_ROLE": "implementer",
+                "SESSION_DIR": "/tmp/session",
+                "FAILURE_CLASS": "protocol_error",
+            },
+            "Malformed JSON in <issue> tag: boom",
+        ),
+    ],
+)
+def test_agent_runner_run_issue_template_protocol_reprompt_includes_expected_output_shape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    role: AgentRole,
+    template: PromptTemplate,
+    scope_args: dict[str, str],
+    error_text: str,
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
+
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[CompletionOutput | IssueOutput],
+    ) -> CompletionOutput:
+        captured["request"] = request
+        return CompletionOutput()
+
+    class _ProtocolErrorRunner:
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id,
+        ) -> CompletionOutput:
+            del role, prompt, run_kind, session_uuid, on_provider_session_id
+            raise AgentOutputProtocolError(error_text)
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Issue Reporter",
+                template=template,
+                scope_args=scope_args,
+                mount_path=_managed_mount(tmp_path),
+                role=role,
+            )
+        )
+    )
+
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[CompletionOutput | IssueOutput],
+        captured["request"],
+    )
+
+    with pytest.raises(AgentOutputProtocolError, match="boom"):
+        asyncio.run(
+            work_request.output_adapter.invoke(
+                runner=cast(ContainerRunner, _ProtocolErrorRunner()),
+                role=role,
+                prompt="unused",
+                run_kind=RunKind.FRESH,
+                session_uuid=None,
+                on_provider_session_id=lambda _provider_session_id: None,
+            )
+        )
+
+    reprompt = work_request.output_adapter.protocol_reprompt_message()
+    assert reprompt is not None
+    assert error_text in reprompt
+    assert (
+        runner._renderer.render_expected_output_shape(template, scope_args) in reprompt
+    )
+
+
+@pytest.mark.parametrize(
+    ("role", "template", "scope_args", "error_text"),
+    [
+        (
+            AgentRole.IMPLEMENTER,
+            PromptTemplate.IMPLEMENT_DOCS,
+            {
+                "ISSUE_NUMBER": "77",
+                "ISSUE_TITLE": "Doc bug",
+                "ISSUE_BODY": "Body",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "issue-77-docs",
+                "INTERRUPTED_WORK": "",
+            },
+            "<commit_message> tag is missing",
+        ),
+        (
+            AgentRole.REVIEWER,
+            PromptTemplate.REVIEW,
+            {
+                "ISSUE_NUMBER": "77",
+                "ISSUE_TITLE": "Doc bug",
+                "ISSUE_BODY": "Body",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "issue-77-docs",
+                "INTERRUPTED_WORK": "",
+            },
+            "<commit_message> tag is missing",
+        ),
+        (
+            AgentRole.MERGER,
+            PromptTemplate.MERGE,
+            {"BRANCHES": "issue-77-docs"},
+            "<commit_message> tag is missing",
+        ),
+    ],
+)
+def test_agent_runner_run_host_parsed_commit_message_templates_reprompt_with_expected_shape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    role: AgentRole,
+    template: PromptTemplate,
+    scope_args: dict[str, str],
+    error_text: str,
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
+
+    captured: dict[str, object] = {}
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[CompletionOutput],
+    ) -> CompletionOutput:
+        captured["request"] = request
+        return CompletionOutput()
+
+    class _ProtocolErrorRunner:
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id,
+        ) -> CompletionOutput:
+            del role, prompt, run_kind, session_uuid, on_provider_session_id
+            raise AgentOutputProtocolError(error_text)
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Code Agent",
+                template=template,
+                scope_args=scope_args,
+                mount_path=_managed_mount(tmp_path),
+                role=role,
+            )
+        )
+    )
+
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[CompletionOutput],
+        captured["request"],
+    )
+
+    with pytest.raises(AgentOutputProtocolError, match="missing"):
+        asyncio.run(
+            work_request.output_adapter.invoke(
+                runner=cast(ContainerRunner, _ProtocolErrorRunner()),
+                role=role,
+                prompt="unused",
+                run_kind=RunKind.FRESH,
+                session_uuid=None,
+                on_provider_session_id=lambda _provider_session_id: None,
+            )
+        )
+
+    reprompt = work_request.output_adapter.protocol_reprompt_message()
+    assert reprompt is not None
+    assert error_text in reprompt
+    assert "Use this output shape exactly:" in reprompt
+    assert (
+        runner._renderer.render_expected_output_shape(template, scope_args) in reprompt
+    )
+
+
+def test_agent_runner_run_divergence_resolver_protocol_reprompt_includes_expected_shape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pycastle_agent_runtime.work as runtime_work
+
+    captured: dict[str, object] = {}
+    scope_args = {"BRANCH": "issue-77-docs"}
+    error_text = "Agent returned no <promise> tags"
+
+    async def fake_invoke_work(
+        request: runtime_work.WorkInvocationRequest[CompletionOutput],
+    ) -> CompletionOutput:
+        captured["request"] = request
+        return CompletionOutput()
+
+    class _ProtocolErrorRunner:
+        async def work(
+            self,
+            role: AgentRole,
+            prompt: str,
+            *,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id,
+        ) -> CompletionOutput:
+            del role, prompt, run_kind, session_uuid, on_provider_session_id
+            raise AgentOutputProtocolError(error_text)
+
+    monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Resolver",
+                template=PromptTemplate.DIVERGENCE_RESOLVE,
+                scope_args=scope_args,
+                mount_path=_managed_mount(tmp_path),
+                role=AgentRole.DIVERGENCE_RESOLVER,
+            )
+        )
+    )
+
+    work_request = cast(
+        runtime_work.WorkInvocationRequest[CompletionOutput],
+        captured["request"],
+    )
+
+    with pytest.raises(AgentOutputProtocolError, match="tags"):
+        asyncio.run(
+            work_request.output_adapter.invoke(
+                runner=cast(ContainerRunner, _ProtocolErrorRunner()),
+                role=AgentRole.DIVERGENCE_RESOLVER,
+                prompt="unused",
+                run_kind=RunKind.FRESH,
+                session_uuid=None,
+                on_provider_session_id=lambda _provider_session_id: None,
+            )
+        )
+
+    reprompt = work_request.output_adapter.protocol_reprompt_message()
+    assert reprompt is not None
+    assert error_text in reprompt
+    assert "<promise>COMPLETE</promise>" in reprompt
+    assert (
+        runner._renderer.render_expected_output_shape(
+            PromptTemplate.DIVERGENCE_RESOLVE, scope_args
+        )
+        in reprompt
+    )
+
+
 def test_build_work_dependencies_marks_generic_permanent_service_exhaustion(
     tmp_path: Path,
 ) -> None:
