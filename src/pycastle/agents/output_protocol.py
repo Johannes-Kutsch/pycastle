@@ -2,14 +2,8 @@ import dataclasses
 import json
 import re
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
-from pycastle_agent_runtime.contracts import (
-    CredentialFailure as RuntimeCredentialFailure,
-    HardError as RuntimeHardError,
-    TransientError as RuntimeTransientError,
-    UsageLimit as RuntimeUsageLimit,
-)
 from pycastle_agent_runtime import parsed_event_reducer as runtime_parsed_event_reducer
 from pycastle_agent_runtime.errors import (
     AgentCredentialFailureError as RuntimeAgentCredentialFailureError,
@@ -301,18 +295,18 @@ def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
 
 
 class _RoleHandler(Protocol):
-    def check_turn(self, turn: str) -> AgentOutput | None: ...
-    def extract_final(self, text: str, tail: str) -> AgentOutput: ...
+    def extract_early_output(self, turn: str) -> AgentOutput | None: ...
+    def extract_final_output(self, text: str, tail: str) -> AgentOutput: ...
 
 
 class _CommitMessageHandler:
-    def check_turn(self, turn: str) -> AgentOutput | None:
+    def extract_early_output(self, turn: str) -> AgentOutput | None:
         body = _last_tag_block(turn, "commit_message")
         if body is not None:
             return CommitMessageOutput(message=body.strip())
         return None
 
-    def extract_final(self, text: str, tail: str) -> AgentOutput:
+    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         body = _last_tag_block(text, "commit_message")
         if body is None:
             return CommitMessageOutput(message=None)
@@ -320,13 +314,13 @@ class _CommitMessageHandler:
 
 
 class _PlannerHandler:
-    def check_turn(self, turn: str) -> AgentOutput | None:
+    def extract_early_output(self, turn: str) -> AgentOutput | None:
         try:
             return _extract_planner_output(turn)
         except PlanParseError:
             return None
 
-    def extract_final(self, text: str, tail: str) -> AgentOutput:
+    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         try:
             return _extract_planner_output(text)
         except PlanParseError as exc:
@@ -334,13 +328,13 @@ class _PlannerHandler:
 
 
 class _PreflightIssueHandler:
-    def check_turn(self, turn: str) -> AgentOutput | None:
+    def extract_early_output(self, turn: str) -> AgentOutput | None:
         try:
             return _extract_issue_output(turn)
         except IssueParseError:
             return None
 
-    def extract_final(self, text: str, tail: str) -> AgentOutput:
+    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         try:
             return _extract_issue_output(text)
         except IssueParseError as exc:
@@ -354,14 +348,14 @@ _COMPLETE_OR_NO_CANDIDATE: frozenset[str] = _COMPLETE | _NO_CANDIDATE
 
 
 class _MergerHandler:
-    def check_turn(self, turn: str) -> AgentOutput | None:
+    def extract_early_output(self, turn: str) -> AgentOutput | None:
         if extract_promise(turn, _FAILED) is not None:
             return FailedOutput()
         if extract_promise(turn, _COMPLETE) is not None:
             return CompletionOutput()
         return None
 
-    def extract_final(self, text: str, tail: str) -> AgentOutput:
+    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         if extract_promise(text, _FAILED) is not None:
             return FailedOutput()
         extract_promise_or_raise(text, _COMPLETE, tail)
@@ -369,7 +363,7 @@ class _MergerHandler:
 
 
 class _ImproveHandler:
-    def check_turn(self, turn: str) -> AgentOutput | None:
+    def extract_early_output(self, turn: str) -> AgentOutput | None:
         if extract_promise(turn, _FAILED) is not None:
             return FailedOutput()
         if extract_promise(turn, _NO_CANDIDATE) is not None:
@@ -378,7 +372,7 @@ class _ImproveHandler:
             return _extract_improve_output(turn)
         return None
 
-    def extract_final(self, text: str, tail: str) -> AgentOutput:
+    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         if extract_promise(text, _FAILED) is not None:
             return FailedOutput()
         token = extract_promise_or_raise(text, _COMPLETE_OR_NO_CANDIDATE, tail)
@@ -406,49 +400,47 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
 assert len(_HANDLERS) == len(AgentRole)
 
 
-def _raise_provider_failure(
-    event: (
-        RuntimeUsageLimit
-        | RuntimeTransientError
-        | RuntimeHardError
-        | RuntimeCredentialFailure
+def _translate_runtime_provider_failure(
+    error: (
+        RuntimeUsageLimitError
+        | RuntimeTransientAgentError
+        | RuntimeHardAgentError
+        | RuntimeAgentCredentialFailureError
     ),
-    *,
-    provider: str | None,
 ) -> None:
-    try:
-        runtime_parsed_event_reducer.reduce_provider_failure(
-            event,
-            provider=provider,
-        )
-    except RuntimeUsageLimitError as err:
+    if isinstance(error, RuntimeUsageLimitError):
         raise UsageLimitError(
-            reset_time=err.reset_time,
-            raw_message=err.raw_message,
-            provider=err.provider,
-            is_permanent=err.is_permanent,
-        ) from err
-    except RuntimeTransientAgentError as err:
+            reset_time=error.reset_time,
+            raw_message=error.raw_message,
+            provider=error.provider,
+            is_permanent=error.is_permanent,
+        ) from error
+    if isinstance(error, RuntimeTransientAgentError):
         raise TransientAgentError(
-            message=str(err),
-            status_code=err.status_code,
-        ) from err
-    except RuntimeAgentCredentialFailureError as err:
+            message=str(error),
+            status_code=error.status_code,
+        ) from error
+    if isinstance(error, RuntimeAgentCredentialFailureError):
         raise AgentCredentialFailureError(
-            message=str(err),
-            status_code=err.status_code,
-            service_name=err.service_name,
-            classification=err.classification,
-            observations=err.observations,
-        ) from err
-    except RuntimeHardAgentError as err:
-        raise HardAgentError(
-            message=str(err),
-            status_code=err.status_code,
-            service_name=err.service_name,
-            classification=err.classification,
-            observations=err.observations,
-        ) from err
+            message=str(error),
+            status_code=error.status_code,
+            service_name=error.service_name,
+            classification=error.classification,
+            observations=error.observations,
+        ) from error
+    raise HardAgentError(
+        message=str(error),
+        status_code=error.status_code,
+        service_name=error.service_name,
+        classification=error.classification,
+        observations=error.observations,
+    ) from error
+
+
+@dataclasses.dataclass(frozen=True)
+class _ReducedRoleOutput:
+    output: AgentOutput
+    source_text: str | None = None
 
 
 def _inject_behaviors(result: AgentOutput, text: str) -> AgentOutput:
@@ -465,44 +457,48 @@ def process_stream_from_events(
     on_tokens: Callable[[int], None] | None = None,
     provider: str | None = None,
 ) -> AgentOutput:
-    from ..services.agent_service import (
-        AssistantTurn,
-        CredentialFailure,
-        HardError,
-        PromptTokens,
-        Result,
-        TransientError,
-        UnsupportedTokens,
-        UsageLimit,
-    )
-
     handler = _HANDLERS[role]
-    result_text: str | None = None
-    collected_turns: list[str] = []
-    for event in events:
-        if isinstance(
-            event, (UsageLimit, TransientError, HardError, CredentialFailure)
-        ):
-            _raise_provider_failure(event, provider=provider)
-        elif isinstance(event, PromptTokens):
-            if on_tokens is not None:
-                on_tokens(event.count)
-        elif isinstance(event, UnsupportedTokens):
-            continue
-        elif isinstance(event, AssistantTurn):
-            on_turn(event.text)
-            collected_turns.append(event.text)
-            result = handler.check_turn(event.text)
-            if result is not None:
-                full_text = "\n".join(collected_turns)
-                return _inject_behaviors(result, full_text)
-        elif isinstance(event, Result):
-            result_text = event.text
-            break
-    text = result_text if result_text is not None else "\n".join(collected_turns)
-    tail = f"\nOutput tail: {text[-300:]!r}"
-    result = handler.extract_final(text, tail)
-    return _inject_behaviors(result, text)
+
+    def extract_early_output(turn: str) -> _ReducedRoleOutput | None:
+        result = handler.extract_early_output(turn)
+        if result is None:
+            return None
+        return _ReducedRoleOutput(output=result)
+
+    def extract_final_output(text: str) -> _ReducedRoleOutput:
+        tail = f"\nOutput tail: {text[-300:]!r}"
+        return _ReducedRoleOutput(
+            output=handler.extract_final_output(text, tail),
+            source_text=text,
+        )
+
+    def post_process_output(
+        reduced: _ReducedRoleOutput, transcript: str
+    ) -> AgentOutput:
+        source_text = transcript if reduced.source_text is None else reduced.source_text
+        return _inject_behaviors(reduced.output, source_text)
+
+    try:
+        return cast(
+            AgentOutput,
+            runtime_parsed_event_reducer.reduce_text_output_events(
+                events,
+                on_turn,
+                on_tokens,
+                provider=cast(str, provider),
+                extract_early_output=extract_early_output,
+                extract_final_output=extract_final_output,
+                post_process_output=post_process_output,
+            ),
+        )
+    except (
+        RuntimeUsageLimitError,
+        RuntimeTransientAgentError,
+        RuntimeHardAgentError,
+        RuntimeAgentCredentialFailureError,
+    ) as error:
+        _translate_runtime_provider_failure(error)
+        raise AssertionError("unreachable")
 
 
 def process_stream(
