@@ -31,12 +31,12 @@ def bundled_defaults(tmp_path: Path) -> Path:
         '#     service="opencode",\n'
         '#     model="kimi-k2.6",\n'
         '#     effort="medium",\n'
-        '#     fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),\n'
+        '#     fallback=StageOverride(service="codex", model="gpt-5.3-codex-spark", effort="high"),\n'
         "# )\n"
         "implement_override = StageOverride(\n"
         '    service="codex",\n'
-        '    model="gpt-5.4",\n'
-        '    effort="medium",\n'
+        '    model="gpt-5.3-codex-spark",\n'
+        '    effort="high",\n'
         ")\n"
     )
     (defaults / ".gitignore").write_text(".env\nsetup/\n")
@@ -213,12 +213,12 @@ def test_init_scaffold_refresh_renders_local_config_example_from_bundled_default
         '#     service="opencode",\n'
         '#     model="kimi-k2.6",\n'
         '#     effort="medium",\n'
-        '#     fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),\n'
+        '#     fallback=StageOverride(service="codex", model="gpt-5.3-codex-spark", effort="high"),\n'
         "# )\n"
         "implement_override = StageOverride(\n"
         '    service="codex",\n'
-        '    model="gpt-5.4",\n'
-        '    effort="medium",\n'
+        '    model="gpt-5.3-codex-spark",\n'
+        '    effort="high",\n'
         ")\n"
     )
 

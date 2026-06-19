@@ -134,8 +134,8 @@ class Config:
     implement_override: StageOverride = dataclasses.field(
         default_factory=lambda: StageOverride(
             service="codex",
-            model="gpt-5.4",
-            effort="medium",
+            model="gpt-5.3-codex-spark",
+            effort="high",
             fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
         )
     )

@@ -31,7 +31,9 @@ def test_logical_session_reuses_one_reserved_log_for_multiple_work_invocations(
         provider_bytes=b'{"type":"result","result":"second"}\n',
     )
 
-    assert session.log_path == tmp_path / "implementer-20260517T1430.log"
+    assert session.log_path == tmp_path / (
+        f"implementer-{fixed_dt.strftime('%Y%m%dT%H%M')}.log"
+    )
 
     log_lines = session.log_path.read_text(encoding="utf-8").splitlines()
     assert json.loads(log_lines[0]) == {
@@ -81,8 +83,9 @@ def test_logical_sessions_keep_work_invocations_in_separate_agent_logs(tmp_path)
         provider_bytes=b'{"type":"result","result":"second"}\n',
     )
 
-    assert first_session.log_path == tmp_path / "implementer-20260517T1430.log"
-    assert second_session.log_path == tmp_path / "implementer-20260517T1430-2.log"
+    expected_stem = f"implementer-{fixed_dt.strftime('%Y%m%dT%H%M')}"
+    assert first_session.log_path == tmp_path / f"{expected_stem}.log"
+    assert second_session.log_path == tmp_path / f"{expected_stem}-2.log"
     assert first_session.log_path.read_text(encoding="utf-8").count("first prompt") == 1
     assert (
         second_session.log_path.read_text(encoding="utf-8").count("second prompt") == 1
@@ -121,19 +124,16 @@ def test_reserve_uses_numeric_suffixes_starting_at_two_for_same_slug_and_minute(
 
 
 def test_reserve_does_not_collide_across_different_local_minutes(tmp_path):
-    timestamps = iter(
-        [
-            datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone(),
-            datetime(2026, 5, 17, 14, 31, tzinfo=timezone.utc).astimezone(),
-        ]
-    )
+    first_dt = datetime(2026, 5, 17, 14, 30, tzinfo=timezone.utc).astimezone()
+    second_dt = datetime(2026, 5, 17, 14, 31, tzinfo=timezone.utc).astimezone()
+    timestamps = iter([first_dt, second_dt])
     log = AgentInvocationLog(now_local=lambda: next(timestamps))
 
     first_path = log.reserve(agent_name="Plan Agent", effective_logs_dir=tmp_path)
     second_path = log.reserve(agent_name="Plan Agent", effective_logs_dir=tmp_path)
 
-    assert first_path.name == "plan-agent-20260517T1430.log"
-    assert second_path.name == "plan-agent-20260517T1431.log"
+    assert first_path.name == f"plan-agent-{first_dt.strftime('%Y%m%dT%H%M')}.log"
+    assert second_path.name == f"plan-agent-{second_dt.strftime('%Y%m%dT%H%M')}.log"
 
 
 def test_reserve_uses_container_runner_slug_rules_in_missing_effective_logs_dir(

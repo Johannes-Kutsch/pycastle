@@ -84,8 +84,8 @@ def test_load_config_uses_universal_default_stage_priority_chains(tmp_path):
     )
     assert cfg.implement_override == StageOverride(
         service="codex",
-        model="gpt-5.4",
-        effort="medium",
+        model="gpt-5.3-codex-spark",
+        effort="high",
         fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
     )
     assert cfg.review_override == StageOverride(

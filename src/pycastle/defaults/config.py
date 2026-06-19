@@ -81,7 +81,7 @@ from pycastle import StageOverride
 #     service="opencode",
 #     model="kimi-k2.6",
 #     effort="medium",
-#     fallback=StageOverride(service="codex", model="gpt-5.4", effort="medium"),
+#     fallback=StageOverride(service="codex", model="gpt-5.3-codex-spark", effort="high"),
 # )
 plan_override = StageOverride(
     service="opencode",
@@ -96,8 +96,8 @@ plan_override = StageOverride(
 )
 implement_override = StageOverride(
     service="codex",
-    model="gpt-5.4",
-    effort="medium",
+    model="gpt-5.3-codex-spark",
+    effort="high",
     fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
 )
 review_override = StageOverride(

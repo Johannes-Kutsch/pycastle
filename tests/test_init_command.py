@@ -845,8 +845,8 @@ def test_init_scaffolds_universal_stage_priority_chains_into_config_files(
         ),
         "implement_override": StageOverride(
             service="codex",
-            model="gpt-5.4",
-            effort="medium",
+            model="gpt-5.3-codex-spark",
+            effort="high",
             fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
         ),
         "review_override": StageOverride(
@@ -911,8 +911,8 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     )
     assert cfg.implement_override == StageOverride(
         service="codex",
-        model="gpt-5.4",
-        effort="medium",
+        model="gpt-5.3-codex-spark",
+        effort="high",
         fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
     )
     assert cfg.review_override == StageOverride(
@@ -979,8 +979,8 @@ def test_init_service_selection_writes_same_stage_chains(
     )
     assert cfg.implement_override == StageOverride(
         service="codex",
-        model="gpt-5.4",
-        effort="medium",
+        model="gpt-5.3-codex-spark",
+        effort="high",
         fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
     )
     assert cfg.review_override == StageOverride(
@@ -1114,8 +1114,8 @@ def test_init_opencode_selection_adds_env_key_without_changing_stage_policy(
     )
     assert cfg.implement_override == StageOverride(
         service="codex",
-        model="gpt-5.4",
-        effort="medium",
+        model="gpt-5.3-codex-spark",
+        effort="high",
         fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
     )
     assert cfg.review_override == StageOverride(

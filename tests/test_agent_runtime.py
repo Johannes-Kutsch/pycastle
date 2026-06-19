@@ -818,11 +818,10 @@ def _standalone_runtime_agent_log_result_with_timezone(
                 f"""
                 import importlib.abc
                 import json
-                import os
                 import sys
-                import time
                 from datetime import datetime, timezone
                 from pathlib import Path
+                from zoneinfo import ZoneInfo
 
                 class _BlockPycastle(importlib.abc.MetaPathFinder):
                     def find_spec(self, fullname, path=None, target=None):
@@ -833,17 +832,16 @@ def _standalone_runtime_agent_log_result_with_timezone(
                             )
                         return None
 
-                os.environ["TZ"] = {tz_name!r}
-                time.tzset()
                 sys.meta_path.insert(0, _BlockPycastle())
 
                 from pycastle_agent_runtime import AgentInvocationLog, AgentRole, RunKind
 
                 logs_dir = Path({str(effective_logs_dir)!r})
+                fixed_dt = datetime(
+                    2026, 5, 17, 14, 30, tzinfo=timezone.utc
+                ).astimezone(ZoneInfo({tz_name!r}))
                 log = AgentInvocationLog(
-                    now_local=lambda: datetime(
-                        2026, 5, 17, 14, 30, tzinfo=timezone.utc
-                    ).astimezone()
+                    now_local=lambda: fixed_dt
                 )
                 log_path = log.reserve(
                     agent_name="Standalone Runtime",
