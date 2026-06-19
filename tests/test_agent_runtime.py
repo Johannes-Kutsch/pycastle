@@ -19,7 +19,7 @@ from pycastle.agents._work_invocation import (
     invoke_work,
 )
 from pycastle.agents.runner import AgentRunner
-from pycastle.agents.output_protocol import AgentOutput, AgentRole
+from pycastle.agents.output_protocol import AgentOutput, AgentRole, CompletionOutput
 from pycastle_agent_runtime import parsed_event_reducer
 from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
 from pycastle_agent_runtime.provider_session_adapter import (
@@ -1780,6 +1780,37 @@ def test_runtime_parsed_event_reducer_success_surface_joins_assistant_turns() ->
 
     assert result == "first turn\nsecond turn"
     assert turns == ["first turn", "second turn"]
+
+
+def test_runtime_parsed_event_reducer_protocol_surface_returns_early_output_and_stops_consuming() -> (
+    None
+):
+    turns: list[str] = []
+    consumed_events: list[str] = []
+
+    def tracking_events() -> Iterator[ParsedTurn]:
+        for label, event in (
+            ("first", AssistantTurn(text="working")),
+            ("complete", AssistantTurn(text="<promise>COMPLETE</promise>")),
+            ("later", Result(text="ignored final result")),
+        ):
+            consumed_events.append(label)
+            yield event
+
+    result = parsed_event_reducer.reduce_successful_text_output_events(
+        tracking_events(),
+        turns.append,
+        extract_early_output=lambda turn: (
+            CompletionOutput() if "<promise>COMPLETE</promise>" in turn else None
+        ),
+        extract_final_output=lambda text: CompletionOutput(
+            issue_numbers=(len(text),)
+        ),
+    )
+
+    assert result == CompletionOutput()
+    assert turns == ["working", "<promise>COMPLETE</promise>"]
+    assert consumed_events == ["first", "complete"]
 
 
 def test_runtime_package_text_output_reducer_updates_prompt_tokens_and_ignores_unsupported_tokens() -> (
