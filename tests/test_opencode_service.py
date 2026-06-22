@@ -20,6 +20,26 @@ from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession, RunKind
 
 
+def test_opencode_service_valid_models_match_current_go_catalog() -> None:
+    assert OpenCodeService().valid_models() == frozenset(
+        {
+            "deepseek-v4-flash",
+            "deepseek-v4-pro",
+            "glm-5.2",
+            "glm-5.1",
+            "kimi-k2.7-code",
+            "kimi-k2.6",
+            "mimo-v2.5-pro",
+            "mimo-v2.5",
+            "minimax-m2.7",
+            "minimax-m3",
+            "qwen3.6-plus",
+            "qwen3.7-max",
+            "qwen3.7-plus",
+        }
+    )
+
+
 def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
     service = OpenCodeService(api_key="go-key")
 
@@ -74,6 +94,7 @@ def test_opencode_service_builds_json_commands_and_go_api_env() -> None:
         "apiKey": "{env:OPENCODE_GO_API_KEY}",
     }
     assert "kimi-k2.6" in provider["models"]
+    assert "kimi-k2.7-code" in provider["models"]
     assert "deepseek-v4-flash" in provider["models"]
 
 
