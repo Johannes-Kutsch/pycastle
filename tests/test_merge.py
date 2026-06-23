@@ -51,6 +51,7 @@ def git_svc():
         (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
 
     svc.create_worktree.side_effect = _fake_create_worktree
+    svc.start_merge.return_value = False
     return svc
 
 
@@ -879,6 +880,78 @@ def test_preflight_skip_closes_parent_issues_for_clean_issues(
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, local_deps)
     local_deps.github_svc.close_completed_parent_issues.assert_called_once()
+
+
+# ── Already-merged branch guard ──────────────────────────────────────────────
+
+
+def test_already_merged_conflict_branch_skips_merger(tmp_path, git_svc, github_svc):
+    git_svc.try_merge.return_value = False
+    git_svc.start_merge.return_value = True
+    fake = FakeAgentRunner([])
+    local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    issues = [{"number": 1, "title": "Conflict"}]
+    _run(issues, local_deps)
+    assert fake.calls == []
+
+
+def test_already_merged_conflict_branch_treated_as_completed(
+    tmp_path, git_svc, github_svc
+):
+    git_svc.try_merge.return_value = False
+    git_svc.start_merge.return_value = True
+    local_deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([]),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+    issues = [{"number": 1, "title": "Conflict"}]
+    result = _run(issues, local_deps)
+    assert result.completed_conflicts == [{"number": 1, "title": "Conflict"}]
+    assert result.pending_conflicts == []
+
+
+def test_already_merged_conflict_branch_closes_issue(tmp_path, git_svc, github_svc):
+    git_svc.try_merge.return_value = False
+    git_svc.start_merge.return_value = True
+    local_deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([]),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+    _run([{"number": 1, "title": "Conflict"}], local_deps)
+    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    assert 1 in closed
+
+
+def test_already_merged_second_branch_does_not_block_first_from_completing(
+    tmp_path, git_svc, github_svc
+):
+    git_svc.try_merge.return_value = False
+
+    def _start_merge_side_effect(path, branch):
+        return "issue-2" in branch
+
+    git_svc.start_merge.side_effect = _start_merge_side_effect
+    fake = FakeAgentRunner([CompletionOutput()])
+    local_deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+    issues = [
+        {"number": 1, "title": "Conflict one"},
+        {"number": 2, "title": "Already merged"},
+    ]
+    result = _run(issues, local_deps)
+    merger_calls = [c for c in fake.calls if c.name == "Merge Agent"]
+    assert len(merger_calls) == 1
+    assert merger_calls[0].work_body == "Merging branch pycastle/issue-1"
+    assert result.completed_conflicts == issues
+    assert result.pending_conflicts == []
 
 
 # ── Exception safety ──────────────────────────────────────────────────────────

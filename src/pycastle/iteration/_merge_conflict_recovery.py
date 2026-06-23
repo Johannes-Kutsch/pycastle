@@ -150,7 +150,17 @@ async def _recover_active_conflict(
             sha=deps.git_svc.get_head_sha(deps.repo_root),
             deps=deps,
         ) as sandbox_path:
-            deps.git_svc.start_merge(sandbox_path, branch_for(active_issue["number"]))
+            already_merged = deps.git_svc.start_merge(
+                sandbox_path, branch_for(active_issue["number"])
+            )
+            if already_merged:
+                _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
+                deps.git_svc.fast_forward_branch(
+                    deps.repo_root, target_branch, sandbox_identity.branch
+                )
+                _ensure_conflict_branch_is_merged(active_issue, deps.repo_root, deps)
+                RoleSession(sandbox_path, AgentRole.MERGER).discard()
+                return None
             mount_decision = decide_managed_worktree_mount(
                 repo_root=deps.repo_root,
                 mount_path=sandbox_path,

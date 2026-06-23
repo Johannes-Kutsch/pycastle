@@ -1,6 +1,6 @@
 <task>
 
-Merge the following branches into the current branch and summarize the resolution.
+Resolve the merge conflicts for the following branch and summarize the resolution.
 
 </task>
 
@@ -12,14 +12,13 @@ Merge the following branches into the current branch and summarize the resolutio
 
 <workflow>
 
-For each branch:
+A merge is already in progress in this worktree. Resolve all conflicts:
 
-1. Run `git merge <branch> --no-edit`
-2. If there are merge conflicts, resolve them by reading both sides and choosing the correct resolution
-3. After resolving conflicts, run `{{CHECKS}}` to verify everything works
-4. If tests fail, fix the issues before proceeding to the next branch
+1. Read both sides of each conflict and choose the correct resolution
+2. After resolving all conflicts, run `{{CHECKS}}` to verify everything works
+3. If tests fail, fix the issues before finishing
 
-After all branches are merged, leave the working tree ready for pycastle to create the merge commit.
+Leave the working tree ready for pycastle to create the merge commit.
 
 </workflow>
 

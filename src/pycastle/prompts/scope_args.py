@@ -118,15 +118,9 @@ def build_merge_scope_args(
     from ..iteration.implement import branch_for
 
     active_branch = branch_for(active_issue["number"])
-    branches = [active_branch]
-    branches.extend(
-        branch_for(issue["number"])
-        for issue in conflict_issues
-        if issue["number"] != active_issue["number"]
-    )
     return validated_scope_args_for_template(
         PromptTemplate.MERGE,
-        {"BRANCHES": "\n".join(f"- {branch}" for branch in branches)},
+        {"BRANCHES": f"- {active_branch}"},
     )
 
 

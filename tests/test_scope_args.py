@@ -312,7 +312,7 @@ def test_build_merge_scope_args_builds_exact_renderable_merge_args(cfg, prompts_
         is scope_args
     )
     assert scope_args == {
-        "BRANCHES": ("- pycastle/issue-5\n- pycastle/issue-2\n- pycastle/issue-7")
+        "BRANCHES": "- pycastle/issue-5"
     }
 
     rendered = asyncio.run(
@@ -323,9 +323,7 @@ def test_build_merge_scope_args_builds_exact_renderable_merge_args(cfg, prompts_
         )
     )
 
-    assert rendered == (
-        "Branches:\n- pycastle/issue-5\n- pycastle/issue-2\n- pycastle/issue-7"
-    )
+    assert rendered == "Branches:\n- pycastle/issue-5"
 
 
 def test_build_preflight_scope_args_builds_exact_renderable_preflight_args(
