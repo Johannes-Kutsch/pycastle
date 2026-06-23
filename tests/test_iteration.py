@@ -103,6 +103,7 @@ def git_svc():
     svc.try_merge.return_value = True
     svc.is_ancestor.return_value = True
     svc.verify_ref_exists.return_value = False
+    svc.start_merge.return_value = False
     return svc
 
 

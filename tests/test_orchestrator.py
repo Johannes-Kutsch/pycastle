@@ -89,6 +89,7 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
     else:
         mock_svc.try_merge.return_value = True
     mock_svc.is_ancestor.return_value = is_ancestor
+    mock_svc.start_merge.return_value = False
 
     def _fake_create_worktree(repo, wt, branch, sha=None):
         wt.mkdir(parents=True, exist_ok=True)
