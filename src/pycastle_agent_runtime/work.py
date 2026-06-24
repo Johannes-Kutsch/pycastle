@@ -31,10 +31,7 @@ from .session import RunKind
 
 if TYPE_CHECKING:
     from .errors import (
-        AgentCredentialFailureError,
         AgentTimeoutError,
-        HardAgentError,
-        TransientAgentError,
         UsageLimitError,
     )
 from .parsed_event_reducer import (
@@ -170,8 +167,6 @@ class _DefaultStatusRow:
         return self._row
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
-        from .errors import AgentTimeoutError, UsageLimitError
-
         del tb
         if self._row.closed:
             return False
@@ -181,12 +176,15 @@ class _DefaultStatusRow:
             else:
                 self._row.close()
             return False
-        if isinstance(exc, UsageLimitError):
-            self._row.close("usage limit reached", shutdown_style="interrupted")
-            return False
-        if isinstance(exc, AgentTimeoutError):
-            self._row.close("timed out", shutdown_style="interrupted")
-            return False
+        if exc_type is not None:
+            from .errors import AgentTimeoutError, UsageLimitError
+
+            if isinstance(exc, UsageLimitError):
+                self._row.close("usage limit reached", shutdown_style="interrupted")
+                return False
+            if isinstance(exc, AgentTimeoutError):
+                self._row.close("timed out", shutdown_style="interrupted")
+                return False
         self._row.close("failed", shutdown_style="error")
         return False
 
@@ -261,20 +259,14 @@ def _ensure_timeout_context(
 
 
 async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
-    from .errors import (
-        AgentCredentialFailureError,
-        AgentTimeoutError,
-        HardAgentError,
-        TransientAgentError,
-        UsageLimitError,
-    )
-
     status_display = request.status_display
     if status_display is None:
         status_display = request.dependencies.status_display_factory()
 
     token = request.token if request.token is not None else CancellationToken()
     if token.is_cancelled:
+        from .errors import UsageLimitError
+
         raise UsageLimitError(
             reset_time=None,
             stage_key=request.dependencies.stage_key_for_role(request.role),
@@ -355,55 +347,64 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         session_namespace=request.session_namespace,
                         service_name=request.service.name,
                     )
-                except AgentTimeoutError as err:
-                    _ensure_timeout_context(
-                        err,
-                        role=request.role,
-                        mount_path=request.mount_path,
+                except Exception as err:
+                    from .errors import (
+                        AgentCredentialFailureError,
+                        AgentTimeoutError,
+                        HardAgentError,
+                        TransientAgentError,
+                        UsageLimitError,
                     )
-                    if retries_left <= 0:
-                        raise
-                    restart_num = (
-                        request.dependencies.timeout_retries - retries_left + 1
-                    )
-                    status_display.print(
-                        request.name,
-                        "Timeout — restarting"
-                        f" (attempt {restart_num}/{request.dependencies.timeout_retries})",
-                    )
-                    retries_left -= 1
-                    initial_attempt = False
-                except UsageLimitError as err:
-                    if err.stage_key is None:
-                        err.stage_key = request.dependencies.stage_key_for_role(
-                            request.role
+
+                    if isinstance(err, AgentTimeoutError):
+                        _ensure_timeout_context(
+                            err,
+                            role=request.role,
+                            mount_path=request.mount_path,
                         )
-                    request.dependencies.handle_provider_account_exhaustion(
-                        request.service,
-                        err,
-                    )
-                    token.cancel()
-                    raise
-                except TransientAgentError as err:
-                    token.cancel()
-                    if request.dependencies.transient_status_message is not None:
+                        if retries_left <= 0:
+                            raise
+                        restart_num = (
+                            request.dependencies.timeout_retries - retries_left + 1
+                        )
                         status_display.print(
                             request.name,
-                            request.dependencies.transient_status_message(err),
+                            "Timeout — restarting"
+                            f" (attempt {restart_num}/{request.dependencies.timeout_retries})",
                         )
-                    raise
-                except AgentCredentialFailureError as err:
-                    token.cancel()
-                    err.caller = request.name
-                    if not err.service_name:
+                        retries_left -= 1
+                        initial_attempt = False
+                        continue
+                    if isinstance(err, UsageLimitError):
+                        if err.stage_key is None:
+                            err.stage_key = request.dependencies.stage_key_for_role(
+                                request.role
+                            )
+                        request.dependencies.handle_provider_account_exhaustion(
+                            request.service,
+                            err,
+                        )
+                        token.cancel()
+                        raise
+                    if isinstance(err, TransientAgentError):
+                        token.cancel()
+                        if request.dependencies.transient_status_message is not None:
+                            status_display.print(
+                                request.name,
+                                request.dependencies.transient_status_message(err),
+                            )
+                        raise
+                    if isinstance(err, AgentCredentialFailureError):
+                        token.cancel()
+                        err.caller = request.name
+                        if not err.service_name:
+                            err.service_name = request.service.name
+                        raise
+                    if isinstance(err, HardAgentError):
+                        token.cancel()
+                        err.caller = request.name
                         err.service_name = request.service.name
-                    raise
-                except HardAgentError as err:
-                    token.cancel()
-                    err.caller = request.name
-                    err.service_name = request.service.name
-                    raise
-                except Exception:
+                        raise
                     if (
                         not request.allow_non_typed_resume_retry
                         or provider_run_session.run_kind != RunKind.RESUME

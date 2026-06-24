@@ -311,9 +311,7 @@ def test_build_merge_scope_args_builds_exact_renderable_merge_args(cfg, prompts_
         validated_scope_args_for_template(PromptTemplate.MERGE, scope_args)
         is scope_args
     )
-    assert scope_args == {
-        "BRANCHES": "- pycastle/issue-5"
-    }
+    assert scope_args == {"BRANCHES": "- pycastle/issue-5"}
 
     rendered = asyncio.run(
         PromptRenderer(cfg).render(

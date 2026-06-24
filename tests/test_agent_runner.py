@@ -4659,6 +4659,7 @@ def test_work_invocation_translates_runtime_usage_limit_to_pycastle_compatibilit
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from pycastle.agents import _work_invocation as work_invocation_module
+
     reset_time = datetime(2026, 6, 8, 12, 0, 0)
 
     async def fake_runtime_invoke_work(request):

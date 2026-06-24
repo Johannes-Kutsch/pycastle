@@ -612,12 +612,6 @@ def _standalone_runtime_surface_behavior_result(
                         reset_time is None,
                     ),
                 )
-                failure = runtime.AgentFailedError(
-                    role_value="implementer",
-                    worktree_path=Path("."),
-                    namespace="main",
-                    service_name="codex",
-                )
                 print(
                     json.dumps(
                         {
@@ -633,7 +627,6 @@ def _standalone_runtime_surface_behavior_result(
                             "planned_run_kind": plan.run_kind.value,
                             "planned_relpath": plan.provider_state_dir_relpath,
                             "usage_decision_type": type(decision).__name__,
-                            "failure_session_dir": failure.session_dir,
                         },
                         sort_keys=True,
                     )
@@ -2350,10 +2343,6 @@ def test_runtime_top_level_surface_is_accessible_standalone_without_pycastle() -
             "SleepUntil",
             "Stop",
             "decide_usage_limit_continuation",
-            "AgentRuntimeError",
-            "RuntimeConfigurationError",
-            "UsageLimitError",
-            "AgentFailedError",
             "AgentInvocationLog",
             "LogicalAgentInvocationLog",
             "WorkInvocationLog",
@@ -2405,7 +2394,6 @@ def test_runtime_surface_behaviors_run_standalone_without_pycastle() -> None:
     result = _standalone_runtime_surface_behavior_result(repo_root)
 
     assert result == {
-        "failure_session_dir": "implementer/main/codex",
         "planned_relpath": "implementer/main/codex/",
         "planned_run_kind": "fresh",
         "provider_run_kind": "fresh",
@@ -2505,7 +2493,7 @@ def test_runtime_public_errors_do_not_default_missing_service_names_to_claude():
 
     assert hard_error.service_name == ""
     assert failed_error.service_name == ""
-    assert failed_error.session_dir == "implementer"
+    assert failed_error.session_dir == ".pycastle-session/implementer"
 
 
 def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
@@ -2590,10 +2578,9 @@ def test_runtime_session_helpers_use_caller_supplied_session_root_and_provider_p
         namespace="main",
         failure_class="protocol_error",
         service_name="codex",
-        provider_session_path=".runtime-session/reviewer/main/codex",
     )
 
-    assert failure.session_dir == ".runtime-session/reviewer/main/codex"
+    assert failure.session_dir == ".pycastle-session/reviewer/main/codex"
 
 
 def test_runtime_session_helpers_default_to_provider_neutral_relpaths():

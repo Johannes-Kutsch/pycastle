@@ -63,12 +63,9 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
-    "AgentCredentialFailureError",
     "AgentInvocationLog",
-    "AgentFailedError",
     "AgentService",
     "AgentRole",
-    "AgentTimeoutError",
     "AssistantTurn",
     "CancellationToken",
     "ChainEntry",
@@ -76,10 +73,8 @@ __all__ = [
     "ConfiguredCandidateSelection",
     "CredentialFailure",
     "HardError",
-    "HardAgentError",
     "LogicalAgentInvocationLog",
     "ParsedTurn",
-    "ProviderErrorObservation",
     "ProviderSessionAdapter",
     "ProviderSessionPreferences",
     "ProviderSessionPreferencesRequest",
@@ -94,7 +89,6 @@ __all__ = [
     "PromptRuntimeExecutionAdapter",
     "Result",
     "RunSessionPlan",
-    "RuntimeConfigurationError",
     "RunKind",
     "ProviderRunStatePlan",
     "ProviderRunStatePlanRequest",
@@ -129,10 +123,8 @@ __all__ = [
     "UsageLimitOutcome",
     "ToolPolicy",
     "TransientError",
-    "TransientAgentError",
     "UnsupportedTokens",
     "UsageLimit",
-    "UsageLimitError",
     "validation_labels",
     "decide_usage_limit_continuation",
     "WorkInvocationDependencies",
@@ -164,6 +156,7 @@ def __getattr__(name: str):
             TransientAgentError,
             UsageLimitError,
         )
+
         return {
             "AgentCredentialFailureError": AgentCredentialFailureError,
             "AgentFailedError": AgentFailedError,
@@ -175,6 +168,7 @@ def __getattr__(name: str):
         }[name]
     if name == "ProviderErrorObservation":
         from .provider_errors import ProviderErrorObservation
+
         return ProviderErrorObservation
     if name in {
         "OneShotRunRequest",

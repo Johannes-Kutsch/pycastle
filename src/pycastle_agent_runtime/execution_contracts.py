@@ -249,8 +249,6 @@ class _DefaultStatusRow:
         return self._row
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
-        from .errors import AgentTimeoutError, UsageLimitError
-
         del tb
         if self._row.closed:
             return False
@@ -260,12 +258,15 @@ class _DefaultStatusRow:
             else:
                 self._row.close()
             return False
-        if isinstance(exc, UsageLimitError):
-            self._row.close("usage limit reached", shutdown_style="interrupted")
-            return False
-        if isinstance(exc, AgentTimeoutError):
-            self._row.close("timed out", shutdown_style="interrupted")
-            return False
+        if exc_type is not None:
+            from .errors import AgentTimeoutError, UsageLimitError
+
+            if isinstance(exc, UsageLimitError):
+                self._row.close("usage limit reached", shutdown_style="interrupted")
+                return False
+            if isinstance(exc, AgentTimeoutError):
+                self._row.close("timed out", shutdown_style="interrupted")
+                return False
         self._row.close("failed", shutdown_style="error")
         return False
 

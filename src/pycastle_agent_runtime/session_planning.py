@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .contracts import AgentService
-from .errors import AgentCredentialFailureError
 from .provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
@@ -47,8 +46,8 @@ class LocalAuthSeedAction:
         default=None,
         compare=False,
     )
-    missing_source_observations: tuple[Any, ...] = (
-        dataclasses.field(default=(), compare=False)
+    missing_source_observations: tuple[Any, ...] = dataclasses.field(
+        default=(), compare=False
     )
 
     def require_source(self) -> Path:
@@ -58,6 +57,8 @@ class LocalAuthSeedAction:
                 or self.missing_source_service_name is None
             ):
                 raise FileNotFoundError(self.source)
+            from .errors import AgentCredentialFailureError
+
             raise AgentCredentialFailureError(
                 self.missing_source_message,
                 status_code=self.missing_source_status_code,

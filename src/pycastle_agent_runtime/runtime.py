@@ -17,7 +17,6 @@ from .execution_contracts import (
     WorkInvocationRequest,
     WorktreeMount,
 )
-from .errors import RuntimeConfigurationError, UsageLimitError
 from .roles import AgentRole
 from .service_registry import ServiceRegistry
 from .session import RunKind
@@ -178,6 +177,8 @@ def _require_execution_adapter_method(
     method = getattr(adapter, method_name, None)
     if callable(method):
         return method
+    from .errors import RuntimeConfigurationError
+
     raise RuntimeConfigurationError(
         f"Prompt runtime requires an execution adapter with callable `{method_name}()`."
     )
@@ -385,6 +386,8 @@ async def run_one_shot(
     service_registry: ServiceRegistry,
     request: OneShotRunRequest,
 ) -> OneShotRunResult:
+    from .errors import RuntimeConfigurationError, UsageLimitError
+
     if not service_registry.has_configured_candidate(request.override):
         raise RuntimeConfigurationError(
             "One-shot runtime requires at least one configured service candidate."

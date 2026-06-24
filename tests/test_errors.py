@@ -83,7 +83,9 @@ def test_usage_limit_error_reset_time_defaults_to_none():
 
 
 def test_pycastle_error_shims_preserve_legacy_service_and_session_defaults():
-    hard_error = HardAgentError(message="provider rejected request", status_code=400, service_name="claude")
+    hard_error = HardAgentError(
+        message="provider rejected request", status_code=400, service_name="claude"
+    )
     failed_error = AgentFailedError(
         role_value="implementer",
         worktree_path=Path("."),
