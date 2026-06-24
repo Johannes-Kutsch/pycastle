@@ -5,13 +5,15 @@ import dataclasses
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 from .contracts import AgentService, ToolPolicy
-from .errors import AgentTimeoutError, UsageLimitError
 from .roles import AgentRole
 from .session import RunKind
 from .types import StageOverride
+
+if TYPE_CHECKING:
+    pass
 
 WorkResultT = TypeVar("WorkResultT")
 
@@ -247,6 +249,8 @@ class _DefaultStatusRow:
         return self._row
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
+        from .errors import AgentTimeoutError, UsageLimitError
+
         del tb
         if self._row.closed:
             return False

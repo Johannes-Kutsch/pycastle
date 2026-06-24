@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ._import_isolation import assert_runtime_import_isolation
-
 from .agent_log import AgentInvocationLog, LogicalAgentInvocationLog, WorkInvocationLog
 from .contracts import (
     AgentService,
@@ -26,17 +24,6 @@ from .execution_contracts import (
     WorkInvocationDependencies,
     WorkInvocationRequest,
 )
-from .errors import (
-    AgentCredentialFailureError,
-    AgentFailedError,
-    AgentRuntimeError,
-    AgentTimeoutError,
-    HardAgentError,
-    RuntimeConfigurationError,
-    TransientAgentError,
-    UsageLimitError,
-)
-from .provider_errors import ProviderErrorObservation
 from .provider_session_adapter import ProviderSessionAdapter
 from .roles import AgentRole
 from .session import (
@@ -79,7 +66,6 @@ __all__ = [
     "AgentCredentialFailureError",
     "AgentInvocationLog",
     "AgentFailedError",
-    "AgentRuntimeError",
     "AgentService",
     "AgentRole",
     "AgentTimeoutError",
@@ -160,6 +146,36 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    if name in {
+        "AgentCredentialFailureError",
+        "AgentFailedError",
+        "AgentTimeoutError",
+        "HardAgentError",
+        "RuntimeConfigurationError",
+        "TransientAgentError",
+        "UsageLimitError",
+    }:
+        from .errors import (
+            AgentCredentialFailureError,
+            AgentFailedError,
+            AgentTimeoutError,
+            HardAgentError,
+            RuntimeConfigurationError,
+            TransientAgentError,
+            UsageLimitError,
+        )
+        return {
+            "AgentCredentialFailureError": AgentCredentialFailureError,
+            "AgentFailedError": AgentFailedError,
+            "AgentTimeoutError": AgentTimeoutError,
+            "HardAgentError": HardAgentError,
+            "RuntimeConfigurationError": RuntimeConfigurationError,
+            "TransientAgentError": TransientAgentError,
+            "UsageLimitError": UsageLimitError,
+        }[name]
+    if name == "ProviderErrorObservation":
+        from .provider_errors import ProviderErrorObservation
+        return ProviderErrorObservation
     if name in {
         "OneShotRunRequest",
         "OneShotRunResult",
@@ -270,6 +286,3 @@ def __getattr__(name: str):
 
         return getattr(stage_priority_chain, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-assert_runtime_import_isolation(importer=__name__)

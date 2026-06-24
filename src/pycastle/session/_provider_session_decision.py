@@ -1,4 +1,4 @@
-from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from pycastle.provider_errors import ProviderErrorObservation
 from pycastle_agent_runtime.session_planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction as RuntimeLocalAuthSeedAction,

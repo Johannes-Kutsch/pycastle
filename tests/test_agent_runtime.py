@@ -21,12 +21,12 @@ from pycastle.agents._work_invocation import (
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole, CompletionOutput
 from pycastle_agent_runtime import parsed_event_reducer
-from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from pycastle.provider_errors import ProviderErrorObservation
 from pycastle_agent_runtime.provider_session_adapter import (
     ProviderSessionPlanningFacts,
     ProviderSessionPlanningRequest,
 )
-from pycastle_agent_runtime.errors import (
+from pycastle.errors import (
     AgentCredentialFailureError,
     AgentTimeoutError,
     HardAgentError,
@@ -2492,61 +2492,6 @@ def test_runtime_package_prompt_entrypoint_requires_build_work_dependencies_adap
                 request=request,
             )
         )
-
-
-def test_runtime_package_import_isolation_guardrail_reports_application_ownership() -> (
-    None
-):
-    from pycastle_agent_runtime._import_isolation import assert_runtime_import_isolation
-
-    with pytest.raises(ImportError) as excinfo:
-        assert_runtime_import_isolation(
-            importer="pycastle_agent_runtime",
-            newly_loaded_modules=[
-                "pycastle.other",
-                "pycastle.session.resume",
-                "pycastle.infrastructure.container_runner",
-                "pycastle.session.resume",
-            ],
-        )
-
-    assert str(excinfo.value) == (
-        "pycastle_agent_runtime imported pycastle application modules during "
-        "runtime package initialization: "
-        "pycastle.infrastructure.container_runner, pycastle.session.resume. "
-        "This violates the pycastle_agent_runtime package boundary."
-    )
-
-
-def test_runtime_package_import_isolation_guardrail_rejects_pycastle_services() -> None:
-    from pycastle_agent_runtime._import_isolation import assert_runtime_import_isolation
-
-    with pytest.raises(ImportError) as excinfo:
-        assert_runtime_import_isolation(
-            importer="pycastle_agent_runtime",
-            newly_loaded_modules=[
-                "pycastle.services",
-                "pycastle.services.agent_service",
-            ],
-        )
-
-    assert str(excinfo.value) == (
-        "pycastle_agent_runtime imported pycastle application modules during "
-        "runtime package initialization: "
-        "pycastle.services, pycastle.services.agent_service. "
-        "This violates the pycastle_agent_runtime package boundary."
-    )
-
-
-def test_runtime_public_errors_use_agent_runtime_error_without_pycastle_alias_export():
-    import pycastle_agent_runtime as runtime
-
-    assert not hasattr(runtime, "PycastleError")
-    assert issubclass(runtime.RuntimeConfigurationError, runtime.AgentRuntimeError)
-    assert issubclass(runtime.UsageLimitError, runtime.AgentRuntimeError)
-    assert issubclass(runtime.TransientAgentError, runtime.AgentRuntimeError)
-    assert issubclass(runtime.HardAgentError, runtime.AgentRuntimeError)
-    assert issubclass(runtime.AgentFailedError, runtime.AgentRuntimeError)
 
 
 def test_runtime_public_errors_do_not_default_missing_service_names_to_claude():

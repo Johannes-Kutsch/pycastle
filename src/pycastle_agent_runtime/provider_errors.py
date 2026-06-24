@@ -1,16 +1,8 @@
-from __future__ import annotations
-
-import dataclasses
-
-
-@dataclasses.dataclass(frozen=True)
-class ProviderErrorObservation:
-    service_name: str
-    raw_provider_text: str
-    source_stream: str
-    status_code: int | None = None
-    provider_code: str | None = None
-    error_name: str | None = None
+def __getattr__(name: str):
+    if name == "ProviderErrorObservation":
+        from pycastle.provider_errors import ProviderErrorObservation
+        return ProviderErrorObservation
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = ["ProviderErrorObservation"]

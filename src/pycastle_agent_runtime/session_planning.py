@@ -4,7 +4,7 @@ import dataclasses
 import shutil
 from enum import Enum
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .contracts import AgentService
 from .errors import AgentCredentialFailureError
@@ -12,8 +12,10 @@ from .provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
 )
-from .provider_errors import ProviderErrorObservation
 from .roles import AgentRole
+
+if TYPE_CHECKING:
+    pass
 from .session import (
     ProviderSessionPreferencesRequest,
     ProviderSessionStateRequest,
@@ -45,7 +47,7 @@ class LocalAuthSeedAction:
         default=None,
         compare=False,
     )
-    missing_source_observations: tuple[ProviderErrorObservation, ...] = (
+    missing_source_observations: tuple[Any, ...] = (
         dataclasses.field(default=(), compare=False)
     )
 

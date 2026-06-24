@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from .contracts import (
     AssistantTurn,
@@ -14,12 +14,14 @@ from .contracts import (
     UnsupportedTokens,
     UsageLimit,
 )
-from .errors import (
-    AgentCredentialFailureError,
-    HardAgentError,
-    TransientAgentError,
-    UsageLimitError,
-)
+
+if TYPE_CHECKING:
+    from .errors import (
+        AgentCredentialFailureError,
+        HardAgentError,
+        TransientAgentError,
+        UsageLimitError,
+    )
 
 OutputT = TypeVar("OutputT")
 
@@ -33,6 +35,13 @@ def reduce_provider_failure(
     *,
     provider: str | None = None,
 ) -> None:
+    from .errors import (
+        AgentCredentialFailureError,
+        HardAgentError,
+        TransientAgentError,
+        UsageLimitError,
+    )
+
     if isinstance(event, UsageLimit):
         raise UsageLimitError(
             reset_time=event.reset_time,

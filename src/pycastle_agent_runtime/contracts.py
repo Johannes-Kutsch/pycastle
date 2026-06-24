@@ -5,11 +5,13 @@ import enum
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from .provider_errors import ProviderErrorObservation
 from .roles import AgentRole
 from .session import RunKind
+
+if TYPE_CHECKING:
+    pass
 
 
 @dataclasses.dataclass
@@ -44,7 +46,7 @@ class UsageLimit:
 class TransientError:
     status_code: int | None
     raw_message: str
-    observations: tuple[ProviderErrorObservation, ...] = dataclasses.field(
+    observations: tuple[Any, ...] = dataclasses.field(
         default=(),
         compare=False,
     )
@@ -55,7 +57,7 @@ class HardError:
     status_code: int
     raw_message: str
     classification: str | None = None
-    observations: tuple[ProviderErrorObservation, ...] = dataclasses.field(
+    observations: tuple[Any, ...] = dataclasses.field(
         default=(),
         compare=False,
     )
@@ -65,7 +67,7 @@ class HardError:
 class CredentialFailure:
     raw_message: str
     service_name: str
-    source_observations: tuple[ProviderErrorObservation, ...] = dataclasses.field(
+    source_observations: tuple[Any, ...] = dataclasses.field(
         compare=False,
     )
     status_code: int | None = None

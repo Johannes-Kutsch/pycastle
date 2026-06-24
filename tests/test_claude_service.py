@@ -23,7 +23,7 @@ from pycastle_agent_runtime.contracts import (
     TransientError as RuntimeTransientError,
     UsageLimit as RuntimeUsageLimit,
 )
-from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from pycastle.provider_errors import ProviderErrorObservation
 from pycastle_agent_runtime.session import ProviderSessionStateRequest
 from pycastle.services import ClaudeService
 from pycastle.services.agent_service import (

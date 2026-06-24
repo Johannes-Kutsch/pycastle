@@ -29,7 +29,7 @@ from pycastle_agent_runtime.contracts import (
     TransientError,
     UsageLimit,
 )
-from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from pycastle.provider_errors import ProviderErrorObservation
 from .flag_profiles import (
     AgentToolPolicyGroup,
     flag_profile_for,

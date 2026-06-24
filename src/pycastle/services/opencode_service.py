@@ -15,7 +15,7 @@ from pycastle_agent_runtime import (
     TransientError,
     UsageLimit,
 )
-from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+from pycastle.provider_errors import ProviderErrorObservation
 from pycastle_agent_runtime.session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,

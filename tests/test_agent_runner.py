@@ -4659,13 +4659,11 @@ def test_work_invocation_translates_runtime_usage_limit_to_pycastle_compatibilit
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from pycastle.agents import _work_invocation as work_invocation_module
-    from pycastle_agent_runtime.errors import UsageLimitError as RuntimeUsageLimitError
-
     reset_time = datetime(2026, 6, 8, 12, 0, 0)
 
     async def fake_runtime_invoke_work(request):
         del request
-        raise RuntimeUsageLimitError(
+        raise UsageLimitError(
             reset_time=reset_time,
             raw_message="limit",
             provider="codex",
@@ -5688,12 +5686,9 @@ def test_translate_run_outcome_translates_runtime_timeout_to_pycastle_compatibil
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.runner import translate_run_outcome
-    from pycastle_agent_runtime.errors import (
-        AgentTimeoutError as RuntimeAgentTimeoutError,
-    )
 
     async def fail() -> PlannerOutput:
-        raise RuntimeAgentTimeoutError("timeout")
+        raise AgentTimeoutError("timeout")
 
     with pytest.raises(AgentTimeoutError) as exc_info:
         asyncio.run(

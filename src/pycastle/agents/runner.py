@@ -5,11 +5,6 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
 from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
-from pycastle_agent_runtime.errors import (
-    AgentTimeoutError as RuntimeAgentTimeoutError,
-    TransientAgentError as RuntimeTransientAgentError,
-    UsageLimitError as RuntimeUsageLimitError,
-)
 from pycastle_agent_runtime.work import (
     RunSessionPlan as RuntimeRunSessionPlan,
     WorkModelDisplayMetadata,
@@ -33,8 +28,6 @@ from ..errors import (
     AgentTimeoutError,
     DockerError,
     SetupPhaseError,
-    TransientAgentError,
-    UsageLimitError,
 )
 from ..managed_worktree_mount_policy import enforce_managed_worktree_mount
 from ..prompts.dispatch import (
@@ -49,7 +42,6 @@ from ..session._provider_session_state import (
     ProviderSessionStateRequest,
     prepare_provider_session_state,
 )
-from ..session.resume import provider_state_relpath
 from ..session.run_dispatch import RunSessionRequest, prepare_run_session
 from ..services import GitService
 from ..services.agent_service import AgentService
@@ -132,12 +124,7 @@ async def translate_run_outcome(
                 worktree_path=request.mount_path,
                 namespace=request.session_namespace,
                 failure_class=output.failure_class,
-                service_name=request.service,
-                provider_session_path=provider_state_relpath(
-                    request.role,
-                    request.service,
-                    request.session_namespace,
-                ).rstrip("/"),
+                service_name=request.service or "claude",
             )
         return output
     except AgentTimeoutError as err:
@@ -145,30 +132,6 @@ async def translate_run_outcome(
             err.role_value = request.role.value
             err.worktree_path = request.mount_path
         raise
-    except UsageLimitError:
-        raise
-    except TransientAgentError:
-        raise
-    except RuntimeAgentTimeoutError as err:
-        raise AgentTimeoutError(
-            str(err),
-            role_value=err.role_value or request.role.value,
-            worktree_path=err.worktree_path or request.mount_path,
-        ) from err
-    except RuntimeUsageLimitError as err:
-        raise UsageLimitError(
-            reset_time=err.reset_time,
-            raw_message=err.raw_message,
-            provider=err.provider,
-            is_permanent=err.is_permanent,
-            account_label=err.account_label,
-            stage_key=err.stage_key,
-        ) from err
-    except RuntimeTransientAgentError as err:
-        raise TransientAgentError(
-            str(err),
-            status_code=err.status_code,
-        ) from err
 
 
 class AgentRunnerProtocol(Protocol):

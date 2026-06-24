@@ -5,12 +5,6 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
 
 from pycastle_agent_runtime import parsed_event_reducer as runtime_parsed_event_reducer
-from pycastle_agent_runtime.errors import (
-    AgentCredentialFailureError as RuntimeAgentCredentialFailureError,
-    HardAgentError as RuntimeHardAgentError,
-    TransientAgentError as RuntimeTransientAgentError,
-    UsageLimitError as RuntimeUsageLimitError,
-)
 from pycastle_agent_runtime.roles import AgentRole
 
 if TYPE_CHECKING:
@@ -402,25 +396,25 @@ assert len(_HANDLERS) == len(AgentRole)
 
 def _translate_runtime_provider_failure(
     error: (
-        RuntimeUsageLimitError
-        | RuntimeTransientAgentError
-        | RuntimeHardAgentError
-        | RuntimeAgentCredentialFailureError
+        UsageLimitError
+        | TransientAgentError
+        | HardAgentError
+        | AgentCredentialFailureError
     ),
 ) -> None:
-    if isinstance(error, RuntimeUsageLimitError):
+    if isinstance(error, UsageLimitError):
         raise UsageLimitError(
             reset_time=error.reset_time,
             raw_message=error.raw_message,
             provider=error.provider,
             is_permanent=error.is_permanent,
         ) from error
-    if isinstance(error, RuntimeTransientAgentError):
+    if isinstance(error, TransientAgentError):
         raise TransientAgentError(
             message=str(error),
             status_code=error.status_code,
         ) from error
-    if isinstance(error, RuntimeAgentCredentialFailureError):
+    if isinstance(error, AgentCredentialFailureError):
         raise AgentCredentialFailureError(
             message=str(error),
             status_code=error.status_code,
@@ -492,10 +486,10 @@ def process_stream_from_events(
             ),
         )
     except (
-        RuntimeUsageLimitError,
-        RuntimeTransientAgentError,
-        RuntimeHardAgentError,
-        RuntimeAgentCredentialFailureError,
+        UsageLimitError,
+        TransientAgentError,
+        HardAgentError,
+        AgentCredentialFailureError,
     ) as error:
         _translate_runtime_provider_failure(error)
         raise AssertionError("unreachable")

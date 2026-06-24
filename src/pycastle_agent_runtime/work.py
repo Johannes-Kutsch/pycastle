@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Callable, Iterable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .contracts import AgentService, ParsedTurn
 from .execution_contracts import (
@@ -26,15 +26,17 @@ from .execution_contracts import (
     WorkStatusDisplay,
     WorkStatusRow,
 )
-from .errors import (
-    AgentCredentialFailureError,
-    AgentTimeoutError,
-    HardAgentError,
-    TransientAgentError,
-    UsageLimitError,
-)
 from .roles import AgentRole
 from .session import RunKind
+
+if TYPE_CHECKING:
+    from .errors import (
+        AgentCredentialFailureError,
+        AgentTimeoutError,
+        HardAgentError,
+        TransientAgentError,
+        UsageLimitError,
+    )
 from .parsed_event_reducer import (
     reduce_text_output_events as reduce_text_output_events_from_parsed_events,
 )
@@ -168,6 +170,8 @@ class _DefaultStatusRow:
         return self._row
 
     async def __aexit__(self, exc_type, exc, tb) -> bool:
+        from .errors import AgentTimeoutError, UsageLimitError
+
         del tb
         if self._row.closed:
             return False
@@ -257,6 +261,14 @@ def _ensure_timeout_context(
 
 
 async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResultT:
+    from .errors import (
+        AgentCredentialFailureError,
+        AgentTimeoutError,
+        HardAgentError,
+        TransientAgentError,
+        UsageLimitError,
+    )
+
     status_display = request.status_display
     if status_display is None:
         status_display = request.dependencies.status_display_factory()
