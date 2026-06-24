@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
 import pycastle_agent_runtime as agent_runtime
-from pycastle_agent_runtime.service_registry import ServiceRegistry
+from .services.service_registry import ServiceRegistry
 
 from .config import Config, StageOverride
 from .config.loader import referenced_services

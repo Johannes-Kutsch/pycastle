@@ -6,7 +6,7 @@ import pytest
 
 from pycastle.errors import AgentTimeoutError
 from pycastle.agents.output_protocol import AgentRole
-from pycastle_agent_runtime.agent_log import AgentInvocationLog
+from pycastle.infrastructure.agent_invocation_log import AgentInvocationLog
 from pycastle.infrastructure._logged_line_stream import (
     pycastle_input_compatibility_record,
     stream_logged_lines,

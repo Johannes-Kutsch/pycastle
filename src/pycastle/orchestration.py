@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pycastle_agent_runtime.service_registry import ServiceRegistry
+from .services.service_registry import ServiceRegistry
 
 from .iteration._deps import ImproveMode
 

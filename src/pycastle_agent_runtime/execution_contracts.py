@@ -7,10 +7,10 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
-from .contracts import AgentService, ToolPolicy
-from .roles import AgentRole
+from pycastle.services.agent_service import AgentService, ToolPolicy
+from pycastle.agents.output_protocol import AgentRole
 from .session import RunKind
-from .types import StageOverride
+from pycastle.config.types import StageOverride
 
 if TYPE_CHECKING:
     pass

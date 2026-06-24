@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pycastle_agent_runtime.contracts import (
+from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
     HardError,
@@ -19,7 +19,7 @@ from pycastle_agent_runtime.contracts import (
     UsageLimit,
 )
 from pycastle.provider_errors import ProviderErrorObservation
-from pycastle_agent_runtime.roles import AgentRole
+from pycastle.agents.output_protocol import AgentRole
 from pycastle_agent_runtime.session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,

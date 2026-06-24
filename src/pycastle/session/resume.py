@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
-from pycastle_agent_runtime.roles import AgentRole
+from pycastle.services.agent_service import AgentService as RuntimeAgentService
+from pycastle.agents.output_protocol import AgentRole
 from pycastle_agent_runtime.session import (
     RunKind,
     normalize_state_dir_relpath,

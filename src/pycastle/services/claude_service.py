@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pycastle_agent_runtime.roles import AgentRole
+from pycastle.agents.output_protocol import AgentRole
 from pycastle_agent_runtime.session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -19,7 +19,7 @@ from pycastle_agent_runtime.session import (
 
 from .. import _time as _time_module
 from ..session.resume import provider_state_relpath
-from pycastle_agent_runtime.contracts import (
+from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
     HardError,

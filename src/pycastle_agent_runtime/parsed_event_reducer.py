@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from .contracts import (
+from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
     HardError,

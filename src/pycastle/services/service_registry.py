@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime
 
-from .contracts import AgentService
-from .stage_priority_chain import (
+from .agent_service import AgentService
+from ..stage_priority_chain import (
     configured_candidate_chain,
     select_configured_candidate_chain,
 )
-from .types import StageOverride
+from ..config.types import StageOverride
 
 ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
 

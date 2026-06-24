@@ -4,7 +4,7 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
-from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
+from pycastle.services.agent_service import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.work import (
     RunSessionPlan as RuntimeRunSessionPlan,
     WorkModelDisplayMetadata,
@@ -184,7 +184,7 @@ class AgentRunner:
         return self._resolve_service(service_name)
 
     def _runtime_service_registry(self):
-        from pycastle_agent_runtime.service_registry import ServiceRegistry
+        from pycastle.services.service_registry import ServiceRegistry
 
         return ServiceRegistry(self._service_registry)
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Protocol
 
 if TYPE_CHECKING:
-    from .roles import AgentRole
+    from pycastle.agents.output_protocol import AgentRole
     from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pycastle_agent_runtime.contracts import AgentService as RuntimeAgentService
+from pycastle.services.agent_service import AgentService as RuntimeAgentService
 from pycastle_agent_runtime.session import (
     ServiceResumeIdentityStore,
     load_provider_state_session_id,

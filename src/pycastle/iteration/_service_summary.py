@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pycastle_agent_runtime.contracts import AgentService
+from pycastle.services.agent_service import AgentService
 
 
 def render_service_summary_line(

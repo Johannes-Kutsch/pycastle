@@ -1,6 +1,6 @@
 from typing import cast
 
-from pycastle_agent_runtime.service_registry import ServiceRegistry
+from pycastle.services.service_registry import ServiceRegistry
 
 from pycastle.config import Config, StageOverride
 from pycastle.run_startup_preparation import (

@@ -504,7 +504,7 @@ def test_runtime_package_metadata_declares_standalone_distribution_path() -> Non
 def test_agent_runtime_package_exports_the_runtime_surface():
     import pycastle_agent_runtime as runtime
 
-    from pycastle_agent_runtime.contracts import (
+    from pycastle.services.agent_service import (
         AgentService,
         AssistantTurn,
         CredentialFailure,
@@ -516,18 +516,18 @@ def test_agent_runtime_package_exports_the_runtime_surface():
         UnsupportedTokens,
         UsageLimit,
     )
-    from pycastle_agent_runtime.service_registry import ServiceRegistry
+    from pycastle.services.service_registry import ServiceRegistry
     from pycastle_agent_runtime.session import (
         ProviderSessionState,
         ProviderSessionStateRequest,
         RunKind,
     )
-    from pycastle_agent_runtime.stage_priority_chain import (
+    from pycastle.stage_priority_chain import (
         ChainEntry,
         ConfiguredCandidateSelection,
         iter_stage_chain,
     )
-    from pycastle_agent_runtime.types import StageOverride
+    from pycastle.config.types import StageOverride
     from pycastle_agent_runtime.usage_limit_decision import (
         ContinueNow,
         SleepUntil,
