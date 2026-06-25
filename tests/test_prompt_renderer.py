@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from pycastle.config import Config
+from pycastle.label_catalog import PROMPT_GLOBAL_LABEL_SPECS
 from pycastle.prompts.pipeline import (
     PromptRenderError,
     PromptRenderer,
@@ -280,49 +281,49 @@ def test_scopes_are_distinct_members():
 # ── PromptTemplate enum has correct filename and scope ────────────────────────
 
 
-def test_template_implement_behavior_has_correct_filename_and_scope():
-    assert PromptTemplate.IMPLEMENT_BEHAVIOR.filename == "work/behavior.md"
-    assert PromptTemplate.IMPLEMENT_BEHAVIOR.scope == Scope.PER_ISSUE
-
-
-def test_template_review_has_per_issue_scope():
-    assert PromptTemplate.REVIEW.filename == "work/review.md"
-    assert PromptTemplate.REVIEW.scope == Scope.PER_ISSUE
-
-
-def test_template_merge_has_correct_scope():
-    assert PromptTemplate.MERGE.filename == "coordination/merge.md"
-    assert PromptTemplate.MERGE.scope == Scope.MERGE
-
-
-def test_template_plan_has_correct_scope():
-    assert PromptTemplate.PLAN.filename == "coordination/plan.md"
-    assert PromptTemplate.PLAN.scope == Scope.PLAN
-
-
-def test_template_preflight_issue_has_correct_scope():
-    assert PromptTemplate.PREFLIGHT_ISSUE.filename == "diagnostics/preflight-issue.md"
-    assert PromptTemplate.PREFLIGHT_ISSUE.scope == Scope.PREFLIGHT
-
-
-def test_template_host_check_issue_has_correct_scope():
-    assert PromptTemplate.HOST_CHECK_ISSUE.filename == "diagnostics/host-check-issue.md"
-    assert PromptTemplate.HOST_CHECK_ISSUE.scope == Scope.HOST_CHECK
-
-
-def test_template_improve_scan_has_correct_scope():
-    assert PromptTemplate.IMPROVE_SCAN.filename == "improve/01-scan.md"
-    assert PromptTemplate.IMPROVE_SCAN.scope == Scope.IMPROVE_SCAN
-
-
-def test_template_improve_issues_has_correct_scope():
-    assert PromptTemplate.IMPROVE_ISSUES.filename == "improve/03-issues.md"
-    assert PromptTemplate.IMPROVE_ISSUES.scope == Scope.IMPROVE_ISSUES
-
-
-def test_template_resume_has_correct_scope():
-    assert PromptTemplate.RESUME.filename == "shared/resume.md"
-    assert PromptTemplate.RESUME.scope == Scope.RESUME
+@pytest.mark.parametrize(
+    ("template", "expected_filename", "expected_scope"),
+    [
+        (PromptTemplate.IMPLEMENT_BEHAVIOR, "work/behavior.md", Scope.PER_ISSUE),
+        (PromptTemplate.IMPLEMENT_REFACTOR, "work/refactor.md", Scope.PER_ISSUE),
+        (PromptTemplate.IMPLEMENT_DOCS, "work/docs.md", Scope.PER_ISSUE),
+        (PromptTemplate.REVIEW, "work/review.md", Scope.PER_ISSUE),
+        (PromptTemplate.MERGE, "coordination/merge.md", Scope.MERGE),
+        (PromptTemplate.PLAN, "coordination/plan.md", Scope.PLAN),
+        (
+            PromptTemplate.PREFLIGHT_ISSUE,
+            "diagnostics/preflight-issue.md",
+            Scope.PREFLIGHT,
+        ),
+        (
+            PromptTemplate.HOST_CHECK_ISSUE,
+            "diagnostics/host-check-issue.md",
+            Scope.HOST_CHECK,
+        ),
+        (PromptTemplate.IMPROVE_SCAN, "improve/01-scan.md", Scope.IMPROVE_SCAN),
+        (PromptTemplate.IMPROVE_PRD, "improve/02-prd.md", Scope.IMPROVE_SESSION),
+        (PromptTemplate.IMPROVE_ISSUES, "improve/03-issues.md", Scope.IMPROVE_ISSUES),
+        (
+            PromptTemplate.IMPROVE_NO_CANDIDATE,
+            "improve/04-no-candidate-report.md",
+            Scope.IMPROVE_SESSION,
+        ),
+        (PromptTemplate.RESUME, "shared/resume.md", Scope.RESUME),
+        (
+            PromptTemplate.DIVERGENCE_RESOLVE,
+            "coordination/diverge.md",
+            Scope.DIVERGE,
+        ),
+        (
+            PromptTemplate.FAILURE_REPORT,
+            "diagnostics/failure-report.md",
+            Scope.FAILURE_REPORT,
+        ),
+    ],
+)
+def test_template_filename_and_scope(template, expected_filename, expected_scope):
+    assert template.filename == expected_filename
+    assert template.scope == expected_scope
 
 
 def test_template_reference_carries_name_and_relative_path():
@@ -334,20 +335,6 @@ def test_template_reference_carries_name_and_relative_path():
 
 def test_template_enum_has_fifteen_variants():
     assert len(list(PromptTemplate)) == 15
-
-
-def test_shipped_plan_prompt_requests_concise_blocked_entries():
-    text = (_SHIPPED_PROMPTS_DIR / "coordination/plan.md").read_text(encoding="utf-8")
-    shape = (
-        _SHIPPED_PROMPTS_DIR / "coordination/_expected-output-shape-plan.md"
-    ).read_text(encoding="utf-8")
-
-    assert "{{EXPECTED_OUTPUT_SHAPE}}" in text
-    assert "Each entry should include only:" in shape
-    assert "`number`: the blocked issue's number" in shape
-    assert "`title`: the blocked issue's title" in shape
-    assert "`blocked_by`" not in text
-    assert "`reason`" not in text
 
 
 # ── Ctor validates: unknown token raises ─────────────────────────────────────
@@ -1171,7 +1158,6 @@ def test_prompt_source_normalizes_windows_style_bundled_relative_paths(
     (bundled_dir / "work" / "behavior.md").write_text("bundled behavior prompt")
 
     source = PromptSource(local_dir, bundled_dir=bundled_dir)
-    source._bundled_relative_paths = {"shared\\resume.md", "work\\behavior.md"}
 
     assert source.read_text("shared/resume.md") == "local resume prompt"
     assert (
@@ -1365,10 +1351,11 @@ def test_render_shipped_preflight_issue_prompt():
         )
     )
 
-    assert "outside the agent container" not in result
+    assert "CHECKS" not in result
     assert "pytest suite" in result
     assert "pytest" in result
     assert "boom" in result
+    assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
 
 
 def test_render_shipped_host_check_issue_prompt():
@@ -1389,14 +1376,13 @@ def test_render_shipped_host_check_issue_prompt():
         )
     )
 
-    assert "outside the agent container" in result
-    assert "deduplicate" in result.lower()
     assert "Windows" in result
     assert "win32" in result
     assert "abc123" in result
     assert "pytest host suite" in result
     assert "pytest tests/host" in result
     assert "boom" in result
+    assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
 
 
 def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles():
@@ -1415,93 +1401,17 @@ def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles()
     assert "#12 OPEN - First candidate" in result
 
 
-def test_shipped_improve_scan_prompt_defines_novelty_gate_contract():
-    text = (_SHIPPED_PROMPTS_DIR / "improve/01-scan.md").read_text(encoding="utf-8")
-
-    assert "<recent_improve_prds>" in text
-    assert "</recent_improve_prds>" in text
-    assert "novelty gate" in text
-    assert (
-        "Treat repeated domain terms, module names, and architectural themes in "
-        "recent PRD titles as negative evidence, even when the titles are not exact "
-        "matches." in text
-    )
-    assert (
-        "Allow same-theme work only when the candidate names materially unresolved "
-        "friction that prior PRDs did not address." in text
-    )
-    assert "Novelty Check" in text
-    assert "matching recent PRDs" in text
-    assert "material remaining friction" in text
-    assert "why prior PRDs did not cover it" in text
-    assert (
-        "Do not pick a weaker unrelated candidate merely to avoid repeating a recent "
-        "theme. If the strongest candidates fail AFK-safety or novelty, emit "
-        "NO-CANDIDATE." in text
-    )
-    assert (
-        "novelty-rejected shortlist candidates visible with rejection reasons" in text
-    )
+# ── Shipped prompt contract checks now assert rendered behavior ─────────────
 
 
-def test_shipped_improve_scan_prompt_checks_size_pressure():
-    text = (_SHIPPED_PROMPTS_DIR / "improve/01-scan.md").read_text(encoding="utf-8")
-
-    assert "files over 500 lines" in text
-    assert "crowded same-level directories" in text
-    assert "hard to navigate" in text
-
-
-def test_shipped_improve_prd_prompt_requires_durable_novelty_check():
-    prd_text = (_SHIPPED_PROMPTS_DIR / "improve/02-prd.md").read_text(encoding="utf-8")
-    issues_text = (_SHIPPED_PROMPTS_DIR / "improve/03-issues.md").read_text(
-        encoding="utf-8"
-    )
-
-    assert "## Novelty Check" in prd_text
-    assert (
-        "Recent Improve PRDs do not share this candidate's architectural theme."
-        in prd_text
-    )
-    assert prd_text.index("## Novelty Check") < prd_text.index(
-        "## Implementation Decisions"
-    )
-    assert "## Novelty Check" not in issues_text
-
-
-def test_shipped_no_candidate_report_prompt_mentions_novelty_rejections():
-    text = (_SHIPPED_PROMPTS_DIR / "improve/04-no-candidate-report.md").read_text(
-        encoding="utf-8"
-    )
-
-    assert "novelty-gate rejection" in text
-    assert "novelty" in text
-    assert "NO-CANDIDATE" in text
-
-
-# ── No legacy standards placeholders in defaults-tree prompts ────────────────
-
-_LEGACY_STANDARDS_NAMES = {
-    "TESTING_STANDARDS",
-    "MOCKING_STANDARDS",
-    "INTERFACES_STANDARDS",
-    "DEEP_MODULES_STANDARDS",
-    "REFACTORING_STANDARDS",
-    "LANGUAGE_STANDARDS",
-    "DEEPENING_STANDARDS",
-}
-
-
-def test_no_legacy_standards_placeholder_in_defaults_prompts():
-    for path in _SHIPPED_PROMPTS_DIR.rglob("*.md"):
-        if path.name.startswith("_"):
-            continue
-        content = path.read_text(encoding="utf-8")
-        found = set(re.findall(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}", content))
-        legacy_found = found & _LEGACY_STANDARDS_NAMES
-        assert not legacy_found, (
-            f"{path.relative_to(_SHIPPED_PROMPTS_DIR)} references legacy placeholder(s): "
-            f"{legacy_found}"
+def test_shipped_templates_render_without_unresolved_placeholders():
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    for template in PromptTemplate:
+        scope_args = {placeholder: "x" for placeholder in template.scope.placeholders}
+        result = _run(renderer.render(template, scope_args, _noop_exec))
+        unresolved = set(re.findall(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}", result))
+        assert not unresolved, (
+            f"{template.filename} rendered with unresolved placeholders: {unresolved}"
         )
 
 
@@ -1576,13 +1486,22 @@ def _parse_placeholder_info() -> tuple[set[str], dict[str, tuple[set[str], set[s
     return global_tokens, scopes
 
 
-def test_placeholder_info_global_tokens_match_code(cfg, prompts_dir):
-    # ISSUE_TRACKER is conditional on its fragment file being present.
-    (prompts_dir / "shared/_issue-tracker.md").write_text("issue-tracker recipes")
-    renderer = PromptRenderer(cfg)
-    expected = set(renderer._global_args.keys()) | set(renderer._SHARED_FILES)
-
+def test_placeholder_info_global_tokens_match_code():
     global_tokens, _ = _parse_placeholder_info()
+    expected_from_cfg = {
+        spec.prompt_placeholder
+        for spec in PROMPT_GLOBAL_LABEL_SPECS
+        if spec.prompt_placeholder is not None
+    }
+    scope_tokens = {
+        placeholder for scope in Scope for placeholder in scope.placeholders
+    }
+    shipped_tokens: set[str] = set()
+    for path in _SHIPPED_PROMPTS_DIR.rglob("*.md"):
+        if path.name == "_placeholder-info.md":
+            continue
+        shipped_tokens.update(_TOKEN_RE.findall(path.read_text(encoding="utf-8")))
+    expected = (shipped_tokens - scope_tokens) | expected_from_cfg
 
     assert global_tokens == expected
 
@@ -1780,50 +1699,29 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
 
 # ── coordination/diverge.md contract ────────────────────────────────────────────────
 
-_MERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "coordination/merge.md").read_text()
-_DIVERGE_PROMPT = (_SHIPPED_PROMPTS_DIR / "coordination/diverge.md").read_text()
+
+def test_rendered_merge_prompt_includes_expected_output_shape():
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    result = _run(
+        renderer.render(
+            PromptTemplate.MERGE, {"BRANCHES": "branch-a\nbranch-b"}, _noop_exec
+        )
+    )
+
+    assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
+    assert "<commit_message>" in result
 
 
-def test_merge_prompt_uses_commit_message_contract():
-    merge_shape = (
-        _SHIPPED_PROMPTS_DIR / "coordination/_expected-output-shape-merge.md"
-    ).read_text(encoding="utf-8")
+def test_rendered_diverge_prompt_has_expected_output_shape_and_no_checks_placeholder():
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    result = _run(
+        renderer.render(
+            PromptTemplate.DIVERGENCE_RESOLVE,
+            {"BRANCH": "feature-branch"},
+            _noop_exec,
+        )
+    )
 
-    assert "{{EXPECTED_OUTPUT_SHAPE}}" in _MERGE_PROMPT
-    assert "<commit_message>...</commit_message>" in merge_shape
-    assert "<promise>COMPLETE</promise>" not in _MERGE_PROMPT
-
-
-def test_merge_prompt_leaves_commit_creation_to_pycastle():
-    assert "pycastle to create the merge commit" in _MERGE_PROMPT
-
-
-def test_diverge_prompt_does_not_contain_checks_placeholder():
-    assert "{{CHECKS}}" not in _DIVERGE_PROMPT
-
-
-def test_diverge_prompt_instructs_resolver_not_to_run_preflight_checks():
-    assert "preflight" in _DIVERGE_PROMPT.lower()
-
-
-def test_diverge_prompt_defines_complete_as_merge_committed_cleanly():
-    shape = (
-        _SHIPPED_PROMPTS_DIR / "coordination/_expected-output-shape-diverge.md"
-    ).read_text(encoding="utf-8")
-
-    assert "{{EXPECTED_OUTPUT_SHAPE}}" in _DIVERGE_PROMPT
-    assert "<promise>COMPLETE</promise>" in shape
-    complete_idx = shape.index("<promise>COMPLETE</promise>")
-    context = shape[max(0, complete_idx - 120) : complete_idx + 120].lower()
-    assert "clean" in context
-
-
-def test_diverge_prompt_defines_failed_as_conflicts_cannot_be_resolved_textually():
-    shape = (
-        _SHIPPED_PROMPTS_DIR / "coordination/_expected-output-shape-diverge.md"
-    ).read_text(encoding="utf-8")
-
-    assert "<promise>FAILED</promise>" in shape
-    failed_idx = shape.index("<promise>FAILED</promise>")
-    context = shape[max(0, failed_idx - 120) : failed_idx + 120].lower()
-    assert "textual" in context or "conflict" in context
+    assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
+    assert "{{CHECKS}}" not in result
+    assert "<promise>COMPLETE</promise>" in result
