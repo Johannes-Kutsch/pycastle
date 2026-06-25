@@ -5,7 +5,6 @@ from pycastle.stage_priority_chain import (
     iter_stage_chain,
     referenced_service_names,
     render_chain_label,
-    StageOverrideChain,
     select_configured_candidate_chain,
     validation_labels,
 )
