@@ -101,7 +101,7 @@ def test_agent_row_success_path_registers_and_removes(
             d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
         ) as row:
             assert isinstance(row, StatusRow)
-            assert not row._closed
+            assert not row.is_closed
 
     asyncio.run(run())
     out = capsys.readouterr().out

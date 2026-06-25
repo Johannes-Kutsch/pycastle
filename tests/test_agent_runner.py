@@ -4755,15 +4755,24 @@ def test_agent_runner_run_delegates_work_prompt_rendering_to_prompt_dispatch(
         run_kind,
         exec_fn,
     ) -> str:
+        if run_kind is RunKind.RESUME and not invocation.send_role_prompt_on_resume:
+            rendered_prompt = await renderer.render(PromptTemplate.RESUME, {}, exec_fn)
+        else:
+            rendered_prompt = await renderer.render(
+                invocation.template,
+                invocation.scope_args,
+                exec_fn,
+            )
         dispatch_calls.append(
             {
                 "invocation": invocation,
                 "renderer": renderer,
                 "run_kind": run_kind,
                 "exec_fn": exec_fn,
+                "rendered_prompt": rendered_prompt,
             }
         )
-        return "dispatched-prompt"
+        return rendered_prompt
 
     monkeypatch.setattr(runtime_work, "invoke_work", fake_invoke_work)
     monkeypatch.setattr(
@@ -4796,7 +4805,7 @@ def test_agent_runner_run_delegates_work_prompt_rendering_to_prompt_dispatch(
         )
     )
 
-    assert result == "dispatched-prompt"
+    assert result == "resume-content"
     assert len(dispatch_calls) == 1
     dispatch_call = dispatch_calls[0]
     invocation = dispatch_call["invocation"]
@@ -4804,7 +4813,7 @@ def test_agent_runner_run_delegates_work_prompt_rendering_to_prompt_dispatch(
     assert invocation.template is _PLAN_TEMPLATE
     assert invocation.scope_args == _PLAN_SCOPE_ARGS
     assert invocation.send_role_prompt_on_resume is False
-    assert dispatch_call["renderer"] is runner._renderer
+    assert dispatch_call["rendered_prompt"] == result
     assert dispatch_call["run_kind"] is RunKind.RESUME
     assert dispatch_call["exec_fn"] is _noop_exec
 

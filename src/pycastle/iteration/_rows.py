@@ -12,6 +12,10 @@ class StatusRow:
         self._caller = caller
         self._closed = False
 
+    @property
+    def is_closed(self) -> bool:
+        return self._closed
+
     def close(self, shutdown_message: str, shutdown_style: str = "success") -> None:
         if self._closed:
             return
