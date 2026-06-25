@@ -61,6 +61,36 @@ def _cfg_for_prompts_dir(prompts_dir: Path) -> SimpleNamespace:
     )
 
 
+def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
+    args = {
+        "ALL_OPEN_ISSUES_JSON": "[]",
+        "READY_FOR_AGENT_ISSUES_JSON": "[]",
+        "BRANCH": "pycastle/issue-1",
+        "BRANCHES": "branch-a\nbranch-b",
+        "CHECKED_SHA": "abc123",
+        "CHECK_NAME": "pytest suite",
+        "COMMAND": "pytest",
+        "FAILED_ROLE": "implementer",
+        "FAILURE_CLASS": "protocol_error",
+        "HOST_OS": "Linux",
+        "HOST_PLATFORM": "linux",
+        "IMPROVE_SHORT_SID": "imp-123",
+        "INTERRUPTED_WORK": "",
+        "ISSUE_BODY": "issue body",
+        "ISSUE_COMMENTS": "issue comments",
+        "ISSUE_NUMBER": "1",
+        "ISSUE_TITLE": "title",
+        "OUTPUT": "boom",
+        "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+        "SESSION_DIR": "/sessions/abc",
+    }
+    return {
+        placeholder: args[placeholder]
+        for placeholder in sorted(template.scope.placeholders)
+    }
+
+
 @pytest.fixture(autouse=True)
 def _project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
@@ -1407,8 +1437,7 @@ def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles()
 def test_shipped_templates_render_without_unresolved_placeholders():
     renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
     for template in PromptTemplate:
-        scope_args = {placeholder: "x" for placeholder in template.scope.placeholders}
-        result = _run(renderer.render(template, scope_args, _noop_exec))
+        result = _run(renderer.render(template, _scope_args_for(template), _noop_exec))
         unresolved = set(re.findall(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}", result))
         assert not unresolved, (
             f"{template.filename} rendered with unresolved placeholders: {unresolved}"
@@ -1488,7 +1517,7 @@ def _parse_placeholder_info() -> tuple[set[str], dict[str, tuple[set[str], set[s
 
 def test_placeholder_info_global_tokens_match_code():
     global_tokens, _ = _parse_placeholder_info()
-    expected_from_cfg = {
+    label_tokens = {
         spec.prompt_placeholder
         for spec in PROMPT_GLOBAL_LABEL_SPECS
         if spec.prompt_placeholder is not None
@@ -1501,7 +1530,7 @@ def test_placeholder_info_global_tokens_match_code():
         if path.name == "_placeholder-info.md":
             continue
         shipped_tokens.update(_TOKEN_RE.findall(path.read_text(encoding="utf-8")))
-    expected = (shipped_tokens - scope_tokens) | expected_from_cfg
+    expected = (shipped_tokens - scope_tokens) | label_tokens
 
     assert global_tokens == expected
 
@@ -1702,26 +1731,26 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
 
 def test_rendered_merge_prompt_includes_expected_output_shape():
     renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
-    result = _run(
-        renderer.render(
-            PromptTemplate.MERGE, {"BRANCHES": "branch-a\nbranch-b"}, _noop_exec
-        )
+    scope_args = _scope_args_for(PromptTemplate.MERGE)
+    result = _run(renderer.render(PromptTemplate.MERGE, scope_args, _noop_exec))
+    expected_output_shape = renderer.render_expected_output_shape(
+        PromptTemplate.MERGE, scope_args
     )
 
     assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
-    assert "<commit_message>" in result
+    assert expected_output_shape in result
 
 
 def test_rendered_diverge_prompt_has_expected_output_shape_and_no_checks_placeholder():
     renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    scope_args = _scope_args_for(PromptTemplate.DIVERGENCE_RESOLVE)
     result = _run(
-        renderer.render(
-            PromptTemplate.DIVERGENCE_RESOLVE,
-            {"BRANCH": "feature-branch"},
-            _noop_exec,
-        )
+        renderer.render(PromptTemplate.DIVERGENCE_RESOLVE, scope_args, _noop_exec)
+    )
+    expected_output_shape = renderer.render_expected_output_shape(
+        PromptTemplate.DIVERGENCE_RESOLVE, scope_args
     )
 
     assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
+    assert expected_output_shape in result
     assert "{{CHECKS}}" not in result
-    assert "<promise>COMPLETE</promise>" in result
