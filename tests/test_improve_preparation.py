@@ -226,7 +226,7 @@ def test_prepare_improve_step_uses_empty_issue_placeholders_without_prd_number()
     prepared = prepare_improve_step(
         ImproveStepPreparationRequest(
             prompt_template=PromptTemplate.IMPROVE_ISSUES,
-            session_namespace="issues",
+            session_namespace="main",
             display_name="Slice Agent",
             work_body="filing sub-issues",
             send_role_prompt_on_resume=True,
@@ -296,7 +296,7 @@ def test_prepare_improve_step_reads_issue_and_comments_for_issues_scope():
     prepared = prepare_improve_step(
         ImproveStepPreparationRequest(
             prompt_template=PromptTemplate.IMPROVE_ISSUES,
-            session_namespace="issues",
+            session_namespace="main",
             display_name="Slice Agent",
             work_body="filing sub-issues",
             send_role_prompt_on_resume=True,
@@ -351,7 +351,7 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert prepared.session_namespace == "issues"
+    assert prepared.session_namespace == "main"
     assert prepared.name == "Slice Agent"
     assert prepared.work_body == "filing sub-issues"
     assert prepared.prompt.send_role_prompt_on_resume is True
@@ -389,7 +389,7 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert prepared.session_namespace == "issues"
+    assert prepared.session_namespace == "main"
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "ISSUE_NUMBER": "",
@@ -430,7 +430,7 @@ def test_prepare_improve_step_propagates_issue_read_failures():
         prepare_improve_step(
             ImproveStepPreparationRequest(
                 prompt_template=PromptTemplate.IMPROVE_ISSUES,
-                session_namespace="issues",
+                session_namespace="main",
                 display_name="Slice Agent",
                 work_body="filing sub-issues",
                 send_role_prompt_on_resume=True,

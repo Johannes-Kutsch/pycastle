@@ -576,19 +576,32 @@ def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
 
 
 def test_improve_orphan_reset_when_prd_done_but_no_in_flight(tmp_path, git_svc):
-    """Progress='02-prd' without in-flight='03-issues' means prd_number was lost.
-    improve_phase clears progress and restarts from phase 1 (orphan-reset)."""
+    """Progress='02-prd' without in-flight='03-issues' continues at phase 3 using
+    fresh PRD fetch; no phase-1 restart."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_progress(wt, "02-prd")
-    # 3 responses: scan → prd → issues (full fresh cycle)
+    _seed_progress(wt, "02-prd:77")
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {
+        "number": 77,
+        "title": "Recovered PRD",
+        "body": "Re-fetched PRD body",
+    }
+    github_svc.get_issue_comments.return_value = []
     runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        [CompletionOutput()],
         preflight_responses=[[]],
     )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
-    assert len(runner.calls) == 3
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert runner.calls[0].prompt.scope_args["ISSUE_NUMBER"] == "77"
+    assert runner.calls[0].prompt.scope_args["ISSUE_TITLE"] == "Recovered PRD"
+    assert len(runner.calls) == 1
 
 
 def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
@@ -597,12 +610,34 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     role_session_dir = wt / ".pycastle-session" / "improve"
     role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
+    (role_session_dir / "_phase_progress").write_text("02-prd:77", encoding="utf-8")
     (role_session_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {
+        "number": 77,
+        "title": "Resume PRD",
+        "body": "Edited body",
+    }
+    github_svc.get_issue_comments.return_value = [
+        {
+            "author": "alice",
+            "created_at": "2026-01-01T00:00:00Z",
+            "body": "looks good",
+        }
+    ]
     runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
     _run(deps)
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert runner.calls[0].prompt.scope_args["ISSUE_NUMBER"] == "77"
+    assert runner.calls[0].prompt.scope_args["ISSUE_TITLE"] == "Resume PRD"
+    assert runner.calls[0].prompt.scope_args["ISSUE_BODY"] == "Edited body"
+    assert (
+        runner.calls[0].prompt.scope_args["ISSUE_COMMENTS"]
+        == "## Comment by @alice at 2026-01-01T00:00:00Z\n\nlooks good"
+    )
+    github_svc.get_issue.assert_called_once_with(77)
+    github_svc.get_issue_comments.assert_called_once_with(77)
     assert len(runner.calls) == 1
 
 
@@ -820,7 +855,7 @@ def test_improve_phase_03_uses_issues_namespace(deps, agent_runner):
         for c in agent_runner.calls
         if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
     )
-    assert issues_call.session_namespace == "issues"
+    assert issues_call.session_namespace == "main"
 
 
 def test_improve_all_phases_have_correct_namespace(deps, agent_runner):
@@ -831,7 +866,84 @@ def test_improve_all_phases_have_correct_namespace(deps, agent_runner):
     assert agent_runner.calls[1].prompt.template == PromptTemplate.IMPROVE_PRD
     assert agent_runner.calls[1].session_namespace == "main"
     assert agent_runner.calls[2].prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert agent_runner.calls[2].session_namespace == "issues"
+    assert agent_runner.calls[2].session_namespace == "main"
+
+
+def test_improve_phase_03_resumes_main_transcript_when_exact_transcript_exists(
+    tmp_path, git_svc
+):
+    """With exact phase-03 main transcript for the selected service,
+    phase 3 reuses the existing transcript and still refreshes the PRD body."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "02-prd:77")
+    _seed_exact_phase_1_main_transcript(
+        wt,
+        service_name="codex",
+        provider_session_id="thread-existing",
+    )
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {
+        "number": 77,
+        "title": "Resume PRD",
+        "body": "Edited body from GitHub",
+    }
+    github_svc.get_issue_comments.return_value = []
+    runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+        service_registry=ServiceRegistry({"codex": CodexService()}),
+    )
+
+    _run(deps)
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert runner.calls[0].prompt.scope_args["ISSUE_NUMBER"] == "77"
+    assert runner.calls[0].prompt.send_role_prompt_on_resume is True
+
+
+def test_improve_phase_03_falls_back_to_fresh_with_prd_refetch_when_main_transcript_missing(
+    tmp_path, git_svc
+):
+    """When phase-03 exact main transcript is unavailable, phase-3 starts fresh
+    from phase-3 work with a re-fetched PRD payload."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_progress(wt, "02-prd:77")
+    runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    github_svc = MagicMock()
+    github_svc.get_issue.return_value = {
+        "number": 77,
+        "title": "Fallback PRD",
+        "body": "PRD edited while phase boundary reset",
+    }
+    github_svc.get_issue_comments.return_value = []
+
+    _run(
+        _make_deps(
+            tmp_path,
+            runner,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            cfg=Config(
+                improve_override=StageOverride(service="codex", effort="medium")
+            ),
+            service_registry=ServiceRegistry({"codex": CodexService()}),
+        )
+    )
+
+    assert len(runner.calls) == 1
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert runner.calls[0].prompt.scope_args["ISSUE_NUMBER"] == "77"
+    assert runner.calls[0].prompt.scope_args["ISSUE_TITLE"] == "Fallback PRD"
+    assert (
+        runner.calls[0].prompt.scope_args["ISSUE_BODY"]
+        == "PRD edited while phase boundary reset"
+    )
 
 
 # ── Return type: sum-type variants ───────────────────────────────────────────

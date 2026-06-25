@@ -116,7 +116,7 @@ def test_terminal_after_04_report(driver_dir: Path) -> None:
 
 
 def test_orphan_reset_wipes_progress_and_restarts_at_01(driver_dir: Path) -> None:
-    """progress=02-prd without in-flight=03-issues → wipe progress, restart at phase 01."""
+    """Legacy orphan reset is no longer used for missing phase-3 progress marker."""
     driver_dir.mkdir(parents=True, exist_ok=True)
     progress_file = driver_dir / "_phase_progress"
     progress_file.write_text("02-prd", encoding="utf-8")
@@ -124,8 +124,23 @@ def test_orphan_reset_wipes_progress_and_restarts_at_01(driver_dir: Path) -> Non
     driver = _make_driver(driver_dir)
     step = driver.start()
 
-    assert step is not None and step.prompt_key == "01-scan.md"
-    assert not progress_file.exists()
+    assert step is not None and step.prompt_key == "03-issues.md"
+    assert progress_file.read_text(encoding="utf-8").strip() == "02-prd"
+
+
+def test_orphan_phase_2_progress_with_prd_number_keeps_prd_context_for_phase_3(
+    driver_dir: Path,
+) -> None:
+    """progress='02-prd:NNN' restores the PRD number for the phase-3 prompt."""
+    driver_dir.mkdir(parents=True, exist_ok=True)
+    progress_file = driver_dir / "_phase_progress"
+    progress_file.write_text("02-prd:77", encoding="utf-8")
+
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+
+    assert step is not None and step.prompt_key == "03-issues.md"
+    assert driver.prd_number == 77
 
 
 def test_orphan_reset_does_not_trigger_when_03_issues_in_flight(
