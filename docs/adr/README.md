@@ -9,7 +9,7 @@
 - [0007 — Stage completion via role-session-dir state](0007-stage-completion-via-role-dir-not-commit-prefix.md): Empty `.pycastle-session/<role>/` dir signals done, not commit-prefix scan.
 - [0008 — Centralized UsageLimitError catch](0008-centralized-usagelimit-catch-at-iteration-boundary.md): Single `try/except` at `run_iteration` top level.
 - [0009 — PromptRenderer with scoped placeholder tiers](0009-prompt-renderer-with-scoped-placeholder-tiers.md): Startup validation of prompt templates against global + per-scope placeholders.
-- [0010 — Per-phase session namespacing for improve](0010-per-phase-session-namespacing-for-improve-mode.md): Improve phase 03 on its own session namespace (`issues`).
+- [0010 — Per-phase session namespacing for improve](0010-per-phase-session-namespacing-for-improve-mode.md): Improve phase 03 on its own session namespace (`issues`). *Phase-03-split superseded by ADR 0046; namespace mechanism + strict phase-1→2 gate + PRD-as-durable-handoff still stand.*
 - [0011 — Recently-closed filter](0011-recently-closed-filter-for-github-list-endpoint.md): Self-healing `_recently_closed` set in `GithubService`.
 - [0012 — Prompt rendering in AgentRunner](0012-prompt-rendering-in-agent-runner-not-container-runner.md): Prompt-shape resolution in `AgentRunner`, not `ContainerRunner`.
 - [0013 — Content-addressed PreflightCache](0013-remove-skip-preflight-route-merger-through-cache.md): Single-slot cross-iteration cache; Merger routes through `get_safe_sha()`.
@@ -44,3 +44,4 @@
 - [0043 — OpenCode timeout exhaustion uses unknown-reset usage-limit path](0043-opencode-timeout-exhaustion-uses-unknown-reset-usage-limit-path.md): Treat OpenCode timeout exhaustion as an unknown-reset usage limit.
 - [0044 — Host-initiated privileged worktree cleanup](0044-host-initiated-privileged-worktree-cleanup.md): Remove root-owned orphan worktrees via a host-spawned root container; never an agent capability.
 - [0045 — Failure-Report evidence from captured agent log](0045-failure-report-evidence-from-captured-agent-log.md): Copy the failed run's agent-invocation log into the worktree; never depend on provider session export.
+- [0046 — Improve slice phase resumes the PRD session](0046-improve-slice-phase-resumes-prd-session.md): Phase 03 resumes the `main` transcript instead of starting fresh in `issues`; `issues` namespace retired (supersedes the phase-03 split in ADR 0010).
