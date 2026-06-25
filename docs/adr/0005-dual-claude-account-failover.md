@@ -1,5 +1,7 @@
 # Dual Claude account failover via OAuth token pool
 
+> **Partially superseded by ADR 0047.** The two-account cap (`CLAUDE_CODE_OAUTH_TOKEN` + `_SECONDARY`), the rejection of the "N-token list" option, and the secondary-preferred ordering are superseded: the pool now takes N numbered credentials (`_2`, `_3`, …), bare key is slot 1 and used first, and the scheme is generalized to OpenCode. The rest of this ADR — OAuth-only auth, env-only secrets, per-agent-run failover granularity — still stands.
+
 All Claude auth collapses onto OAuth tokens (`claude setup-token`-generated): primary plus optional secondary. An in-memory pool picks a non-exhausted token per agent spawn and sleeps only when every account is exhausted, until the earliest wake-time. Drops `ANTHROPIC_API_KEY` and `CLAUDE_ACCOUNT_JSON`. Previously, a Pro/Max rate-limit slept until `reset_time + 2 min` even with a second subscription available.
 
 ## Considered Options
