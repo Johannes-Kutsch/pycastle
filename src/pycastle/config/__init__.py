@@ -4,6 +4,7 @@ from .types import StageOverride
 from pycastle.config.env_loader import (
     DEFAULT_ENV_FILE,
     KNOWN_CREDENTIAL_ENV_KEYS,
+    parse_credential_list,
     load_credential_env,
     load_env,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "Config",
     "DEFAULT_ENV_FILE",
     "KNOWN_CREDENTIAL_ENV_KEYS",
+    "parse_credential_list",
     "StageOverride",
     "image_name_for",
     "load_config",

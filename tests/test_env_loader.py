@@ -7,6 +7,7 @@ import pytest
 from pycastle.config import (
     DEFAULT_ENV_FILE,
     KNOWN_CREDENTIAL_ENV_KEYS,
+    parse_credential_list,
     load_config,
     load_credential_env,
     load_env,
@@ -254,6 +255,71 @@ def test_credential_env_contains_only_known_credential_keys(
         "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
         "OPENCODE_GO_API_KEY",
     }
+
+
+def test_credential_env_includes_numbered_credentials(
+    repo: Path, tmp_path: Path
+) -> None:
+    global_dir = tmp_path / "home"
+    global_dir.mkdir()
+    (global_dir / ".env").write_text(
+        "GH_TOKEN=gh\n"
+        "CLAUDE_CODE_OAUTH_TOKEN=primary\n"
+        "CLAUDE_CODE_OAUTH_TOKEN_2=secondary\n"
+        "OPENCODE_GO_API_KEY=primary-opencode\n"
+        "OPENCODE_GO_API_KEY_2=secondary-opencode\n"
+    )
+    env = load_credential_env(
+        global_dir=global_dir,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={},
+    )
+    assert env["CLAUDE_CODE_OAUTH_TOKEN_2"] == "secondary"
+    assert env["OPENCODE_GO_API_KEY_2"] == "secondary-opencode"
+
+
+def test_parse_credential_list_orders_sloted_credentials_for_a_service() -> None:
+    credential_env = {
+        "CLAUDE_CODE_OAUTH_TOKEN_3": "slot3",
+        "CLAUDE_CODE_OAUTH_TOKEN": "slot1",
+        "CLAUDE_CODE_OAUTH_TOKEN_2": "slot2",
+    }
+    assert parse_credential_list(credential_env, "CLAUDE_CODE_OAUTH_TOKEN") == [
+        (1, "slot1"),
+        (2, "slot2"),
+        (3, "slot3"),
+    ]
+
+
+def test_parse_credential_list_ignores_legacy_secondary_key() -> None:
+    credential_env = {
+        "CLAUDE_CODE_OAUTH_TOKEN": "primary",
+        "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY": "secondary",
+    }
+    assert parse_credential_list(credential_env, "CLAUDE_CODE_OAUTH_TOKEN") == [
+        (1, "primary")
+    ]
+
+
+def test_parse_credential_list_rejects_bare_and_slot_1_both_set() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"CLAUDE_CODE_OAUTH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN_1",
+    ):
+        parse_credential_list(
+            {
+                "CLAUDE_CODE_OAUTH_TOKEN": "primary",
+                "CLAUDE_CODE_OAUTH_TOKEN_1": "secondary",
+            },
+            "CLAUDE_CODE_OAUTH_TOKEN",
+        )
+
+
+def test_parse_credential_list_with_only_primary_credential_is_single_item() -> None:
+    assert parse_credential_list(
+        {"OPENCODE_GO_API_KEY": "one"},
+        "OPENCODE_GO_API_KEY",
+    ) == [(1, "one")]
 
 
 def test_credential_env_honours_process_env_wins_precedence(
