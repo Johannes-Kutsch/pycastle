@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import shutil
 import subprocess
 import warnings
@@ -26,6 +27,7 @@ from pycastle.infrastructure.worktree import (
     DurableIssueWorktreeIntent,
     ReusableSandboxWorktreeIntent,
     cleanup_durable_issue_worktree_after_success,
+    prune_orphan_worktrees,
     detached_transient_worktree,
     durable_issue_worktree,
     managed_worktree,
@@ -340,6 +342,62 @@ def test_managed_worktree_preserves_when_stage_done_sentinel_present(real_branch
         text=True,
     ).stdout
     assert "pycastle/issue-stage-done" in branches
+
+
+def test_managed_worktree_logs_creation_and_prune_events_with_node_state(
+    tmp_path: Path,
+    branch_deps,
+    monkeypatch,
+):
+    log_path = tmp_path / "worktree-lifecycle-debug.log"
+    monkeypatch.setenv(
+        "PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG",
+        str(log_path),
+    )
+    orphan = branch_deps.repo_root / "pycastle" / ".worktrees" / "orphan-1848"
+    orphan.mkdir(parents=True)
+    (orphan / "pyproject.toml").write_text(
+        "[project]\nname='orphan'\n", encoding="utf-8"
+    )
+
+    async def _run():
+        async with managed_worktree(
+            "issue-1848",
+            branch="pycastle/issue-1848",
+            sha="abc1848",
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
+            deps=branch_deps,
+        ):
+            pass
+
+        prune_orphan_worktrees(
+            branch_deps.repo_root,
+            cfg=branch_deps.cfg,
+            git_service=branch_deps.git_svc,
+        )
+
+    asyncio.run(_run())
+
+    entries = [
+        json.loads(line) for line in log_path.read_text().splitlines() if line.strip()
+    ]
+    events = [entry["event"] for entry in entries]
+
+    assert "worktree_create" in events
+    assert "prune_worktree" in events
+
+    create = next(entry for entry in entries if entry["event"] == "worktree_create")
+    prune = next(entry for entry in entries if entry["event"] == "prune_worktree")
+    assert create["path"] == str(
+        branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-1848"
+    )
+    assert create["exists"] is True
+    assert create["node_type"] == "directory"
+    assert isinstance(create.get("uid"), int)
+    assert isinstance(create.get("gid"), int)
+    assert prune["path"] == str(orphan)
+    assert prune["exists"] is True
+    assert prune["node_type"] == "directory"
 
 
 def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branch_deps):

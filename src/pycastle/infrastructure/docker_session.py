@@ -12,6 +12,7 @@ from docker.models.containers import Container as DockerContainer
 
 from ..config import Config
 from ..errors import DockerError, DockerTimeoutError
+from .worktree_lifecycle_debug import log_worktree_lifecycle_event
 from .worktree import CONTAINER_PARENT_GIT, patch_gitdir_for_container
 
 _AGENT_USER_LOCAL_BIN = "/home/agent/.local/bin"
@@ -106,9 +107,31 @@ class DockerSession:
                     "or required core tools may be missing."
                 )
             raise DockerError(message) from exc
+        workspace = self._workspace_mount()
+        if workspace is not None:
+            log_worktree_lifecycle_event(
+                "container_launch",
+                workspace,
+                cfg=self._cfg,
+            )
         return self
 
+    def _workspace_mount(self) -> Path | None:
+        for host_path, spec in self._volumes.items():
+            if not isinstance(spec, dict):
+                continue
+            if spec.get("bind") == "/home/agent/workspace":
+                return Path(host_path)
+        return None
+
     def __exit__(self, *_) -> None:
+        workspace = self._workspace_mount()
+        if workspace is not None:
+            log_worktree_lifecycle_event(
+                "container_teardown",
+                workspace,
+                cfg=self._cfg,
+            )
         if self._auto_overlay is not None:
             try:
                 self._auto_overlay.unlink(missing_ok=True)

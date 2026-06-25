@@ -645,6 +645,56 @@ def test_agent_runner_run_returns_agent_output(tmp_path):
     assert isinstance(result, CommitMessageOutput)
 
 
+def test_agent_runner_run_logs_container_launch_and_teardown_order(
+    tmp_path, monkeypatch
+):
+    log_path = tmp_path / "worktree-lifecycle-debug.log"
+    monkeypatch.setenv(
+        "PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG",
+        str(log_path),
+    )
+    service = _RecordingAgentService("claude")
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=_make_docker_client(_COMPLETE_STREAM),
+        service_registry={"claude": service},
+    )
+
+    asyncio.run(
+        runner.run(
+            _run_request(
+                name="Test",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=_managed_mount(tmp_path),
+            )
+        )
+    )
+
+    entries = [
+        json.loads(line) for line in log_path.read_text().splitlines() if line.strip()
+    ]
+    events = [entry["event"] for entry in entries]
+    assert "container_launch" in events
+    assert "container_teardown" in events
+
+    launch_index = events.index("container_launch")
+    teardown_index = events.index("container_teardown")
+    assert launch_index < teardown_index
+
+    launch = entries[launch_index]
+    teardown = entries[teardown_index]
+    assert launch["exists"] is True
+    assert launch["node_type"] == "directory"
+    assert launch["path"] == teardown["path"]
+    assert isinstance(launch.get("uid"), int)
+    assert isinstance(launch.get("gid"), int)
+
+    assert service.commands == ["claude exec"]
+
+
 def test_agent_runner_dispatches_with_explicit_claude_service(
     tmp_path,
 ):

@@ -22,6 +22,7 @@ from ..errors import (
 )
 from ..services import GitCommandError, GitService, GitTimeoutError
 from ..session import SESSION_DIR_NAME, any_role_dir_present
+from .worktree_lifecycle_debug import log_worktree_lifecycle_event
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 PRESERVED_FAILURE_MARKER = ".preserved-failure"
@@ -184,6 +185,7 @@ def prune_orphan_worktrees(
         if is_failure_worktree_preserved(child):
             continue
         if str(child.resolve()) not in active:
+            log_worktree_lifecycle_event("prune_worktree", child, cfg=cfg_for_cleanup)
             try:
                 shutil.rmtree(child)
             except PermissionError as exc:
@@ -228,6 +230,9 @@ def _try_remove_orphan_via_host_container(cfg: Config | None, child: Path) -> bo
 
 
 def teardown_worktree(svc: GitService, repo_root: Path, path: Path) -> None:
+    log_worktree_lifecycle_event(
+        "worktree_teardown", path, cfg=None, repo_root=repo_root
+    )
     try:
         svc.remove_worktree(repo_root, path)
     finally:
@@ -246,6 +251,7 @@ def cleanup_durable_issue_worktree_after_success(
     if path not in svc.list_worktrees(repo_root):
         return
     prune_needed = not path.exists()
+    log_worktree_lifecycle_event("worktree_prune", path, repo_root=repo_root)
     try:
         teardown_worktree(svc, repo_root, path)
     except GitCommandError as exc:
@@ -401,6 +407,7 @@ async def managed_worktree(
         _create_worktree(
             deps.git_svc, deps.repo_root, path, resolved_identity.branch, sha
         )
+    log_worktree_lifecycle_event("worktree_create", path, repo_root=deps.repo_root)
     _preservation_worthy_exc = False
     try:
         yield path
