@@ -9,9 +9,7 @@ from .services.service_registry import ServiceRegistry
 from .config import Config, StageOverride, parse_credential_list
 from .config.loader import referenced_services
 from .stage_priority_chain import (
-    chain_entries,
-    render_chain_label,
-    validation_labels,
+    StageOverrideChain,
 )
 
 if TYPE_CHECKING:
@@ -229,9 +227,10 @@ def _validate_stage_overrides(
         valid_models_by_service = {}
     violations: list[StageOverrideValidationFailure] = []
     for stage_name, override in _stage_overrides(cfg):
+        chain_facts = StageOverrideChain(override=override, stage_name=stage_name)
         for stage_label, entry in zip(
-            validation_labels(stage_name, override),
-            chain_entries(override),
+            chain_facts.validation_labels,
+            chain_facts.entries,
             strict=True,
         ):
             svc_name = entry.service
@@ -294,14 +293,22 @@ def _validate_locally_configured_stage_overrides(
     cfg: Config, runtime_registry: ServiceRegistry
 ) -> list[StageOverrideValidationFailure]:
     violations: list[StageOverrideValidationFailure] = []
+    configured_service_names = tuple(runtime_registry.services)
+    available_service_names = configured_service_names
     for stage_name, override in _stage_overrides(cfg):
-        if runtime_registry.has_configured_candidate(override):
+        chain_facts = StageOverrideChain(
+            override=override,
+            stage_name=stage_name,
+            configured_service_names=configured_service_names,
+            available_service_names=available_service_names,
+        )
+        if chain_facts.has_configured_candidate:
             continue
         violations.append(
             StageOverrideValidationFailure(
                 code="no_configured_service",
                 stage_label=stage_name,
-                chain_label=render_chain_label(override),
+                chain_label=chain_facts.rendered_chain_label,
             )
         )
     return violations
@@ -312,9 +319,13 @@ def _validate_configured_provider_stage_overrides(
 ) -> list[StageOverrideValidationFailure]:
     violations: list[StageOverrideValidationFailure] = []
     for stage_name, override in _stage_overrides(cfg):
+        chain_facts = StageOverrideChain(
+            override=override,
+            stage_name=stage_name,
+        )
         for stage_label, entry in zip(
-            validation_labels(stage_name, override),
-            chain_entries(override),
+            chain_facts.validation_labels,
+            chain_facts.entries,
             strict=True,
         ):
             if not entry.model:

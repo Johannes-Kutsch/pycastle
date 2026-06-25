@@ -1,5 +1,6 @@
 from pycastle.config.types import StageOverride
 from pycastle.stage_priority_chain import (
+    StageOverrideChain,
     chain_entries,
     iter_stage_chain,
     referenced_service_names,
@@ -103,6 +104,29 @@ def test_render_chain_label_marks_missing_primary_service_name() -> None:
     result = render_chain_label(override)
 
     assert result == "<missing>"
+
+
+def test_stage_override_chain_keeps_validation_labels_and_chain_label_coherent() -> (
+    None
+):
+    override = StageOverride(
+        service="",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+    )
+
+    result = StageOverrideChain(
+        override=override,
+        stage_name="plan",
+        configured_service_names=("codex",),
+        available_service_names=("codex",),
+    )
+
+    assert [entry.service for entry in result.entries] == ["", "claude"]
+    assert result.validation_labels == ("plan", "plan fallback")
+    assert result.rendered_chain_label == "<missing> -> claude"
+    assert result.has_configured_candidate is False
 
 
 def test_referenced_service_names_collects_primary_and_fallback_service_names() -> None:
