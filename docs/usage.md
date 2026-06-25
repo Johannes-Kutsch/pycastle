@@ -12,9 +12,11 @@ Everything an adopter needs once they have decided to try pycastle: prerequisite
 
   If your repository belongs to an SSO-protected organisation, the PAT must be authorised for that org via the GitHub web UI (PAT settings → "Configure SSO" → Authorize) before pycastle can use it.
 - Service-specific credentials for whichever services you actually configure:
-  - Claude: `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token` to generate one)
+  - Claude: `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token` to generate one), plus optional `CLAUDE_CODE_OAUTH_TOKEN_2`, `CLAUDE_CODE_OAUTH_TOKEN_3`, ...
+  - OpenCode: `OPENCODE_GO_API_KEY`, plus optional `OPENCODE_GO_API_KEY_2`, `OPENCODE_GO_API_KEY_3`, ...
   - Codex: host `~/.codex/auth.json`, which pycastle seeds into per-role runtime state on demand
-  - OpenCode: `OPENCODE_GO_API_KEY`
+
+Dual-Claude-account migration: if you previously set `CLAUDE_CODE_OAUTH_TOKEN_SECONDARY`, rename it to `CLAUDE_CODE_OAUTH_TOKEN_2`; the bare key remains slot 1 and keeps behavior unchanged.
 
 ## Installation
 
