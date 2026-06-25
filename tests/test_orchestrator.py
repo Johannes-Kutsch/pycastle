@@ -2958,7 +2958,9 @@ def test_opencode_timeout_usage_exhaustion_switches_to_fallback_instead_of_sleep
             captured.append((request.service, request.name))
             if request.service == "opencode":
                 opencode.mark_exhausted(None)
-                raise UsageLimitError(reset_time=None, raw_message=None, provider="opencode")
+                raise UsageLimitError(
+                    reset_time=None, raw_message=None, provider="opencode"
+                )
             return CompletionOutput()
         return CompletionOutput()
 
@@ -2980,8 +2982,82 @@ def test_opencode_timeout_usage_exhaustion_switches_to_fallback_instead_of_sleep
             max_iterations=2,
         )
 
-    assert captured == [("opencode", "Implement Agent #1"), ("codex", "Implement Agent #1")]
+    assert captured == [
+        ("opencode", "Implement Agent #1"),
+        ("codex", "Implement Agent #1"),
+    ]
     mock_sleep.assert_not_called()
+
+
+def test_opencode_timeout_usage_exhaustion_sleeps_until_marked_wake_without_fallback(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    wake_time = datetime(2026, 1, 1, 13, 45, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        "pycastle.iteration.orchestrator._time_module.now_local", lambda: now
+    )
+
+    class _MarkingOpencodeService(_FakeService):
+        def __init__(self) -> None:
+            super().__init__(available=True)
+
+        @property
+        def name(self) -> str:
+            return "opencode"
+
+        def mark_exhausted(self, reset_time) -> None:
+            self._available = False
+            self._wake_time = reset_time
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        if request.name.startswith("Implement Agent"):
+            opencode.mark_exhausted(wake_time)
+            raise UsageLimitError(
+                reset_time=None,
+                raw_message=None,
+                provider="opencode",
+            )
+        return CompletionOutput()
+
+    opencode = _MarkingOpencodeService()
+    mock_github = _make_github_svc(numbers=[1])
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Issue 1",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [],
+    ]
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            git_service=_make_git_svc(try_merge_side_effect=[True]),
+            service_registry=ServiceRegistry(
+                cast(dict[str, AgentService], {"opencode": opencode})
+            ),
+            implement_override=StageOverride(
+                service="opencode",
+                effort="low",
+                model="deepseek-v4-flash",
+            ),
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_called_once_with((wake_time - now).total_seconds())
 
 
 def test_primary_takes_precedence_when_both_services_available(tmp_path):

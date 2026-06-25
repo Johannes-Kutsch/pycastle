@@ -4706,9 +4706,7 @@ def test_work_invocation_opencode_idle_timeout_exhaustion_becomes_usage_limit(
             self.mark_exhausted_calls.append(reset_time)
 
     now = datetime(2025, 1, 1, 14, 30, 0)
-    monkeypatch.setattr(
-        "pycastle.agents.runner._time_module.now_local", lambda: now
-    )
+    monkeypatch.setattr("pycastle.agents.runner._time_module.now_local", lambda: now)
 
     expected_reset = compute_wake_time(None, now, timedelta(minutes=90))[0].replace(
         minute=0,
@@ -4754,9 +4752,7 @@ def test_work_invocation_opencode_idle_timeout_exhaustion_becomes_usage_limit(
                     service=cast(Any, service),
                     model="deepseek-v4-flash",
                     effort="medium",
-                    output_adapter=TextOutputAdapter(
-                        prompt="already-rendered prompt"
-                    ),
+                    output_adapter=TextOutputAdapter(prompt="already-rendered prompt"),
                     dependencies=dependencies,
                     status_display=status_display,
                 )
@@ -4769,6 +4765,101 @@ def test_work_invocation_opencode_idle_timeout_exhaustion_becomes_usage_limit(
     assert err.reset_time is None
     assert err.stage_key == "plan"
     assert service.mark_exhausted_calls == [expected_reset]
+    assert (
+        "print",
+        "Planner",
+        "Timeout — restarting (attempt 1/2)",
+        None,
+    ) in status_display.calls
+    assert (
+        "print",
+        "Planner",
+        "Timeout — restarting (attempt 2/2)",
+        None,
+    ) in status_display.calls
+
+
+@pytest.mark.parametrize("service_name", ["claude", "codex"])
+def test_work_invocation_non_opencode_idle_timeout_exhaustion_remains_timeout(
+    tmp_path: Path,
+    service_name: str,
+):
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole,
+            tool_policy,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AgentTimeoutError("timeout")
+
+    class _TimeoutService:
+        def __init__(self, name: str) -> None:
+            self.name = name
+            self.mark_exhausted_calls: list[datetime | None] = []
+
+        def mark_exhausted(self, reset_time: datetime | None) -> None:
+            self.mark_exhausted_calls.append(reset_time)
+
+    service = _TimeoutService(service_name)
+    status_display = RecordingStatusDisplay()
+
+    with pytest.raises(AgentTimeoutError) as exc_info:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Planner",
+                    mount_path=_managed_mount(tmp_path),
+                    role=AgentRole.PLANNER,
+                    service=cast(Any, service),
+                    model="test-model",
+                    effort="medium",
+                    output_adapter=TextOutputAdapter(prompt="already-rendered prompt"),
+                    dependencies=WorkInvocationDependencies(
+                        container_workspace="/home/agent/workspace",
+                        timeout_retries=2,
+                        stage_key_for_role=lambda role: role.value,
+                        prepare_session=lambda _request: _PreparedRunSessionStandIn(
+                            initial_run_kind=RunKind.FRESH,
+                            initial_provider_session_id=None,
+                        ),
+                        build_session=lambda *_args: _FakeSession(),
+                        build_runner=lambda *_args: cast(
+                            ContainerRunner, _FakeRunner()
+                        ),
+                        get_git_identity=lambda: ("Test User", "test@example.com"),
+                    ),
+                    status_display=status_display,
+                )
+            )
+        )
+
+    err = exc_info.value
+    assert err.role_value == AgentRole.PLANNER.value
+    assert err.worktree_path == _managed_mount(tmp_path)
+    assert service.mark_exhausted_calls == []
     assert (
         "print",
         "Planner",
