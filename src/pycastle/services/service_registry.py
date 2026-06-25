@@ -6,8 +6,7 @@ from datetime import datetime
 from .agent_service import AgentService
 from ..config.types import StageOverride
 from ..stage_priority_chain import (
-    configured_candidate_chain,
-    select_configured_candidate_chain,
+    StageOverrideChain,
 )
 
 ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
@@ -21,12 +20,13 @@ class ServiceRegistry:
     def services(self) -> dict[str, AgentService]:
         return dict(self._services)
 
-    def _configured_candidate_overrides(
+    def _configured_candidates_chain(
         self, override: StageOverride
-    ) -> tuple[StageOverride, ...]:
-        return configured_candidate_chain(
-            override, configured_service_names=tuple(self._services)
-        ).candidates
+    ) -> StageOverrideChain:
+        return StageOverrideChain(
+            override=override,
+            configured_service_names=tuple(self._services),
+        )
 
     def _availability_by_service(
         self, overrides: tuple[StageOverride, ...], now: datetime
@@ -40,43 +40,34 @@ class ServiceRegistry:
             )
         return availability
 
-    def _exhausted_services_for(
-        self, override: StageOverride, now: datetime
-    ) -> tuple[AgentService, ...]:
-        configured_overrides = self._configured_candidate_overrides(override)
-        availability = self._availability_by_service(configured_overrides, now)
-        return tuple(
-            self._services[node.service]
-            for node in configured_overrides
-            if not availability[node.service]
-        )
-
     def has_configured_candidate(self, override: StageOverride) -> bool:
-        return configured_candidate_chain(
-            override, configured_service_names=tuple(self._services)
-        ).has_configured_candidate
+        return self._configured_candidates_chain(
+            override,
+        ).configured_candidates.has_configured_candidate
 
     def resolve(self, override: StageOverride, now: datetime) -> StageOverride:
-        configured_overrides = self._configured_candidate_overrides(override)
-        availability = self._availability_by_service(configured_overrides, now)
-        selection = select_configured_candidate_chain(
-            override,
-            configured_service_names=tuple(
-                node.service for node in configured_overrides
-            ),
+        configured_candidates = self._configured_candidates_chain(
+            override
+        ).configured_candidates.candidates
+        availability = self._availability_by_service(configured_candidates, now)
+        selection = StageOverrideChain(
             available_service_names=tuple(
                 node.service
-                for node in configured_overrides
+                for node in configured_candidates
                 if availability[node.service]
             ),
-        )
+            override=override,
+            configured_service_names=tuple(self._services),
+        ).configured_candidate_selection
         return selection.selected_chain or override
 
     def has_available(self, now: datetime) -> bool:
         return any(svc.is_available(now=now) for svc in self._services.values())
 
     def has_available_for(self, override: StageOverride, now: datetime) -> bool:
-        configured_overrides = self._configured_candidate_overrides(override)
+        configured_overrides = self._configured_candidates_chain(
+            override
+        ).configured_candidates.candidates
         availability = self._availability_by_service(configured_overrides, now)
         return any(availability[node.service] for node in configured_overrides)
 
@@ -91,7 +82,15 @@ class ServiceRegistry:
     def next_wake_time_for(
         self, override: StageOverride, now: datetime
     ) -> datetime | None:
-        exhausted = self._exhausted_services_for(override, now)
+        configured_overrides = self._configured_candidates_chain(
+            override
+        ).configured_candidates.candidates
+        availability = self._availability_by_service(configured_overrides, now)
+        exhausted = [
+            self._services[node.service]
+            for node in configured_overrides
+            if not availability[node.service]
+        ]
         if not exhausted:
             return None
         return min(service.next_wake_time() for service in exhausted)
