@@ -5,6 +5,11 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+from pycastle.config import Config
+from pycastle.iteration import AbortedUsageLimit
+from pycastle.iteration.usage_limit_decision import (
+    decide_usage_limit_continuation as decide_iteration_usage_limit_continuation,
+)
 from pycastle.config.types import StageOverride
 from pycastle.services.service_registry import ServiceRegistry
 from pycastle.usage_limit_decision import (
@@ -491,4 +496,52 @@ def test_decide_usage_limit_continuation_keeps_stage_key_behavior_without_regist
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
         " Press Ctrl+C to abort."
+    )
+
+
+def test_iteration_usage_limit_continuation_uses_provider_minimum_duration_for_unknown_reset():
+    decision = decide_iteration_usage_limit_continuation(
+        AbortedUsageLimit(
+            provider="codex",
+            reset_time=None,
+            stage_key="review",
+        ),
+        Config(
+            codex_minimum_unknown_reset_duration_hours=1.5,
+        ),
+        service_registry=None,
+        now=_now(),
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == datetime(2026, 1, 1, 16, 2, 0, tzinfo=timezone.utc)
+    assert decision.is_estimated is True
+    assert (
+        decision.message == "Usage limit reached. Sleeping until 16:02 (estimated)."
+        " Press Ctrl+C to abort."
+    )
+
+
+def test_iteration_usage_limit_continuation_keeps_parsed_reset_time_authoritative():
+    reset_time = datetime(2026, 1, 1, 15, 30, 0, tzinfo=timezone.utc)
+
+    decision = decide_iteration_usage_limit_continuation(
+        AbortedUsageLimit(
+            provider="codex",
+            reset_time=reset_time,
+            stage_key="review",
+        ),
+        Config(
+            codex_minimum_unknown_reset_duration_hours=6,
+        ),
+        service_registry=None,
+        now=_now(),
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 32, 0, tzinfo=timezone.utc)
+    assert decision.is_estimated is False
+    assert (
+        decision.message
+        == "Usage limit reached. Sleeping until 15:32. Press Ctrl+C to abort."
     )

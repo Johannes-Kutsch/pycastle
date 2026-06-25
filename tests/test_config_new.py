@@ -69,6 +69,47 @@ def test_load_config_layers_host_checks_independently_from_preflight_checks(tmp_
     assert cfg.preflight_checks == (("global-preflight", "python -m preflight"),)
 
 
+def test_load_config_accepts_minimum_unknown_reset_duration_hours(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "claude_minimum_unknown_reset_duration_hours = 1.5\n"
+        "codex_minimum_unknown_reset_duration_hours = 2\n"
+        "opencode_minimum_unknown_reset_duration_hours = 0.25\n"
+    )
+
+    cfg = load_config(repo_root=tmp_path)
+
+    assert cfg.claude_minimum_unknown_reset_duration_hours == 1.5
+    assert cfg.codex_minimum_unknown_reset_duration_hours == 2
+    assert cfg.opencode_minimum_unknown_reset_duration_hours == 0.25
+
+
+def test_load_config_rejects_negative_minimum_unknown_reset_duration_hours(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "codex_minimum_unknown_reset_duration_hours = -1\n"
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match="codex_minimum_unknown_reset_duration_hours must be >= 0",
+    ):
+        load_config(repo_root=tmp_path)
+
+
+def test_load_config_rejects_boolean_minimum_unknown_reset_duration_hours(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "claude_minimum_unknown_reset_duration_hours = True\n"
+    )
+
+    with pytest.raises(
+        ConfigValidationError,
+        match="claude_minimum_unknown_reset_duration_hours must be a non-negative number of hours",
+    ):
+        load_config(repo_root=tmp_path)
+
+
 def test_load_config_uses_universal_default_stage_priority_chains(tmp_path):
     cfg = load_config(repo_root=tmp_path)
     assert cfg.plan_override == StageOverride(

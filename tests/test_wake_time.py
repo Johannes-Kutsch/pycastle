@@ -38,3 +38,28 @@ def test_none_reset_at_exact_top_of_hour_rolls_forward() -> None:
     wake, is_estimated = compute_wake_time(None, now)
     assert wake == datetime(2026, 5, 19, 15, 2)
     assert is_estimated is True
+
+
+def test_unknown_reset_minimum_duration_rounds_up_to_next_supported_wake_boundary() -> (
+    None
+):
+    now = datetime(2026, 5, 19, 14, 30, 0)
+    wake, is_estimated = compute_wake_time(
+        None,
+        now,
+        minimum_unknown_reset_duration=timedelta(hours=1, minutes=30),
+    )
+    assert wake == datetime(2026, 5, 19, 16, 2)
+    assert is_estimated is True
+
+
+def test_reset_time_remains_authoritative_even_with_minimum_duration() -> None:
+    reset = datetime(2026, 5, 19, 15, 30, 0)
+    now = datetime(2026, 5, 19, 14, 30, 0)
+    wake, is_estimated = compute_wake_time(
+        reset,
+        now,
+        minimum_unknown_reset_duration=timedelta(hours=6),
+    )
+    assert wake == datetime(2026, 5, 19, 15, 32, 0)
+    assert is_estimated is False
