@@ -40,6 +40,18 @@ def test_run_returns_true_when_command_succeeds():
         assert svc.is_ancestor("HEAD", Path("repo"))
 
 
+def test_run_returns_false_when_command_reports_branch_is_not_ancestor():
+    svc = _git_service(timeout=5)
+    completed = subprocess.CompletedProcess(
+        args=["git", "merge-base", "--is-ancestor", "feature", "HEAD"],
+        returncode=1,
+        stdout=b"",
+        stderr=b"",
+    )
+    with patch("subprocess.run", return_value=completed):
+        assert not svc.is_ancestor("feature", Path("repo"))
+
+
 def test_run_raises_timeout_error_when_command_exceeds_timeout():
     svc = _git_service(timeout=5)
     with patch(
