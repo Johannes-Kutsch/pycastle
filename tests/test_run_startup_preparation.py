@@ -449,6 +449,43 @@ def test_prepare_run_startup_requires_claude_primary_token_to_build_adapter():
     ]
 
 
+def test_prepare_run_startup_ignores_empty_and_repeated_stage_chain_service_names():
+    repeated_claude_chain = StageOverride(
+        service=" ",
+        fallback=StageOverride(
+            service="claude",
+            fallback=StageOverride(
+                service="claude",
+                fallback=StageOverride(service="opencode"),
+            ),
+        ),
+    )
+    cfg = Config(
+        docker_image_name="img",
+        plan_override=repeated_claude_chain,
+        implement_override=repeated_claude_chain,
+        review_override=repeated_claude_chain,
+        merge_override=repeated_claude_chain,
+        preflight_issue_override=repeated_claude_chain,
+        improve_override=repeated_claude_chain,
+    )
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "CLAUDE_CODE_OAUTH_TOKEN": "primary",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.configured_provider_adapters.keys() == {"claude"}
+    assert startup.runtime_registry.services == startup.configured_provider_adapters
+
+
 def test_prepare_run_startup_short_circuits_before_local_priority_chain_validation():
     cfg = Config(
         docker_image_name="img",
