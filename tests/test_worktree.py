@@ -1748,6 +1748,41 @@ def test_prune_orphan_worktrees_uses_injected_git_service_without_loading_config
     assert not orphan.exists()
 
 
+def test_prune_orphan_worktrees_warns_and_removes_all_other_orphans(
+    tmp_path, monkeypatch
+):
+    from pycastle.infrastructure import worktree as worktree_module
+
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    stuck_orphan = worktrees_dir / "stuck-orphan"
+    removable_orphan = worktrees_dir / "removable-orphan"
+    stuck_orphan.mkdir()
+    removable_orphan.mkdir()
+
+    original = worktree_module.shutil.rmtree
+
+    def _raise_on_stuck(path, *args, **kwargs):
+        if Path(path).resolve() == stuck_orphan.resolve():
+            raise PermissionError("cannot remove")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(worktree_module.shutil, "rmtree", _raise_on_stuck)
+
+    with pytest.warns(
+        UserWarning, match=r"Unable to remove orphan worktree: .*stuck-orphan"
+    ):
+        worktree_module.prune_orphan_worktrees(
+            tmp_path,
+            cfg=Config(),
+            git_service=_make_prune_git_svc([]),
+        )
+
+    assert not removable_orphan.exists()
+    assert stuck_orphan.exists()
+    assert worktrees_dir.exists()
+
+
 # ── prune_orphan_worktrees: git-registered worktrees without role sessions ────
 
 

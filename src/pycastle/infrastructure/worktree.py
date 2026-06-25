@@ -1,4 +1,5 @@
 import os
+import subprocess
 import re
 import shutil
 import tempfile
@@ -7,6 +8,7 @@ from contextlib import asynccontextmanager, contextmanager, suppress
 from enum import Enum
 from pathlib import Path
 from typing import Protocol
+import warnings
 
 from ..config import Config, load_config
 from ..errors import (
@@ -167,8 +169,10 @@ def prune_orphan_worktrees(
 ) -> None:
     if git_service is not None:
         svc = git_service
+        cfg_for_cleanup = cfg
     else:
         resolved_cfg = cfg or load_config()
+        cfg_for_cleanup = resolved_cfg
         svc = GitService(resolved_cfg)
     worktrees_dir = _project_local_worktrees_dir(repo_root)
     if not worktrees_dir.exists():
@@ -180,8 +184,47 @@ def prune_orphan_worktrees(
         if is_failure_worktree_preserved(child):
             continue
         if str(child.resolve()) not in active:
-            shutil.rmtree(child)
+            try:
+                shutil.rmtree(child)
+            except PermissionError as exc:
+                if not _try_remove_orphan_via_host_container(cfg_for_cleanup, child):
+                    warnings.warn(
+                        f"Unable to remove orphan worktree: {child} ({exc})",
+                        UserWarning,
+                        stacklevel=2,
+                    )
     remove_worktrees_dir_if_empty(worktrees_dir)
+
+
+def _try_remove_orphan_via_host_container(cfg: Config | None, child: Path) -> bool:
+    if cfg is None or not cfg.docker_image_name:
+        return False
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        "--user",
+        "0",
+        "-v",
+        f"{child.parent}:/pycastle-worktrees:rw",
+        "--entrypoint",
+        "rm",
+        cfg.docker_image_name,
+        "--",
+        "-rf",
+        f"/pycastle-worktrees/{child.name}",
+    ]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=True, timeout=10
+        )
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
+        return False
+    return result.returncode == 0 and not child.exists()
 
 
 def teardown_worktree(svc: GitService, repo_root: Path, path: Path) -> None:
