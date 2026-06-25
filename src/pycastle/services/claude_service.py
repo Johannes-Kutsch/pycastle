@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import dataclasses
 import json
 import shlex
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from pycastle.agents.output_protocol import AgentRole
@@ -17,7 +16,6 @@ from pycastle.runtime_session import (
     is_exact_resumable_service_session,
 )
 
-from .. import _time as _time_module
 from ..session.resume import provider_state_relpath
 from pycastle.services.agent_service import (
     AssistantTurn,
@@ -35,81 +33,13 @@ from .flag_profiles import (
     flag_profile_for,
     flag_profile_for_tool_policy,
 )
-from ._wake_time import compute_wake_time
 from .reset_time_parser import parse_claude_reset_time
-
-
-# ── private account pool ──────────────────────────────────────────────────────
-
-
-@dataclasses.dataclass
-class _Account:
-    name: str
-    token: str
-    exhausted_until: datetime | None = None
-
-
-class _AccountPool:
-    def __init__(self, accounts: list[tuple[str, str]]) -> None:
-        if not accounts:
-            raise ValueError("ClaudeService requires at least one account")
-        self._accounts: list[_Account] = [
-            _Account(name=n, token=t) for n, t in accounts
-        ]
-
-    def _is_exhausted(self, acc: _Account, now: datetime) -> bool:
-        return acc.exhausted_until is not None and acc.exhausted_until > now
-
-    def pick(self, now: datetime | None = None) -> tuple[str, str]:
-        now = now or _time_module.now_local()
-        for acc in self._accounts:
-            if not self._is_exhausted(acc, now):
-                return acc.name, acc.token
-        raise RuntimeError("No available Claude accounts")
-
-    def mark_exhausted(
-        self,
-        token: str,
-        reset_time: datetime | None,
-        now: datetime | None = None,
-    ) -> None:
-        now = now or _time_module.now_local()
-        wake, _ = compute_wake_time(
-            reset_time,
-            now,
-        )
-        for acc in self._accounts:
-            if acc.token == token:
-                acc.exhausted_until = wake
-                return
-
-    def mark_permanently_exhausted(self, token: str) -> str | None:
-        for acc in self._accounts:
-            if acc.token == token:
-                acc.exhausted_until = _PERMANENT_EXHAUSTION_WAKE
-                return acc.name
-        return None
-
-    def has_available(self, now: datetime | None = None) -> bool:
-        now = now or _time_module.now_local()
-        return any(not self._is_exhausted(a, now) for a in self._accounts)
-
-    def earliest_wake_time(self) -> datetime:
-        wakes = [
-            a.exhausted_until for a in self._accounts if a.exhausted_until is not None
-        ]
-        if not wakes:
-            raise RuntimeError("No exhausted accounts")
-        return min(wakes)
-
-    def names(self) -> list[str]:
-        return [a.name for a in self._accounts]
+from .credential_pool import CredentialPool
 
 
 _SUBSCRIPTION_ACCESS_DENIAL_PHRASE = (
     "disabled Claude subscription access for Claude Code"
 )
-_PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
 
 
 def _provider_session_preferences_for_request(
@@ -252,8 +182,14 @@ def _classify_line(line: str) -> list[ParsedTurn]:
 
 class ClaudeService:
     def __init__(self, accounts: list[tuple[str, str]] | None = None) -> None:
-        self._pool: _AccountPool | None = (
-            _AccountPool(accounts) if accounts is not None else None
+        self._pool: CredentialPool | None = (
+            CredentialPool(
+                accounts,
+                empty_error_message="ClaudeService requires at least one account",
+                unavailable_error_message="No available Claude accounts",
+            )
+            if accounts is not None
+            else None
         )
         self._current_token: str | None = None
 
