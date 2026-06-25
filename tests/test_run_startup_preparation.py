@@ -224,6 +224,30 @@ def test_prepare_run_startup_prefers_bare_claude_credential_over_numbered_slot_t
     assert claude.build_env()["CLAUDE_CODE_OAUTH_TOKEN"] == "slot-1"
 
 
+def test_prepare_run_startup_omits_numbered_claude_credentials_from_shared_container_env():
+    cfg = Config(docker_image_name="img", improve_mode="until_sleep")
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "CLAUDE_CODE_OAUTH_TOKEN": "slot-1",
+            "CLAUDE_CODE_OAUTH_TOKEN_2": "slot-2",
+            "CLAUDE_CODE_OAUTH_TOKEN_10": "slot-10",
+            "SHARED_CONTAINER_TOKEN": "shared",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.shared_container_env == {
+        "GH_TOKEN": "gh",
+        "SHARED_CONTAINER_TOKEN": "shared",
+    }
+
+
 def test_prepare_run_startup_uses_only_passed_credential_env_facts(monkeypatch):
     cfg = Config(docker_image_name="img", improve_mode="until_sleep")
     monkeypatch.setenv("GH_TOKEN", "ambient-gh")

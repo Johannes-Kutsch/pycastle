@@ -334,15 +334,17 @@ def _validate_configured_provider_stage_overrides(
 def _shared_container_env(credential_env: Mapping[str, str]) -> dict[str, str]:
     # Strip provider-specific credentials from the shared env; service adapters
     # inject what they need into the agent container at the streaming boundary.
+    provider_credential_prefixes = (
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "OPENCODE_GO_API_KEY",
+    )
     return {
         key: value
         for key, value in credential_env.items()
-        if key
-        not in {
-            "CLAUDE_CODE_OAUTH_TOKEN",
-            "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
-            "OPENCODE_GO_API_KEY",
-        }
+        if not any(
+            key == prefix or key.startswith(f"{prefix}_")
+            for prefix in provider_credential_prefixes
+        )
     }
 
 
