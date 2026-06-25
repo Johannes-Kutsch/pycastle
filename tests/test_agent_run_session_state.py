@@ -273,11 +273,13 @@ def test_session_package_public_interface_reports_no_protocol_resume_for_unrecov
     assert state.protocol_reprompt_provider_run_session() is None
 
 
-def test_record_observed_provider_session_id_writes_exact_codex_thread_id_file(
+def test_record_observed_provider_session_id_round_trips_via_resume_prepare(
     tmp_path: Path,
 ):
     state_dir = tmp_path / ".pycastle-session" / "improve" / "main" / "codex"
-    state_dir.mkdir(parents=True)
+    sessions_dir = state_dir / "sessions"
+    sessions_dir.mkdir(parents=True)
+    (sessions_dir / "rollout-001.jsonl").write_text("{}\n", encoding="utf-8")
     (state_dir / "auth.json").write_text("{}", encoding="utf-8")
 
     state = prepare_agent_run_session_state(
@@ -289,6 +291,16 @@ def test_record_observed_provider_session_id_writes_exact_codex_thread_id_file(
         )
     )
 
-    record_observed_provider_session_id(state, "thread-exact-value")
+    record_observed_provider_session_id(state, "thread-resume-value")
 
-    assert (state_dir / "thread_id").read_text(encoding="utf-8") == "thread-exact-value"
+    resumable_state = prepare_agent_run_session_state(
+        AgentRunSessionStateRequest(
+            worktree=tmp_path,
+            role=AgentRole.IMPROVE,
+            session_namespace="main",
+            service=CodexService(),
+        )
+    )
+
+    assert resumable_state.run_kind is RunKind.RESUME
+    assert resumable_state.provider_session_id == "thread-resume-value"
