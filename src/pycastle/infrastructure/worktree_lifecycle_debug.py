@@ -12,12 +12,10 @@ from ..config import Config, resolve_logs_dir
 _ENV_LOG_PATH = "PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG"
 
 
-def _node_type(path: Path, *, missing_ok: bool = False) -> str:
-    if not path.exists():
-        return "missing" if not missing_ok else "missing"
-    if path.is_symlink():
+def _node_type(stat_result: os.stat_result) -> str:
+    file_mode = stat_result.st_mode
+    if stat.S_ISLNK(file_mode):
         return "symlink"
-    file_mode = path.stat().st_mode
     if stat.S_ISDIR(file_mode):
         return "directory"
     if stat.S_ISREG(file_mode):
@@ -26,10 +24,11 @@ def _node_type(path: Path, *, missing_ok: bool = False) -> str:
 
 
 def _path_snapshot(path: Path) -> tuple[bool, str, int | None, int | None]:
-    if not path.exists():
+    try:
+        stat_result = path.lstat()
+    except FileNotFoundError:
         return False, "missing", None, None
-    stat_result = path.stat()
-    return True, _node_type(path), stat_result.st_uid, stat_result.st_gid
+    return True, _node_type(stat_result), stat_result.st_uid, stat_result.st_gid
 
 
 def _log_target(

@@ -37,6 +37,9 @@ from pycastle.infrastructure.worktree import (
     transient_worktree,
     worktree_identity,
 )
+from pycastle.infrastructure.worktree_lifecycle_debug import (
+    log_worktree_lifecycle_event,
+)
 
 
 # ── Cycle 23-1: timeout constants ────────────────────────────────────────────
@@ -398,6 +401,27 @@ def test_managed_worktree_logs_creation_and_prune_events_with_node_state(
     assert prune["path"] == str(orphan)
     assert prune["exists"] is True
     assert prune["node_type"] == "directory"
+
+
+def test_temporary_worktree_lifecycle_log_reports_broken_symlink_node_type(
+    tmp_path: Path, monkeypatch
+):
+    log_path = tmp_path / "worktree-lifecycle-debug.log"
+    monkeypatch.setenv("PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG", str(log_path))
+    link_path = tmp_path / "broken-worktree-link"
+    link_path.symlink_to(tmp_path / "missing-target")
+
+    log_worktree_lifecycle_event("worktree_create", link_path)
+
+    [entry] = [
+        json.loads(line) for line in log_path.read_text().splitlines() if line.strip()
+    ]
+    assert entry["event"] == "worktree_create"
+    assert entry["path"] == str(link_path)
+    assert entry["exists"] is True
+    assert entry["node_type"] == "symlink"
+    assert isinstance(entry.get("uid"), int)
+    assert isinstance(entry.get("gid"), int)
 
 
 def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branch_deps):
