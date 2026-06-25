@@ -252,7 +252,6 @@ def test_credential_env_contains_only_known_credential_keys(
     assert set(env.keys()) == {
         "GH_TOKEN",
         "CLAUDE_CODE_OAUTH_TOKEN",
-        "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY",
         "OPENCODE_GO_API_KEY",
     }
 
@@ -298,6 +297,22 @@ def test_credential_env_excludes_non_base_key_numbered_suffixes(
         process_env={},
     )
     assert env == {"CLAUDE_CODE_OAUTH_TOKEN": "primary"}
+
+
+def test_credential_env_does_not_include_legacy_claude_secondary_key(
+    repo: Path, tmp_path: Path
+) -> None:
+    global_dir = tmp_path / "home"
+    global_dir.mkdir()
+    (global_dir / ".env").write_text("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY=legacy\n")
+
+    env = load_credential_env(
+        global_dir=global_dir,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={},
+    )
+
+    assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in env
 
 
 def test_parse_credential_list_orders_slotted_credentials_for_a_service() -> None:

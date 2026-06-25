@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from .services.service_registry import ServiceRegistry
 
-from .config import Config, StageOverride
+from .config import Config, StageOverride, parse_credential_list
 from .config.loader import referenced_services
 from .stage_priority_chain import (
     chain_entries,
@@ -33,6 +33,7 @@ class StageOverrideValidationFailure:
         "invalid_model",
         "provider_model_mismatch",
         "no_configured_service",
+        "credential_pool_error",
     ]
     stage_label: str
     service: str | None = None
@@ -42,6 +43,7 @@ class StageOverrideValidationFailure:
     valid_values: tuple[str, ...] = ()
     suggestion: str | None = None
     chain_label: str | None = None
+    message: str | None = None
 
     def render(self) -> str:
         if self.code == "missing_service":
@@ -68,6 +70,8 @@ class StageOverrideValidationFailure:
                 f"  stage={self.stage_label!r}: model={self.model!r} is invalid"
                 f" for service={self.service!r}.{detail}"
             )
+        if self.code == "credential_pool_error" and self.message is not None:
+            return f"  {self.message}"
         return (
             f"  stage={self.stage_label!r}: no locally configured service in priority chain "
             f"{self.chain_label!r}"
@@ -102,9 +106,21 @@ def prepare_run_startup(
     credential_env: Mapping[str, str],
     improve_mode_flags: RunStartupImproveModeFlagFacts,
 ) -> RunStartupPreparation:
-    configured_provider_adapters = configured_provider_adapters_for_run(
-        cfg, credential_env
-    )
+    configuration_failures: tuple[StageOverrideValidationFailure, ...] = ()
+    try:
+        configured_provider_adapters = configured_provider_adapters_for_run(
+            cfg,
+            credential_env,
+        )
+    except ValueError as err:
+        configured_provider_adapters = {}
+        configuration_failures = (
+            StageOverrideValidationFailure(
+                code="credential_pool_error",
+                stage_label="startup",
+                message=str(err),
+            ),
+        )
     runtime_registry = ServiceRegistry(configured_provider_adapters)
     validation_services = _validation_services()
     validation_failures = tuple(
@@ -121,11 +137,15 @@ def prepare_run_startup(
         )
     )
     if not validation_failures:
-        validation_failures = tuple(
-            _validate_configured_provider_stage_overrides(
-                cfg, configured_provider_adapters
-            )
-        ) + tuple(_validate_locally_configured_stage_overrides(cfg, runtime_registry))
+        validation_failures = (
+            *tuple(
+                _validate_configured_provider_stage_overrides(
+                    cfg, configured_provider_adapters
+                )
+            ),
+            *tuple(_validate_locally_configured_stage_overrides(cfg, runtime_registry)),
+        )
+    validation_failures = (*configuration_failures, *validation_failures)
     return RunStartupPreparation(
         validation_failures=tuple(validation_failures),
         configured_provider_adapters=configured_provider_adapters,
@@ -156,15 +176,15 @@ def configured_provider_adapters_for_run(
     if "claude" not in referenced:
         return service_registry
 
-    primary = credential_env.get("CLAUDE_CODE_OAUTH_TOKEN")
-    if not primary:
+    accounts_with_slots = parse_credential_list(
+        credential_env,
+        "CLAUDE_CODE_OAUTH_TOKEN",
+    )
+
+    if not accounts_with_slots:
         return service_registry
 
-    accounts: list[tuple[str, str]] = []
-    secondary = credential_env.get("CLAUDE_CODE_OAUTH_TOKEN_SECONDARY")
-    if secondary:
-        accounts.append(("secondary", secondary))
-    accounts.append(("primary", primary))
+    accounts = [(f"account {slot}", token) for slot, token in accounts_with_slots]
     service_registry["claude"] = ClaudeService(accounts=accounts)
     return service_registry
 

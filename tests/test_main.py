@@ -73,7 +73,7 @@ def test_load_env_returns_only_known_keys_with_isolated_global_layer(
     assert env == {"CLAUDE_CODE_OAUTH_TOKEN": "oauth-tok", "GH_TOKEN": "gh-tok"}
 
 
-def test_load_env_includes_secondary_oauth_token_when_present(tmp_path, monkeypatch):
+def test_load_env_includes_main_claude_oauth_token_when_present(tmp_path, monkeypatch):
     from pycastle.main import _load_env
 
     pycastle_dir = tmp_path / "pycastle"
@@ -92,7 +92,6 @@ def test_load_env_includes_secondary_oauth_token_when_present(tmp_path, monkeypa
     env = _load_env(cfg=Config())
 
     assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "primary-tok"
-    assert env["CLAUDE_CODE_OAUTH_TOKEN_SECONDARY"] == "secondary-tok"
 
 
 def test_run_cmd_dispatches_via_pycastle_owned_orchestration_adapter(

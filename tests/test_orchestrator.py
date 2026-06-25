@@ -2530,7 +2530,7 @@ def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
 
-    svc = ClaudeService(accounts=[("secondary", "tok-s"), ("primary", "tok-p")])
+    svc = ClaudeService(accounts=[("account 2", "tok-s"), ("account 1", "tok-p")])
     recording = RecordingStatusDisplay()
 
     async def _fake_run_agent(request: RunRequest):
@@ -2546,7 +2546,8 @@ def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
 
     msgs = [c[2] for c in recording.calls if c[0] == "print"]
     assert any(
-        "Claude accounts: secondary (active), primary (standby)" in str(m) for m in msgs
+        "Claude accounts: account 2 (active), account 1 (standby)" in str(m)
+        for m in msgs
     )
 
 
@@ -2556,7 +2557,7 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
 
-    svc = ClaudeService(accounts=[("primary", "tok-p")])
+    svc = ClaudeService(accounts=[("account 1", "tok-p")])
     recording = RecordingStatusDisplay()
 
     async def _fake_run_agent(request: RunRequest):
@@ -2571,7 +2572,7 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
     )
 
     msgs = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("Claude accounts: primary (active)" in str(m) for m in msgs)
+    assert any("Claude accounts: account 1 (active)" in str(m) for m in msgs)
 
 
 def test_codex_auth_summary_printed_at_startup(tmp_path):

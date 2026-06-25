@@ -194,11 +194,34 @@ def test_prepare_run_startup_keeps_provider_credentials_behind_provider_adapters
     opencode = startup.configured_provider_adapters["opencode"]
 
     assert isinstance(claude, ClaudeService)
-    assert claude.account_names() == ["secondary", "primary"]
-    assert claude.build_env()["CLAUDE_CODE_OAUTH_TOKEN"] == "secondary"
+    assert claude.account_names() == ["account 1"]
+    assert claude.build_env()["CLAUDE_CODE_OAUTH_TOKEN"] == "primary"
     assert opencode.build_env()["OPENCODE_GO_API_KEY"] == "opencode"
     assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in startup.shared_container_env
     assert "OPENCODE_GO_API_KEY" not in startup.shared_container_env
+
+
+def test_prepare_run_startup_prefers_bare_claude_credential_over_numbered_slot_two():
+    cfg = Config(docker_image_name="img", improve_mode="until_sleep")
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "CLAUDE_CODE_OAUTH_TOKEN": "slot-1",
+            "CLAUDE_CODE_OAUTH_TOKEN_2": "slot-2",
+            "CLAUDE_CODE_OAUTH_TOKEN_10": "slot-10",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    claude = startup.configured_provider_adapters["claude"]
+
+    assert claude.account_names() == ["account 1", "account 2", "account 10"]
+    assert claude.build_env()["CLAUDE_CODE_OAUTH_TOKEN"] == "slot-1"
 
 
 def test_prepare_run_startup_uses_only_passed_credential_env_facts(monkeypatch):
@@ -220,6 +243,27 @@ def test_prepare_run_startup_uses_only_passed_credential_env_facts(monkeypatch):
 
     assert startup.shared_container_env == {}
     assert startup.configured_provider_adapters.keys() == {"codex"}
+
+
+def test_prepare_run_startup_rejects_slot_1_conflict_between_bare_and_prefixed_key():
+    startup = prepare_run_startup(
+        Config(docker_image_name="img"),
+        {
+            "CLAUDE_CODE_OAUTH_TOKEN": "primary",
+            "CLAUDE_CODE_OAUTH_TOKEN_1": "slot-1",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    assert startup.validation_error_message is not None
+    assert "cannot resolve slot 1" in startup.validation_error_message
+    assert (
+        "CLAUDE_CODE_OAUTH_TOKEN and CLAUDE_CODE_OAUTH_TOKEN_1"
+        in startup.validation_error_message
+    )
 
 
 def test_prepare_run_startup_omits_services_absent_from_resolved_stage_chains():
