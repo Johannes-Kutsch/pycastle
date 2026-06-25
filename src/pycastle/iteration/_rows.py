@@ -12,6 +12,10 @@ class StatusRow:
         self._caller = caller
         self._closed = False
 
+    @property
+    def is_closed(self) -> bool:
+        return self._closed
+
     def close(self, shutdown_message: str, shutdown_style: str = "success") -> None:
         if self._closed:
             return
@@ -54,7 +58,7 @@ async def status_row(
         row.close("failed", shutdown_style="error")
         raise
     else:
-        if not row._closed:
+        if not row.is_closed:
             if must_close:
                 row.close("failed", shutdown_style="error")
             else:

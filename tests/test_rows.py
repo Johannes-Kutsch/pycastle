@@ -7,7 +7,7 @@ from pycastle.iteration import StatusRow, status_row
 from pycastle.display.status_display import PlainStatusDisplay
 
 
-def test_phase_row_success_path_register_and_close(
+def test_status_row_phase_success_path_registers_and_closes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
@@ -21,7 +21,7 @@ def test_phase_row_success_path_register_and_close(
     assert out == "\n[MyPhase] started\n[MyPhase] all done\n"
 
 
-def test_phase_row_exception_path_auto_error_remove(
+def test_status_row_phase_exception_path_marks_failed_and_propagates(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
@@ -36,7 +36,7 @@ def test_phase_row_exception_path_auto_error_remove(
     assert out == "\n[MyPhase] started\n[MyPhase] failed\n"
 
 
-def test_phase_row_close_is_idempotent(
+def test_status_row_phase_close_is_idempotent(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
@@ -51,7 +51,7 @@ def test_phase_row_close_is_idempotent(
     assert out == "\n[MyPhase] started\n[MyPhase] done\n"
 
 
-def test_phase_row_custom_startup_message_appears_in_output(
+def test_status_row_phase_custom_startup_message_appears_in_output(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
@@ -74,7 +74,7 @@ def test_phase_row_custom_startup_message_appears_in_output(
     )
 
 
-def test_phase_row_custom_startup_message_appears_on_exception_path(
+def test_status_row_phase_custom_startup_message_appears_on_exception_path(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
@@ -91,24 +91,29 @@ def test_phase_row_custom_startup_message_appears_on_exception_path(
     assert out == "\n[Plan] custom message\n[Plan] failed\n"
 
 
-def test_agent_row_success_path_registers_and_removes(
+def test_status_row_agent_success_path_registers_removes_and_closes(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
+    row: StatusRow | None = None
 
     async def run() -> None:
+        nonlocal row
         async with status_row(
             d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
-        ) as row:
-            assert isinstance(row, StatusRow)
-            assert not row._closed
+        ) as current_row:
+            row = current_row
+            assert isinstance(current_row, StatusRow)
+            assert not current_row.is_closed
 
     asyncio.run(run())
+    assert row is not None
+    assert row.is_closed
     out = capsys.readouterr().out
     assert out == "\n[Worker] started\n[Worker] finished\n"
 
 
-def test_agent_row_exception_path_marks_failed_and_propagates(
+def test_status_row_agent_exception_path_marks_failed_and_propagates(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
@@ -125,7 +130,7 @@ def test_agent_row_exception_path_marks_failed_and_propagates(
     assert out == "\n[Worker] started\n[Worker] failed\n"
 
 
-def test_agent_row_usage_limit_paints_interrupted_and_propagates(
+def test_status_row_agent_usage_limit_paints_interrupted_and_propagates(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
@@ -142,7 +147,7 @@ def test_agent_row_usage_limit_paints_interrupted_and_propagates(
     assert out == "\n[Worker] started\n[Worker] usage limit reached\n"
 
 
-def test_agent_row_timeout_paints_interrupted_and_propagates(
+def test_status_row_agent_timeout_paints_interrupted_and_propagates(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
@@ -159,7 +164,7 @@ def test_agent_row_timeout_paints_interrupted_and_propagates(
     assert out == "\n[Worker] started\n[Worker] timed out\n"
 
 
-def test_agent_row_register_uses_agent_kind_and_work_body(
+def test_status_row_agent_registration_uses_agent_kind_and_work_body(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     d = PlainStatusDisplay()
