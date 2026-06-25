@@ -2475,6 +2475,88 @@ def test_agent_runner_opencode_invalid_key_exhausts_last_credential_and_surfaces
     assert exc_info.value.status_code == 401
 
 
+def test_agent_runner_keeps_invalid_opencode_credential_retired_after_another_credential_resets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import timezone
+
+    from pycastle.services.opencode_service import OpenCodeService
+
+    invalid_key_error = (
+        b'{"type":"error","timestamp":1,"sessionID":"sess-123","error":{'
+        b'"name":"AuthenticationError","data":{"message":"invalid api key",'
+        b'"statusCode":401,"isRetryable":false}}'
+        b"}\n"
+    )
+    usage_limit_error = (
+        b'{"type":"error","timestamp":2,"sessionID":"sess-456","error":{'
+        b'"name":"RateLimitError","data":{"message":"try again at '
+        b'2026-06-25T12:00:00Z","statusCode":429,"isRetryable":true}}'
+        b"}\n"
+    )
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    call_count = 0
+
+    def exec_side_effect(*_args, **_kwargs):
+        nonlocal call_count
+        if _kwargs.get("stream"):
+            result = MagicMock()
+            result.output = iter(
+                [invalid_key_error] if call_count == 0 else [usage_limit_error]
+            )
+            call_count += 1
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    svc = OpenCodeService(
+        accounts=[("account 1", "invalid-key"), ("account 2", "valid-key")]
+    )
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"opencode": svc},
+    )
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Test Reviewer",
+                    template=PromptTemplate.REVIEW,
+                    scope_args={
+                        "ISSUE_NUMBER": "77",
+                        "ISSUE_TITLE": "Doc bug",
+                        "ISSUE_BODY": "Body",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-77-docs",
+                        "INTERRUPTED_WORK": "",
+                    },
+                    mount_path=_managed_mount(tmp_path),
+                    role=AgentRole.REVIEWER,
+                    service="opencode",
+                )
+            )
+        )
+
+    later = datetime(2026, 6, 25, 12, 5, tzinfo=timezone.utc).astimezone()
+    monkeypatch.setattr(
+        "pycastle.services.credential_pool._time_module.now_local",
+        lambda: later,
+    )
+
+    env = svc.build_env()
+
+    assert env["OPENCODE_GO_API_KEY"] == "valid-key"
+
+
 def test_agent_runner_treats_unrelated_403_as_hard_error(tmp_path):
     mock_client = _make_docker_client(
         [
