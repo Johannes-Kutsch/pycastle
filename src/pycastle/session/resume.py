@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from pycastle.services.agent_service import AgentService as RuntimeAgentService
 from pycastle.agents.output_protocol import AgentRole
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     RunKind,
     normalize_state_dir_relpath,
     provider_state_relpath as runtime_provider_state_relpath,

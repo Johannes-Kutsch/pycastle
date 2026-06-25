@@ -1,4 +1,4 @@
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionSelection,
     ServiceResumeIdentityStore,
     select_resumable_provider_session_id,

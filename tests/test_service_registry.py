@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pycastle_agent_runtime as runtime
+from pycastle.config.types import StageOverride
+from pycastle.services.service_registry import ServiceRegistry
 from pycastle.services.agent_service import AgentService
 from pycastle.services.opencode_service import OpenCodeService
+
+runtime = SimpleNamespace(ServiceRegistry=ServiceRegistry, StageOverride=StageOverride)
 
 
 def _now() -> datetime:

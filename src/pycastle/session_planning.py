@@ -6,8 +6,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from .agent_role import AgentRole
-from .agent_service import AgentService
+from .agents.output_protocol import AgentRole
+from .services.agent_service import AgentService
 from .provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
@@ -15,7 +15,7 @@ from .provider_session_adapter import (
 
 if TYPE_CHECKING:
     pass
-from .session import (
+from .runtime_session import (
     ProviderSessionPreferencesRequest,
     ProviderSessionStateRequest,
     RunKind,

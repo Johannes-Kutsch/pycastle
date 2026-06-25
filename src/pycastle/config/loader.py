@@ -8,8 +8,6 @@ import types
 from pathlib import Path
 from typing import Any, Literal
 
-import pycastle_agent_runtime as agent_runtime
-
 from pycastle._universal_image_build import resolve_universal_dockerfile
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
@@ -19,6 +17,7 @@ from pycastle.layout import (
     resolve_layout,
 )
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
+from pycastle.stage_priority_chain import referenced_service_names
 
 __all__ = [
     "Config",
@@ -194,7 +193,7 @@ def referenced_services(cfg: Config) -> set[str]:
             cfg.preflight_issue_override,
             cfg.improve_override,
         )
-        for service in agent_runtime.referenced_service_names(override)
+        for service in referenced_service_names(override)
     }
 
 

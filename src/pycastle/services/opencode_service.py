@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pycastle_agent_runtime import (
+from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
     HardError,
@@ -16,7 +16,7 @@ from pycastle_agent_runtime import (
     UsageLimit,
 )
 from pycastle.provider_errors import ProviderErrorObservation
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,

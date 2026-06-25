@@ -5,19 +5,19 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from pycastle_agent_runtime.provider_session_adapter import (
+from pycastle.provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningFacts,
     ProviderSessionPlanningRequest,
 )
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
     provider_state_relpath,
 )
-from pycastle_agent_runtime.session_planning import (
+from pycastle.session_planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
     ProviderRunStatePlan,

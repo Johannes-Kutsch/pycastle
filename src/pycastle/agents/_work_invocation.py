@@ -5,8 +5,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Protocol
 
-from pycastle_agent_runtime.session import RunKind
-from pycastle_agent_runtime.work import (
+from pycastle.runtime_session import RunKind
+from pycastle.work import (
     CancellationToken,
     RunSessionPlan,
     TextOutputAdapter,

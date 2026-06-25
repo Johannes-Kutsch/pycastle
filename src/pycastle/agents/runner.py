@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
 from pycastle.services.agent_service import AgentService as RuntimeAgentService
-from pycastle_agent_runtime.work import (
+from pycastle.work import (
     RunSessionPlan as RuntimeRunSessionPlan,
     WorkModelDisplayMetadata,
     WorkInvocationDependencies,
@@ -393,7 +393,7 @@ class AgentRunner:
         session_namespace: str = "",
         run_session_plan: RunSessionPlan | None = None,
     ) -> str:
-        from pycastle_agent_runtime.runtime import (
+        from pycastle.runtime import (
             PromptRunRequest,
             PromptRunSession,
             ToolPolicy as RuntimeToolPolicy,
@@ -516,7 +516,7 @@ class AgentRunner:
         else:
             reprompt_message = REPROMPT_MESSAGE
 
-        from pycastle_agent_runtime.work import invoke_work
+        from pycastle.work import invoke_work
 
         run_session = RuntimeRunSessionPlan(
             mount_path=request.mount_path,

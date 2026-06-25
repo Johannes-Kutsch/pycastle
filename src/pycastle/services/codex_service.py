@@ -20,7 +20,7 @@ from pycastle.services.agent_service import (
 )
 from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.agents.output_protocol import AgentRole
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,

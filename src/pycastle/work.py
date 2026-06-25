@@ -6,8 +6,8 @@ from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .agent_role import AgentRole
-from .agent_service import AgentService, ParsedTurn
+from .agents.output_protocol import AgentRole
+from .services.agent_service import AgentService, ParsedTurn
 from .execution_contracts import (
     CancellationToken,
     PreparedProviderRunSession,
@@ -27,7 +27,7 @@ from .execution_contracts import (
     WorkStatusDisplay,
     WorkStatusRow,
 )
-from .session import RunKind
+from .runtime_session import RunKind
 
 if TYPE_CHECKING:
     from .errors import (

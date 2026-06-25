@@ -10,7 +10,7 @@ from typing import BinaryIO
 
 from . import _time as _time_module
 from .agent_role import AgentRole
-from .session import RunKind
+from pycastle.runtime_session import RunKind
 
 
 class WorkInvocationLog:

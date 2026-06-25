@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 import click
-import pycastle_agent_runtime as runtime_package
 
 from .config import (
     Config,
@@ -24,16 +23,22 @@ from .run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
     prepare_run_startup,
 )
+from .services.service_registry import ServiceRegistry
+from .stage_priority_chain import (
+    chain_entries,
+    render_chain_label,
+    validation_labels,
+)
 from ._universal_image_build import UniversalImageBuildOptions
 from .display.status_display import PlainStatusDisplay
 
 
 class _AgentRuntimeAdapter:
     def __init__(self) -> None:
-        self.ServiceRegistry = runtime_package.ServiceRegistry
-        self.chain_entries = runtime_package.chain_entries
-        self.render_chain_label = runtime_package.render_chain_label
-        self.validation_labels = runtime_package.validation_labels
+        self.ServiceRegistry = ServiceRegistry
+        self.chain_entries = chain_entries
+        self.render_chain_label = render_chain_label
+        self.validation_labels = validation_labels
 
     def __getattr__(self, name: str) -> Any:
         if name == "run":

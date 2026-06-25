@@ -4,8 +4,8 @@ import dataclasses
 from datetime import datetime
 from typing import Callable, TypeAlias
 
-from .service_registry import ServiceRegistry
-from .stage_override import StageOverride
+from .services.service_registry import ServiceRegistry
+from .config.types import StageOverride
 
 
 @dataclasses.dataclass(frozen=True)

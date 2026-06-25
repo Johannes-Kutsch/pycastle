@@ -4,7 +4,7 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from pycastle_agent_runtime.session_planning import (
+from pycastle.session_planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
     RecoveredSessionIdPersistence,

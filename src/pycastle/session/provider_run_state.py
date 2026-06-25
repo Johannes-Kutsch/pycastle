@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pycastle_agent_runtime.session import RunKind
+    from pycastle.runtime_session import RunKind
 
 
 class ProviderFreshFallbackReason(Enum):

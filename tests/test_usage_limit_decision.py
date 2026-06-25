@@ -1,12 +1,33 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
-import pycastle_agent_runtime as runtime
-
+from pycastle.config.types import StageOverride
+from pycastle.services.service_registry import ServiceRegistry
+from pycastle.usage_limit_decision import (
+    ContinueNow,
+    SleepUntil,
+    Stop,
+    UsageLimitContinuationDecision,
+    UsageLimitOutcome,
+    decide_usage_limit_continuation,
+)
 from pycastle.services._wake_time import compute_wake_time
 from pycastle.services.agent_service import AgentService
+
+runtime: Any = SimpleNamespace(
+    ContinueNow=ContinueNow,
+    ServiceRegistry=ServiceRegistry,
+    SleepUntil=SleepUntil,
+    StageOverride=StageOverride,
+    Stop=Stop,
+    UsageLimitContinuationDecision=UsageLimitContinuationDecision,
+    UsageLimitOutcome=UsageLimitOutcome,
+    decide_usage_limit_continuation=decide_usage_limit_continuation,
+)
 
 
 def _now() -> datetime:

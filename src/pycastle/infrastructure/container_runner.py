@@ -9,7 +9,7 @@ from ..config import Config, resolve_logs_dir
 from ..display.status_display import PlainStatusDisplay
 from .agent_invocation_log import AgentInvocationLog
 from ..services.agent_service import ToolPolicy as RuntimeToolPolicy
-from pycastle_agent_runtime.work import reduce_text_output_events
+from pycastle.work import reduce_text_output_events
 from ..services.flag_profiles import AgentToolPolicyGroup
 from .docker_session import DockerSession
 from ..errors import DockerError

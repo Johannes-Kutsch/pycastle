@@ -6,10 +6,16 @@ import textwrap
 from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, TypedDict, cast
 from unittest.mock import MagicMock
 
 import pytest
+import pycastle.errors as pycastle_errors
+import pycastle.execution_contracts as execution_contracts_module
+import pycastle.provider_errors as provider_errors_module
+import pycastle.runtime as runtime_module
+import pycastle.services.service_registry as service_registry_module
 
 from pycastle.agents._work_invocation import (
     TextOutputAdapter,
@@ -20,9 +26,9 @@ from pycastle.agents._work_invocation import (
 )
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole, CompletionOutput
-from pycastle_agent_runtime import parsed_event_reducer
+from pycastle import parsed_event_reducer
 from pycastle.provider_errors import ProviderErrorObservation
-from pycastle_agent_runtime.provider_session_adapter import (
+from pycastle.provider_session_adapter import (
     ProviderSessionPlanningFacts,
     ProviderSessionPlanningRequest,
 )
@@ -34,13 +40,26 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from pycastle_agent_runtime.work import RunSessionPlan, reduce_text_output_events
-from pycastle_agent_runtime.session import (
+from pycastle.work import RunSessionPlan, reduce_text_output_events
+from pycastle.usage_limit_decision import (
+    ContinueNow,
+    Stop,
+    UsageLimitOutcome,
+    decide_usage_limit_continuation,
+)
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
+from pycastle.session_planning import (
+    ProviderRunStatePlanRequest,
+    ResidentSessionPlanRequest,
+    plan_provider_run_state,
+    plan_resident_session,
+)
+from pycastle.config.types import StageOverride
 from pycastle.config import Config
 from pycastle.services.claude_service import ClaudeService
 from pycastle.services import GitService
@@ -54,6 +73,13 @@ from pycastle.services.agent_service import (
     TransientError,
     UnsupportedTokens,
     UsageLimit,
+)
+from pycastle.services.service_registry import ServiceRegistry
+from pycastle.stage_priority_chain import (
+    ChainEntry,
+    ConfiguredCandidateSelection,
+    render_chain_label,
+    select_configured_candidate_chain,
 )
 from pycastle.session import RunKind
 
@@ -97,7 +123,52 @@ def _managed_mount(repo_root: Path, name: str = "issue-1") -> Path:
     return mount_path
 
 
+def _runtime_namespace() -> SimpleNamespace:
+    return SimpleNamespace(
+        AgentRole=AgentRole,
+        CancellationToken=runtime_module.CancellationToken,
+        ChainEntry=ChainEntry,
+        ConfiguredCandidateSelection=ConfiguredCandidateSelection,
+        ContinueNow=ContinueNow,
+        OneShotRunRequest=runtime_module.OneShotRunRequest,
+        OneShotRunResult=runtime_module.OneShotRunResult,
+        OneShotRuntimeMetadata=runtime_module.OneShotRuntimeMetadata,
+        PromptRunRequest=runtime_module.PromptRunRequest,
+        PromptRunSession=runtime_module.PromptRunSession,
+        PromptRuntime=runtime_module.PromptRuntime,
+        ProviderRunStatePlanRequest=ProviderRunStatePlanRequest,
+        ProviderSessionPreferences=ProviderSessionPreferences,
+        ProviderSessionState=ProviderSessionState,
+        ProviderSessionStateRequest=ProviderSessionStateRequest,
+        ResidentRunRequest=runtime_module.ResidentRunRequest,
+        ResidentRunResult=runtime_module.ResidentRunResult,
+        ResidentRuntimeMetadata=runtime_module.ResidentRuntimeMetadata,
+        ResidentSessionPlanRequest=ResidentSessionPlanRequest,
+        RunKind=RunKind,
+        ServiceRegistry=ServiceRegistry,
+        StageOverride=StageOverride,
+        Stop=Stop,
+        ToolPolicy=runtime_module.ToolPolicy,
+        UsageLimitOutcome=UsageLimitOutcome,
+        WorktreeMount=runtime_module.WorktreeMount,
+        decide_usage_limit_continuation=decide_usage_limit_continuation,
+        errors=pycastle_errors,
+        execution_contracts=execution_contracts_module,
+        parsed_event_reducer=parsed_event_reducer,
+        plan_provider_run_state=plan_provider_run_state,
+        plan_resident_session=plan_resident_session,
+        provider_errors=provider_errors_module,
+        render_chain_label=render_chain_label,
+        run_one_shot=runtime_module.run_one_shot,
+        run_prompt=runtime_module.run_prompt,
+        run_resident_prompt=runtime_module.run_resident_prompt,
+        select_configured_candidate_chain=select_configured_candidate_chain,
+        service_registry=service_registry_module,
+    )
+
+
 def _runtime_imported_application_modules(repo_root: Path) -> list[str]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -152,6 +223,7 @@ def _runtime_imported_application_modules(repo_root: Path) -> list[str]:
 def _runtime_attr_imported_application_modules(
     repo_root: Path, attr_name: str
 ) -> list[str]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -196,6 +268,7 @@ def _runtime_attr_imported_application_modules(
 def _runtime_module_imported_application_modules(
     repo_root: Path, module_name: str
 ) -> list[str]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -239,6 +312,7 @@ def _runtime_module_imported_application_modules(
 def _standalone_runtime_attr_access_result(
     repo_root: Path, attr_name: str
 ) -> dict[str, str]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -289,6 +363,7 @@ def _standalone_runtime_attr_access_result(
 def _standalone_runtime_attr_access_results(
     repo_root: Path, attr_names: list[str]
 ) -> dict[str, dict[str, str]]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -339,6 +414,7 @@ def _standalone_runtime_attr_access_results(
 def _standalone_runtime_star_import_names(
     repo_root: Path, attr_names: list[str]
 ) -> dict[str, bool]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -386,6 +462,7 @@ def _standalone_runtime_star_import_names(
 def _standalone_runtime_surface_behavior_result(
     repo_root: Path,
 ) -> dict[str, object]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -643,6 +720,7 @@ def _standalone_runtime_surface_behavior_result(
 
 
 def _standalone_runtime_prompt_result(repo_root: Path) -> str:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -790,6 +868,7 @@ def _standalone_runtime_prompt_result(repo_root: Path) -> str:
 def _standalone_runtime_agent_log_result(
     repo_root: Path, effective_logs_dir: Path
 ) -> dict[str, object]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     return _standalone_runtime_agent_log_result_with_timezone(
         repo_root,
         effective_logs_dir,
@@ -803,6 +882,7 @@ def _standalone_runtime_agent_log_result_with_timezone(
     *,
     tz_name: str,
 ) -> dict[str, object]:
+    pytest.skip("runtime-owned surfaces moved into pycastle")
     result = subprocess.run(
         [
             sys.executable,
@@ -827,7 +907,9 @@ def _standalone_runtime_agent_log_result_with_timezone(
 
                 sys.meta_path.insert(0, _BlockPycastle())
 
-                from pycastle_agent_runtime import AgentInvocationLog, AgentRole, RunKind
+                from pycastle.infrastructure.agent_invocation_log import AgentInvocationLog
+                from pycastle.agents.output_protocol import AgentRole
+                from pycastle.runtime_session import RunKind
 
                 logs_dir = Path({str(effective_logs_dir)!r})
                 fixed_dt = datetime(
@@ -1661,7 +1743,7 @@ class _PromptRuntimeExecutionAdapterStandIn:
 
 
 def test_runtime_package_runs_prompt_contract_and_returns_llm_output(tmp_path: Path):
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     managed_mount = _managed_mount(tmp_path)
     service = _RecordingRuntimeService("codex")
@@ -2450,7 +2532,7 @@ def test_runtime_agent_log_lifecycle_uses_local_minute_timestamp_standalone(
 def test_runtime_package_prompt_entrypoint_requires_build_work_dependencies_adapter(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     service = _RecordingRuntimeService("codex")
     registry = runtime.ServiceRegistry({"codex": service})
@@ -2483,7 +2565,7 @@ def test_runtime_package_prompt_entrypoint_requires_build_work_dependencies_adap
 
 
 def test_runtime_public_errors_do_not_default_missing_service_names_to_claude():
-    from pycastle_agent_runtime.errors import AgentFailedError, HardAgentError
+    from pycastle.errors import AgentFailedError, HardAgentError
 
     hard_error = HardAgentError(message="provider rejected request", status_code=400)
     failed_error = AgentFailedError(
@@ -2500,8 +2582,8 @@ def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         ProviderRunStatePlanRequest,
         plan_provider_run_state,
     )
@@ -2543,9 +2625,9 @@ def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
 def test_runtime_session_helpers_use_caller_supplied_session_root_and_provider_path(
     tmp_path: Path,
 ):
-    from pycastle_agent_runtime.errors import AgentFailedError
+    from pycastle.errors import AgentFailedError
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import (
+    from pycastle.runtime_session import (
         normalize_state_dir_relpath,
         provider_state_relpath,
     )
@@ -2585,7 +2667,7 @@ def test_runtime_session_helpers_use_caller_supplied_session_root_and_provider_p
 
 def test_runtime_session_helpers_default_to_provider_neutral_relpaths():
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import (
+    from pycastle.runtime_session import (
         normalize_state_dir_relpath,
         provider_state_relpath,
     )
@@ -2612,8 +2694,8 @@ def test_runtime_session_helpers_default_to_provider_neutral_relpaths():
 def test_runtime_provider_state_plan_records_observed_provider_session_id_for_opencode(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.session import RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import RunKind
+    from pycastle.session_planning import (
         AuthSeedingRequirement,
         ProviderRunStatePlan,
         RecoveredSessionIdPersistence,
@@ -2658,7 +2740,7 @@ def test_runtime_provider_state_plan_records_observed_provider_session_id_for_op
 def test_runtime_session_helpers_recover_and_persist_opencode_session_id(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.session import (
+    from pycastle.runtime_session import (
         load_state_dir_provider_session_id,
         provider_state_session_id_path,
         select_resumable_provider_session_id,
@@ -2698,7 +2780,7 @@ def test_runtime_session_helpers_recover_and_persist_opencode_session_id(
 def test_runtime_session_helpers_allow_provider_adapter_to_recover_custom_session_id_filename(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.session import (
+    from pycastle.runtime_session import (
         load_provider_state_session_id,
         select_resumable_provider_session_id,
     )
@@ -2739,8 +2821,8 @@ def test_runtime_session_helpers_allow_provider_adapter_to_recover_custom_sessio
 def test_runtime_provider_state_plan_records_successful_run_metadata_through_role_session_interface() -> (
     None
 ):
-    from pycastle_agent_runtime.session import RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import RunKind
+    from pycastle.session_planning import (
         AuthSeedingRequirement,
         ProviderRunStatePlan,
         RecoveredSessionIdPersistence,
@@ -2781,8 +2863,8 @@ def test_runtime_provider_session_adapter_plan_allows_execution_service_without_
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import RunKind
+    from pycastle.session_planning import (
         AuthSeedingRequirement,
         ProviderRunStatePlanRequest,
         plan_provider_run_state,
@@ -2844,8 +2926,8 @@ def test_runtime_provider_session_adapter_planning_facts_supply_provider_state_d
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         ProviderRunStatePlanRequest,
         plan_provider_run_state,
     )
@@ -2889,8 +2971,8 @@ def test_runtime_provider_session_adapter_handles_local_preparation_and_session_
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import RunKind
+    from pycastle.session_planning import (
         ProviderRunStatePlanRequest,
         plan_provider_run_state,
     )
@@ -2941,7 +3023,7 @@ def test_runtime_provider_session_adapter_handles_local_preparation_and_session_
 def test_runtime_session_select_resumable_provider_session_id_persists_state_dir_sidecar_identity(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.session import (
+    from pycastle.runtime_session import (
         select_resumable_provider_session_id,
     )
 
@@ -2965,7 +3047,7 @@ def test_runtime_session_select_resumable_provider_session_id_persists_state_dir
 def test_runtime_session_exact_resume_uses_injected_provider_identity_matcher(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.session import (
+    from pycastle.runtime_session import (
         is_exact_resumable_service_session,
     )
 
@@ -3017,8 +3099,8 @@ def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,
         ProviderRunStatePlanRequest,
@@ -3069,8 +3151,8 @@ def test_runtime_resident_session_plan_exposes_provider_metadata_without_persist
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,
         ResidentSessionPlanRequest,
@@ -3149,10 +3231,10 @@ def test_runtime_resident_session_plan_exposes_provider_metadata_without_persist
 def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
+    from pycastle.provider_errors import ProviderErrorObservation
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,
         ProviderRunStatePlanRequest,
@@ -3221,8 +3303,8 @@ def test_runtime_provider_state_plan_without_provider_auth_seed_policy_raises_fi
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,
         ProviderRunStatePlanRequest,
@@ -3274,8 +3356,8 @@ def test_runtime_provider_state_plan_keeps_selected_provider_state_dir_for_openc
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         ProviderRunStatePlanRequest,
         plan_provider_run_state,
     )
@@ -3324,8 +3406,8 @@ def test_runtime_provider_state_plan_uses_service_state_dir_when_provider_reques
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         ProviderRunStatePlanRequest,
         plan_provider_run_state,
     )
@@ -3372,8 +3454,8 @@ def test_runtime_provider_state_plan_falls_back_to_relpath_when_selected_state_d
     tmp_path: Path,
 ) -> None:
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
-    from pycastle_agent_runtime.session import ProviderSessionState, RunKind
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.runtime_session import ProviderSessionState, RunKind
+    from pycastle.session_planning import (
         ProviderRunStatePlanRequest,
         plan_provider_run_state,
     )
@@ -3422,7 +3504,7 @@ def test_runtime_provider_state_plan_falls_back_to_relpath_when_selected_state_d
 def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
     tmp_path: Path,
 ):
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     managed_mount = _managed_mount(tmp_path)
     service = _RecordingRuntimeService(
@@ -3463,7 +3545,7 @@ def test_runtime_package_returns_assistant_turns_when_service_emits_no_result(
 def test_runtime_package_prompt_entrypoint_uses_injected_execution_adapter_contract(
     tmp_path: Path,
 ):
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     service = _RecordingRuntimeService("codex")
     adapter = _PromptRuntimeExecutionAdapterStandIn(
@@ -3509,7 +3591,7 @@ def test_runtime_package_prompt_entrypoint_uses_injected_execution_adapter_contr
 def test_runtime_package_prompt_entrypoint_preserves_runtime_owned_session_contract(
     tmp_path: Path,
 ):
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     service = _RecordingRuntimeService("codex")
     adapter = _PromptRuntimeExecutionAdapterStandIn(
@@ -3554,7 +3636,7 @@ def test_runtime_package_prompt_entrypoint_preserves_runtime_owned_session_contr
 def test_runtime_package_resident_entrypoint_executes_planned_resume_and_returns_session_aware_result(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     selected_state_dir = tmp_path / "custom" / "generic-state"
     role_session = _RuntimeRoleSessionStandIn(
@@ -3663,7 +3745,7 @@ def test_runtime_package_resident_entrypoint_executes_planned_resume_and_returns
 def test_runtime_package_resident_entrypoint_executes_planned_fresh_run_and_returns_fresh_session_metadata(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     role_session = _RuntimeRoleSessionStandIn(
         _RuntimeServiceSessionState(
@@ -3762,7 +3844,7 @@ def test_runtime_package_resident_entrypoint_executes_planned_fresh_run_and_retu
 def test_runtime_package_resident_entrypoint_returns_prepared_provider_session_id_when_execution_keeps_existing_session(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     selected_state_dir = tmp_path / "custom" / "generic-state"
     role_session = _RuntimeRoleSessionStandIn(
@@ -3847,7 +3929,7 @@ def test_runtime_package_resident_entrypoint_returns_prepared_provider_session_i
 def test_runtime_package_one_shot_entrypoint_resolves_stage_chain_and_returns_selected_runtime_result(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     service = _RecordingRuntimeService("codex")
     adapter = _PromptRuntimeExecutionAdapterStandIn(
@@ -3951,7 +4033,7 @@ def test_runtime_package_one_shot_entrypoint_resolves_stage_chain_and_returns_se
 def test_runtime_package_one_shot_entrypoint_preserves_resume_runtime_metadata(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     codex_service = _RecordingRuntimeService("codex")
 
@@ -4083,7 +4165,7 @@ def test_runtime_package_one_shot_entrypoint_preserves_resume_runtime_metadata(
 def test_runtime_package_one_shot_entrypoint_reports_no_fallback_for_unset_primary_service(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     codex_service = _RecordingRuntimeService("codex")
 
@@ -4201,7 +4283,7 @@ def test_runtime_package_one_shot_entrypoint_reports_no_fallback_for_unset_prima
 def test_runtime_package_one_shot_entrypoint_falls_through_on_usage_limit_with_shared_cancellation_token(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     class _ExhaustibleRuntimeService(_RecordingRuntimeService):
         def __init__(self, name: str) -> None:
@@ -4419,7 +4501,7 @@ def test_runtime_package_invoke_work_dispatches_through_canonical_run_session_pl
 def test_runtime_package_prompt_entrypoint_fills_missing_credential_failure_service_name_from_selected_fallback(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     service = _RecordingRuntimeService("opencode")
     adapter = _PromptRuntimeExecutionAdapterStandIn(
@@ -4487,7 +4569,7 @@ def test_runtime_package_prompt_entrypoint_fills_missing_credential_failure_serv
 def test_runtime_package_prompt_entrypoint_preserves_provider_named_credential_failure_from_selected_fallback(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     service = _RecordingRuntimeService("opencode")
     adapter = _PromptRuntimeExecutionAdapterStandIn(
@@ -4781,7 +4863,7 @@ def test_runtime_package_invoke_work_fills_missing_credential_failure_service_na
 
 
 def test_runtime_package_owns_service_selection_contract() -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     primary = _RecordingRuntimeService("codex")
     fallback = _RecordingRuntimeService("claude")
@@ -4810,7 +4892,7 @@ def test_runtime_package_owns_service_selection_contract() -> None:
 
     resolved = registry.resolve(override, datetime(2026, 1, 1))
 
-    assert runtime.ServiceRegistry.__module__.startswith("pycastle_agent_runtime")
+    assert runtime.ServiceRegistry.__module__.startswith("pycastle.services")
     assert resolved == runtime.StageOverride(
         service="claude",
         model="sonnet",
@@ -4832,7 +4914,7 @@ def test_runtime_service_registry_module_import_stays_standalone() -> None:
 def test_runtime_package_service_registry_snapshots_availability_per_configured_service() -> (
     None
 ):
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     registry = runtime.ServiceRegistry(
         {
@@ -4927,7 +5009,7 @@ def test_runtime_package_exports_stage_selection_contract(
     available_service_names: tuple[str, ...],
     expected: _ExpectedSelection,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     override = runtime.StageOverride(
         service="missing",
@@ -4972,7 +5054,7 @@ def test_runtime_package_exports_stage_selection_contract(
 def test_runtime_package_stage_selection_reports_when_no_candidate_is_configured() -> (
     None
 ):
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     override = runtime.StageOverride(
         service="missing-primary",
@@ -5021,7 +5103,7 @@ def test_runtime_package_orchestration_entrypoint_owns_service_selection_session
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     managed_mount = tmp_path / "pycastle" / ".worktrees" / "issue-1"
     managed_mount.mkdir(parents=True)
@@ -5178,7 +5260,7 @@ def test_agent_runner_run_prompt_rejects_non_directory_managed_mount_before_prov
 def test_runtime_package_resident_entrypoint_rejects_non_managed_mount_before_provider_setup(
     tmp_path: Path,
 ) -> None:
-    import pycastle_agent_runtime as runtime
+    runtime = _runtime_namespace()
 
     provider_state_dir = (
         tmp_path / ".pycastle-session" / "implementer" / "main" / "codex"

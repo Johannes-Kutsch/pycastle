@@ -4,11 +4,15 @@ import difflib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
-import pycastle_agent_runtime as agent_runtime
 from .services.service_registry import ServiceRegistry
 
 from .config import Config, StageOverride
 from .config.loader import referenced_services
+from .stage_priority_chain import (
+    chain_entries,
+    render_chain_label,
+    validation_labels,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -198,8 +202,8 @@ def _validate_stage_overrides(
     violations: list[StageOverrideValidationFailure] = []
     for stage_name, override in _stage_overrides(cfg):
         for stage_label, entry in zip(
-            agent_runtime.validation_labels(stage_name, override),
-            agent_runtime.chain_entries(override),
+            validation_labels(stage_name, override),
+            chain_entries(override),
             strict=True,
         ):
             svc_name = entry.service
@@ -269,7 +273,7 @@ def _validate_locally_configured_stage_overrides(
             StageOverrideValidationFailure(
                 code="no_configured_service",
                 stage_label=stage_name,
-                chain_label=agent_runtime.render_chain_label(override),
+                chain_label=render_chain_label(override),
             )
         )
     return violations
@@ -281,8 +285,8 @@ def _validate_configured_provider_stage_overrides(
     violations: list[StageOverrideValidationFailure] = []
     for stage_name, override in _stage_overrides(cfg):
         for stage_label, entry in zip(
-            agent_runtime.validation_labels(stage_name, override),
-            agent_runtime.chain_entries(override),
+            validation_labels(stage_name, override),
+            chain_entries(override),
             strict=True,
         ):
             if not entry.model:

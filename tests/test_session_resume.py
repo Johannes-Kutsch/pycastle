@@ -12,7 +12,7 @@ from typing import cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,

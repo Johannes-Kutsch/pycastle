@@ -4,8 +4,8 @@ import dataclasses
 from typing import Any
 
 from . import _time as _time_module
-from .agent_role import AgentRole
-from .agent_service import ToolPolicy
+from .agents.output_protocol import AgentRole
+from .services.agent_service import ToolPolicy
 from .execution_contracts import (
     CancellationToken,
     PromptRunRequest,
@@ -18,10 +18,10 @@ from .execution_contracts import (
     WorkInvocationRequest,
     WorktreeMount,
 )
-from .service_registry import ServiceRegistry
-from .session import RunKind
+from .services.service_registry import ServiceRegistry
+from .runtime_session import RunKind
 from .session_planning import ResidentSessionPlan
-from .stage_override import StageOverride
+from .config.types import StageOverride
 from .stage_priority_chain import iter_stage_chain
 from .work import invoke_work
 

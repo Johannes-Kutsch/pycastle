@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from .agent_role import AgentRole
 
 if TYPE_CHECKING:
-    from .session import (
+    from pycastle.runtime_session import (
         ProviderSessionPreferences,
         ProviderSessionPreferencesRequest,
         ProviderSessionState,

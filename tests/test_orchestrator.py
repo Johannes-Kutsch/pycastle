@@ -14,7 +14,7 @@ from pycastle.agents.output_protocol import (
     PromiseParseError,
 )
 from pycastle.agents.runner import RunRequest
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,

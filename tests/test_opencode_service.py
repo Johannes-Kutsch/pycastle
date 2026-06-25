@@ -5,16 +5,16 @@ from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 
-from pycastle_agent_runtime import (
+from pycastle.provider_errors import ProviderErrorObservation
+from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
     HardError,
-    ProviderErrorObservation,
     Result,
     TransientError,
     UsageLimit,
 )
-from pycastle_agent_runtime.session import ProviderSessionStateRequest
+from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession, RunKind

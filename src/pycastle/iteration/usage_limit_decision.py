@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pycastle_agent_runtime import (
+from pycastle.usage_limit_decision import (
     ContinueNow as _ContinueNow,
     SleepUntil as _SleepUntil,
     Stop as _Stop,

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )

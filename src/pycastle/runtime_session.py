@@ -5,10 +5,10 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Protocol
 
-from .agent_role import AgentRole
+from .agents.output_protocol import AgentRole
 
 if TYPE_CHECKING:
-    from pycastle_agent_runtime.session_planning import (
+    from pycastle.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,
     )

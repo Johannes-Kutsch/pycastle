@@ -33,7 +33,7 @@ from pycastle.agents._work_invocation import (
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest, _stage_key_for_role
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
@@ -4737,7 +4737,7 @@ def test_agent_runner_run_delegates_work_prompt_rendering_to_prompt_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import pycastle_agent_runtime.work as runtime_work
+    import pycastle.work as runtime_work
 
     captured: dict[str, object] = {}
     dispatch_calls: list[dict[str, object]] = []
@@ -4814,7 +4814,7 @@ def test_agent_runner_run_expands_shell_expressions_via_container_exec(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The Work prompt builder passes container_exec through to prompt rendering."""
-    import pycastle_agent_runtime.work as runtime_work
+    import pycastle.work as runtime_work
 
     captured: dict[str, object] = {}
 
@@ -4868,7 +4868,7 @@ def test_agent_runner_run_builds_runtime_work_invocation_with_agent_output_proto
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import pycastle_agent_runtime.work as runtime_work
+    import pycastle.work as runtime_work
 
     captured: dict[str, object] = {}
 
@@ -4915,7 +4915,7 @@ def test_agent_runner_run_planner_protocol_reprompt_uses_parser_error_and_expect
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import pycastle_agent_runtime.work as runtime_work
+    import pycastle.work as runtime_work
 
     captured: dict[str, object] = {}
 
@@ -5043,7 +5043,7 @@ def test_agent_runner_run_improve_protocol_reprompt_uses_phase_specific_expected
     error_text: str,
     expected_snippets: tuple[str, str],
 ) -> None:
-    import pycastle_agent_runtime.work as runtime_work
+    import pycastle.work as runtime_work
 
     captured: dict[str, object] = {}
 
@@ -5142,7 +5142,7 @@ def test_agent_runner_run_issue_template_protocol_reprompt_includes_expected_out
     scope_args: dict[str, str],
     error_text: str,
 ) -> None:
-    import pycastle_agent_runtime.work as runtime_work
+    import pycastle.work as runtime_work
 
     captured: dict[str, object] = {}
 
@@ -5250,7 +5250,7 @@ def test_agent_runner_run_host_parsed_commit_message_templates_reprompt_with_exp
     scope_args: dict[str, str],
     error_text: str,
 ) -> None:
-    import pycastle_agent_runtime.work as runtime_work
+    import pycastle.work as runtime_work
 
     captured: dict[str, object] = {}
 
@@ -5318,7 +5318,7 @@ def test_agent_runner_run_divergence_resolver_protocol_reprompt_includes_expecte
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import pycastle_agent_runtime.work as runtime_work
+    import pycastle.work as runtime_work
 
     captured: dict[str, object] = {}
     scope_args = {"BRANCH": "issue-77-docs"}
@@ -5552,8 +5552,11 @@ def test_agent_runner_run_prompt_passes_pycastle_adapter_contract_to_runtime_pac
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import pycastle_agent_runtime as runtime
-    import pycastle_agent_runtime.runtime as prompt_runtime
+    import pycastle.runtime as prompt_runtime
+    from pycastle.config.types import StageOverride
+    from pycastle.runtime import PromptRunRequest
+    from pycastle.services.agent_service import ToolPolicy
+    from pycastle.services.service_registry import ServiceRegistry
 
     codex = CodexService()
     captured: dict[str, object] = {}
@@ -5599,19 +5602,19 @@ def test_agent_runner_run_prompt_passes_pycastle_adapter_contract_to_runtime_pac
 
     assert result == "runtime result"
     assert captured["runner"] is runner
-    registry = cast(runtime.ServiceRegistry, captured["service_registry"])
-    assert isinstance(registry, runtime.ServiceRegistry)
+    registry = cast(ServiceRegistry, captured["service_registry"])
+    assert isinstance(registry, ServiceRegistry)
     assert registry["codex"] is codex
-    prompt_request = cast(runtime.PromptRunRequest, captured["request"])
+    prompt_request = cast(PromptRunRequest, captured["request"])
     assert prompt_request.name == "Runtime Consumer"
     assert prompt_request.prompt == "Return the final answer only."
     assert prompt_request.mount_path == _managed_mount(tmp_path)
-    assert prompt_request.override == runtime.StageOverride(
+    assert prompt_request.override == StageOverride(
         service="codex",
         model="gpt-5.4",
         effort="medium",
     )
-    assert prompt_request.tool_policy is runtime.ToolPolicy.PARTIAL
+    assert prompt_request.tool_policy is ToolPolicy.PARTIAL
     assert prompt_request.session_namespace == "issues"
     assert prompt_request.run_session_plan == run_session_plan
 

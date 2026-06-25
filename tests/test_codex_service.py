@@ -9,7 +9,7 @@ from pycastle.services.agent_service import (
     HardError as RuntimeHardError,
     UsageLimit as RuntimeUsageLimit,
 )
-from pycastle_agent_runtime.session import (
+from pycastle.runtime_session import (
     ProviderSessionState as RuntimeProviderSessionState,
     ProviderSessionStateRequest,
 )

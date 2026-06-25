@@ -4,12 +4,12 @@ import dataclasses
 from pathlib import Path
 from typing import Protocol
 
-from .agent_role import AgentRole
-from .agent_service import (
+from .agents.output_protocol import AgentRole
+from .services.agent_service import (
     ProviderSessionRecordingStore,
     ProviderStatePreparationAction,
 )
-from .session import (
+from .runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
