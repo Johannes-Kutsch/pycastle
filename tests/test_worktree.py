@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import shutil
 import subprocess
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -1781,6 +1782,43 @@ def test_prune_orphan_worktrees_warns_and_removes_all_other_orphans(
     assert not removable_orphan.exists()
     assert stuck_orphan.exists()
     assert worktrees_dir.exists()
+
+
+def test_prune_orphan_worktrees_removes_orphan_via_host_container_cleanup(
+    tmp_path, monkeypatch
+):
+    from pycastle.infrastructure import worktree as worktree_module
+
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    stuck_orphan = worktrees_dir / "stuck-orphan"
+    stuck_orphan.mkdir()
+
+    original = worktree_module.shutil.rmtree
+
+    def _raise_on_stuck(path, *args, **kwargs):
+        if Path(path).resolve() == stuck_orphan.resolve():
+            raise PermissionError("cannot remove")
+        return original(path, *args, **kwargs)
+
+    def _remove_in_container(command, **kwargs):
+        original(stuck_orphan)
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr(worktree_module.shutil, "rmtree", _raise_on_stuck)
+    monkeypatch.setattr(worktree_module.subprocess, "run", _remove_in_container)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        worktree_module.prune_orphan_worktrees(
+            tmp_path,
+            cfg=Config(docker_image_name="pycastle:test"),
+            git_service=_make_prune_git_svc([]),
+        )
+
+    assert caught == []
+    assert not stuck_orphan.exists()
+    assert not worktrees_dir.exists()
 
 
 # ── prune_orphan_worktrees: git-registered worktrees without role sessions ────
