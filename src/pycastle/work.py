@@ -364,6 +364,21 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                             mount_path=request.mount_path,
                         )
                         if retries_left <= 0:
+                            if request.service.name == "opencode":
+                                transformed = UsageLimitError(
+                                    reset_time=None,
+                                    raw_message=None,
+                                    provider=request.service.name,
+                                    stage_key=request.dependencies.stage_key_for_role(
+                                        request.role,
+                                    ),
+                                )
+                                request.dependencies.handle_provider_account_exhaustion(
+                                    request.service,
+                                    transformed,
+                                )
+                                token.cancel()
+                                raise transformed
                             raise
                         restart_num = (
                             request.dependencies.timeout_retries - retries_left + 1

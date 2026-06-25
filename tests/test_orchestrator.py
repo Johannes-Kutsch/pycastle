@@ -2928,6 +2928,62 @@ def test_exhausted_primary_dispatches_with_fallback_triple(tmp_path):
     )
 
 
+def test_opencode_timeout_usage_exhaustion_switches_to_fallback_instead_of_sleeping(
+    tmp_path,
+):
+    captured: list[tuple[str, str]] = []
+    issues = [
+        {
+            "number": 1,
+            "title": "Fix",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+
+    class _MarkingOpencodeService(_FakeService):
+        @property
+        def name(self) -> str:
+            return "opencode"
+
+        def mark_exhausted(self, reset_time) -> None:
+            del reset_time
+            self._available = False
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(issues)
+        if request.name.startswith("Implement Agent"):
+            captured.append((request.service, request.name))
+            if request.service == "opencode":
+                opencode.mark_exhausted(None)
+                raise UsageLimitError(reset_time=None, raw_message=None, provider="opencode")
+            return CompletionOutput()
+        return CompletionOutput()
+
+    opencode = _MarkingOpencodeService(available=True)
+    codex = _FakeService(available=True)
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=_make_github_svc(numbers=[1]),
+            git_service=_make_git_svc(try_merge_side_effect=[True]),
+            service_registry=ServiceRegistry({"opencode": opencode, "codex": codex}),
+            implement_override=StageOverride(
+                service="opencode",
+                effort="low",
+                fallback=StageOverride(service="codex", effort="high", model="gpt-5.2"),
+            ),
+            max_iterations=2,
+        )
+
+    assert captured == [("opencode", "Implement Agent #1"), ("codex", "Implement Agent #1")]
+    mock_sleep.assert_not_called()
+
+
 def test_primary_takes_precedence_when_both_services_available(tmp_path):
     """Snap-back is automatic: when the primary service is available, dispatch uses
     the primary's (service, model, effort) even if the fallback is also available."""

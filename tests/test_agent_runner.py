@@ -4657,6 +4657,132 @@ def test_work_invocation_timeout_exhaustion_preserves_agent_timeout_context(
     assert err.worktree_path == _managed_mount(tmp_path)
 
 
+def test_work_invocation_opencode_idle_timeout_exhaustion_becomes_usage_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import dataclasses
+    from datetime import datetime, timedelta
+    from pycastle.services._wake_time import compute_wake_time
+
+    class _FakeSession:
+        def exec_simple(self, cmd: str) -> str:
+            raise AssertionError(f"unexpected container exec: {cmd}")
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    class _FakeRunner:
+        async def setup(self, git_name: str, git_email: str, work_body: str) -> None:
+            del git_name, git_email, work_body
+
+        async def work_text(
+            self,
+            prompt: str,
+            *,
+            role: AgentRole,
+            tool_policy,
+            run_kind: RunKind,
+            session_uuid: str | None,
+            on_provider_session_id=None,
+        ) -> str:
+            del (
+                prompt,
+                role,
+                tool_policy,
+                run_kind,
+                session_uuid,
+                on_provider_session_id,
+            )
+            raise AgentTimeoutError("timeout")
+
+    class _ExhaustibleOpencodeService:
+        name = "opencode"
+
+        def __init__(self) -> None:
+            self.mark_exhausted_calls: list[datetime | None] = []
+
+        def mark_exhausted(self, reset_time: datetime | None) -> None:
+            self.mark_exhausted_calls.append(reset_time)
+
+    now = datetime(2025, 1, 1, 14, 30, 0)
+    monkeypatch.setattr(
+        "pycastle.agents.runner._time_module.now_local", lambda: now
+    )
+
+    expected_reset = compute_wake_time(None, now, timedelta(minutes=90))[0].replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(
+            tmp_path,
+            timeout_retries=2,
+            opencode_minimum_unknown_reset_duration_hours=1.5,
+        ),
+        _make_git_service(),
+    )
+    service = _ExhaustibleOpencodeService()
+    dependencies = runner.build_work_dependencies(
+        name="Planner",
+        model="deepseek-v4-flash",
+        effort="medium",
+        service=cast(Any, service),
+    )
+    dependencies = dataclasses.replace(
+        dependencies,
+        prepare_session=lambda request: _PreparedRunSessionStandIn(
+            initial_run_kind=RunKind.FRESH,
+            initial_provider_session_id=None,
+        ),
+        build_session=lambda *_args: _FakeSession(),
+        build_runner=lambda *_args: cast(ContainerRunner, _FakeRunner()),
+    )
+
+    status_display = RecordingStatusDisplay()
+
+    with pytest.raises(UsageLimitError) as exc_info:
+        asyncio.run(
+            invoke_work(
+                WorkInvocationRequest(
+                    name="Planner",
+                    mount_path=_managed_mount(tmp_path),
+                    role=AgentRole.PLANNER,
+                    service=cast(Any, service),
+                    model="deepseek-v4-flash",
+                    effort="medium",
+                    output_adapter=TextOutputAdapter(
+                        prompt="already-rendered prompt"
+                    ),
+                    dependencies=dependencies,
+                    status_display=status_display,
+                )
+            )
+        )
+
+    err = exc_info.value
+    assert err.provider == "opencode"
+    assert err.raw_message is None
+    assert err.reset_time is None
+    assert err.stage_key == "plan"
+    assert service.mark_exhausted_calls == [expected_reset]
+    assert (
+        "print",
+        "Planner",
+        "Timeout — restarting (attempt 1/2)",
+        None,
+    ) in status_display.calls
+    assert (
+        "print",
+        "Planner",
+        "Timeout — restarting (attempt 2/2)",
+        None,
+    ) in status_display.calls
+
+
 def test_work_invocation_translates_runtime_usage_limit_to_pycastle_compatibility_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
