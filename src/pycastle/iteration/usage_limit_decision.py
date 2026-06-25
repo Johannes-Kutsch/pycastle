@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pycastle.usage_limit_decision import (
     ContinueNow as _ContinueNow,
@@ -40,6 +40,21 @@ def decide_usage_limit_continuation(
     service_registry: ServiceRegistry | None,
     now: datetime,
 ) -> UsageLimitContinuationDecision:
+    minimum_unknown_reset_duration = _minimum_unknown_reset_duration_for_provider(
+        cfg,
+        outcome.provider,
+    )
+
+    def _compute_wake_time(
+        reset_time: datetime | None,
+        now_: datetime,
+    ) -> tuple[datetime, bool]:
+        return compute_wake_time(
+            reset_time,
+            now_,
+            minimum_unknown_reset_duration=minimum_unknown_reset_duration,
+        )
+
     return _decide_usage_limit_continuation(
         UsageLimitOutcome(
             reset_time=outcome.reset_time,
@@ -51,5 +66,18 @@ def decide_usage_limit_continuation(
         stage_override=_override_for_stage_key(cfg, outcome.stage_key),
         service_registry=service_registry,
         now=now,
-        compute_wake_time=compute_wake_time,
+        compute_wake_time=_compute_wake_time,
     )
+
+
+def _minimum_unknown_reset_duration_for_provider(
+    cfg: Config,
+    provider: str | None,
+) -> timedelta:
+    if provider == "claude":
+        return timedelta(hours=cfg.claude_minimum_unknown_reset_duration_hours)
+    if provider == "codex":
+        return timedelta(hours=cfg.codex_minimum_unknown_reset_duration_hours)
+    if provider == "opencode":
+        return timedelta(hours=cfg.opencode_minimum_unknown_reset_duration_hours)
+    return timedelta(0)

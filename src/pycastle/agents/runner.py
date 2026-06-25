@@ -1,9 +1,11 @@
 import dataclasses
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import AbstractAsyncContextManager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
+from .. import _time as _time_module
 from pycastle.services.agent_service import AgentService as RuntimeAgentService
 from pycastle.work import (
     RunSessionPlan as RuntimeRunSessionPlan,
@@ -11,6 +13,7 @@ from pycastle.work import (
     WorkInvocationDependencies,
     WorkInvocationRequest,
 )
+from pycastle.services._wake_time import compute_wake_time
 
 from ._work_invocation import ProtocolOutputAdapter, format_transient_status_message
 from .output_protocol import (
@@ -93,6 +96,34 @@ def _stage_key_for_role(role: AgentRole) -> str | None:
         AgentRole.FAILURE_REPORT: "preflight_issue",
     }
     return mapping.get(role)
+
+
+def _minimum_unknown_reset_duration_for_provider(
+    cfg: Config,
+    provider: str,
+) -> timedelta:
+    if provider == "claude":
+        return timedelta(hours=cfg.claude_minimum_unknown_reset_duration_hours)
+    if provider == "codex":
+        return timedelta(hours=cfg.codex_minimum_unknown_reset_duration_hours)
+    if provider == "opencode":
+        return timedelta(hours=cfg.opencode_minimum_unknown_reset_duration_hours)
+    return timedelta(0)
+
+
+def _minimum_unknown_reset_or_default(
+    reset_time: datetime | None,
+    minimum_unknown_reset_duration: timedelta,
+    now: datetime,
+) -> datetime | None:
+    if reset_time is not None or minimum_unknown_reset_duration <= timedelta(0):
+        return reset_time
+    wake, _ = compute_wake_time(
+        reset_time,
+        now,
+        minimum_unknown_reset_duration=minimum_unknown_reset_duration,
+    )
+    return wake - timedelta(minutes=2)
 
 
 @dataclasses.dataclass
@@ -290,6 +321,13 @@ class AgentRunner:
             service_for_run: AgentService,
             error,
         ) -> None:
+            provider = error.provider or service_for_run.name
+            minimum_unknown_reset_duration = (
+                _minimum_unknown_reset_duration_for_provider(
+                    self._cfg,
+                    provider,
+                )
+            )
             mark_permanently_exhausted = getattr(
                 service_for_run,
                 "mark_permanently_exhausted",
@@ -298,7 +336,15 @@ class AgentRunner:
             if error.is_permanent and callable(mark_permanently_exhausted):
                 error.account_label = mark_permanently_exhausted()
                 return
-            service_for_run.mark_exhausted(error.reset_time)
+            now = _time_module.now_local()
+            mark_exhausted_reset_time = _minimum_unknown_reset_or_default(
+                error.reset_time,
+                minimum_unknown_reset_duration,
+                now,
+            )
+            service_for_run.mark_exhausted(
+                mark_exhausted_reset_time,
+            )
 
         return WorkInvocationDependencies(
             container_workspace=_CONTAINER_WORKSPACE,

@@ -117,6 +117,9 @@ class Config:
     auto_file_bugs: bool = False
     bug_report_repo: str = "Johannes-Kutsch/pycastle"
     timeout_retries: int = 1
+    claude_minimum_unknown_reset_duration_hours: int | float = 0.0
+    codex_minimum_unknown_reset_duration_hours: int | float = 0.0
+    opencode_minimum_unknown_reset_duration_hours: int | float = 0.0
     plan_override: StageOverride = dataclasses.field(
         default_factory=lambda: StageOverride(
             service="opencode",
@@ -269,6 +272,7 @@ def load_config(
     _validate_bug_report_repo(cfg)
     _validate_improve_max(cfg)
     _validate_improve_mode(cfg)
+    _validate_minimum_unknown_reset_duration_hours(cfg)
     object.__setattr__(cfg, "repo_root", layout.repo_root)
     object.__setattr__(
         cfg,
@@ -278,6 +282,31 @@ def load_config(
         and "logs_dir" not in (overrides or {}),
     )
     return cfg
+
+
+def _validate_minimum_unknown_reset_duration_hours(cfg: Config) -> None:
+    for name in (
+        "claude_minimum_unknown_reset_duration_hours",
+        "codex_minimum_unknown_reset_duration_hours",
+        "opencode_minimum_unknown_reset_duration_hours",
+    ):
+        _validate_minimum_unknown_reset_duration_hours_value(name, getattr(cfg, name))
+
+
+def _validate_minimum_unknown_reset_duration_hours_value(
+    field_name: str,
+    value: Any,
+) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigValidationError(
+            f"{field_name} must be a non-negative number of hours",
+            invalid_value=str(value),
+        )
+    if value < 0:
+        raise ConfigValidationError(
+            f"{field_name} must be >= 0",
+            invalid_value=str(value),
+        )
 
 
 def _validate_improve_mode(cfg: Config) -> None:

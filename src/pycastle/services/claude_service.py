@@ -68,10 +68,16 @@ class _AccountPool:
         raise RuntimeError("No available Claude accounts")
 
     def mark_exhausted(
-        self, token: str, reset_time: datetime | None, now: datetime | None = None
+        self,
+        token: str,
+        reset_time: datetime | None,
+        now: datetime | None = None,
     ) -> None:
         now = now or _time_module.now_local()
-        wake, _ = compute_wake_time(reset_time, now)
+        wake, _ = compute_wake_time(
+            reset_time,
+            now,
+        )
         for acc in self._accounts:
             if acc.token == token:
                 acc.exhausted_until = wake
@@ -266,10 +272,17 @@ class ClaudeService:
         return self._pool.earliest_wake_time()
 
     def mark_exhausted(
-        self, reset_time: datetime | None, *, _now: datetime | None = None
+        self,
+        reset_time: datetime | None,
+        *,
+        _now: datetime | None = None,
     ) -> None:
         if self._pool is not None and self._current_token is not None:
-            self._pool.mark_exhausted(self._current_token, reset_time, now=_now)
+            self._pool.mark_exhausted(
+                self._current_token,
+                reset_time,
+                now=_now,
+            )
 
     def mark_permanently_exhausted(self) -> str | None:
         if self._pool is None or self._current_token is None:

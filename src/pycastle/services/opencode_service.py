@@ -376,10 +376,16 @@ class OpenCodeService:
         return self._exhausted_until
 
     def mark_exhausted(
-        self, reset_time: datetime | None, *, _now: datetime | None = None
+        self,
+        reset_time: datetime | None,
+        *,
+        _now: datetime | None = None,
     ) -> None:
         now = _now or _time_module.now_local()
-        wake, _ = compute_wake_time(reset_time, now)
+        wake, _ = compute_wake_time(
+            reset_time,
+            now,
+        )
         if wake.tzinfo is None:
             wake = wake.replace(tzinfo=timezone.utc)
         self._exhausted_until = wake
