@@ -4,7 +4,8 @@ import dataclasses
 from typing import Any
 
 from . import _time as _time_module
-from pycastle.services.agent_service import ToolPolicy
+from .agent_role import AgentRole
+from .agent_service import ToolPolicy
 from .execution_contracts import (
     CancellationToken,
     PromptRunRequest,
@@ -17,12 +18,11 @@ from .execution_contracts import (
     WorkInvocationRequest,
     WorktreeMount,
 )
-from pycastle.agents.output_protocol import AgentRole
-from pycastle.services.service_registry import ServiceRegistry
+from .service_registry import ServiceRegistry
 from .session import RunKind
 from .session_planning import ResidentSessionPlan
-from pycastle.stage_priority_chain import iter_stage_chain
-from pycastle.config.types import StageOverride
+from .stage_override import StageOverride
+from .stage_priority_chain import iter_stage_chain
 from .work import invoke_work
 
 __all__ = [

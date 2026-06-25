@@ -61,8 +61,10 @@ def cron_env(tmp_path, fake_crontab):
     venv_bin = tmp_path / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
     python_shim = venv_bin / "python"
-    python_shim.write_text(f"#!/usr/bin/env bash\nexec {sys.executable} \"$@\"\n")
-    python_shim.chmod(python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    python_shim.write_text(f'#!/usr/bin/env bash\nexec {sys.executable} "$@"\n')
+    python_shim.chmod(
+        python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
 
     env = os.environ.copy()
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
@@ -160,8 +162,10 @@ def test_install_local_logs_dir_entry_runs_through_effective_logs_dir_with_space
     venv_bin = project_dir / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
     python_shim = venv_bin / "python"
-    python_shim.write_text(f"#!/usr/bin/env bash\nexec {sys.executable} \"$@\"\n")
-    python_shim.chmod(python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    python_shim.write_text(f'#!/usr/bin/env bash\nexec {sys.executable} "$@"\n')
+    python_shim.chmod(
+        python_shim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+    )
 
     cron_sh = setup_dir / "cron.sh"
     cron_sh.write_text("#!/usr/bin/env bash\necho cron tick\n")

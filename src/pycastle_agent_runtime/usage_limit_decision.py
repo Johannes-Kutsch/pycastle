@@ -4,8 +4,8 @@ import dataclasses
 from datetime import datetime
 from typing import Callable, TypeAlias
 
-from pycastle.services.service_registry import ServiceRegistry
-from pycastle.config.types import StageOverride
+from .service_registry import ServiceRegistry
+from .stage_override import StageOverride
 
 
 @dataclasses.dataclass(frozen=True)

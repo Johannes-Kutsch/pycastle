@@ -4,11 +4,11 @@ import dataclasses
 from pathlib import Path
 from typing import Protocol
 
-from pycastle.services.agent_service import (
+from .agent_role import AgentRole
+from .agent_service import (
     ProviderSessionRecordingStore,
     ProviderStatePreparationAction,
 )
-from pycastle.agents.output_protocol import AgentRole
 from .session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,

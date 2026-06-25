@@ -4818,6 +4818,17 @@ def test_runtime_package_owns_service_selection_contract() -> None:
     )
 
 
+def test_runtime_service_registry_module_import_stays_standalone() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    imported = _runtime_module_imported_application_modules(
+        repo_root,
+        "pycastle_agent_runtime.service_registry",
+    )
+
+    assert imported == []
+
+
 def test_runtime_package_service_registry_snapshots_availability_per_configured_service() -> (
     None
 ):

@@ -5,8 +5,9 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Protocol
 
+from .agent_role import AgentRole
+
 if TYPE_CHECKING:
-    from pycastle.agents.output_protocol import AgentRole
     from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,
@@ -82,7 +83,7 @@ class ProviderSessionState:
 
 
 def provider_state_relpath(
-    role: "AgentRole",
+    role: AgentRole,
     provider_name: str,
     namespace: str = "",
     *,
@@ -95,7 +96,7 @@ def provider_state_relpath(
 
 
 def normalize_state_dir_relpath(
-    role: "AgentRole",
+    role: AgentRole,
     namespace: str,
     service_name: str,
     state_dir_relpath: str | None,
