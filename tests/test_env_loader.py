@@ -266,8 +266,10 @@ def test_credential_env_includes_numbered_credentials(
         "GH_TOKEN=gh\n"
         "CLAUDE_CODE_OAUTH_TOKEN=primary\n"
         "CLAUDE_CODE_OAUTH_TOKEN_2=secondary\n"
+        "CLAUDE_CODE_OAUTH_TOKEN_7=slot7\n"
         "OPENCODE_GO_API_KEY=primary-opencode\n"
         "OPENCODE_GO_API_KEY_2=secondary-opencode\n"
+        "OPENCODE_GO_API_KEY_12=slot12\n"
     )
     env = load_credential_env(
         global_dir=global_dir,
@@ -275,11 +277,32 @@ def test_credential_env_includes_numbered_credentials(
         process_env={},
     )
     assert env["CLAUDE_CODE_OAUTH_TOKEN_2"] == "secondary"
+    assert env["CLAUDE_CODE_OAUTH_TOKEN_7"] == "slot7"
     assert env["OPENCODE_GO_API_KEY_2"] == "secondary-opencode"
+    assert env["OPENCODE_GO_API_KEY_12"] == "slot12"
 
 
-def test_parse_credential_list_orders_sloted_credentials_for_a_service() -> None:
+def test_credential_env_excludes_non_base_key_numbered_suffixes(
+    repo: Path, tmp_path: Path
+) -> None:
+    global_dir = tmp_path / "home"
+    global_dir.mkdir()
+    (global_dir / ".env").write_text(
+        "CLAUDE_CODE_OAUTH_TOKEN=primary\n"
+        "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY_2=legacy-numbered\n"
+        "OPENCODE_GO_API_KEY_EXTRA_2=not-a-credential\n"
+    )
+    env = load_credential_env(
+        global_dir=global_dir,
+        local_env_file=DEFAULT_ENV_FILE,
+        process_env={},
+    )
+    assert env == {"CLAUDE_CODE_OAUTH_TOKEN": "primary"}
+
+
+def test_parse_credential_list_orders_slotted_credentials_for_a_service() -> None:
     credential_env = {
+        "CLAUDE_CODE_OAUTH_TOKEN_10": "slot10",
         "CLAUDE_CODE_OAUTH_TOKEN_3": "slot3",
         "CLAUDE_CODE_OAUTH_TOKEN": "slot1",
         "CLAUDE_CODE_OAUTH_TOKEN_2": "slot2",
@@ -288,6 +311,7 @@ def test_parse_credential_list_orders_sloted_credentials_for_a_service() -> None
         (1, "slot1"),
         (2, "slot2"),
         (3, "slot3"),
+        (10, "slot10"),
     ]
 
 
