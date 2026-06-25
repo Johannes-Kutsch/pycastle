@@ -183,7 +183,13 @@ def _classify_line(line: str) -> list[ParsedTurn]:
 class ClaudeService:
     def __init__(self, accounts: list[tuple[str, str]] | None = None) -> None:
         self._pool: CredentialPool | None = (
-            CredentialPool(accounts) if accounts is not None else None
+            CredentialPool(
+                accounts,
+                empty_error_message="ClaudeService requires at least one account",
+                unavailable_error_message="No available Claude accounts",
+            )
+            if accounts is not None
+            else None
         )
         self._current_token: str | None = None
 

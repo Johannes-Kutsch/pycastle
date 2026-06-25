@@ -18,12 +18,19 @@ class _CredentialSlot:
 
 
 class CredentialPool:
-    def __init__(self, accounts: list[tuple[str, str]]) -> None:
+    def __init__(
+        self,
+        accounts: list[tuple[str, str]],
+        *,
+        empty_error_message: str = "CredentialPool requires at least one credential",
+        unavailable_error_message: str = "No available credentials",
+    ) -> None:
         if not accounts:
-            raise ValueError("ClaudeService requires at least one account")
+            raise ValueError(empty_error_message)
         self._accounts: list[_CredentialSlot] = [
             _CredentialSlot(name=n, token=t) for n, t in accounts
         ]
+        self._unavailable_error_message = unavailable_error_message
 
     def _is_exhausted(self, acc: _CredentialSlot, now: datetime) -> bool:
         return acc.exhausted_until is not None and acc.exhausted_until > now
@@ -33,7 +40,7 @@ class CredentialPool:
         for acc in self._accounts:
             if not self._is_exhausted(acc, now):
                 return acc.name, acc.token
-        raise RuntimeError("No available Claude accounts")
+        raise RuntimeError(self._unavailable_error_message)
 
     def mark_exhausted(
         self,

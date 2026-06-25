@@ -109,12 +109,12 @@ def test_build_env_raises_when_all_accounts_exhausted():
     svc.build_env()
     svc.mark_exhausted(_FAR)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="No available Claude accounts"):
         svc.build_env()  # no available account; _pool.pick raises
 
 
 def test_empty_accounts_raises():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="ClaudeService requires at least one account"):
         ClaudeService(accounts=[])
 
 
