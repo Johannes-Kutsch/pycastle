@@ -390,7 +390,11 @@ def test_managed_worktree_logs_creation_and_prune_events_with_node_state(
     assert "prune_worktree" in events
 
     create = next(entry for entry in entries if entry["event"] == "worktree_create")
-    prune = next(entry for entry in entries if entry["event"] == "prune_worktree")
+    prune = next(
+        entry
+        for entry in entries
+        if entry["event"] == "prune_worktree" and entry["path"] == str(orphan)
+    )
     assert create["path"] == str(
         branch_deps.repo_root / "pycastle" / ".worktrees" / "issue-1848"
     )
