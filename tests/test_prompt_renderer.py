@@ -81,6 +81,8 @@ def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
         "ISSUE_NUMBER": "1",
         "ISSUE_TITLE": "title",
         "OUTPUT": "boom",
+        "EVIDENCE_PATH": ".pycastle/failure-report-evidence/agent-invocation.log",
+        "HAS_EVIDENCE_PATH": "yes",
         "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
         "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
         "SESSION_DIR": "/sessions/abc",
