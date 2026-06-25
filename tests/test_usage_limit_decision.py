@@ -169,6 +169,36 @@ def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
     )
 
 
+def test_decide_usage_limit_continuation_keeps_failing_service_wake_on_continue_when_other_stage_services_are_exhausted():
+    failing_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
+    registry = runtime.ServiceRegistry(
+        {
+            "claude": _make_service(available=False, wake_time=failing_wake),
+            "codex": _make_service(available=False, wake_time=fallback_wake),
+            "opencode": _make_service(available=True),
+        }
+    )
+
+    decision = _decide(
+        runtime.UsageLimitOutcome(provider="claude"),
+        stage_override=runtime.StageOverride(
+            service="claude",
+            fallback=runtime.StageOverride(
+                service="codex",
+                fallback=runtime.StageOverride(service="opencode"),
+            ),
+        ),
+        service_registry=registry,
+        now=_now(),
+    )
+
+    assert decision == runtime.ContinueNow(
+        message="Account exhausted until 16:00, switching to next available.",
+        exhausted_wake_time=failing_wake,
+    )
+
+
 def test_decide_usage_limit_continuation_formats_cross_day_sleep_message():
     now = datetime(2026, 1, 1, 23, 30, 0, tzinfo=timezone.utc)
     fallback_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=timezone.utc)

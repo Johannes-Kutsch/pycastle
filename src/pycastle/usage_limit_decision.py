@@ -100,9 +100,20 @@ def decide_usage_limit_continuation(
             exhausted_wake_time = None
         elif use_stage_scope:
             assert stage_override is not None
-            exhausted_wake_time = service_registry.next_wake_time_for(
-                stage_override, now
-            )
+            exhausted_wake_time = None
+            if outcome.provider is not None:
+                provider_service = service_registry[outcome.provider]
+                if provider_service is not None and not provider_service.is_available(
+                    now=now
+                ):
+                    try:
+                        exhausted_wake_time = provider_service.next_wake_time()
+                    except RuntimeError:
+                        pass
+            if exhausted_wake_time is None:
+                exhausted_wake_time = service_registry.next_wake_time_for(
+                    stage_override, now
+                )
         else:
             exhausted_wake_time = service_registry.next_wake_time(now)
         message = None

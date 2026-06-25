@@ -5730,6 +5730,236 @@ def test_build_work_dependencies_keeps_parsed_reset_time_authoritative_with_prov
     assert service.mark_exhausted_calls == [reset_time]
 
 
+def test_build_work_dependencies_uses_opencode_minimum_unknown_reset_duration_for_unknown_reset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _ResettableService:
+        name = "opencode"
+
+        def __init__(self) -> None:
+            self.mark_exhausted_calls: list[datetime | None] = []
+
+        def build_command(
+            self, role, model, effort, run_kind, session_uuid, *, tool_policy=None
+        ) -> str:
+            del role, model, effort, run_kind, session_uuid, tool_policy
+            return ""
+
+        def build_env(
+            self, state_dir_container_path=None, token=None
+        ) -> dict[str, str]:
+            del state_dir_container_path, token
+            return {}
+
+        def run(self, lines, on_provider_session_id=None):
+            del lines, on_provider_session_id
+            return iter(())
+
+        def is_available(self, now: datetime | None = None) -> bool:
+            del now
+            return True
+
+        def next_wake_time(self) -> datetime:
+            raise AssertionError("next_wake_time should not be called")
+
+        def mark_exhausted(self, reset_time: datetime | None) -> None:
+            self.mark_exhausted_calls.append(reset_time)
+
+        def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+            del role, namespace
+            return None
+
+        def is_resumable(self, state_dir: Path) -> bool:
+            del state_dir
+            return False
+
+        def provider_session_preferences(
+            self,
+            request: ProviderSessionPreferencesRequest,
+        ) -> ProviderSessionPreferences:
+            del request
+            return ProviderSessionPreferences()
+
+        def provider_session_state(self, request: ProviderSessionStateRequest):
+            del request
+            return ProviderSessionState(RunKind.FRESH, None)
+
+        def valid_models(self) -> frozenset[str]:
+            return frozenset({"deepseek-v4-flash"})
+
+        def valid_efforts(self) -> frozenset[str]:
+            return frozenset({"medium"})
+
+    now = datetime(2025, 1, 1, 14, 30, 0)
+    monkeypatch.setattr("pycastle.agents.runner._time_module.now_local", lambda: now)
+    service = _ResettableService()
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, opencode_minimum_unknown_reset_duration_hours=1.5),
+        _make_git_service(),
+    )
+
+    dependencies = runner.build_work_dependencies(
+        name="Reviewer",
+        model="deepseek-v4-flash",
+        effort="medium",
+        service=cast(Any, service),
+    )
+    error = UsageLimitError(reset_time=None, provider="opencode")
+
+    dependencies.handle_provider_account_exhaustion(service, error)
+
+    assert error.account_label is None
+    assert service.mark_exhausted_calls == [datetime(2025, 1, 1, 16, 0, 0)]
+
+
+def test_build_work_dependencies_keeps_parsed_reset_time_authoritative_for_opencode_with_provider_minimum_duration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _ResettableService:
+        name = "opencode"
+
+        def __init__(self) -> None:
+            self.mark_exhausted_calls: list[datetime | None] = []
+
+        def build_command(
+            self, role, model, effort, run_kind, session_uuid, *, tool_policy=None
+        ) -> str:
+            del role, model, effort, run_kind, session_uuid, tool_policy
+            return ""
+
+        def build_env(
+            self, state_dir_container_path=None, token=None
+        ) -> dict[str, str]:
+            del state_dir_container_path, token
+            return {}
+
+        def run(self, lines, on_provider_session_id=None):
+            del lines, on_provider_session_id
+            return iter(())
+
+        def is_available(self, now: datetime | None = None) -> bool:
+            del now
+            return True
+
+        def next_wake_time(self) -> datetime:
+            raise AssertionError("next_wake_time should not be called")
+
+        def mark_exhausted(self, reset_time: datetime | None) -> None:
+            self.mark_exhausted_calls.append(reset_time)
+
+        def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+            del role, namespace
+            return None
+
+        def is_resumable(self, state_dir: Path) -> bool:
+            del state_dir
+            return False
+
+        def provider_session_preferences(
+            self,
+            request: ProviderSessionPreferencesRequest,
+        ) -> ProviderSessionPreferences:
+            del request
+            return ProviderSessionPreferences()
+
+        def provider_session_state(self, request: ProviderSessionStateRequest):
+            del request
+            return ProviderSessionState(RunKind.FRESH, None)
+
+        def valid_models(self) -> frozenset[str]:
+            return frozenset({"deepseek-v4-flash"})
+
+        def valid_efforts(self) -> frozenset[str]:
+            return frozenset({"medium"})
+
+    now = datetime(2025, 1, 1, 14, 30, 0)
+    monkeypatch.setattr("pycastle.agents.runner._time_module.now_local", lambda: now)
+    service = _ResettableService()
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, opencode_minimum_unknown_reset_duration_hours=6),
+        _make_git_service(),
+    )
+    reset_time = datetime(2025, 1, 1, 15, 45, 0)
+
+    dependencies = runner.build_work_dependencies(
+        name="Reviewer",
+        model="deepseek-v4-flash",
+        effort="medium",
+        service=cast(Any, service),
+    )
+    error = UsageLimitError(reset_time=reset_time, provider="opencode")
+
+    dependencies.handle_provider_account_exhaustion(service, error)
+
+    assert error.account_label is None
+    assert service.mark_exhausted_calls == [reset_time]
+
+
+def test_build_work_dependencies_uses_claude_minimum_unknown_reset_duration_for_unknown_reset_with_account_pool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2025, 1, 1, 14, 30, 0)
+    monkeypatch.setattr("pycastle.agents.runner._time_module.now_local", lambda: now)
+    service = ClaudeService(
+        accounts=[("primary", "tok-primary"), ("secondary", "tok-secondary")]
+    )
+    service.build_env()
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, claude_minimum_unknown_reset_duration_hours=1.5),
+        _make_git_service(),
+    )
+    dependencies = runner.build_work_dependencies(
+        name="Reviewer",
+        model="sonnet",
+        effort="medium",
+        service=service,
+    )
+    error = UsageLimitError(reset_time=None, provider="claude")
+
+    dependencies.handle_provider_account_exhaustion(service, error)
+
+    assert error.account_label is None
+    assert service.next_wake_time() == datetime(2025, 1, 1, 16, 2, 0)
+
+
+def test_build_work_dependencies_keeps_parsed_reset_time_authoritative_for_claude_with_account_pool(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2025, 1, 1, 14, 30, 0)
+    monkeypatch.setattr("pycastle.agents.runner._time_module.now_local", lambda: now)
+    service = ClaudeService(
+        accounts=[("primary", "tok-primary"), ("secondary", "tok-secondary")]
+    )
+    service.build_env()
+    reset_time = datetime(2025, 1, 1, 15, 45, 0)
+
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path, claude_minimum_unknown_reset_duration_hours=6),
+        _make_git_service(),
+    )
+    dependencies = runner.build_work_dependencies(
+        name="Reviewer",
+        model="sonnet",
+        effort="medium",
+        service=service,
+    )
+    error = UsageLimitError(reset_time=reset_time, provider="claude")
+
+    dependencies.handle_provider_account_exhaustion(service, error)
+
+    assert error.account_label is None
+    assert service.next_wake_time() == datetime(2025, 1, 1, 15, 47, 0)
+
+
 def test_agent_runner_run_prompt_passes_pycastle_adapter_contract_to_runtime_package(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
