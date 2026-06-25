@@ -39,6 +39,8 @@
 - [0037 — Prompt family layout](0037-prompt-family-layout.md): `coordination/`, `diagnostics/`, `improve/`, `shared/`, `work/`.
 - [0038 — Service-aware Failure-Report session dir](0038-service-aware-failure-report-session-dir.md): Failed service name through `AgentFailedError`.
 - [0039 — Shared operator-actionable credential failures](0039-shared-operator-actionable-agent-credential-failures.md): Cross-provider credential failure routing to consuming project.
-- [0040 — Runtime ownership migration](0040-pycastle-agent-runtime-ownership-migration.md): `pycastle_agent_runtime` as reusable runtime; pycastle as adapter.
 - [0041 — Managed session and diagnostic workspaces](0041-agent-session-state-only-in-managed-worktrees.md): Session state only in managed worktrees.
 - [0042 — Template-specific protocol reprompts](0042-template-specific-protocol-reprompts.md): Expected output shape shared between first prompt and reprompt.
+- [0043 — OpenCode timeout exhaustion uses unknown-reset usage-limit path](0043-opencode-timeout-exhaustion-uses-unknown-reset-usage-limit-path.md): Treat OpenCode timeout exhaustion as an unknown-reset usage limit.
+- [0044 — Host-initiated privileged worktree cleanup](0044-host-initiated-privileged-worktree-cleanup.md): Remove root-owned orphan worktrees via a host-spawned root container; never an agent capability.
+- [0045 — Failure-Report evidence from captured agent log](0045-failure-report-evidence-from-captured-agent-log.md): Copy the failed run's agent-invocation log into the worktree; never depend on provider session export.
