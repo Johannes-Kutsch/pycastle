@@ -1570,7 +1570,13 @@ def test_placeholder_info_no_unknown_scope_sections():
 
 def test_scope_failure_report_placeholders():
     assert Scope.FAILURE_REPORT.placeholders == frozenset(
-        {"FAILED_ROLE", "SESSION_DIR", "FAILURE_CLASS"}
+        {
+            "FAILED_ROLE",
+            "SESSION_DIR",
+            "EVIDENCE_PATH",
+            "HAS_EVIDENCE_PATH",
+            "FAILURE_CLASS",
+        }
     )
 
 
@@ -1579,6 +1585,8 @@ def test_scope_failure_report_placeholders():
 _FAILURE_REPORT_SCOPE_ARGS_BASE = {
     "FAILED_ROLE": "implementer",
     "SESSION_DIR": "/sessions/abc",
+    "EVIDENCE_PATH": "logs/implementer-agent-invocation.log",
+    "HAS_EVIDENCE_PATH": "yes",
 }
 
 
@@ -1595,6 +1603,27 @@ def test_failure_report_renders_recovery_section_for_non_typed_crash():
 
     assert "## Recovery" in result
     assert "rm -rf <SESSION_DIR>" in result
+
+
+def test_failure_report_renders_no_evidence_branch():
+    renderer = PromptRenderer(Config())
+
+    result = _run(
+        renderer.render(
+            PromptTemplate.FAILURE_REPORT,
+            {
+                **_FAILURE_REPORT_SCOPE_ARGS_BASE,
+                "EVIDENCE_PATH": "",
+                "HAS_EVIDENCE_PATH": "no",
+                "FAILURE_CLASS": "protocol_error",
+            },
+            _noop_exec,
+        )
+    )
+
+    assert "No invocation log was copied for diagnosis" in result
+    assert "git status" in result
+    assert "git diff" in result
 
 
 def test_failure_report_omits_recovery_section_for_protocol_error():
@@ -1627,6 +1656,8 @@ def test_conditional_block_renders_when_condition_matches(cfg, prompts_dir):
             {
                 "FAILED_ROLE": "r",
                 "SESSION_DIR": "/s",
+                "EVIDENCE_PATH": "",
+                "HAS_EVIDENCE_PATH": "no",
                 "FAILURE_CLASS": "non_typed_crash",
             },
             _noop_exec,
@@ -1650,6 +1681,8 @@ def test_conditional_block_omitted_when_condition_does_not_match(cfg, prompts_di
             {
                 "FAILED_ROLE": "r",
                 "SESSION_DIR": "/s",
+                "EVIDENCE_PATH": "",
+                "HAS_EVIDENCE_PATH": "no",
                 "FAILURE_CLASS": "protocol_error",
             },
             _noop_exec,

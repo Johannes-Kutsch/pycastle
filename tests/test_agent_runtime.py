@@ -167,10 +167,6 @@ def _runtime_namespace() -> SimpleNamespace:
     )
 
 
-
-
-
-
 def _runtime_module_imported_application_modules(
     repo_root: Path, module_name: str
 ) -> list[str]:
@@ -213,16 +209,6 @@ def _runtime_module_imported_application_modules(
         text=True,
     )
     return json.loads(result.stdout)
-
-
-
-
-
-
-
-
-
-
 
 
 def _standalone_runtime_agent_log_result(
@@ -1648,28 +1634,6 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_credential_failure_
     assert excinfo.value.status_code == 401
     assert excinfo.value.service_name == "codex"
     assert excinfo.value.classification == "operator_actionable_credential_failure"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_runtime_agent_log_lifecycle_runs_standalone_without_pycastle(
@@ -4087,8 +4051,6 @@ def test_runtime_package_owns_service_selection_contract() -> None:
     )
 
 
-
-
 def test_runtime_package_service_registry_snapshots_availability_per_configured_service() -> (
     None
 ):
@@ -4501,5 +4463,3 @@ def test_runtime_package_resident_entrypoint_rejects_non_managed_mount_before_pr
     assert "role 'implementer'" in str(excinfo.value)
     assert service.build_env_state_dir_args == []
     assert provider_session_adapter.prepare_calls == []
-
-

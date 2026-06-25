@@ -105,7 +105,15 @@ class Scope(enum.Enum):
     RESUME = ("RESUME", frozenset[str]())
     FAILURE_REPORT = (
         "FAILURE_REPORT",
-        frozenset({"FAILED_ROLE", "SESSION_DIR", "FAILURE_CLASS"}),
+        frozenset(
+            {
+                "FAILED_ROLE",
+                "SESSION_DIR",
+                "EVIDENCE_PATH",
+                "HAS_EVIDENCE_PATH",
+                "FAILURE_CLASS",
+            }
+        ),
     )
 
     @property

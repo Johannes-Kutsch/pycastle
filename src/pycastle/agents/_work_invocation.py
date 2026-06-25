@@ -103,6 +103,7 @@ class ProtocolOutputAdapter:
         mount_path: Path,
         session_namespace: str,
         service_name: str,
+        invocation_log_path: Path | str | None = None,
     ) -> AgentOutput:
         if isinstance(result, FailedOutput):
             raise AgentFailedError(
@@ -111,6 +112,7 @@ class ProtocolOutputAdapter:
                 namespace=session_namespace,
                 failure_class=result.failure_class,
                 service_name=service_name or "claude",
+                agent_invocation_log_path=invocation_log_path,
             )
         return result
 

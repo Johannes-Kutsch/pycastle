@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 import json
 import platform
 from collections.abc import Sequence
@@ -169,11 +170,16 @@ def build_host_check_scope_args(
 
 
 def build_failure_report_scope_args(failure: FailureReportSource) -> dict[str, str]:
+    raw_evidence_path = getattr(failure, "agent_invocation_log_path", None)
+    evidence_path = str(raw_evidence_path) if raw_evidence_path is not None else ""
+    has_evidence_path = "yes" if evidence_path else "no"
     return validated_scope_args_for_template(
         PromptTemplate.FAILURE_REPORT,
         {
             "FAILED_ROLE": failure.role_value,
             "SESSION_DIR": failure.session_dir,
+            "EVIDENCE_PATH": evidence_path,
+            "HAS_EVIDENCE_PATH": has_evidence_path,
             "FAILURE_CLASS": failure.failure_class,
         },
     )

@@ -105,4 +105,6 @@ Used by: diagnostics/failure-report.md
 
 - `{{FAILED_ROLE}}` — The agent role that failed.
 - `{{SESSION_DIR}}` — Path to the failed service's role-session directory.
+- `{{EVIDENCE_PATH}}` — Path in the worktree where the copied invocation log is available.
+- `{{HAS_EVIDENCE_PATH}}` — "yes" when evidence is available, otherwise "no".
 - `{{FAILURE_CLASS}}` — Classification of the failure: `"protocol_error"` (reprompt-loop exhaustion) or `"non_typed_crash"` (untyped exception on resume retry).

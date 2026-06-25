@@ -105,6 +105,7 @@ class AgentFailedError(PycastleError):
         namespace: str = "",
         failure_class: str = "",
         service_name: str = "",
+        agent_invocation_log_path: Path | str | None = None,
     ) -> None:
         super().__init__(f"Agent {role_value!r} failed irrecoverably")
         self.role_value = role_value
@@ -112,6 +113,7 @@ class AgentFailedError(PycastleError):
         self.namespace = namespace
         self.failure_class = failure_class
         self.service_name = service_name
+        self.agent_invocation_log_path = agent_invocation_log_path
 
     @property
     def session_dir(self) -> str:

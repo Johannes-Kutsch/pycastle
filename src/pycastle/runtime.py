@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 from typing import Any
 
 from . import _time as _time_module
@@ -281,8 +282,9 @@ class _OneShotOutputAdapter:
         mount_path: Any,
         session_namespace: str,
         service_name: str,
+        invocation_log_path: Path | str | None = None,
     ) -> Any:
-        del role, mount_path, session_namespace, service_name
+        del role, mount_path, session_namespace, service_name, invocation_log_path
         return result
 
 
