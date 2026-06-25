@@ -58,7 +58,7 @@ async def status_row(
         row.close("failed", shutdown_style="error")
         raise
     else:
-        if not row._closed:
+        if not row.is_closed:
             if must_close:
                 row.close("failed", shutdown_style="error")
             else:
