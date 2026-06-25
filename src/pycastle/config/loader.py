@@ -17,7 +17,7 @@ from pycastle.layout import (
     resolve_layout,
 )
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
-from pycastle.stage_priority_chain import referenced_service_names
+from pycastle.stage_priority_chain import chain_entries
 
 __all__ = [
     "Config",
@@ -186,18 +186,24 @@ class Config:
 
 def referenced_services(cfg: Config) -> set[str]:
     """Return the set of service names the resolved config references."""
-    return {
-        service
-        for override in (
-            cfg.plan_override,
-            cfg.implement_override,
-            cfg.review_override,
-            cfg.merge_override,
-            cfg.preflight_issue_override,
-            cfg.improve_override,
-        )
-        for service in referenced_service_names(override)
-    }
+    services: list[str] = []
+    seen: set[str] = set()
+
+    for override in (
+        cfg.plan_override,
+        cfg.implement_override,
+        cfg.review_override,
+        cfg.merge_override,
+        cfg.preflight_issue_override,
+        cfg.improve_override,
+    ):
+        for entry in chain_entries(override):
+            service = entry.service.strip()
+            if not service or service in seen:
+                continue
+            seen.add(service)
+            services.append(service)
+    return set(services)
 
 
 def resolve_dockerfile(pycastle_dir: Path | str) -> Path:
