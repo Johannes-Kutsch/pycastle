@@ -71,6 +71,8 @@ def _copy_invocation_log_to_evidence_area(
 ) -> Path | None:
     if source is None:
         return None
+    if not worktree_path.is_dir():
+        return None
     source_path = Path(source)
     if not source_path.is_file():
         return None

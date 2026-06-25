@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import shutil
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -2783,6 +2784,62 @@ def test_run_iteration_failure_report_handles_missing_invocation_log_without_fal
     failure_req = calls[1]
     assert failure_req.prompt.scope_args["HAS_EVIDENCE_PATH"] == "no"
     assert failure_req.prompt.scope_args["EVIDENCE_PATH"] == ""
+
+
+def test_run_iteration_missing_worktree_mount_does_not_materialize_evidence_dir(
+    tmp_path, git_svc, logger
+):
+    calls: list[RunRequest] = []
+    missing_mount = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    source_log = tmp_path / "captured-agent.log"
+    source_log.write_text("captured bytes", encoding="utf-8")
+
+    original_error = AgentFailedError(
+        role_value="improve",
+        worktree_path=missing_mount,
+        failure_class="protocol_error",
+        service_name="codex",
+        agent_invocation_log_path=source_log,
+    )
+    report_crash = RuntimeError("missing mount still rejected")
+    response_queue: list[object] = [original_error, report_crash]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        if req.name == "Improve Agent":
+            shutil.rmtree(req.mount_path)
+        if req.name == "Failure Report Agent":
+            assert not req.mount_path.exists()
+            assert req.prompt.scope_args["HAS_EVIDENCE_PATH"] == "no"
+            assert req.prompt.scope_args["EVIDENCE_PATH"] == ""
+        response = response_queue.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(
+                preflight_issue_override=StageOverride(service="codex", effort="medium")
+            ),
+        ),
+        improve_mode="endless",
+    )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedAgentFailure)
+    assert result.failed_role == "improve"
+    assert result.issue_number is None
+    assert len(calls) == 2
 
 
 def test_run_iteration_failure_report_crash_logs_warning_and_error(
