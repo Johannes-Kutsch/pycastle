@@ -6,12 +6,12 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from .contracts import AgentService
+from pycastle.services.agent_service import AgentService
 from .provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
 )
-from .roles import AgentRole
+from pycastle.agents.output_protocol import AgentRole
 
 if TYPE_CHECKING:
     pass

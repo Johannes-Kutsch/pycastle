@@ -1,14 +1,9 @@
 import dataclasses
+import enum
 import json
 import re
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
-
-from pycastle_agent_runtime import parsed_event_reducer as runtime_parsed_event_reducer
-from pycastle_agent_runtime.roles import AgentRole
-
-if TYPE_CHECKING:
-    from ..services.agent_service import ParsedTurn
 
 from ..errors import (
     AgentCredentialFailureError,
@@ -16,6 +11,20 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
+
+if TYPE_CHECKING:
+    from ..services.agent_service import ParsedTurn
+
+
+class AgentRole(enum.Enum):
+    PLANNER = "planner"
+    PREFLIGHT_ISSUE = "preflight_issue"
+    IMPLEMENTER = "implementer"
+    REVIEWER = "reviewer"
+    MERGER = "merger"
+    IMPROVE = "improve"
+    FAILURE_REPORT = "failure_report"
+    DIVERGENCE_RESOLVER = "divergence_resolver"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -451,6 +460,10 @@ def process_stream_from_events(
     on_tokens: Callable[[int], None] | None = None,
     provider: str | None = None,
 ) -> AgentOutput:
+    from pycastle_agent_runtime import (
+        parsed_event_reducer as runtime_parsed_event_reducer,
+    )
+
     handler = _HANDLERS[role]
 
     def extract_early_output(turn: str) -> _ReducedRoleOutput | None:

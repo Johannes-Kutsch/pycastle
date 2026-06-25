@@ -6,9 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
 
-from . import _time as _time_module
-from .roles import AgentRole
-from .session import RunKind
+from .. import _time as _time_module
+from ..agents.output_protocol import AgentRole
+from ..session import RunKind
 
 
 class WorkInvocationLog:

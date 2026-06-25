@@ -14,7 +14,7 @@ from pycastle.errors import (
     ClaudeTimeoutError,
     PycastleError,
 )
-from pycastle_agent_runtime.contracts import (
+from pycastle.services.agent_service import (
     AssistantTurn as RuntimeAssistantTurn,
     CredentialFailure as RuntimeCredentialFailure,
     HardError as RuntimeHardError,

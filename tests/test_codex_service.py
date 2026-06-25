@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 import pytest
-from pycastle_agent_runtime.contracts import (
+from pycastle.services.agent_service import (
     AssistantTurn as RuntimeAssistantTurn,
     HardError as RuntimeHardError,
     UsageLimit as RuntimeUsageLimit,

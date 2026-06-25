@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from .types import StageOverride
+from .config.types import StageOverride
 
 
 @dataclass(frozen=True)

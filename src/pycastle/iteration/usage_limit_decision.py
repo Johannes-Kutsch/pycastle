@@ -8,7 +8,7 @@ from pycastle_agent_runtime import (
     UsageLimitOutcome,
     decide_usage_limit_continuation as _decide_usage_limit_continuation,
 )
-from pycastle_agent_runtime.service_registry import ServiceRegistry
+from pycastle.services.service_registry import ServiceRegistry
 from ..config import Config, StageOverride
 from ..services._wake_time import compute_wake_time
 from . import AbortedUsageLimit

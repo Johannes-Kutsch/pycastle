@@ -2499,7 +2499,7 @@ def test_runtime_public_errors_do_not_default_missing_service_names_to_claude():
 def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         ProviderRunStatePlanRequest,
@@ -2544,7 +2544,7 @@ def test_runtime_session_helpers_use_caller_supplied_session_root_and_provider_p
     tmp_path: Path,
 ):
     from pycastle_agent_runtime.errors import AgentFailedError
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import (
         normalize_state_dir_relpath,
         provider_state_relpath,
@@ -2584,7 +2584,7 @@ def test_runtime_session_helpers_use_caller_supplied_session_root_and_provider_p
 
 
 def test_runtime_session_helpers_default_to_provider_neutral_relpaths():
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import (
         normalize_state_dir_relpath,
         provider_state_relpath,
@@ -2780,7 +2780,7 @@ def test_runtime_provider_state_plan_records_successful_run_metadata_through_rol
 def test_runtime_provider_session_adapter_plan_allows_execution_service_without_session_methods(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import RunKind
     from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
@@ -2843,7 +2843,7 @@ def test_runtime_provider_session_adapter_plan_allows_execution_service_without_
 def test_runtime_provider_session_adapter_planning_facts_supply_provider_state_dir(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         ProviderRunStatePlanRequest,
@@ -2888,7 +2888,7 @@ def test_runtime_provider_session_adapter_planning_facts_supply_provider_state_d
 def test_runtime_provider_session_adapter_handles_local_preparation_and_session_recording(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import RunKind
     from pycastle_agent_runtime.session_planning import (
         ProviderRunStatePlanRequest,
@@ -3016,7 +3016,7 @@ def test_runtime_session_exact_resume_uses_injected_provider_identity_matcher(
 def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_auth_json(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
@@ -3068,7 +3068,7 @@ def test_runtime_provider_state_plan_exposes_codex_auth_seed_action_for_missing_
 def test_runtime_resident_session_plan_exposes_provider_metadata_without_persistence_policy(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
@@ -3150,7 +3150,7 @@ def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy
     tmp_path: Path,
 ) -> None:
     from pycastle_agent_runtime.provider_errors import ProviderErrorObservation
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
@@ -3220,7 +3220,7 @@ def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy
 def test_runtime_provider_state_plan_without_provider_auth_seed_policy_raises_file_not_found(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         AuthSeedingRequirement,
@@ -3273,7 +3273,7 @@ def test_runtime_provider_state_plan_without_provider_auth_seed_policy_raises_fi
 def test_runtime_provider_state_plan_keeps_selected_provider_state_dir_for_opencode_resume_without_container_override_policy(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         ProviderRunStatePlanRequest,
@@ -3323,7 +3323,7 @@ def test_runtime_provider_state_plan_keeps_selected_provider_state_dir_for_openc
 def test_runtime_provider_state_plan_uses_service_state_dir_when_provider_requests_container_override_policy(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         ProviderRunStatePlanRequest,
@@ -3371,7 +3371,7 @@ def test_runtime_provider_state_plan_uses_service_state_dir_when_provider_reques
 def test_runtime_provider_state_plan_falls_back_to_relpath_when_selected_state_dir_is_outside_worktree(
     tmp_path: Path,
 ) -> None:
-    from pycastle_agent_runtime.roles import AgentRole as RuntimeAgentRole
+    from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle_agent_runtime.session import ProviderSessionState, RunKind
     from pycastle_agent_runtime.session_planning import (
         ProviderRunStatePlanRequest,

@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .agent_log import AgentInvocationLog, LogicalAgentInvocationLog, WorkInvocationLog
-from .contracts import (
+from pycastle.infrastructure.agent_invocation_log import (
+    AgentInvocationLog,
+    LogicalAgentInvocationLog,
+    WorkInvocationLog,
+)
+from pycastle.services.agent_service import (
     AgentService,
     AssistantTurn,
     CredentialFailure,
@@ -25,7 +29,7 @@ from .execution_contracts import (
     WorkInvocationRequest,
 )
 from .provider_session_adapter import ProviderSessionAdapter
-from .roles import AgentRole
+from pycastle.agents.output_protocol import AgentRole
 from .session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -33,7 +37,7 @@ from .session import (
     ProviderSessionStateRequest,
     RunKind,
 )
-from .types import StageOverride
+from pycastle.config.types import StageOverride
 
 if TYPE_CHECKING:
     from pycastle_agent_runtime.session_planning import (
@@ -44,8 +48,8 @@ if TYPE_CHECKING:
         plan_provider_run_state,
         plan_resident_session,
     )
-    from pycastle_agent_runtime.service_registry import ServiceRegistry
-    from pycastle_agent_runtime.stage_priority_chain import (
+    from pycastle.services.service_registry import ServiceRegistry
+    from pycastle.stage_priority_chain import (
         ChainEntry,
         ConfiguredCandidateChain,
         ConfiguredCandidateSelection,
@@ -213,7 +217,7 @@ def __getattr__(name: str):
 
         return getattr(execution_contracts, name)
     if name == "ServiceRegistry":
-        from pycastle_agent_runtime.service_registry import ServiceRegistry
+        from pycastle.services.service_registry import ServiceRegistry
 
         return ServiceRegistry
     if name in {
@@ -276,7 +280,7 @@ def __getattr__(name: str):
         "select_configured_candidate_chain",
         "validation_labels",
     }:
-        from pycastle_agent_runtime import stage_priority_chain
+        from pycastle import stage_priority_chain
 
         return getattr(stage_priority_chain, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

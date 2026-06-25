@@ -437,7 +437,7 @@ def test_work_text_reuses_runner_logical_session_after_work(tmp_path):
 
 
 def test_work_text_preserves_tool_policy_behavior_for_runtime_contract(tmp_path):
-    from pycastle_agent_runtime.contracts import ToolPolicy
+    from pycastle.services.agent_service import ToolPolicy
     from pycastle.services.flag_profiles import AgentToolPolicyGroup
 
     session = FakeDockerSession(stream_chunks=[b'{"type":"ignored"}\n'])

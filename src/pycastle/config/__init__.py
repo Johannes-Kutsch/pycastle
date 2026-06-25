@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pycastle_agent_runtime.types import StageOverride
+from .types import StageOverride
 from pycastle.config.env_loader import (
     DEFAULT_ENV_FILE,
     KNOWN_CREDENTIAL_ENV_KEYS,
