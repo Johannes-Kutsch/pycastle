@@ -2350,6 +2350,131 @@ def test_agent_runner_routes_subscription_access_denial_variant_to_agent_credent
     assert env.get("CLAUDE_CODE_OAUTH_TOKEN") == "tok-secondary"
 
 
+def test_agent_runner_rotates_opencode_after_invalid_key_and_succeeds_with_next_credential(
+    tmp_path,
+):
+    from pycastle.services.opencode_service import OpenCodeService
+
+    invalid_key_error = (
+        b'{"type":"error","timestamp":1,"sessionID":"sess-123","error":{'
+        b'"name":"AuthenticationError","data":{"message":"invalid api key",'
+        b'"statusCode":401,"isRetryable":false}}'
+        b"}\n"
+    )
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    call_count = 0
+
+    def exec_side_effect(*_args, **_kwargs):
+        nonlocal call_count
+        if _kwargs.get("stream"):
+            result = MagicMock()
+            if call_count == 0:
+                call_count += 1
+                result.output = iter([invalid_key_error])
+            else:
+                result.output = iter(_REVIEWER_COMPLETE_STREAM)
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    svc = OpenCodeService(
+        accounts=[("account 1", "invalid-key"), ("account 2", "valid-key")]
+    )
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"opencode": svc},
+    )
+
+    result = asyncio.run(
+        runner.run(
+            _run_request(
+                name="Test Reviewer",
+                template=PromptTemplate.REVIEW,
+                scope_args={
+                    "ISSUE_NUMBER": "77",
+                    "ISSUE_TITLE": "Doc bug",
+                    "ISSUE_BODY": "Body",
+                    "ISSUE_COMMENTS": "",
+                    "BRANCH": "issue-77-docs",
+                    "INTERRUPTED_WORK": "",
+                },
+                mount_path=_managed_mount(tmp_path),
+                role=AgentRole.REVIEWER,
+                service="opencode",
+            )
+        )
+    )
+
+    assert result is not None
+    env = svc.build_env()
+    assert env["OPENCODE_GO_API_KEY"] == "valid-key"
+
+
+def test_agent_runner_opencode_invalid_key_exhausts_last_credential_and_surfaces_failure(
+    tmp_path,
+):
+    from pycastle.services.opencode_service import OpenCodeService
+
+    invalid_key_error = (
+        b'{"type":"error","timestamp":1,"sessionID":"sess-123","error":{'
+        b'"name":"AuthenticationError","data":{"message":"invalid api key",'
+        b'"statusCode":401,"isRetryable":false}}'
+        b"}\n"
+    )
+    mock_client = MagicMock()
+    mock_container = MagicMock()
+    mock_client.containers.run.return_value = mock_container
+
+    def exec_side_effect(*_args, **_kwargs):
+        if _kwargs.get("stream"):
+            result = MagicMock()
+            result.output = iter([invalid_key_error])
+            return result
+        return MagicMock(exit_code=0, output=(b"", b""))
+
+    mock_container.exec_run.side_effect = exec_side_effect
+
+    svc = OpenCodeService(accounts=[("account 1", "invalid-key")])
+    runner = AgentRunner(
+        {},
+        _make_cfg(tmp_path),
+        _make_git_service(),
+        docker_client=mock_client,
+        service_registry={"opencode": svc},
+    )
+
+    with pytest.raises(AgentCredentialFailureError) as exc_info:
+        asyncio.run(
+            runner.run(
+                _run_request(
+                    name="Test Reviewer",
+                    template=PromptTemplate.REVIEW,
+                    scope_args={
+                        "ISSUE_NUMBER": "77",
+                        "ISSUE_TITLE": "Doc bug",
+                        "ISSUE_BODY": "Body",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-77-docs",
+                        "INTERRUPTED_WORK": "",
+                    },
+                    mount_path=_managed_mount(tmp_path),
+                    role=AgentRole.REVIEWER,
+                    service="opencode",
+                )
+            )
+        )
+
+    assert exc_info.value.service_name == "opencode"
+    assert exc_info.value.status_code == 401
+
+
 def test_agent_runner_treats_unrelated_403_as_hard_error(tmp_path):
     mock_client = _make_docker_client(
         [

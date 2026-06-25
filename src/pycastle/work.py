@@ -415,6 +415,26 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         err.caller = request.name
                         if not err.service_name:
                             err.service_name = request.service.name
+                        can_permanently_exhaust_opencode = callable(
+                            getattr(request.service, "mark_permanently_exhausted", None)
+                        )
+                        if (
+                            err.service_name == "opencode"
+                            and can_permanently_exhaust_opencode
+                        ):
+                            transformed = UsageLimitError(
+                                reset_time=None,
+                                raw_message=str(err),
+                                provider=request.service.name,
+                                is_permanent=True,
+                            )
+                            request.dependencies.handle_provider_account_exhaustion(
+                                request.service,
+                                transformed,
+                            )
+                            if request.service.is_available():
+                                initial_attempt = False
+                                continue
                         raise
                     if isinstance(err, HardAgentError):
                         token.cancel()
