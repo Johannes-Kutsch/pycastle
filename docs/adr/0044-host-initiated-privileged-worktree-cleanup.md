@@ -1,0 +1,20 @@
+# Host-initiated privileged-container cleanup of root-owned orphan worktrees
+
+Under rootful Docker, the daemon creates missing bind-mount *source* paths as root when a container is launched against a worktree path that does not yet exist on the host — for example when `Ctrl+C` interrupts a run between worktree intent and `git worktree add`, while the container is started against the path anyway. This leaves a `root:root` orphan worktree (the dir *and* its `.git`) under `pycastle/.worktrees/` that the unprivileged host user cannot remove: deleting the inner `.git` needs write on its `root:root 0755` parent, which the host user lacks. `prune_orphan_worktrees` did an unguarded `shutil.rmtree`, so a single such orphan aborted startup with an unhandled `PermissionError` (upstream crash reports #1829, #1831).
+
+Decision: on a host `shutil.rmtree` that fails with `PermissionError`, the **host orchestrator** removes the orphan by running a throwaway `--rm` container (reusing the agent image) as root, mounting only the orphan's parent directory and `rm -rf`-ing the single named child. Container-root equals host-root under rootful Docker, so it deletes what the host user cannot. When Docker is unreachable, prune degrades to warn-and-skip; it never crashes startup. This is the tolerate-and-clean half of the fix; preventing the daemon from creating the root-owned paths in the first place is deferred and tracked separately.
+
+## Considered Options
+
+- **Document a manual `sudo rm`.** Rejected: orphans accumulate, every subsequent startup keeps crashing (the `PermissionError` is unhandled), and it demands human intervention on a headless Pi.
+- **Catch the error and `chmod`/`chown` on the host, then retry `rmtree`.** Rejected: changing ownership or mode requires owning the files; the unprivileged host user owns neither, so it cannot repair them from the host side at all.
+- **Run agent containers with `--user $(id -u)` or `--userns=keep-id`.** This is the *prevention* axis, not this decision. It does nothing for worktrees already poisoned on disk, and pokes at the cross-platform overlay/mount seam. Deferred as separate work.
+- **Host-initiated privileged-container `rm -rf` — chosen.** Smallest, lowest-risk change that both stops the startup crash and cleans up already-stuck worktrees, reusing container infrastructure pycastle already owns.
+
+## Consequences
+
+- `prune_orphan_worktrees` and worktree teardown gain a resilience ladder: host `rmtree` → on `PermissionError`, container `rm -rf` → on unreachable Docker, warn-and-skip. A failed prune never aborts startup.
+- Full cleanup now depends on a built agent image. On a fresh checkout before `pycastle build`, prune falls to warn-and-skip — acceptable, because root-owned orphans only exist *after* containers have run, by which point an image normally exists.
+- The cleanup container's mount is scoped to the **single orphan's parent**, and it `rm -rf`s only the named child — never the whole `.worktrees` tree — so a path bug cannot escalate a root `rm -rf`.
+- **Host-initiated only; never an agent capability.** The fix must not mount `/var/run/docker.sock` into an agent container, grant the agent `sudo`, or add `--privileged`/`cap_add` to agent containers. Any of those would hand the in-container agent host root — a far worse problem than the orphan. The pycastle agent container stays contained (uid 1000, no socket).
+- **Security framing.** `sudo` is not the operative boundary on a rootful-Docker host — docker-group membership is already root-equivalent, so every docker-capable principal (the host user, an interactive terminal agent run as that user, pycastle itself) could already do this manually. The cleanup grants *no new capability*; it automates a power that already exists, for the host orchestrator only. The mechanism relies on rootful Docker's container-root == host-root identity; under rootless Docker/Podman the bug does not occur (writes are not root-owned) and the trick would not grant root anyway.
