@@ -4,6 +4,7 @@ from pycastle.stage_priority_chain import (
     iter_stage_chain,
     referenced_service_names,
     render_chain_label,
+    StageOverrideChain,
     select_configured_candidate_chain,
     validation_labels,
 )
@@ -288,3 +289,83 @@ def test_select_configured_candidate_chain_reports_when_no_candidate_is_configur
 
     assert result.has_configured_candidate is False
     assert result.selected_chain is None
+
+
+def test_stage_override_chain_configured_candidate_availability_rebuilds_compact_chain() -> (
+    None
+):
+    override = StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(
+            service="missing",
+            model="unused",
+            effort="high",
+            fallback=StageOverride(
+                service="claude",
+                model="opus",
+                effort="high",
+            ),
+        ),
+    )
+
+    chain = StageOverrideChain(
+        override=override,
+        configured_service_names=("codex", "claude"),
+    )
+
+    result = chain.configured_candidate_availability({"codex": True, "claude": False})
+
+    assert result.available_candidates == (override,)
+    assert result.exhausted_candidates == (
+        StageOverride(service="claude", model="opus", effort="high"),
+    )
+    assert result.selection.selected_chain == StageOverride(
+        service="codex",
+        model="gpt-5.4",
+        effort="medium",
+        fallback=StageOverride(
+            service="claude",
+            model="opus",
+            effort="high",
+        ),
+    )
+
+
+def test_stage_override_chain_configured_candidate_availability_returns_first_configured_chain_when_all_exhausted() -> (
+    None
+):
+    override = StageOverride(
+        service="missing",
+        fallback=StageOverride(
+            service="codex",
+            model="gpt-5.4-mini",
+            effort="medium",
+            fallback=StageOverride(
+                service="claude",
+                model="haiku",
+                effort="low",
+            ),
+        ),
+    )
+
+    chain = StageOverrideChain(
+        override=override,
+        configured_service_names=("codex", "claude"),
+    )
+
+    result = chain.configured_candidate_availability({"codex": False, "claude": False})
+
+    assert result.has_available_candidate is False
+    assert result.exhausted_candidates == chain.configured_candidates.candidates
+    assert result.selection.selected_chain == StageOverride(
+        service="codex",
+        model="gpt-5.4-mini",
+        effort="medium",
+        fallback=StageOverride(
+            service="claude",
+            model="haiku",
+            effort="low",
+        ),
+    )

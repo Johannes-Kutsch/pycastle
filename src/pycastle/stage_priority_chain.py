@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 
 from .config.types import StageOverride
@@ -18,6 +18,17 @@ class ChainEntry:
 class ConfiguredCandidateSelection:
     has_configured_candidate: bool
     selected_chain: StageOverride | None
+
+
+@dataclass(frozen=True)
+class ConfiguredCandidateAvailability:
+    available_candidates: tuple[StageOverride, ...]
+    exhausted_candidates: tuple[StageOverride, ...]
+    selection: ConfiguredCandidateSelection
+
+    @property
+    def has_available_candidate(self) -> bool:
+        return bool(self.available_candidates)
 
 
 @dataclass(frozen=True)
@@ -107,6 +118,31 @@ class StageOverrideChain:
     @property
     def selected_chain(self) -> StageOverride | None:
         return self.configured_candidate_selection.selected_chain
+
+    def configured_candidate_availability(
+        self, availability_by_service: Mapping[str, bool]
+    ) -> ConfiguredCandidateAvailability:
+        configured_candidates = self.configured_candidates.candidates
+        available_candidates = tuple(
+            node
+            for node in configured_candidates
+            if availability_by_service.get(node.service, False)
+        )
+        exhausted_candidates = tuple(
+            node
+            for node in configured_candidates
+            if not availability_by_service.get(node.service, False)
+        )
+        selection = _select_configured_candidate_chain(
+            configured_candidates=configured_candidates,
+            configured_services=set(self.configured_service_names),
+            available_services={node.service for node in available_candidates},
+        )
+        return ConfiguredCandidateAvailability(
+            available_candidates=available_candidates,
+            exhausted_candidates=exhausted_candidates,
+            selection=selection,
+        )
 
 
 def iter_stage_chain(override: StageOverride) -> Iterator[StageOverride]:
@@ -239,6 +275,7 @@ def _deduplicated_service_names(
 
 __all__ = [
     "ChainEntry",
+    "ConfiguredCandidateAvailability",
     "StageOverrideChain",
     "ConfiguredCandidateChain",
     "ConfiguredCandidateSelection",
