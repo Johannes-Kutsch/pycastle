@@ -201,6 +201,48 @@ def test_prepare_run_startup_keeps_provider_credentials_behind_provider_adapters
     assert "OPENCODE_GO_API_KEY" not in startup.shared_container_env
 
 
+def test_prepare_run_startup_uses_numbered_opencode_credentials_in_priority_order():
+    cfg = Config(docker_image_name="img", improve_mode="until_sleep")
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "OPENCODE_GO_API_KEY": "slot-1",
+            "OPENCODE_GO_API_KEY_2": "slot-2",
+            "OPENCODE_GO_API_KEY_10": "slot-10",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    opencode = startup.configured_provider_adapters["opencode"]
+
+    assert opencode.account_names() == ["account 1", "account 2", "account 10"]
+    assert opencode.build_env()["OPENCODE_GO_API_KEY"] == "slot-1"
+
+
+def test_prepare_run_startup_keeps_single_bare_opencode_key_behavior_unchanged():
+    startup = prepare_run_startup(
+        Config(docker_image_name="img", improve_mode="until_sleep"),
+        {
+            "GH_TOKEN": "gh",
+            "OPENCODE_GO_API_KEY": "single-key",
+        },
+        RunStartupImproveModeFlagFacts(
+            no_improve=False,
+            improve_mode_flag=None,
+        ),
+    )
+
+    opencode = startup.configured_provider_adapters["opencode"]
+
+    assert opencode.account_names() == ["account 1"]
+    assert opencode.build_env()["OPENCODE_GO_API_KEY"] == "single-key"
+
+
 def test_prepare_run_startup_prefers_bare_claude_credential_over_numbered_slot_two():
     cfg = Config(docker_image_name="img", improve_mode="until_sleep")
 

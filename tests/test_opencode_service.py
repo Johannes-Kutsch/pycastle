@@ -569,3 +569,85 @@ def test_opencode_service_parses_noon_and_midnight_reset_times() -> None:
             raw_message=None,
         )
     ]
+
+
+def test_opencode_service_uses_first_available_account_from_pool() -> None:
+    service = OpenCodeService(
+        accounts=[
+            ("account 1", "slot-1"),
+            ("account 2", "slot-2"),
+            ("account 10", "slot-10"),
+        ]
+    )
+
+    assert service.account_names() == ["account 1", "account 2", "account 10"]
+    assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-1"
+
+
+def test_opencode_service_rotates_to_next_account_when_current_is_temporary_exhausted() -> (
+    None
+):
+    service = OpenCodeService(
+        accounts=[
+            ("account 1", "slot-1"),
+            ("account 2", "slot-2"),
+        ]
+    )
+
+    service.mark_exhausted(
+        datetime(2030, 6, 1, 11, 0, 0, tzinfo=timezone.utc),
+        _now=datetime(2030, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
+    )
+
+    assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-2"
+
+
+def test_opencode_service_does_not_exhaust_all_accounts_on_single_usage_limit() -> None:
+    service = OpenCodeService(
+        accounts=[
+            ("account 1", "slot-1"),
+            ("account 2", "slot-2"),
+        ]
+    )
+
+    service.mark_exhausted(
+        datetime(2030, 6, 1, 11, 0, 0, tzinfo=timezone.utc),
+        _now=datetime(2030, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
+    )
+    assert (
+        service.is_available(now=datetime(2026, 6, 1, 10, 1, 0, tzinfo=timezone.utc))
+        is True
+    )
+
+
+def test_opencode_service_returns_to_recovered_account_after_reset_time() -> None:
+    service = OpenCodeService(
+        accounts=[
+            ("account 1", "slot-1"),
+            ("account 2", "slot-2"),
+        ]
+    )
+
+    service.mark_exhausted(
+        datetime(2030, 6, 1, 11, 0, 0, tzinfo=timezone.utc),
+        _now=datetime(2030, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
+    )
+
+    assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-2"
+    assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-2"
+    assert (
+        service.is_available(now=datetime(2026, 6, 1, 11, 5, 0, tzinfo=timezone.utc))
+        is True
+    )
+
+
+def test_opencode_service_marks_bad_key_permanently_exhausted_and_uses_next() -> None:
+    service = OpenCodeService(
+        accounts=[
+            ("account 1", "slot-1"),
+            ("account 2", "slot-2"),
+        ]
+    )
+
+    assert service.mark_permanently_exhausted() == "account 1"
+    assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-2"

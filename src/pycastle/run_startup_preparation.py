@@ -168,10 +168,18 @@ def configured_provider_adapters_for_run(
     if "codex" in referenced:
         service_registry["codex"] = CodexService()
 
-    if "opencode" in referenced and credential_env.get("OPENCODE_GO_API_KEY"):
-        service_registry["opencode"] = OpenCodeService(
-            api_key=credential_env.get("OPENCODE_GO_API_KEY")
+    if "opencode" in referenced:
+        opencode_accounts_with_slots = parse_credential_list(
+            credential_env,
+            "OPENCODE_GO_API_KEY",
         )
+        if opencode_accounts_with_slots:
+            service_registry["opencode"] = OpenCodeService(
+                accounts=[
+                    (f"account {slot}", credential)
+                    for slot, credential in opencode_accounts_with_slots
+                ]
+            )
 
     if "claude" not in referenced:
         return service_registry

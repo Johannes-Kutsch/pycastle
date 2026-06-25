@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Callable, Iterable, Iterator
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 from pycastle.services.agent_service import (
@@ -26,11 +26,10 @@ from pycastle.runtime_session import (
     select_resumable_provider_session_id,
 )
 
-from .. import _time as _time_module
 from ..agents.output_protocol import AgentRole
 from ..session.resume import provider_state_relpath
 from ..session import RunKind
-from ._wake_time import compute_wake_time
+from .credential_pool import CredentialPool
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
 from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time
 
@@ -186,8 +185,26 @@ def _extract_credential_failure(event: dict[str, object]) -> CredentialFailure |
 
 @dataclasses.dataclass
 class OpenCodeService:
-    api_key: str | None = None
-    _exhausted_until: datetime | None = dataclasses.field(default=None, init=False)
+    _pool: CredentialPool | None = dataclasses.field(default=None, init=False)
+    _current_token: str | None = dataclasses.field(default=None, init=False)
+
+    def __init__(
+        self, api_key: str | None = None, accounts: list[tuple[str, str]] | None = None
+    ):
+        if accounts is not None:
+            self._pool = CredentialPool(
+                accounts,
+                empty_error_message="OpenCodeService requires at least one account",
+                unavailable_error_message="No available OpenCode accounts",
+            )
+            self._current_token = accounts[0][1]
+            return
+        if api_key is not None:
+            self._pool = CredentialPool([("account 1", api_key)])
+            self._current_token = api_key
+            return
+        self._pool = None
+        self._current_token = None
 
     @property
     def name(self) -> str:
@@ -221,12 +238,18 @@ class OpenCodeService:
         state_dir_container_path: str | None = None,
         token: str | None = None,
     ) -> dict[str, str]:
-        del token
         env: dict[str, str] = {"TZ": "UTC"}
         if state_dir_container_path:
             env["OPENCODE_HOME"] = state_dir_container_path
-        if self.api_key:
-            env["OPENCODE_GO_API_KEY"] = self.api_key
+
+        if token is None and self._pool is not None:
+            _, self._current_token = self._pool.pick()
+            token = self._current_token
+        elif token is not None:
+            self._current_token = token
+
+        if token is not None:
+            env["OPENCODE_GO_API_KEY"] = token
             env["OPENCODE_CONFIG_CONTENT"] = _opencode_go_config_content()
         return env
 
@@ -363,17 +386,14 @@ class OpenCodeService:
                 return
 
     def is_available(self, now: datetime | None = None) -> bool:
-        if self._exhausted_until is None:
+        if self._pool is None:
             return True
-        now = now or _time_module.now_local()
-        return now >= self._exhausted_until
+        return self._pool.has_available(now=now)
 
     def next_wake_time(self) -> datetime:
-        if self._exhausted_until is None:
-            raise RuntimeError(
-                "OpenCodeService.next_wake_time called when not exhausted"
-            )
-        return self._exhausted_until
+        if self._pool is None:
+            raise RuntimeError("OpenCodeService.next_wake_time called with no pool")
+        return self._pool.earliest_wake_time()
 
     def mark_exhausted(
         self,
@@ -381,14 +401,23 @@ class OpenCodeService:
         *,
         _now: datetime | None = None,
     ) -> None:
-        now = _now or _time_module.now_local()
-        wake, _ = compute_wake_time(
+        if self._pool is None or self._current_token is None:
+            return
+        self._pool.mark_exhausted(
+            self._current_token,
             reset_time,
-            now,
+            now=_now,
         )
-        if wake.tzinfo is None:
-            wake = wake.replace(tzinfo=timezone.utc)
-        self._exhausted_until = wake
+
+    def mark_permanently_exhausted(self) -> str | None:
+        if self._pool is None or self._current_token is None:
+            return None
+        return self._pool.mark_permanently_exhausted(self._current_token)
+
+    def account_names(self) -> list[str]:
+        if self._pool is None:
+            return []
+        return self._pool.names()
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return provider_state_relpath(role, self.name, namespace)

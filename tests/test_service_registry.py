@@ -197,6 +197,41 @@ def test_resolve_falls_through_exhausted_opencode_before_sleep() -> None:
     assert result.fallback is None
 
 
+def test_resolve_skips_exhausted_open_code_slots_before_fallback() -> None:
+    opencode = OpenCodeService(
+        accounts=[
+            ("account 1", "key-1"),
+            ("account 2", "key-2"),
+        ]
+    )
+    opencode.mark_exhausted(
+        datetime(2040, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+        _now=_now(),
+    )
+    _ = opencode.build_env()
+    opencode.mark_exhausted(
+        datetime(2040, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+        _now=_now(),
+    )
+    fallback_svc = _make_svc(available=True)
+    registry = runtime.ServiceRegistry(
+        services={"opencode": opencode, "claude": fallback_svc},
+    )
+    override = runtime.StageOverride(
+        service="opencode",
+        model="kimi-k2.6",
+        effort="medium",
+        fallback=runtime.StageOverride(
+            service="claude", model="sonnet", effort="medium"
+        ),
+    )
+
+    result = registry.resolve(override, _now())
+
+    assert result.service == "claude"
+    assert result.fallback is None
+
+
 # --- has_available_for ---
 
 
