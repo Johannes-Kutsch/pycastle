@@ -4,7 +4,7 @@
 - [0002 — CLI-native model shorthand resolution](0002-cli-native-model-shorthand-resolution.md): Pass shorthands directly to service CLI; `load_config` stays pure.
 - [0003 — Global user-scope config and env](0003-global-user-scope-config-and-env.md): Layer `defaults → global → local` for `config.py` and `.env`.
 - [0004 — GitHub PAT as sole credential](0004-github-pat-as-sole-credential.md): Single `GH_TOKEN` PAT for all GitHub access.
-- [0005 — Dual Claude account failover](0005-dual-claude-account-failover.md): In-memory OAuth token pool with secondary-account failover.
+- [0005 — Dual Claude account failover](0005-dual-claude-account-failover.md): In-memory OAuth token pool with secondary-account failover. *Two-account cap, N-token rejection, and secondary-first ordering superseded by ADR 0047.*
 - [0006 — Session resume across container teardown](0006-session-resume-across-container-teardown.md): Resume interrupted agents via derived UUID so in-progress reasoning survives.
 - [0007 — Stage completion via role-session-dir state](0007-stage-completion-via-role-dir-not-commit-prefix.md): Empty `.pycastle-session/<role>/` dir signals done, not commit-prefix scan.
 - [0008 — Centralized UsageLimitError catch](0008-centralized-usagelimit-catch-at-iteration-boundary.md): Single `try/except` at `run_iteration` top level.
@@ -45,3 +45,4 @@
 - [0044 — Host-initiated privileged worktree cleanup](0044-host-initiated-privileged-worktree-cleanup.md): Remove root-owned orphan worktrees via a host-spawned root container; never an agent capability.
 - [0045 — Failure-Report evidence from captured agent log](0045-failure-report-evidence-from-captured-agent-log.md): Copy the failed run's agent-invocation log into the worktree; never depend on provider session export.
 - [0046 — Improve slice phase resumes the PRD session](0046-improve-slice-phase-resumes-prd-session.md): Phase 03 resumes the `main` transcript instead of starting fresh in `issues`; `issues` namespace retired (supersedes the phase-03 split in ADR 0010).
+- [0047 — Numbered credential pool per `.env`-credentialed service](0047-numbered-credential-pool-per-env-service.md): N numbered credentials (`_2`, `_3`, …) per Claude/OpenCode, bare key = slot 1, uniform retire-and-rotate (supersedes ADR 0005's two-account cap and secondary-first ordering).
