@@ -2689,6 +2689,102 @@ def test_run_iteration_failure_report_receives_correct_run_request(
     assert failure_req.mount_path == expected_wt
 
 
+def test_run_iteration_failure_report_includes_evidence_path_and_copies_invocation_log(
+    tmp_path, git_svc, logger
+):
+    calls: list[RunRequest] = []
+    expected_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    source_log = tmp_path / "captured-agent.log"
+    source_log.write_bytes(
+        b'{"type":"result","result":"attempt-1"}\n'
+        b'{"type":"result","result":"attempt-2"}\n'
+    )
+
+    original_error = AgentFailedError(
+        role_value="improve",
+        worktree_path=expected_path,
+        failure_class="protocol_error",
+        service_name="codex",
+    )
+    original_error.agent_invocation_log_path = source_log
+    response_queue = [original_error, IssueOutput(number=99, labels=["bug"])]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(
+                preflight_issue_override=StageOverride(service="codex", effort="medium")
+            ),
+        ),
+        improve_mode="endless",
+    )
+    asyncio.run(run_iteration(deps))
+
+    failure_req = calls[1]
+    evidence_path = failure_req.prompt.scope_args["EVIDENCE_PATH"]
+    has_evidence = failure_req.prompt.scope_args["HAS_EVIDENCE_PATH"]
+    assert evidence_path == ".pycastle-session/failure-report/agent-invocation.log"
+    assert has_evidence == "yes"
+
+    copied_log = expected_path / evidence_path
+    assert copied_log.exists()
+    assert copied_log.read_bytes() == source_log.read_bytes()
+
+
+def test_run_iteration_failure_report_handles_missing_invocation_log_without_fallback_issue(
+    tmp_path, git_svc, logger
+):
+    calls: list[RunRequest] = []
+    expected_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    missing_log = tmp_path / "missing" / "agent-invocation.log"
+
+    original_error = AgentFailedError(
+        role_value="improve",
+        worktree_path=expected_path,
+        failure_class="protocol_error",
+        service_name="codex",
+    )
+    original_error.agent_invocation_log_path = missing_log
+    response_queue = [original_error, IssueOutput(number=99, labels=["bug"])]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(
+                preflight_issue_override=StageOverride(service="codex", effort="medium")
+            ),
+        ),
+        improve_mode="endless",
+    )
+    asyncio.run(run_iteration(deps))
+
+    failure_req = calls[1]
+    assert failure_req.prompt.scope_args["HAS_EVIDENCE_PATH"] == "no"
+    assert failure_req.prompt.scope_args["EVIDENCE_PATH"] == ""
+
+
 def test_run_iteration_failure_report_crash_logs_warning_and_error(
     tmp_path, git_svc, logger
 ):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
@@ -53,6 +54,34 @@ from .preflight import (
 )
 
 _FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
+
+
+_EVIDENCE_DIR = Path(".pycastle-session") / "failure-report"
+_EVIDENCE_FILENAME = "agent-invocation.log"
+
+
+def _evidence_relative_path() -> str:
+    return str(_EVIDENCE_DIR / _EVIDENCE_FILENAME)
+
+
+def _copy_invocation_log_to_evidence_area(
+    *,
+    worktree_path: Path,
+    source: Path | str | None,
+) -> Path | None:
+    if source is None:
+        return None
+    source_path = Path(source)
+    if not source_path.is_file():
+        return None
+
+    destination = worktree_path / _EVIDENCE_DIR / _EVIDENCE_FILENAME
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, destination)
+        return destination
+    except OSError:
+        return None
 
 
 def _extract_legacy_hard_error_text(raw: str) -> str:
@@ -324,6 +353,17 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     return AbortedAgentFailure(
                         failed_role=err.role_value, issue_number=issue_number
                     )
+
+                raw_evidence_path = getattr(err, "agent_invocation_log_path", None)
+                copied_evidence = _copy_invocation_log_to_evidence_area(
+                    worktree_path=err.worktree_path,
+                    source=raw_evidence_path,
+                )
+                if copied_evidence is not None:
+                    err.agent_invocation_log_path = _evidence_relative_path()
+                else:
+                    err.agent_invocation_log_path = ""
+
                 result = await deps.agent_runner.run(
                     RunRequest(
                         name="Failure Report Agent",

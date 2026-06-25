@@ -100,20 +100,6 @@ def _wheel_members(tmp_path: Path) -> set[str]:
         shutil.rmtree(build_dir, ignore_errors=True)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _shipped_defaults_in_sdist(tmp_path: Path) -> set[str]:
     sdist_members = _sdist_members(tmp_path)
     return {
@@ -320,12 +306,6 @@ def test_sdist_ships_current_bundled_runtime_defaults_tree_only(tmp_path):
     assert "defaults/Dockerfile.opencode" not in shipped_defaults
 
 
-
-
-
-
-
-
 def test_agent_runtime_package_exports_the_runtime_surface():
     from pycastle.services.agent_service import (
         AgentService,
@@ -429,20 +409,6 @@ def test_agent_runtime_package_exports_the_runtime_surface():
     assert "run_one_shot" in runtime.__all__
     assert "run_prompt" in runtime.__all__
     assert runtime.decide_usage_limit_continuation is decide_usage_limit_continuation
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_bundled_universal_dockerfile_installs_supported_clis_and_baseline_tools():

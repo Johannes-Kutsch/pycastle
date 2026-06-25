@@ -10,7 +10,13 @@ An agent (`{{FAILED_ROLE}}`) failed irrecoverably. File a triage issue so a huma
 
 Role: **`{{FAILED_ROLE}}`**
 
-Session transcript: `{{SESSION_DIR}}/`
+Invocation evidence: `{{EVIDENCE_PATH}}`
+
+{{#if HAS_EVIDENCE_PATH=no}}
+No invocation log was copied for diagnosis. Rely on the worktree state:
+- Run `git status`
+- Run `git diff`
+{{/if}}
 
 Failure class: `{{FAILURE_CLASS}}`
 
@@ -20,7 +26,7 @@ Failure class: `{{FAILURE_CLASS}}`
 
 ## Your task
 
-1. Read the session transcript at `{{SESSION_DIR}}/` to understand what the agent attempted and where it broke down.
+1. Read the invocation evidence at `{{EVIDENCE_PATH}}` to understand what the failed role attempted and where it broke down.
 2. Run `git status` and `git diff` to inspect any uncommitted worktree state the failed agent left behind.
 3. File exactly one GitHub issue with:
    - Labels: `{{BUG_LABEL}}` and `{{NEEDS_TRIAGE_LABEL}}`

@@ -346,6 +346,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                         mount_path=request.mount_path,
                         session_namespace=request.session_namespace,
                         service_name=request.service.name,
+                        invocation_log_path=getattr(runner, "log_path", None),
                     )
                 except Exception as err:
                     from .errors import (
@@ -421,6 +422,7 @@ async def invoke_work(request: WorkInvocationRequest[WorkResultT]) -> WorkResult
                             mount_path=request.mount_path,
                             session_namespace=request.session_namespace,
                             service_name=request.service.name,
+                            invocation_log_path=getattr(runner, "log_path", None),
                         )
                     non_typed_retry_done = True
         finally:

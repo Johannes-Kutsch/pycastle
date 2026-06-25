@@ -419,6 +419,8 @@ def test_build_failure_report_scope_args_builds_exact_renderable_failure_report_
     assert scope_args == {
         "FAILED_ROLE": "reviewer",
         "SESSION_DIR": ".pycastle-session/reviewer/main/codex",
+        "EVIDENCE_PATH": "",
+        "HAS_EVIDENCE_PATH": "no",
         "FAILURE_CLASS": "non_typed_crash",
     }
 
@@ -434,6 +436,33 @@ def test_build_failure_report_scope_args_builds_exact_renderable_failure_report_
     assert rendered == (
         "Role: reviewer\nSession: .pycastle-session/reviewer/main/codex\nRecovery"
     )
+
+
+def test_build_failure_report_scope_args_reports_usable_invocation_evidence(
+    tmp_path,
+):
+    from pathlib import Path
+
+    inv_log = tmp_path / "agent-invocation.log"
+    inv_log.write_bytes(b"agent log bytes")
+    failed_agent = AgentFailedError(
+        role_value="planner",
+        worktree_path=Path("/tmp/worktree"),
+        namespace="",
+        failure_class="protocol_error",
+        service_name="opencode",
+    )
+    failed_agent.agent_invocation_log_path = inv_log
+
+    scope_args = build_failure_report_scope_args(failed_agent)
+
+    assert scope_args == {
+        "FAILED_ROLE": "planner",
+        "SESSION_DIR": ".pycastle-session/planner/opencode",
+        "EVIDENCE_PATH": str(inv_log),
+        "HAS_EVIDENCE_PATH": "yes",
+        "FAILURE_CLASS": "protocol_error",
+    }
 
 
 @dataclass
@@ -457,6 +486,8 @@ def test_build_failure_report_scope_args_accepts_equivalent_failed_agent_data():
     assert build_failure_report_scope_args(failure) == {
         "FAILED_ROLE": "planner",
         "SESSION_DIR": ".pycastle-session/planner/opencode",
+        "EVIDENCE_PATH": "",
+        "HAS_EVIDENCE_PATH": "no",
         "FAILURE_CLASS": "protocol_error",
     }
 

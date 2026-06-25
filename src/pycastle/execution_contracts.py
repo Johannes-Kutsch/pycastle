@@ -419,6 +419,7 @@ class WorkOutputAdapter(Protocol[WorkResultT]):
         mount_path: Path,
         session_namespace: str,
         service_name: str,
+        invocation_log_path: Path | str | None = None,
     ) -> WorkResultT: ...
 
 
@@ -536,8 +537,10 @@ class TextOutputAdapter:
         mount_path: Path,
         session_namespace: str,
         service_name: str,
+        invocation_log_path: Path | str | None = None,
     ) -> str:
         del role, mount_path, session_namespace, service_name
+        del invocation_log_path
         return result
 
 
