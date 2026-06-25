@@ -402,6 +402,52 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
     assert github_port.issue_comment_calls == []
 
 
+def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
+    tmp_path: Path,
+):
+    driver = ImprovePhaseDriver(
+        tmp_path / "improve-live-issues", no_candidate_report=True
+    )
+    step1 = driver.start()
+    assert step1 is not None
+    driver.record_outcome(step1, CompletionOutput())
+
+    step2 = driver.next()
+    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    driver.record_outcome(step2, IssueOutput(number=77, labels=[]))
+
+    step3 = driver.next()
+    assert step3 is not None and step3.prompt_key == "03-issues.md"
+    github_port = _GithubPortStandIn(
+        issue={"number": 77, "title": "Edited PRD", "body": "Edited PRD body"},
+        comments=[
+            {
+                "author": "alice",
+                "created_at": "2026-01-01T00:00:00Z",
+                "body": "updated between phases",
+            }
+        ],
+    )
+
+    prepared = prepare_improve_step(
+        step3,
+        short_sid="abcd1234",
+        github_port=github_port,
+    )
+
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.session_namespace == "main"
+    assert prepared.prompt.scope_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "ISSUE_NUMBER": "77",
+        "ISSUE_TITLE": "Edited PRD",
+        "ISSUE_BODY": "Edited PRD body",
+        "ISSUE_COMMENTS": "## Comment by @alice at 2026-01-01T00:00:00Z\n\nupdated between phases",
+    }
+    assert github_port.issue_calls == [77]
+    assert github_port.issue_comment_calls == [77]
+
+
 def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
     tmp_path: Path,
 ):

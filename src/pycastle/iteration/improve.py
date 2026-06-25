@@ -106,14 +106,7 @@ class ImprovePhaseDriver:
     def _load(self) -> tuple[str | None, str | None]:
         try:
             value = self._progress_file.read_text(encoding="utf-8").strip()
-            last_id: str | None = None
-            if value in self._VALID_PHASE_IDS:
-                last_id = value
-            elif ":" in value:
-                base_id, maybe_prd = value.split(":", 1)
-                if base_id == "02-prd" and maybe_prd.isdigit():
-                    last_id = base_id
-                    self._prd_number = int(maybe_prd)
+            last_id: str | None = value if value in self._VALID_PHASE_IDS else None
         except OSError:
             last_id = None
 
@@ -123,30 +116,33 @@ class ImprovePhaseDriver:
             else None
         )
 
+        # Orphan-reset: process restarted after phase 02 wrote progress but
+        # before phase 03 recorded its in-flight marker. The only recoverable
+        # phase-02 states are a true mid-phase retry ("02-prd") and a phase-03
+        # continuation ("03-issues"). Any other state lost the in-memory
+        # prd_number, so restart from phase 01 (leaves a dead PRD on GitHub
+        # with no label).
+        if last_id == "02-prd" and in_flight_id not in {"02-prd", "03-issues"}:
+            self._progress_file.unlink(missing_ok=True)
+            return None, None
+
         return last_id, in_flight_id
 
-    @staticmethod
-    def _base_phase_id(phase_id: str) -> str:
-        if phase_id.startswith("02-prd:"):
-            return "02-prd"
-        return phase_id
-
     def _next_prompt_key(self, last_id: str | None) -> str | None:
-        normalized_last_id = self._base_phase_id(last_id) if last_id else None
-        if normalized_last_id is None:
+        if last_id is None:
             return "01-scan.md"
-        if normalized_last_id == "01-scan:picked":
+        if last_id == "01-scan:picked":
             return "02-prd.md"
-        if normalized_last_id == "01-scan:no-candidate":
+        if last_id == "01-scan:no-candidate":
             return "04-no-candidate-report.md" if self._no_candidate_report else None
-        if normalized_last_id == "02-prd":
+        if last_id == "02-prd":
             return "03-issues.md"
         return None
 
     def _resume_prompt_key(
         self, last_id: str | None, in_flight_id: str | None
     ) -> str | None:
-        if self._base_phase_id(last_id or "") == "02-prd" and in_flight_id == "02-prd":
+        if last_id == "02-prd" and in_flight_id == "02-prd":
             return "02-prd.md"
         return self._next_prompt_key(last_id)
 
@@ -157,8 +153,6 @@ class ImprovePhaseDriver:
                 if isinstance(output, NoCandidateOutput)
                 else "01-scan:picked"
             )
-        if prompt_key == "02-prd.md" and isinstance(output, IssueOutput):
-            return f"02-prd:{output.number}"
         return {
             "02-prd.md": "02-prd",
             "03-issues.md": "03-issues",
@@ -211,7 +205,7 @@ class ImprovePhaseDriver:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._progress_file.write_text(completed_id, encoding="utf-8")
         self._in_flight_file.unlink(missing_ok=True)
-        self._last_id = self._base_phase_id(completed_id)
+        self._last_id = completed_id
 
         if step.prompt_key == "02-prd.md" and isinstance(output, IssueOutput):
             self._prd_number = output.number
