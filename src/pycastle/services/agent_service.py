@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING, Any, Protocol
 from ..agents.output_protocol import AgentRole
 
 if TYPE_CHECKING:
-    pass
+    from pycastle_agent_runtime.session import (
+        ProviderSessionPreferences,
+        ProviderSessionPreferencesRequest,
+        ProviderSessionState,
+        ProviderSessionStateRequest,
+    )
 
 
 @dataclasses.dataclass
@@ -139,6 +144,16 @@ class AgentService(Protocol):
     def valid_models(self) -> frozenset[str]: ...
 
     def valid_efforts(self) -> frozenset[str]: ...
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences: ...
+
+    def provider_session_state(
+        self,
+        request: ProviderSessionStateRequest,
+    ) -> ProviderSessionState: ...
 
 
 __all__ = [
