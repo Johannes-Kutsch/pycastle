@@ -197,7 +197,7 @@ def test_resolve_falls_through_exhausted_opencode_before_sleep() -> None:
     assert result.fallback is None
 
 
-def test_resolve_skips_exhausted_open_code_slots_before_fallback() -> None:
+def test_resolve_skips_exhausted_opencode_slots_before_fallback() -> None:
     opencode = OpenCodeService(
         accounts=[
             ("account 1", "key-1"),

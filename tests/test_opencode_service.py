@@ -5,6 +5,8 @@ from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 
+import pytest
+
 from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.services.agent_service import (
     AssistantTurn,
@@ -16,6 +18,7 @@ from pycastle.services.agent_service import (
 )
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.services import credential_pool as credential_pool_module
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession, RunKind
 
@@ -620,7 +623,11 @@ def test_opencode_service_does_not_exhaust_all_accounts_on_single_usage_limit() 
     )
 
 
-def test_opencode_service_returns_to_recovered_account_after_reset_time() -> None:
+def test_opencode_service_returns_to_recovered_account_after_reset_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2030, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
+    recovered = datetime(2030, 6, 1, 11, 5, 0, tzinfo=timezone.utc)
     service = OpenCodeService(
         accounts=[
             ("account 1", "slot-1"),
@@ -628,17 +635,21 @@ def test_opencode_service_returns_to_recovered_account_after_reset_time() -> Non
         ]
     )
 
+    monkeypatch.setattr(credential_pool_module._time_module, "now_local", lambda: now)
+    assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-1"
     service.mark_exhausted(
         datetime(2030, 6, 1, 11, 0, 0, tzinfo=timezone.utc),
-        _now=datetime(2030, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
+        _now=now,
     )
 
     assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-2"
-    assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-2"
-    assert (
-        service.is_available(now=datetime(2026, 6, 1, 11, 5, 0, tzinfo=timezone.utc))
-        is True
+
+    monkeypatch.setattr(
+        credential_pool_module._time_module,
+        "now_local",
+        lambda: recovered,
     )
+    assert service.build_env()["OPENCODE_GO_API_KEY"] == "slot-1"
 
 
 def test_opencode_service_marks_bad_key_permanently_exhausted_and_uses_next() -> None:
