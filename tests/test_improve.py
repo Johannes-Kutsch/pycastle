@@ -26,6 +26,8 @@ from pycastle.services import GitService, GithubNetworkError, ServiceRegistry
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession
+from pycastle.session.provider_session_state import save_service_session_metadata
+from pycastle.session.resume import session_uuid_for_role_session_path
 
 
 @pytest.fixture
@@ -61,6 +63,18 @@ def deps(tmp_path, git_svc, agent_runner):
 
 def _run(deps):
     return asyncio.run(improve_phase(deps))
+
+
+def _role_session_session_uuid(role_session: object) -> str:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        identity_uuid = session_uuid_for_role_session_path(role_session_path)
+        if identity_uuid is not None:
+            return identity_uuid
+    legacy = getattr(role_session, "session_uuid", None)
+    if callable(legacy):
+        return legacy()
+    raise AssertionError("Unable to derive role session identifier")
 
 
 # ── improve_phase: integration behavior ──────────────────────────────────────
@@ -347,7 +361,7 @@ def _seed_exact_phase_1_main_transcript(
     provider_session_id: str,
 ) -> None:
     role_session = RoleSession(worktree_path, AgentRole.IMPROVE, "main")
-    role_session.save_service_session_metadata(service_name, provider_session_id)
+    save_service_session_metadata(role_session.path, service_name, provider_session_id)
     if service_name == "opencode":
         state_dir = worktree_path / "opencode"
     elif service_name == "codex":
@@ -539,7 +553,9 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_selected_service_m
     _seed_exact_phase_1_main_transcript(
         wt,
         service_name="claude",
-        provider_session_id=RoleSession(wt, AgentRole.IMPROVE, "main").session_uuid(),
+        provider_session_id=_role_session_session_uuid(
+            RoleSession(wt, AgentRole.IMPROVE, "main")
+        ),
     )
     status_display = MagicMock()
     runner = FakeAgentRunner([], preflight_responses=[[]])

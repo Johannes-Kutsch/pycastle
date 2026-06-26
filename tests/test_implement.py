@@ -18,6 +18,7 @@ from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.session import RoleSession
+from pycastle.session.provider_session_state import save_service_session_metadata
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
@@ -59,7 +60,7 @@ def _seed_prior_role_session_with_service(
 ) -> None:
     role_session = RoleSession(worktree, role)
     role_session.save_service_session_id(service_name, session_id)
-    role_session.save_service_session_metadata(service_name, session_id)
+    save_service_session_metadata(role_session.path, service_name, session_id)
     state_dir = worktree / f".pycastle-session/{role.value}/{service_name}"
     state_dir.mkdir(parents=True, exist_ok=True)
     (state_dir / "seed").write_text("seed", encoding="utf-8")

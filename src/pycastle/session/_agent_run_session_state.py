@@ -146,13 +146,15 @@ class AgentRunSessionState:
                 state_dir_path=self.service_state_dir_path,
                 allow_protocol_reprompt=False,
             )
-        service_state = self.role_session.service_session_state(self._plan.service)
         return self._plan.service.provider_session_state(
             ProviderSessionStateRequest(
                 role_session=self.role_session,
-                provider_state_dir=service_state.state_dir,
-                has_resumable_provider_state=service_state.has_resumable_provider_state,
-                state_dir_relpath=service_state.state_dir_relpath,
+                provider_state_dir=self.service_state_dir_path,
+                has_resumable_provider_state=(
+                    self.service_state_dir_path is not None
+                    and self._plan.service.is_resumable(self.service_state_dir_path)
+                ),
+                state_dir_relpath=self.provider_state_dir_relpath,
                 preferred_provider_session_id=self.provider_session_id,
                 force_resume=True,
             )

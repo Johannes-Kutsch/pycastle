@@ -14,10 +14,13 @@ from pycastle.runtime_session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
+from pycastle.session.provider_session_state import load_service_session_id
+from pycastle.session.provider_session_state import save_service_session_metadata
 from pycastle.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
+from pycastle.session.resume import session_uuid_for_role_session_path
 from pycastle.session.agent import RunSessionPlanRequest, plan_run_session
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
@@ -37,6 +40,33 @@ from pycastle.session.service_resume_identity import (
     select_resumable_provider_session_id,
 )
 from pycastle.services.agent_service import AgentService
+
+
+def _role_session_session_uuid(role_session: object) -> str:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        identity_uuid = session_uuid_for_role_session_path(role_session_path)
+        if identity_uuid is not None:
+            return identity_uuid
+    legacy = getattr(role_session, "session_uuid", None)
+    if callable(legacy):
+        return legacy()
+    raise AssertionError("Unable to derive role session identifier")
+
+
+def _role_session_service_session_id(
+    role_session: object,
+    service_name: str,
+) -> str | None:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        saved_session_id = load_service_session_id(role_session_path, service_name)
+        if saved_session_id is not None:
+            return saved_session_id
+    legacy = getattr(role_session, "service_session_id", None)
+    if callable(legacy):
+        return legacy(service_name)
+    return None
 
 
 @dataclass
@@ -71,7 +101,8 @@ class _FakeAgentService:
     ) -> ProviderSessionState:
         if self.name == "claude":
             provider_session_id = (
-                self.provider_session_id or request.role_session.session_uuid()
+                self.provider_session_id
+                or _role_session_session_uuid(request.role_session)
             )
             exact_transcript_match = False
             if request.require_exact_transcript_match:
@@ -391,7 +422,9 @@ def test_run_session_plan_reports_fresh_for_claude_with_absent_or_empty_state_di
     service = ClaudeService()
     expected_relpath = ".pycastle-session/implementer/claude/"
     expected_state_dir = tmp_path / ".pycastle-session/implementer/claude"
-    expected_session_id = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    expected_session_id = _role_session_session_uuid(
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    )
 
     absent_plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
@@ -435,7 +468,7 @@ def test_run_session_plan_uses_claude_provider_session_adapter_for_fresh_identit
 
     assert plan.run_kind is RunKind.FRESH
     assert plan.provider_session_id == (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+        _role_session_session_uuid(RoleSession(tmp_path, AgentRole.IMPLEMENTER))
     )
     assert plan.provider_state_dir_relpath == ".pycastle-session/implementer/claude/"
     assert plan.host_provider_state_dir == (
@@ -448,7 +481,9 @@ def test_run_session_plan_reports_resume_for_claude_with_populated_state_dir(
 ):
     service = ClaudeService()
     expected_state_dir = tmp_path / ".pycastle-session/implementer/claude"
-    expected_session_id = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    expected_session_id = _role_session_session_uuid(
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    )
     expected_state_dir.mkdir(parents=True)
     (expected_state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
@@ -471,7 +506,11 @@ def test_run_session_plan_uses_claude_provider_session_adapter_for_resume_exact_
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
     state_dir.mkdir(parents=True)
     (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-    role_session.save_service_session_metadata("claude", role_session.session_uuid())
+    save_service_session_metadata(
+        role_session.path,
+        "claude",
+        _role_session_session_uuid(role_session),
+    )
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
@@ -481,7 +520,7 @@ def test_run_session_plan_uses_claude_provider_session_adapter_for_resume_exact_
     )
 
     assert plan.run_kind is RunKind.RESUME
-    assert plan.provider_session_id == role_session.session_uuid()
+    assert plan.provider_session_id == _role_session_session_uuid(role_session)
     assert plan.exact_transcript_match is True
 
 
@@ -617,7 +656,7 @@ def test_has_exact_transcript_match_accepts_sidecar_backed_opencode_handoff_with
     state_dir.mkdir(parents=True)
     (state_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
     role_session.save_service_session_id("opencode", "sess-opencode-123")
-    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+    save_service_session_metadata(role_session.path, "opencode", "sess-opencode-123")
 
     assert (
         has_exact_transcript_match(
@@ -667,13 +706,11 @@ def test_run_session_plan_namespaces_claude_provider_session_identity_only_when_
 
     assert main_plan.provider_session_id != issues_plan.provider_session_id
     assert main_plan.service_state_dir != issues_plan.service_state_dir
-    assert (
-        base_plan.provider_session_id
-        == RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    assert base_plan.provider_session_id == _role_session_session_uuid(
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     )
-    assert (
-        base_plan.provider_session_id
-        == RoleSession(tmp_path, AgentRole.IMPLEMENTER, "").session_uuid()
+    assert base_plan.provider_session_id == _role_session_session_uuid(
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER, "")
     )
 
 
@@ -702,7 +739,7 @@ def test_run_session_plan_uses_namespaced_claude_provider_state_dir_paths(
         tmp_path / ".pycastle-session" / "improve" / "main" / "claude"
     )
     assert main_plan.provider_session_id == (
-        RoleSession(tmp_path, AgentRole.IMPROVE, "main").session_uuid()
+        _role_session_session_uuid(RoleSession(tmp_path, AgentRole.IMPROVE, "main"))
     )
     assert issues_plan.provider_state_dir_relpath == (
         ".pycastle-session/improve/issues/claude/"
@@ -711,7 +748,7 @@ def test_run_session_plan_uses_namespaced_claude_provider_state_dir_paths(
         tmp_path / ".pycastle-session" / "improve" / "issues" / "claude"
     )
     assert issues_plan.provider_session_id == (
-        RoleSession(tmp_path, AgentRole.IMPROVE, "issues").session_uuid()
+        _role_session_session_uuid(RoleSession(tmp_path, AgentRole.IMPROVE, "issues"))
     )
 
 
@@ -735,8 +772,8 @@ def test_run_session_plan_rotates_claude_provider_session_identity_when_role_ses
     state_dir = worktree / ".pycastle-session" / "implementer" / "claude"
     state_dir.mkdir(parents=True)
     (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-    role_session.save_service_session_metadata(
-        "claude", initial_plan.provider_session_id
+    save_service_session_metadata(
+        role_session.path, "claude", initial_plan.provider_session_id
     )
 
     resumed_plan = RunSessionPlan.for_service(
@@ -889,7 +926,9 @@ def test_codex_provider_session_state_recovers_unique_rollout_and_persists_sidec
 
     assert decision.run_kind is RunKind.RESUME
     assert decision.provider_session_id == "thread-from-rollout"
-    assert role_session.service_session_id("codex") == "thread-from-rollout"
+    assert (
+        _role_session_service_session_id(role_session, "codex") == "thread-from-rollout"
+    )
     assert decision.persist_provider_session_id is True
     assert decision.state_dir_relpath == ".pycastle-session/implementer/codex/"
     assert decision.state_dir_path == state_dir
@@ -920,7 +959,9 @@ def test_run_session_plan_persists_recovered_codex_rollout_thread_id(
         plan.recovered_session_id_persistence is RecoveredSessionIdPersistence.PERSIST
     )
     assert (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
+        _role_session_service_session_id(
+            RoleSession(tmp_path, AgentRole.IMPLEMENTER), "codex"
+        )
         == "thread-from-rollout"
     )
 
@@ -953,7 +994,7 @@ def test_codex_provider_session_state_returns_fresh_for_ambiguous_rollouts(
 
     assert decision.run_kind is RunKind.FRESH
     assert decision.provider_session_id is None
-    assert role_session.service_session_id("codex") is None
+    assert _role_session_service_session_id(role_session, "codex") is None
     assert decision.state_dir_relpath == ".pycastle-session/implementer/codex/"
     assert decision.state_dir_path == state_dir
     assert decision.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
@@ -1121,7 +1162,10 @@ def test_run_session_plan_records_runtime_provider_session_id_in_sidecar_and_met
     plan.record_successful_run(runtime_session_id)
 
     role_session = RoleSession(tmp_path, role, namespace)
-    assert role_session.service_session_id(service.name) == runtime_session_id
+    assert (
+        _role_session_service_session_id(role_session, service.name)
+        == runtime_session_id
+    )
     assert role_session.service_session_metadata(service.name) == {
         "service": service.name,
         "provider_session_id": runtime_session_id,
@@ -1143,7 +1187,7 @@ def test_run_session_plan_captures_codex_provider_session_id_for_same_plan_reuse
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     assert plan.provider_session_id == "thread-codex-456"
-    assert role_session.service_session_id("codex") == "thread-codex-456"
+    assert _role_session_service_session_id(role_session, "codex") == "thread-codex-456"
     assert role_session.service_session_metadata("codex") == {
         "service": "codex",
         "provider_session_id": "thread-codex-456",
@@ -1165,7 +1209,7 @@ def test_record_observed_provider_session_id_persists_codex_thread_id_sidecar(
     )
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert role_session.service_session_id("codex") == "thread-codex-456"
+    assert _role_session_service_session_id(role_session, "codex") == "thread-codex-456"
     assert (state_dir / "thread_id").read_text(encoding="utf-8") == ("thread-codex-456")
 
 
@@ -1184,7 +1228,7 @@ def test_record_observed_provider_session_id_persists_generic_service_session_id
     )
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert role_session.service_session_id("fake") == "thread-fake-456"
+    assert _role_session_service_session_id(role_session, "fake") == "thread-fake-456"
 
 
 def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_reuse(
@@ -1202,7 +1246,10 @@ def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_re
 
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     assert plan.provider_session_id == "sess-opencode-456"
-    assert role_session.service_session_id("opencode") == "sess-opencode-456"
+    assert (
+        _role_session_service_session_id(role_session, "opencode")
+        == "sess-opencode-456"
+    )
     assert role_session.service_session_metadata("opencode") == {
         "service": "opencode",
         "provider_session_id": "sess-opencode-456",
@@ -1228,7 +1275,7 @@ def test_run_session_plan_captures_generic_provider_session_id_for_same_plan_reu
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     assert plan.provider_session_id == "thread-fake-456"
-    assert role_session.service_session_id("fake") == "thread-fake-456"
+    assert _role_session_service_session_id(role_session, "fake") == "thread-fake-456"
     assert role_session.service_session_metadata("fake") == {
         "service": "fake",
         "provider_session_id": "thread-fake-456",
@@ -1539,5 +1586,5 @@ def test_run_session_plan_capture_without_record_persists_session_id_but_not_met
     plan.capture_provider_session_id("sess-captured")
 
     role_session = RoleSession(tmp_path, AgentRole.PLANNER)
-    assert role_session.service_session_id("opencode") == "sess-captured"
+    assert _role_session_service_session_id(role_session, "opencode") == "sess-captured"
     assert role_session.service_session_metadata("opencode") is None

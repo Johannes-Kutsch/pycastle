@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -31,8 +32,22 @@ from pycastle.services.agent_service import (
     Result,
     UsageLimit,
 )
+from pycastle.session.provider_session_state import save_service_session_metadata
 from pycastle.session import RoleSession
 from pycastle.session import RunKind
+from pycastle.session.resume import session_uuid_for_role_session_path
+
+
+def _role_session_session_uuid(role_session: object) -> str:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        identity_uuid = session_uuid_for_role_session_path(role_session_path)
+        if identity_uuid is not None:
+            return identity_uuid
+    legacy = getattr(role_session, "session_uuid", None)
+    if callable(legacy):
+        return legacy()
+    raise AssertionError("Unable to derive role session identifier")
 
 
 # ── Exception hierarchy ───────────────────────────────────────────────────────
@@ -310,13 +325,15 @@ def test_provider_session_state_forced_resume_uses_preferred_session_id_without_
             role_session=role_session,
             provider_state_dir=None,
             has_resumable_provider_state=False,
-            preferred_provider_session_id=role_session.session_uuid(),
+            preferred_provider_session_id=_role_session_session_uuid(role_session),
             force_resume=True,
         )
     )
 
     assert provider_session_state.run_kind is RunKind.RESUME
-    assert provider_session_state.provider_session_id == role_session.session_uuid()
+    assert provider_session_state.provider_session_id == _role_session_session_uuid(
+        role_session
+    )
     assert provider_session_state.exact_transcript_match is False
 
 
@@ -335,7 +352,9 @@ def test_provider_session_state_fresh_without_preferred_session_id_uses_role_ses
     )
 
     assert provider_session_state.run_kind is RunKind.FRESH
-    assert provider_session_state.provider_session_id == role_session.session_uuid()
+    assert provider_session_state.provider_session_id == _role_session_session_uuid(
+        role_session
+    )
     assert provider_session_state.exact_transcript_match is False
 
 
@@ -347,7 +366,7 @@ def test_provider_session_state_exact_transcript_match_uses_preferred_session_id
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
     state_dir.mkdir(parents=True)
     (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-    role_session.save_service_session_metadata("claude", "preferred-id")
+    save_service_session_metadata(role_session.path, "claude", "preferred-id")
 
     provider_session_state = service.provider_session_state(
         ProviderSessionStateRequest(

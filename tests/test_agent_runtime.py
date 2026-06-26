@@ -52,6 +52,10 @@ from pycastle.runtime_session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
+from pycastle.session.provider_session_state import (
+    load_service_session_metadata,
+    save_service_session_id,
+)
 from pycastle.session_planning import (
     ProviderRunStatePlanRequest,
     ResidentSessionPlanRequest,
@@ -752,6 +756,25 @@ class _RuntimeSessionIdentityStoreStandIn:
 
     def exact_transcript_service_name(self) -> str | None:
         return self._exact_transcript_service_name
+
+
+class _RuntimePathOnlyIdentityStoreStandIn:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.saved_service_session_ids: list[tuple[str, str]] = []
+
+    def save_service_session_id(self, service_name: str, session_id: str) -> None:
+        save_service_session_id(self.path, service_name, session_id)
+        self.saved_service_session_ids.append((service_name, session_id))
+
+    def service_session_metadata(
+        self,
+        service_name: str,
+    ) -> dict[str, str] | None:
+        return load_service_session_metadata(self.path, service_name)
+
+    def exact_transcript_service_name(self) -> str | None:
+        return None
 
 
 class _TextSuccessRuntimeService(_PlanRecordingRuntimeService):
@@ -1991,6 +2014,41 @@ def test_runtime_provider_state_plan_records_successful_run_metadata_through_rol
     assert role_session.recorded_success_metadata == [("codex", "thread-runtime")]
 
 
+def test_runtime_provider_state_plan_records_successful_run_metadata_through_role_session_path(
+    tmp_path: Path,
+) -> None:
+    from pycastle.runtime_session import RunKind
+    from pycastle.session_planning import (
+        AuthSeedingRequirement,
+        ProviderRunStatePlan,
+        RecoveredSessionIdPersistence,
+    )
+
+    role_session_path = tmp_path / ".pycastle-session" / "implementer"
+    role_session = _RuntimePathOnlyIdentityStoreStandIn(role_session_path)
+    plan = ProviderRunStatePlan(
+        role_session=role_session,
+        provider_session_adapter=_RecordingProviderSessionAdapter(
+            ProviderSessionState(RunKind.FRESH, "thread-runtime"),
+            service_name="codex",
+        ),
+        service_name="codex",
+        run_kind=RunKind.FRESH,
+        provider_state_dir=None,
+        provider_state_dir_relpath=None,
+        provider_session_id="thread-runtime",
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+    )
+
+    plan.record_successful_run("thread-runtime")
+
+    assert load_service_session_metadata(role_session_path, "codex") == {
+        "service": "codex",
+        "provider_session_id": "thread-runtime",
+    }
+
+
 def test_runtime_provider_session_adapter_plan_allows_execution_service_without_session_methods(
     tmp_path: Path,
 ) -> None:
@@ -2174,6 +2232,31 @@ def test_runtime_session_select_resumable_provider_session_id_persists_state_dir
     assert selection.provider_session_id == "thread-from-sidecar"
     assert selection.persist_provider_session_id is True
     assert role_session.saved_service_session_ids == [("codex", "thread-from-sidecar")]
+
+
+def test_runtime_session_select_resumable_provider_session_id_reads_sidecar_from_path_only_store(
+    tmp_path: Path,
+) -> None:
+    from pycastle.runtime_session import select_resumable_provider_session_id
+
+    role_session_path = tmp_path / ".pycastle-session" / "implementer"
+    save_service_session_id(
+        role_session_path,
+        "codex",
+        "thread-from-role-session-sidecar",
+    )
+    role_session = _RuntimePathOnlyIdentityStoreStandIn(role_session_path)
+
+    selection = select_resumable_provider_session_id(
+        role_session,
+        "codex",
+        provider_state_dir=tmp_path / ".pycastle-session" / "implementer" / "codex",
+        has_resumable_provider_state=True,
+    )
+
+    assert selection.provider_session_id == "thread-from-role-session-sidecar"
+    assert selection.persist_provider_session_id is False
+    assert role_session.saved_service_session_ids == []
 
 
 def test_runtime_session_exact_resume_uses_injected_provider_identity_matcher(

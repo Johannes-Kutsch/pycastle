@@ -17,6 +17,7 @@ from pycastle.runtime_session import (
 )
 
 from ..session.resume import provider_state_relpath
+from ..session.resume import session_uuid_for_role_session_path
 from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
@@ -45,12 +46,32 @@ def _provider_session_preferences_for_request(
     request: ProviderSessionPreferencesRequest,
 ) -> ProviderSessionPreferences:
     return ProviderSessionPreferences(
-        preferred_provider_session_id=request.role_session.session_uuid()
+        preferred_provider_session_id=request.preferred_provider_session_id
     )
 
 
-def _provider_session_id_for_request(request: ProviderSessionStateRequest) -> str:
-    return request.preferred_provider_session_id or request.role_session.session_uuid()
+def _provider_session_id_for_request(
+    request: ProviderSessionStateRequest,
+) -> str | None:
+    return request.preferred_provider_session_id or _provider_session_uuid_for_request(
+        request
+    )
+
+
+def _provider_session_uuid_for_request(
+    request: ProviderSessionStateRequest,
+) -> str | None:
+    legacy_session_uuid = getattr(request.role_session, "session_uuid", None)
+    if callable(legacy_session_uuid):
+        return legacy_session_uuid()
+
+    role_session_path = getattr(request.role_session, "path", None)
+    if not isinstance(role_session_path, Path):
+        return None
+    derived_session_uuid = session_uuid_for_role_session_path(role_session_path)
+    if derived_session_uuid is not None:
+        return derived_session_uuid
+    return None
 
 
 def _provider_session_state_for_request(

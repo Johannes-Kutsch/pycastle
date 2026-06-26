@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 from .runtime_session import (
     ProviderSessionPreferencesRequest,
     ProviderSessionStateRequest,
+    session_uuid,
     RunKind,
     ServiceResumeIdentityStore,
     normalize_state_dir_relpath,
@@ -119,15 +120,7 @@ class ProviderSessionDecision:
 
 
 class RoleSessionLike(Protocol):
-    def session_uuid(self) -> str: ...
-
     def save_service_session_id(self, service_name: str, session_id: str) -> None: ...
-
-    def record_successful_provider_session_metadata(
-        self,
-        service_name: str,
-        provider_session_id: str | None,
-    ) -> None: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -224,7 +217,27 @@ class ProviderRunStatePlan:
         )
 
     def record_successful_run(self, provider_session_id: str | None) -> None:
-        self.role_session.record_successful_provider_session_metadata(
+        from .session.provider_session_state import (
+            clear_service_session_metadata,
+            save_service_session_metadata,
+        )
+
+        legacy_record_successful_metadata = getattr(
+            self.role_session,
+            "record_successful_provider_session_metadata",
+            None,
+        )
+        if callable(legacy_record_successful_metadata):
+            legacy_record_successful_metadata(self.service_name, provider_session_id)
+
+        role_session_path = getattr(self.role_session, "path", None)
+        if not isinstance(role_session_path, Path):
+            return
+        if provider_session_id is None:
+            clear_service_session_metadata(role_session_path, self.service_name)
+            return
+        save_service_session_metadata(
+            role_session_path,
             self.service_name,
             provider_session_id,
         )
@@ -365,6 +378,7 @@ def plan_provider_run_state(
     request: ProviderRunStatePlanRequest,
 ) -> ProviderRunStatePlan:
     provider_session_adapter = request.provider_session_adapter
+    preferred_provider_session_id = _preferred_provider_session_id(request)
     provider_session_planning_facts = (
         provider_session_adapter.provider_session_planning_facts(
             ProviderSessionPlanningRequest(
@@ -396,6 +410,7 @@ def plan_provider_run_state(
                 provider_state_dir=host_state_dir,
                 has_resumable_provider_state=has_resumable_provider_state,
                 state_dir_relpath=state_dir_relpath,
+                preferred_provider_session_id=preferred_provider_session_id,
             )
         )
     )
@@ -447,6 +462,29 @@ def _host_state_dir(worktree: Path, state_dir_relpath: str | None) -> Path | Non
     if state_dir_relpath is None:
         return None
     return worktree / state_dir_relpath.rstrip("/")
+
+
+def _preferred_provider_session_id(
+    request: ProviderRunStatePlanRequest,
+) -> str | None:
+    role_session = request.role_session
+    if request.provider_session_adapter.service_name == "codex":
+        return None
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        from .session.resume import session_uuid_for_role_session_path
+
+        derived_uuid = session_uuid_for_role_session_path(role_session_path)
+        if derived_uuid is not None:
+            return derived_uuid
+    legacy_session_uuid = getattr(role_session, "session_uuid", None)
+    if callable(legacy_session_uuid):
+        return legacy_session_uuid()
+    return session_uuid(
+        request.worktree,
+        request.role.value,
+        request.namespace,
+    )
 
 
 __all__ = [
