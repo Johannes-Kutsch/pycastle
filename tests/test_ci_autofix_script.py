@@ -119,12 +119,13 @@ def _run_script(
     )
 
 
-def test_publish_workflow_uses_privileged_push_token_for_autofix_retrigger():
+def test_publish_workflow_checkout_uses_default_token_and_no_publish_push_token():
     workflow = (
         Path(__file__).parent.parent / ".github" / "workflows" / "publish.yml"
     ).read_text()
 
-    assert "token: ${{ secrets.PUBLISH_PUSH_TOKEN }}" in workflow
+    assert "token: ${{ secrets.PUBLISH_PUSH_TOKEN }}" not in workflow
+    assert "${{ secrets.CI_AUTOFIX_SSH_KEY }}" in workflow
 
 
 def test_format_and_check_fix_are_applied_then_pushed_for_branch_context(
