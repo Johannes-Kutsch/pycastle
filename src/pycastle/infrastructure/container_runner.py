@@ -208,7 +208,7 @@ class ContainerRunner:
             env: Mapping[str, str],
         ) -> tuple[str, ...]:
             del invocation_dir
-            transformed: list[str] = ["docker", "exec", container_id]
+            transformed: list[str] = ["docker", "exec", "-i", container_id]
             for key, value in env.items():
                 if (
                     key == "OPENCODE_CONFIG_CONTENT"
