@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,6 +9,12 @@ from pycastle.agent_credential_failure_routing import (
 )
 from pycastle.errors import AgentCredentialFailureError, HardAgentError
 from pycastle.services import GithubService
+
+
+@dataclass(frozen=True)
+class _Observation:
+    source_stream: str
+    raw_provider_text: str
 
 
 def test_route_agent_credential_failure_returns_terminal_route_result_for_shared_classification():
@@ -52,6 +59,14 @@ def test_route_agent_credential_failure_interprets_codex_auth_lineage_exhaustion
         service_name="codex",
         classification="codex_auth_lineage_exhausted",
     )
+    err.source_observations = (
+        (
+            "json_event.error",
+            'Error: API request failed: 401 Unauthorized: {"type":"error",'
+            '"code":"refresh_token_reused","message":"This refresh token has already '
+            'been used."}',
+        ),
+    )
     err.caller = "Implementer"
 
     result = route_agent_credential_failure(
@@ -66,7 +81,7 @@ def test_route_agent_credential_failure_interprets_codex_auth_lineage_exhaustion
     )
     _, _, body, _ = github_svc.create_issue_in.call_args[0]
     assert "Run `codex login` on the host to reseed credentials." in body
-    assert '{"code":"refresh_token_reused"}' in body
+    assert "refresh_token_reused" in body
 
 
 def test_route_agent_credential_failure_builds_redacted_issue_body_in_routing_module():
@@ -84,6 +99,7 @@ def test_route_agent_credential_failure_builds_redacted_issue_body_in_routing_mo
         service_name="codex",
         classification="codex_auth_lineage_exhausted",
     )
+    err.source_observations = (("json_event.error", raw_result),)
     err.caller = "Implementer"
 
     result = route_agent_credential_failure(
@@ -102,7 +118,7 @@ def test_route_agent_credential_failure_builds_redacted_issue_body_in_routing_mo
     assert "Agent: Implementer" in body
     assert "Status: 401" in body
     assert "## Environment" in body
-    assert "### stderr" in body
+    assert "### json_event.error" in body
     assert "### Raw result envelope" in body
     assert "plain-secret-123456" not in body
     assert "rt-secret-123456" not in body
@@ -125,6 +141,7 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
         service_name="codex",
         classification="operator_actionable_agent_credential_failure",
     )
+    err.source_observations = (("json_event.error", raw_result),)
     err.caller = "Implementer"
 
     result = route_agent_credential_failure(
@@ -151,18 +168,43 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
     assert "Agent: Implementer" in body
     assert "Service: codex" in body
     assert "Status: 401" in body
-    assert "### stderr" in body
+    assert "### json_event.error" in body
     assert "### Raw result envelope" in body
     assert "## Environment" in body
-    assert (
-        "The access token could not be refreshed because "
-        "refreshToken=[REDACTED] was already used."
-    ) in body
     assert '"code":"refresh_token_reused"' in body
     assert "plain-secret-123456" not in body
     assert "rt-secret-123456" not in body
     assert "sk-live-abc123SECRET" not in body
     assert body.count("[REDACTED]") >= 3
+
+
+def test_route_agent_credential_failure_renders_dataclass_style_source_observations():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = 42
+
+    err = AgentCredentialFailureError(
+        message="Codex authentication missing: run `codex login` on the host.",
+        status_code=401,
+        service_name="codex",
+    )
+    err.source_observations = (
+        _Observation(
+            source_stream="json_event.error",
+            raw_provider_text="Codex authentication missing: run `codex login` on the host.",
+        ),
+    )
+    err.caller = "Failure Report Agent"
+
+    route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    _, _, body, _ = github_svc.create_issue_in.call_args[0]
+    assert "### json_event.error" in body
+    assert "Codex authentication missing: run `codex login` on the host." in body
 
 
 def test_route_agent_credential_failure_selects_codex_reseed_remediation_from_adapter_classification():

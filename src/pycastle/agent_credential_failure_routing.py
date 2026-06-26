@@ -101,12 +101,21 @@ def _render_observations(
     raw: str,
     observations: tuple,
 ) -> tuple[tuple[str, str], ...]:
-    rendered = tuple(
-        (source_stream, raw_text)
-        for source_stream, raw_text in observations
-        if isinstance(source_stream, str) and isinstance(raw_text, str)
-    )
-    return rendered or (("raw error", raw),)
+    rendered: list[tuple[str, str]] = []
+    for observation in observations:
+        if (
+            isinstance(observation, tuple)
+            and len(observation) == 2
+            and isinstance(observation[0], str)
+            and isinstance(observation[1], str)
+        ):
+            rendered.append((observation[0], observation[1]))
+            continue
+        source_stream = getattr(observation, "source_stream", None)
+        raw_text = getattr(observation, "raw_provider_text", None)
+        if isinstance(source_stream, str) and isinstance(raw_text, str):
+            rendered.append((source_stream, raw_text))
+    return tuple(rendered) or (("raw error", raw),)
 
 
 def _redact_credential_material(text: str) -> str:
@@ -319,7 +328,9 @@ def route_agent_credential_failure(
 ) -> AgentCredentialFailureRouteResult | None:
     raw = provider_failure.args[0] if provider_failure.args else ""
     service_name = getattr(provider_failure, "service_name", "claude") or "claude"
-    raw_observations = getattr(provider_failure, "observations", ())
+    raw_observations = getattr(provider_failure, "source_observations", ())
+    if not raw_observations:
+        raw_observations = getattr(provider_failure, "observations", ())
     if not raw_observations and raw:
         if service_name == "codex" and '"code":"refresh_token_reused"' in raw:
             raw_observations = (
