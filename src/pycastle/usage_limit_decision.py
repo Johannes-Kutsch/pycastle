@@ -62,12 +62,6 @@ def _sleep_message(wake: datetime, now: datetime, *, is_estimated: bool) -> str:
 
 
 def _permanent_exhaustion_message(outcome: PermanentlyExhausted) -> str:
-    if (
-        outcome.provider is None
-        and outcome.account_label is None
-        and outcome.raw_message is None
-    ):
-        return outcome.reason
     provider_label = outcome.provider or "claude"
     account = outcome.account_label or "unknown"
     message = (
@@ -108,9 +102,6 @@ def decide_usage_limit_continuation(
     else:
         has_available = service_registry.has_available(now)
 
-    if isinstance(outcome, PermanentlyExhausted):
-        return Stop(message=_permanent_exhaustion_message(outcome))
-
     if has_available:
         if service_registry is None:
             exhausted_wake_time = None
@@ -133,7 +124,9 @@ def decide_usage_limit_continuation(
         else:
             exhausted_wake_time = service_registry.next_wake_time(now)
         message = None
-        if exhausted_wake_time is not None:
+        if isinstance(outcome, PermanentlyExhausted):
+            message = _permanent_exhaustion_message(outcome)
+        elif exhausted_wake_time is not None:
             message = (
                 f"Account exhausted until {_fmt_wake(exhausted_wake_time, now)}, "
                 "switching to next available."
@@ -142,6 +135,9 @@ def decide_usage_limit_continuation(
             message=message,
             exhausted_wake_time=exhausted_wake_time,
         )
+
+    if isinstance(outcome, PermanentlyExhausted):
+        return Stop(message=_permanent_exhaustion_message(outcome))
 
     if service_registry is None:
         next_wake = None

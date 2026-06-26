@@ -368,10 +368,15 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion():
         now=_now(),
     )
 
-    assert decision == runtime.Stop(message="credential_failure")
+    assert decision == runtime.Stop(
+        message=(
+            "claude unknown account retired for this run and will be retried on the "
+            "next run."
+        )
+    )
 
 
-def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_with_fallback():
+def test_decide_usage_limit_continuation_returns_continue_now_for_permanent_exhaustion_with_fallback():
     denial = "disabled Claude subscription access for Claude Code"
     primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
     registry = runtime.ServiceRegistry(
@@ -393,12 +398,13 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_with_fall
         now=_now(),
     )
 
-    assert decision == runtime.Stop(
+    assert decision == runtime.ContinueNow(
         message=(
             "claude secondary account retired for this run and will be retried on "
             "the next run. Claude said: disabled Claude subscription access for "
             "Claude Code"
-        )
+        ),
+        exhausted_wake_time=primary_wake,
     )
 
 
