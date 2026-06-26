@@ -65,6 +65,12 @@ def _seed_prior_role_session_with_service(
     (state_dir / "seed").write_text("seed", encoding="utf-8")
 
 
+def _mark_role_stage_done(worktree: Path, *, role: AgentRole) -> None:
+    role_session = RoleSession(worktree, role)
+    role_session.start_fresh()
+    role_session.mark_done()
+
+
 def _reviewer_output(message: str | None) -> CommitMessageOutput:
     return CommitMessageOutput(message=message)
 
@@ -810,6 +816,48 @@ def test_run_issue_no_prior_session_starts_with_full_role_prompt_without_interru
     assert implementer_call.prompt.scope_args["INTERRUPTED_WORK"] == ""
     assert implementer_call.prompt.scope_args["ISSUE_BODY"] == issue["body"]
     assert implementer_call.prompt.scope_args["ISSUE_TITLE"] == issue["title"]
+
+
+def test_run_issue_reviewer_cross_service_resolved_service_uses_full_role_prompt_with_interrupted_work_clause(
+    tmp_path,
+):
+    branch = "pycastle/issue-6"
+    worktree = worktree_identity(branch, tmp_path).path
+    issue = {
+        "number": 6,
+        "title": "Reviewer handoff",
+        "body": "Reviewer should keep prior work context.",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([CompletionOutput()])
+    cfg = Config(review_override=StageOverride(service="opencode"))
+    registry = ServiceRegistry(
+        {
+            "opencode": _CrossServiceTestService("opencode"),
+            "codex": _CrossServiceTestService("codex"),
+        }
+    )
+    deps = _make_deps(tmp_path, fake, cfg=cfg, service_registry=registry)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    deps.git_svc.create_worktree(tmp_path, worktree, branch, "sha-abc")
+    _mark_role_stage_done(worktree, role=AgentRole.IMPLEMENTER)
+    _seed_prior_role_session_with_service(
+        worktree=worktree,
+        role=AgentRole.REVIEWER,
+        service_name="codex",
+        session_id="codex-review-session",
+    )
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    reviewer_call = fake.calls[0]
+    assert reviewer_call.role is AgentRole.REVIEWER
+    assert (
+        "Run `git diff` and `git status` to understand the current state"
+        in reviewer_call.prompt.scope_args["INTERRUPTED_WORK"]
+    )
+    assert reviewer_call.prompt.scope_args["ISSUE_BODY"] == issue["body"]
 
 
 # ── Issue 349: issue_title threading ─────────────────────────────────────────

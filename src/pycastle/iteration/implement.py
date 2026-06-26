@@ -4,7 +4,7 @@ import dataclasses
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from ..agents.output_protocol import AgentRole, CommitMessageOutput
 from ..agents.result import CancellationToken
@@ -42,6 +42,9 @@ from ..infrastructure.worktree import (
 )
 from ._deps import Logger
 
+if TYPE_CHECKING:
+    from ..services import ServiceRegistry
+
 
 class _ImplementDeps(Protocol):
     cfg: Config
@@ -51,6 +54,7 @@ class _ImplementDeps(Protocol):
     github_svc: GithubService
     repo_root: Path
     logger: Logger
+    service_registry: "ServiceRegistry | None"
 
 
 def branch_for(issue_number: int) -> str:
@@ -73,6 +77,43 @@ def pick_implement_template(issue: dict, cfg: Config) -> PromptTemplate:
 
 def pick_slice_mode(issue: dict, cfg: Config) -> str:
     return _resolve_slice(issue, cfg)[0]
+
+
+def _resolved_stage_service_name(cfg: Config, role: AgentRole) -> str:
+    if role is AgentRole.IMPLEMENTER:
+        return cfg.implement_override.service
+    if role is AgentRole.REVIEWER:
+        return cfg.review_override.service
+    raise RuntimeError(f"Unsupported role {role!r} for implement path")
+
+
+def _prompt_run_state_for_role(
+    *,
+    mount_path: Path,
+    role: AgentRole,
+    deps: _ImplementDeps,
+) -> tuple[RunKind, bool]:
+    role_session = RoleSession(mount_path, role)
+    service_name = _resolved_stage_service_name(deps.cfg, role)
+    has_resumable_state = role_session.is_resumable()
+    has_exact_transcript_handoff = (
+        role_session.has_exact_transcript_handoff_for_selected_service(
+            deps.service_registry,
+            service_name,
+        )
+    )
+    run_kind = (
+        role_session.run_kind()
+        if has_exact_transcript_handoff or not has_resumable_state
+        else RunKind.FRESH
+    )
+    interrupted_work_from_dirty_tree = (
+        run_kind is RunKind.FRESH
+        and has_resumable_state
+        and not has_exact_transcript_handoff
+        and not deps.git_svc.is_working_tree_clean(mount_path)
+    )
+    return run_kind, interrupted_work_from_dirty_tree
 
 
 @dataclasses.dataclass
@@ -102,41 +143,16 @@ async def run_issue(
     _token = token if token is not None else CancellationToken()
 
     def _scope_args_for(mount_path: Path, role: AgentRole) -> dict[str, str]:
-        role_session = RoleSession(mount_path, role)
-        has_resumable_state = role_session.is_resumable()
-        if role is AgentRole.IMPLEMENTER:
-            service_name = deps.cfg.implement_override.service
-        elif role is AgentRole.REVIEWER:
-            service_name = deps.cfg.review_override.service
-        else:
-            raise RuntimeError(f"Unsupported role {role!r} for implement path")
-        registry = getattr(deps, "service_registry", None)
-        has_exact_owner = bool(
-            service_name
-            and registry is not None
-            and role_session.has_exact_provider_transcript_for_selected_service(
-                registry, service_name
-            )
-        )
-        run_kind = (
-            RunKind.FRESH
-            if has_resumable_state and not has_exact_owner
-            else role_session.run_kind()
-        )
-        interrupted_work_from_dirty_tree = (
-            run_kind is RunKind.FRESH
-            and has_resumable_state
-            and deps.repo_root is not None
-            and not has_exact_owner
+        run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
+            mount_path=mount_path,
+            role=role,
+            deps=deps,
         )
         return build_per_issue_scope_args(
             issue,
             branch=_branch,
             run_kind=run_kind,
-            is_dirty=(
-                interrupted_work_from_dirty_tree
-                and not deps.git_svc.is_working_tree_clean(mount_path)
-            ),
+            is_dirty=interrupted_work_from_dirty_tree,
         )
 
     _implement_started = False
