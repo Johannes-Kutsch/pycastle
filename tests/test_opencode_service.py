@@ -18,6 +18,10 @@ from pycastle.services.agent_service import (
 )
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.session.provider_session_state import (
+    load_service_session_id,
+    save_service_session_metadata,
+)
 from pycastle.services import credential_pool as credential_pool_module
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.session import RoleSession, RunKind
@@ -343,7 +347,7 @@ def test_opencode_service_exact_transcript_requires_metadata_saved_id_and_resuma
     service = OpenCodeService()
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     role_session.save_service_session_id("opencode", "sess-opencode-123")
-    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+    save_service_session_metadata(role_session.path, "opencode", "sess-opencode-123")
     provider_state_dir = tmp_path / "selected-opencode-state"
     provider_state_dir.mkdir(parents=True)
     (provider_state_dir / "session_id").write_text(
@@ -414,7 +418,7 @@ def test_opencode_service_recovers_resume_from_selected_state_dir_without_saved_
     assert provider_session_state.provider_session_id == "sess-opencode-123"
     assert provider_session_state.persist_provider_session_id is True
     assert provider_session_state.use_service_state_dir_for_container is True
-    assert role_session.service_session_id("opencode") == "sess-opencode-123"
+    assert load_service_session_id(role_session.path, "opencode") == "sess-opencode-123"
 
 
 def test_opencode_service_exact_transcript_recovers_saved_session_id_before_matching(
@@ -422,7 +426,7 @@ def test_opencode_service_exact_transcript_recovers_saved_session_id_before_matc
 ) -> None:
     service = OpenCodeService()
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    role_session.save_service_session_metadata("opencode", "sess-opencode-123")
+    save_service_session_metadata(role_session.path, "opencode", "sess-opencode-123")
     provider_state_dir = tmp_path / "selected-opencode-state"
     provider_state_dir.mkdir(parents=True)
     (provider_state_dir / "session_id").write_text(

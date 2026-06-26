@@ -14,6 +14,19 @@ from pycastle.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService, CodexService, OpenCodeService
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import RoleSession, RunKind
+from pycastle.session.resume import session_uuid_for_role_session_path
+
+
+def _role_session_session_uuid(role_session: object) -> str:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        identity_uuid = session_uuid_for_role_session_path(role_session_path)
+        if identity_uuid is not None:
+            return identity_uuid
+    legacy = getattr(role_session, "session_uuid", None)
+    if callable(legacy):
+        return legacy()
+    raise AssertionError("Unable to derive role session identifier")
 
 
 def test_prepare_agent_run_session_state_fresh_claude_uses_derived_uuid_and_service_state_dir(
@@ -29,13 +42,10 @@ def test_prepare_agent_run_session_state_fresh_claude_uses_derived_uuid_and_serv
     )
 
     assert state.run_kind is RunKind.FRESH
-    assert (
-        state.provider_session_id
-        == RoleSession(
-            tmp_path,
-            AgentRole.IMPLEMENTER,
-        ).session_uuid()
+    expected_session_id = _role_session_session_uuid(
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     )
+    assert state.provider_session_id == expected_session_id
     assert state.service_state_dir_path == (
         tmp_path / ".pycastle-session" / "implementer" / "claude"
     )
@@ -61,13 +71,8 @@ def test_prepare_agent_run_session_state_resume_claude_uses_same_derived_uuid(
     )
 
     assert state.run_kind is RunKind.RESUME
-    assert (
-        state.provider_session_id
-        == RoleSession(
-            tmp_path,
-            AgentRole.IMPROVE,
-            "main",
-        ).session_uuid()
+    assert state.provider_session_id == _role_session_session_uuid(
+        RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     )
     assert state.service_state_dir_path == state_dir
     assert state.provider_state_dir_relpath == ".pycastle-session/improve/main/claude/"
@@ -91,13 +96,10 @@ def test_prepare_agent_run_session_state_empty_role_dir_stays_fresh_for_claude(
     )
 
     assert state.run_kind is RunKind.FRESH
-    assert (
-        state.provider_session_id
-        == RoleSession(
-            tmp_path,
-            AgentRole.IMPLEMENTER,
-        ).session_uuid()
+    expected_session_id = _role_session_session_uuid(
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     )
+    assert state.provider_session_id == expected_session_id
     assert state.service_state_dir_path == role_dir / "claude"
     assert state.provider_state_dir_relpath == ".pycastle-session/implementer/claude/"
     assert state.auth_seed_action is None

@@ -58,6 +58,7 @@ from pycastle.session._provider_session_plan import (
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
 )
+from pycastle.session.resume import session_uuid_for_role_session_path
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
@@ -108,6 +109,18 @@ class _PreparedRunSessionStandIn:
 
     def resumable_provider_run_session(self) -> "_PreparedProviderRunSessionStandIn":
         return self.resumable_session
+
+
+def _role_session_session_uuid(role_session: object) -> str:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        identity_uuid = session_uuid_for_role_session_path(role_session_path)
+        if identity_uuid is not None:
+            return identity_uuid
+    legacy = getattr(role_session, "session_uuid", None)
+    if callable(legacy):
+        return legacy()
+    raise AssertionError("Unable to derive role session identifier")
 
     def protocol_reprompt_provider_run_session(self):
         return None
@@ -2674,11 +2687,9 @@ def test_work_invocation_resume_non_typed_retry_raises_agent_failed_error(
     service = ClaudeService()
     session = _FakeSession()
     runner = _FakeRunner()
-    expected_session_id = RoleSession(
-        tmp_path,
-        AgentRole.IMPLEMENTER,
-        "",
-    ).session_uuid()
+    expected_session_id = _role_session_session_uuid(
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER, "")
+    )
 
     async def prompt_factory(*, run_kind: RunKind, container_exec) -> str:
         del run_kind, container_exec

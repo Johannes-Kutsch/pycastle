@@ -41,10 +41,40 @@ from pycastle.session.service_resume_identity import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
+from pycastle.session.provider_session_state import save_service_session_metadata
 from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService, CodexService
 from pycastle.services.agent_service import AgentService
 from pycastle.services.opencode_service import OpenCodeService
+from pycastle.session.resume import session_uuid_for_role_session_path
+from pycastle.session.provider_session_state import load_service_session_id
+
+
+def _role_session_session_uuid(role_session: object) -> str:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        identity_uuid = session_uuid_for_role_session_path(role_session_path)
+        if identity_uuid is not None:
+            return identity_uuid
+    legacy = getattr(role_session, "session_uuid", None)
+    if callable(legacy):
+        return legacy()
+    raise AssertionError("Unable to derive role session identifier")
+
+
+def _role_session_service_session_id(
+    role_session: object,
+    service_name: str,
+) -> str | None:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        saved_session_id = load_service_session_id(role_session_path, service_name)
+        if saved_session_id is not None:
+            return saved_session_id
+    legacy = getattr(role_session, "service_session_id", None)
+    if callable(legacy):
+        return legacy(service_name)
+    return None
 
 
 def _load_opencode_state_dir_session_id(state_dir: Path | None) -> str | None:
@@ -84,7 +114,7 @@ class _LegacyStateDirService:
                 RunKind.RESUME
                 if request.has_resumable_provider_state
                 else RunKind.FRESH,
-                request.role_session.session_uuid(),
+                _role_session_session_uuid(request.role_session),
             )
         return ProviderSessionState(
             RunKind.RESUME if request.has_resumable_provider_state else RunKind.FRESH,
@@ -201,14 +231,16 @@ class _ClaudeFilesystemStandIn:
         request: ProviderSessionPreferencesRequest,
     ) -> ProviderSessionPreferences:
         return ProviderSessionPreferences(
-            preferred_provider_session_id=request.role_session.session_uuid()
+            preferred_provider_session_id=_role_session_session_uuid(
+                request.role_session
+            )
         )
 
     def provider_session_state(
         self,
         request: ProviderSessionStateRequest,
     ) -> ProviderSessionState:
-        provider_session_id = request.role_session.session_uuid()
+        provider_session_id = _role_session_session_uuid(request.role_session)
         exact_transcript_match = False
         if request.require_exact_transcript_match:
             exact_transcript_match = is_exact_resumable_service_session(
@@ -280,12 +312,11 @@ def test_session_package_public_interface_prepares_fresh_claude_run_state(
     )
 
     assert state.run_kind is RunKind.FRESH
-    assert (
-        state.provider_session_id
-        == RoleSession(
+    assert state.provider_session_id == _role_session_session_uuid(
+        RoleSession(
             tmp_path,
             AgentRole.IMPLEMENTER,
-        ).session_uuid()
+        )
     )
     assert state.service_state_dir_path == (
         tmp_path / ".pycastle-session" / "implementer" / "claude"
@@ -320,12 +351,11 @@ def test_session_package_public_interface_prepares_resumed_run_session(
 
     assert isinstance(session, PreparedRunSession)
     assert session.run_kind is RunKind.RESUME
-    assert (
-        session.provider_session_id
-        == RoleSession(
+    assert session.provider_session_id == _role_session_session_uuid(
+        RoleSession(
             tmp_path,
             AgentRole.IMPLEMENTER,
-        ).session_uuid()
+        )
     )
     assert session.provider_state_dir_container_path == (
         "/workspace/.pycastle-session/implementer/claude/"
@@ -372,12 +402,11 @@ def test_prepare_provider_session_state_fresh_claude_uses_deterministic_uuid_and
     state = prepare_provider_session_state(_provider_request(tmp_path))
 
     assert state.run_kind is RunKind.FRESH
-    assert (
-        state.provider_session_id
-        == RoleSession(
+    assert state.provider_session_id == _role_session_session_uuid(
+        RoleSession(
             tmp_path,
             AgentRole.IMPLEMENTER,
-        ).session_uuid()
+        )
     )
     assert state.service_state_dir_path == (
         tmp_path / ".pycastle-session" / "implementer" / "claude"
@@ -397,12 +426,11 @@ def test_prepare_provider_session_state_resume_claude_uses_same_deterministic_uu
     state = prepare_provider_session_state(_provider_request(tmp_path))
 
     assert state.run_kind is RunKind.RESUME
-    assert (
-        state.provider_session_id
-        == RoleSession(
+    assert state.provider_session_id == _role_session_session_uuid(
+        RoleSession(
             tmp_path,
             AgentRole.IMPLEMENTER,
-        ).session_uuid()
+        )
     )
 
 
@@ -569,7 +597,7 @@ def test_prepare_agent_session_fresh_claude_has_uuid_as_provider_session_id(
 ):
     session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
 
-    expected = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    expected = _role_session_session_uuid(RoleSession(tmp_path, AgentRole.IMPLEMENTER))
     assert session.provider_session_id == expected
 
 
@@ -595,7 +623,7 @@ def test_prepare_agent_session_resume_claude_returns_run_kind_resume(
     session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
 
     assert session.run_kind is RunKind.RESUME
-    expected = RoleSession(tmp_path, AgentRole.IMPLEMENTER).session_uuid()
+    expected = _role_session_session_uuid(RoleSession(tmp_path, AgentRole.IMPLEMENTER))
     assert session.provider_session_id == expected
 
 
@@ -692,7 +720,9 @@ def test_prepare_provider_session_state_recovers_single_nested_codex_rollout_thr
     assert initial_run.run_kind is RunKind.RESUME
     assert initial_run.provider_session_id == "thread-from-rollout"
     assert (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
+        _role_session_service_session_id(
+            RoleSession(tmp_path, AgentRole.IMPLEMENTER), "codex"
+        )
         == "thread-from-rollout"
     )
 
@@ -740,7 +770,9 @@ def test_prepare_provider_session_state_treats_duplicate_nested_codex_rollout_th
     assert state.run_kind is RunKind.RESUME
     assert state.provider_session_id == "thread-same-id"
     assert (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex")
+        _role_session_service_session_id(
+            RoleSession(tmp_path, AgentRole.IMPLEMENTER), "codex"
+        )
         == "thread-same-id"
     )
 
@@ -795,7 +827,10 @@ def test_prepare_provider_session_state_treats_distinct_nested_codex_rollout_thr
     assert resumable_run.run_kind is RunKind.FRESH
     assert resumable_run.provider_session_id is None
     assert (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") is None
+        _role_session_service_session_id(
+            RoleSession(tmp_path, AgentRole.IMPLEMENTER), "codex"
+        )
+        is None
     )
 
 
@@ -913,12 +948,11 @@ def test_prepare_agent_session_codex_resume_never_uses_role_session_uuid_as_prov
 
     assert session.run_kind is RunKind.RESUME
     assert session.provider_session_id == "thread-from-sidecar"
-    assert (
-        session.provider_session_id
-        != RoleSession(
+    assert session.provider_session_id != _role_session_session_uuid(
+        RoleSession(
             tmp_path,
             AgentRole.IMPLEMENTER,
-        ).session_uuid()
+        )
     )
 
 
@@ -938,9 +972,9 @@ def test_prepare_agent_session_persists_recovered_codex_thread_id_for_future_res
 
     assert session.run_kind is RunKind.RESUME
     assert session.provider_session_id == "thread-from-rollout"
-    assert RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") == (
-        "thread-from-rollout"
-    )
+    assert _role_session_service_session_id(
+        RoleSession(tmp_path, AgentRole.IMPLEMENTER), "codex"
+    ) == ("thread-from-rollout")
 
 
 def test_prepare_agent_session_falls_back_to_fresh_for_codex_with_distinct_rollout_thread_ids_without_writing_sidecar(
@@ -966,7 +1000,10 @@ def test_prepare_agent_session_falls_back_to_fresh_for_codex_with_distinct_rollo
     assert session.run_kind is RunKind.FRESH
     assert session.provider_session_id is None
     assert (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") is None
+        _role_session_service_session_id(
+            RoleSession(tmp_path, AgentRole.IMPLEMENTER), "codex"
+        )
+        is None
     )
 
 
@@ -994,7 +1031,10 @@ def test_prepare_agent_session_falls_back_to_fresh_for_codex_without_thread_star
     assert session.run_kind is RunKind.FRESH
     assert session.provider_session_id is None
     assert (
-        RoleSession(tmp_path, AgentRole.IMPLEMENTER).service_session_id("codex") is None
+        _role_session_service_session_id(
+            RoleSession(tmp_path, AgentRole.IMPLEMENTER), "codex"
+        )
+        is None
     )
 
 
@@ -1109,12 +1149,11 @@ def test_prepare_agent_session_empty_namespace_preserves_legacy_path_and_uuid_fo
     )
 
     assert session.provider_state_dir_relpath == ".pycastle-session/implementer/claude/"
-    assert (
-        session.provider_session_id
-        == RoleSession(
+    assert session.provider_session_id == _role_session_session_uuid(
+        RoleSession(
             tmp_path,
             AgentRole.IMPLEMENTER,
-        ).session_uuid()
+        )
     )
 
 
@@ -1391,7 +1430,9 @@ def test_prepare_agent_session_opencode_resume_uses_selected_service_state_dir(
     assert session.run_kind is RunKind.RESUME
     assert session.provider_session_id == "sess-from-custom-state"
     assert (
-        RoleSession(tmp_path, AgentRole.IMPROVE, "main").service_session_id("opencode")
+        _role_session_service_session_id(
+            RoleSession(tmp_path, AgentRole.IMPROVE, "main"), "opencode"
+        )
         == "sess-from-custom-state"
     )
     assert (
@@ -1435,7 +1476,10 @@ def test_prepare_provider_session_state_captures_opencode_session_id_in_selected
     assert (state_dir / "session_id").read_text(encoding="utf-8") == (
         "sess-opencode-runtime"
     )
-    assert role_session.service_session_id("opencode") == "sess-opencode-runtime"
+    assert (
+        _role_session_service_session_id(role_session, "opencode")
+        == "sess-opencode-runtime"
+    )
     assert role_session.service_session_metadata("opencode") == {
         "service": "opencode",
         "provider_session_id": "sess-opencode-runtime",
@@ -1515,7 +1559,10 @@ def test_prepared_provider_run_session_capture_without_success_leaves_metadata_a
     run_session.record_provider_session_id("sess-opencode-runtime")
 
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    assert role_session.service_session_id("opencode") == "sess-opencode-runtime"
+    assert (
+        _role_session_service_session_id(role_session, "opencode")
+        == "sess-opencode-runtime"
+    )
     assert role_session.service_session_metadata("opencode") is None
 
 
@@ -1560,7 +1607,9 @@ def test_remember_provider_session_id_persists_sidecar_for_codex(tmp_path: Path)
     session.on_provider_session_id("thread-sidecar-id")
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    assert role_session.service_session_id("codex") == "thread-sidecar-id"
+    assert (
+        _role_session_service_session_id(role_session, "codex") == "thread-sidecar-id"
+    )
 
 
 def test_record_successful_provider_session_metadata_saves_metadata(tmp_path: Path):
@@ -1596,7 +1645,7 @@ def test_prepared_success_recorder_without_provider_session_id_leaves_metadata_u
 ):
     _seed_codex_auth(tmp_path)
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    role_session.save_service_session_metadata("claude", "thread-existing")
+    save_service_session_metadata(role_session.path, "claude", "thread-existing")
     before = service_session_metadata_path(role_session.path).read_text(
         encoding="utf-8"
     )
@@ -1622,8 +1671,8 @@ def test_prepared_provider_run_session_without_provider_session_id_clears_stale_
 ):
     _seed_codex_auth(tmp_path)
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    role_session.save_service_session_metadata("claude", "thread-claude")
-    role_session.save_service_session_metadata("codex", "thread-stale")
+    save_service_session_metadata(role_session.path, "claude", "thread-claude")
+    save_service_session_metadata(role_session.path, "codex", "thread-stale")
 
     state = prepare_provider_session_state(
         PreparedProviderSessionStateRequest(
@@ -1648,7 +1697,7 @@ def test_prepared_provider_run_session_without_provider_session_id_deletes_file_
 ):
     _seed_codex_auth(tmp_path)
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    role_session.save_service_session_metadata("codex", "thread-stale")
+    save_service_session_metadata(role_session.path, "codex", "thread-stale")
 
     state = prepare_provider_session_state(
         PreparedProviderSessionStateRequest(
@@ -1670,7 +1719,7 @@ def test_prepared_success_recorder_preserves_metadata_for_other_services(
 ):
     _seed_codex_auth(tmp_path)
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    role_session.save_service_session_metadata("claude", "thread-claude")
+    save_service_session_metadata(role_session.path, "claude", "thread-claude")
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
     session.on_provider_session_id("thread-codex")
 

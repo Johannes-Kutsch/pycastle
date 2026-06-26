@@ -6,35 +6,60 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pycastle.services.agent_service import AgentService as RuntimeAgentService
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import (
+    session_uuid as runtime_session_uuid,
     RunKind,
     normalize_state_dir_relpath,
     provider_state_relpath as runtime_provider_state_relpath,
 )
 
-from ._provider_session_decision import RecoveredSessionIdPersistence
-from .provider_run_state import ProviderFreshFallbackReason, ProviderRunState
 from .provider_session_state import (
-    clear_service_session_metadata,
     has_exact_provider_transcript_for_service,
     is_exact_resumable_service_session,
-    load_service_session_id as load_role_service_session_id,
     load_exact_transcript_service_name,
     is_service_session_metadata_path,
     load_service_session_metadata,
-    save_service_session_metadata,
     service_session_id_path as role_service_session_id_path,
 )
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
-    from ..services.agent_service import AgentService
 
-_NAMESPACE = uuid.NAMESPACE_DNS
 SESSION_DIR_NAME = ".pycastle-session"
 _SESSION_UUID_SEED_FILENAME = "_session_uuid_seed"
+
+
+def session_uuid_for_role_session_path(
+    role_session_path: Path,
+) -> str | None:
+    identity = _role_session_identity_from_path(role_session_path)
+    if identity is None:
+        return None
+    worktree, role, namespace = identity
+    return runtime_session_uuid(worktree, role.value, namespace)
+
+
+def _role_session_identity_from_path(
+    role_session_path: Path,
+) -> tuple[Path, AgentRole, str] | None:
+    path = role_session_path.resolve()
+    parts = path.parts
+    root_name = SESSION_DIR_NAME
+    try:
+        session_root_index = len(parts) - 1 - tuple(reversed(parts)).index(root_name)
+    except ValueError:
+        return None
+    role_index = session_root_index + 1
+    if role_index >= len(parts):
+        return None
+    try:
+        role = AgentRole(parts[role_index])
+    except ValueError:
+        return None
+    namespace = parts[role_index + 1] if role_index + 1 < len(parts) else ""
+    worktree = Path(*parts[:session_root_index])
+    return worktree, role, namespace
 
 
 def _force_remove_readonly(func, path, _exc_info):
@@ -118,19 +143,6 @@ class RoleSession:
             self._namespace,
         ).rstrip("/")
 
-    def session_uuid(self) -> str:
-        role_key = (
-            f"pycastle.{self._role.value}.{self._namespace}"
-            if self._namespace
-            else f"pycastle.{self._role.value}"
-        )
-        role_ns = uuid.uuid5(_NAMESPACE, role_key)
-        session_id = uuid.uuid5(
-            role_ns,
-            f"{self._worktree.resolve()}:{self._ensure_session_uuid_seed()}",
-        )
-        return str(session_id)
-
     def _session_uuid_seed_path(self) -> Path:
         return self.path / _SESSION_UUID_SEED_FILENAME
 
@@ -150,9 +162,6 @@ class RoleSession:
 
     def service_session_id_path(self, service_name: str) -> Path:
         return role_service_session_id_path(self.path, service_name)
-
-    def service_session_id(self, service_name: str) -> str | None:
-        return load_role_service_session_id(self.path, service_name)
 
     def save_service_session_id(self, service_name: str, session_id: str) -> None:
         path = self.service_session_id_path(service_name)
@@ -178,30 +187,6 @@ class RoleSession:
     def exact_transcript_service_name(self) -> str | None:
         return load_exact_transcript_service_name(self.path)
 
-    def save_service_session_metadata(self, service_name: str, session_id: str) -> None:
-        save_service_session_metadata(self.path, service_name, session_id)
-
-    def record_successful_provider_session_metadata(
-        self,
-        service_name: str,
-        provider_session_id: str | None,
-    ) -> None:
-        if provider_session_id is None:
-            clear_service_session_metadata(self.path, service_name)
-            return
-        save_service_session_metadata(self.path, service_name, provider_session_id)
-
-    def has_exact_provider_transcript_for_service(
-        self,
-        service: RuntimeAgentService,
-    ) -> bool:
-        return has_exact_provider_transcript_for_service(
-            worktree=self._worktree,
-            role=self._role,
-            namespace=self._namespace,
-            service=service,
-        )
-
     def has_exact_provider_transcript_for_selected_service(
         self,
         registry: "ServiceRegistry | None",
@@ -212,72 +197,11 @@ class RoleSession:
         service = registry[service_name]
         if service is None:
             return False
-        return self.has_exact_provider_transcript_for_service(service)
-
-    def service_session_state(
-        self, service: RuntimeAgentService
-    ) -> ServiceSessionState:
-        state_dir_relpath = _normalize_state_dir_relpath(
-            self._role,
-            self._namespace,
-            service.name,
-            service.state_dir_relpath(self._role, self._namespace),
-        )
-        state_dir = (
-            self.provider_state_dir(service.name)
-            if state_dir_relpath
-            == provider_state_relpath(
-                self._role,
-                service.name,
-                self._namespace,
-            )
-            else self._worktree / state_dir_relpath
-            if state_dir_relpath is not None
-            else None
-        )
-        return ServiceSessionState(
-            state_dir=state_dir,
-            has_resumable_provider_state=(
-                state_dir is not None and service.is_resumable(state_dir)
-            ),
-            state_dir_relpath=state_dir_relpath,
-        )
-
-    def provider_run_state_for_service(
-        self,
-        service: "AgentService",
-    ) -> ProviderRunState:
-        from ._provider_session_plan import (
-            ProviderRunStatePlanRequest,
-            plan_provider_run_state,
-        )
-
-        plan = plan_provider_run_state(
-            ProviderRunStatePlanRequest(
-                worktree=self._worktree,
-                role=self._role,
-                namespace=self._namespace,
-                service=service,
-            )
-        )
-        return ProviderRunState(
-            run_kind=plan.run_kind,
-            provider_session_id=plan.provider_session_id,
-            persist_provider_session_id=(
-                plan.recovered_session_id_persistence
-                is RecoveredSessionIdPersistence.PERSIST
-            ),
-            provider_state_dir=plan.provider_state_dir,
-            fresh_fallback_reason=(
-                ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY
-                if (
-                    plan.run_kind is RunKind.FRESH
-                    and plan.provider_state_dir is not None
-                    and service.is_resumable(plan.provider_state_dir)
-                    and plan.provider_session_id is None
-                )
-                else None
-            ),
+        return has_exact_provider_transcript_for_service(
+            worktree=self._worktree,
+            role=self._role,
+            namespace=self._namespace,
+            service=service,
         )
 
     def has_exact_transcript_handoff_for_selected_service(

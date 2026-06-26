@@ -10,6 +10,7 @@ from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.iteration.in_flight import select_in_flight_issues
 from pycastle.iteration.implement import branch_for
 from pycastle.services import GitService
+from pycastle.session.provider_session_state import save_service_session_metadata
 from pycastle.session.resume import RoleSession, SESSION_DIR_NAME
 
 
@@ -162,7 +163,7 @@ def test_select_in_flight_issues_omits_metadata_only_role_session_without_branch
         AgentRole.IMPLEMENTER,
     )
     role_session.start_fresh()
-    role_session.save_service_session_metadata("claude", "thread-123")
+    save_service_session_metadata(role_session.path, "claude", "thread-123")
 
     git_svc.verify_ref_exists.return_value = False
 

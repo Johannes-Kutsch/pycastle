@@ -29,6 +29,7 @@ from pycastle.runtime_session import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
+from ..session.provider_session_state import load_service_session_id
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentOutputProtocolError
@@ -77,6 +78,21 @@ def _is_refresh_token_already_used_prose(message: str) -> bool:
         "access token could not be refreshed" in lowered
         and "refresh token was already used" in lowered
     )
+
+
+def _resolved_provider_session_id(
+    role_session: object, service_name: str
+) -> str | None:
+    legacy_service_session_id = getattr(role_session, "service_session_id", None)
+    if callable(legacy_service_session_id):
+        saved_provider_session_id = legacy_service_session_id(service_name)
+        if saved_provider_session_id is not None:
+            return saved_provider_session_id
+
+    role_session_path = getattr(role_session, "path", None)
+    if not isinstance(role_session_path, Path):
+        return None
+    return load_service_session_id(role_session_path, service_name)
 
 
 def _provider_error_observation(
@@ -270,7 +286,9 @@ class CodexService:
                 auth_seeding_requirement=auth_seeding_requirement,
                 auth_seed_action=auth_seed_action,
             )
-        saved_provider_session_id = request.role_session.service_session_id(self.name)
+        saved_provider_session_id = _resolved_provider_session_id(
+            request.role_session, self.name
+        )
         if saved_provider_session_id is not None:
             exact_transcript_match = False
             if request.require_exact_transcript_match:

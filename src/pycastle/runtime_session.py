@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Protocol
@@ -18,10 +19,6 @@ else:
 
 
 class ServiceResumeIdentityStore(Protocol):
-    def session_uuid(self) -> str: ...
-
-    def service_session_id(self, service_name: str) -> str | None: ...
-
     def save_service_session_id(self, service_name: str, session_id: str) -> None: ...
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None: ...
@@ -30,6 +27,60 @@ class ServiceResumeIdentityStore(Protocol):
 
 
 _DEFAULT_PROVIDER_SESSION_ID_FILENAME = "thread_id"
+_NAMESPACE = uuid.NAMESPACE_DNS
+_SESSION_UUID_SEED_FILENAME = "_session_uuid_seed"
+
+
+def session_uuid(
+    worktree: Path,
+    role_name: str,
+    namespace: str = "",
+    *,
+    session_root: str = ".pycastle-session",
+) -> str:
+    role_key = (
+        f"pycastle.{role_name}.{namespace}" if namespace else f"pycastle.{role_name}"
+    )
+    role_ns = uuid.uuid5(_NAMESPACE, role_key)
+    session_id = uuid.uuid5(
+        role_ns,
+        f"{worktree.resolve()}:{_ensure_session_uuid_seed(worktree, role_name, namespace, session_root=session_root)}",
+    )
+    return str(session_id)
+
+
+def _role_session_uuid_seed_path(
+    worktree: Path,
+    role_name: str,
+    namespace: str = "",
+    *,
+    session_root: str = ".pycastle-session",
+) -> Path:
+    base = worktree / session_root / role_name
+    return (base / namespace if namespace else base) / _SESSION_UUID_SEED_FILENAME
+
+
+def _ensure_session_uuid_seed(
+    worktree: Path,
+    role_name: str,
+    namespace: str = "",
+    *,
+    session_root: str = ".pycastle-session",
+) -> str:
+    path = _role_session_uuid_seed_path(
+        worktree,
+        role_name,
+        namespace,
+        session_root=session_root,
+    )
+    if path.is_file():
+        seed = path.read_text(encoding="utf-8").strip()
+        if seed:
+            return seed
+    seed = str(uuid.uuid4())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(seed, encoding="utf-8")
+    return seed
 
 
 class RunKind(Enum):
@@ -49,6 +100,7 @@ class ProviderSessionPreferencesRequest:
     provider_state_dir: Path | None
     has_resumable_provider_state: bool
     state_dir_relpath: str | None = None
+    preferred_provider_session_id: str | None = None
     force_resume: bool = False
 
 
@@ -175,7 +227,18 @@ def select_resumable_provider_session_id(
     if not has_resumable_provider_state:
         return ProviderSessionSelection(provider_session_id=None)
 
-    provider_session_id = role_session.service_session_id(service_name)
+    role_session_path = getattr(role_session, "path", None)
+    from .session.provider_session_state import load_service_session_id
+
+    provider_session_id = (
+        load_service_session_id(role_session_path, service_name)
+        if isinstance(role_session_path, Path)
+        else None
+    )
+    if provider_session_id is None:
+        service_session_id = getattr(role_session, "service_session_id", None)
+        if callable(service_session_id):
+            provider_session_id = service_session_id(service_name)
     if provider_session_id is not None:
         return ProviderSessionSelection(provider_session_id=provider_session_id)
 

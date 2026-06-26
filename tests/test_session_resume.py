@@ -18,6 +18,10 @@ from pycastle.runtime_session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
+from pycastle.session.provider_session_state import (
+    load_service_session_id,
+    save_service_session_metadata,
+)
 from pycastle.services.agent_service import AgentService
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
@@ -30,7 +34,100 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
+from pycastle.session._provider_session_plan import _provider_session_adapter
+from pycastle.session_planning import (
+    ProviderRunStatePlanRequest,
+    RecoveredSessionIdPersistence,
+    plan_provider_run_state,
+)
 from pycastle.session._provider_session_sidecars import service_session_metadata_path
+from pycastle.session.resume import session_uuid_for_role_session_path
+
+
+def _role_session_session_uuid(role_session: object) -> str:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        identity_uuid = session_uuid_for_role_session_path(role_session_path)
+        if identity_uuid is not None:
+            return identity_uuid
+    legacy = getattr(role_session, "session_uuid", None)
+    if callable(legacy):
+        return legacy()
+    raise AssertionError("Unable to derive role session identifier")
+
+
+def _role_session_identity(role_session: object) -> tuple[Path, AgentRole, str]:
+    role_session_path = getattr(role_session, "path", None)
+    if not isinstance(role_session_path, Path):
+        raise AssertionError("RoleSession path is unavailable")
+    parts = role_session_path.resolve().parts
+    try:
+        session_root_index = (
+            len(parts) - 1 - tuple(reversed(parts)).index(".pycastle-session")
+        )
+    except ValueError as exc:
+        raise AssertionError("Unable to locate role session root") from exc
+    role_index = session_root_index + 1
+    if role_index >= len(parts):
+        raise AssertionError("Unable to parse role session identity")
+    try:
+        role = AgentRole(parts[role_index])
+    except ValueError as exc:
+        raise AssertionError("Unable to parse role session identity") from exc
+    namespace = parts[role_index + 1] if role_index + 1 < len(parts) else ""
+    worktree = Path(*parts[:session_root_index])
+    return worktree, role, namespace
+
+
+def _role_session_service_session_id(
+    role_session: object,
+    service_name: str,
+) -> str | None:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        saved_session_id = load_service_session_id(role_session_path, service_name)
+        if saved_session_id is not None:
+            return saved_session_id
+    legacy = getattr(role_session, "service_session_id", None)
+    if callable(legacy):
+        return legacy(service_name)
+    return None
+
+
+def _provider_run_state_for_service(
+    role_session: object,
+    service: AgentService,
+) -> ProviderRunState:
+    worktree, role, namespace = _role_session_identity(role_session)
+    requested_role_session = cast(RoleSession, role_session)
+    plan = plan_provider_run_state(
+        ProviderRunStatePlanRequest(
+            worktree=worktree,
+            role=role,
+            namespace=namespace,
+            service=service,
+            role_session=requested_role_session,
+            provider_session_adapter=_provider_session_adapter(service),
+        )
+    )
+    fallback_reason = None
+    if (
+        plan.run_kind is RunKind.FRESH
+        and plan.provider_session_id is None
+        and plan.provider_state_dir is not None
+        and service.is_resumable(plan.provider_state_dir)
+    ):
+        fallback_reason = ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY
+    return ProviderRunState(
+        run_kind=plan.run_kind,
+        provider_session_id=plan.provider_session_id,
+        persist_provider_session_id=(
+            plan.recovered_session_id_persistence
+            is RecoveredSessionIdPersistence.PERSIST
+        ),
+        provider_state_dir=plan.provider_state_dir,
+        fresh_fallback_reason=fallback_reason,
+    )
 
 
 @dataclass(frozen=True)
@@ -51,7 +148,9 @@ class _FakeService:
     ) -> ProviderSessionPreferences:
         if self.name == "claude":
             return ProviderSessionPreferences(
-                preferred_provider_session_id=request.role_session.session_uuid()
+                preferred_provider_session_id=_role_session_session_uuid(
+                    request.role_session
+                )
             )
         return ProviderSessionPreferences()
 
@@ -62,7 +161,7 @@ class _FakeService:
         if self.name == "claude":
             provider_session_id = (
                 request.preferred_provider_session_id
-                or request.role_session.session_uuid()
+                or _role_session_session_uuid(request.role_session)
             )
             return ProviderSessionState(
                 RunKind.RESUME
@@ -72,7 +171,9 @@ class _FakeService:
             )
         if not request.has_resumable_provider_state:
             return ProviderSessionState(RunKind.FRESH, None)
-        saved_provider_session_id = request.role_session.service_session_id(self.name)
+        saved_provider_session_id = _role_session_service_session_id(
+            request.role_session, self.name
+        )
         if saved_provider_session_id is None:
             return ProviderSessionState(RunKind.FRESH, None)
         return ProviderSessionState(RunKind.RESUME, saved_provider_session_id)
@@ -95,47 +196,49 @@ def rs(worktree):
 
 
 def test_session_uuid_is_deterministic(worktree):
-    assert (
-        RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
-        == RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
-    )
+    assert _role_session_session_uuid(
+        RoleSession(worktree, AgentRole.IMPLEMENTER)
+    ) == _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPLEMENTER))
 
 
 def test_session_uuid_differs_by_role(worktree):
-    assert (
-        RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
-        != RoleSession(worktree, AgentRole.REVIEWER).session_uuid()
-    )
+    assert _role_session_session_uuid(
+        RoleSession(worktree, AgentRole.IMPLEMENTER)
+    ) != _role_session_session_uuid(RoleSession(worktree, AgentRole.REVIEWER))
 
 
 def test_session_uuid_differs_by_worktree(tmp_path):
-    a = RoleSession(tmp_path / "issue-1", AgentRole.IMPLEMENTER).session_uuid()
-    b = RoleSession(tmp_path / "issue-2", AgentRole.IMPLEMENTER).session_uuid()
+    a = _role_session_session_uuid(
+        RoleSession(tmp_path / "issue-1", AgentRole.IMPLEMENTER)
+    )
+    b = _role_session_session_uuid(
+        RoleSession(tmp_path / "issue-2", AgentRole.IMPLEMENTER)
+    )
     assert a != b
 
 
 def test_session_uuid_differs_by_namespace(worktree):
-    a = RoleSession(worktree, AgentRole.IMPROVE, "main").session_uuid()
-    b = RoleSession(worktree, AgentRole.IMPROVE, "issues").session_uuid()
+    a = _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPROVE, "main"))
+    b = _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPROVE, "issues"))
     assert a != b
 
 
 def test_session_uuid_empty_namespace_equals_no_namespace(worktree):
-    assert (
-        RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
-        == RoleSession(worktree, AgentRole.IMPLEMENTER, "").session_uuid()
-    )
+    assert _role_session_session_uuid(
+        RoleSession(worktree, AgentRole.IMPLEMENTER)
+    ) == _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPLEMENTER, ""))
 
 
 def test_session_uuid_resolved_path_equals_direct(worktree):
-    assert (
-        RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
-        == RoleSession(worktree.resolve(), AgentRole.IMPLEMENTER).session_uuid()
+    assert _role_session_session_uuid(
+        RoleSession(worktree, AgentRole.IMPLEMENTER)
+    ) == _role_session_session_uuid(
+        RoleSession(worktree.resolve(), AgentRole.IMPLEMENTER)
     )
 
 
 def test_session_uuid_is_valid_uuid_string(worktree):
-    result = RoleSession(worktree, AgentRole.IMPLEMENTER).session_uuid()
+    result = _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPLEMENTER))
     assert str(uuid.UUID(result)) == result
 
 
@@ -199,9 +302,9 @@ def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):
     planner_b.save_service_session_id("opencode", "sess-b")
     reviewer_a.save_service_session_id("opencode", "sess-review")
 
-    assert planner_a.service_session_id("opencode") == "sess-a"
-    assert planner_b.service_session_id("opencode") == "sess-b"
-    assert reviewer_a.service_session_id("opencode") == "sess-review"
+    assert _role_session_service_session_id(planner_a, "opencode") == "sess-a"
+    assert _role_session_service_session_id(planner_b, "opencode") == "sess-b"
+    assert _role_session_service_session_id(reviewer_a, "opencode") == "sess-review"
 
 
 def test_service_session_ids_use_service_specific_sidecars(worktree):
@@ -211,9 +314,9 @@ def test_service_session_ids_use_service_specific_sidecars(worktree):
     rs.save_service_session_id("opencode", "sess-123")
     rs.save_service_session_id("unknown-service", "default-123")
 
-    assert rs.service_session_id("codex") == "thread-123"
-    assert rs.service_session_id("opencode") == "sess-123"
-    assert rs.service_session_id("unknown-service") == "default-123"
+    assert _role_session_service_session_id(rs, "codex") == "thread-123"
+    assert _role_session_service_session_id(rs, "opencode") == "sess-123"
+    assert _role_session_service_session_id(rs, "unknown-service") == "default-123"
 
 
 def test_service_session_id_sidecars_follow_role_session_provider_state_layout(
@@ -256,7 +359,7 @@ def test_service_session_id_sidecars_follow_role_session_provider_state_layout(
 def test_service_session_metadata_stays_at_role_session_level(worktree):
     rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
 
-    rs.save_service_session_metadata("codex", "thread-123")
+    save_service_session_metadata(rs.path, "codex", "thread-123")
 
     assert service_session_metadata_path(rs.path) == (
         worktree
@@ -290,7 +393,7 @@ def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thr
         encoding="utf-8",
     )
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.RESUME,
@@ -298,7 +401,7 @@ def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thr
         persist_provider_session_id=True,
         provider_state_dir=state_dir,
     )
-    assert rs.service_session_id("codex") == "thread-from-rollout"
+    assert _role_session_service_session_id(rs, "codex") == "thread-from-rollout"
 
 
 def test_provider_run_state_for_codex_service_preserves_provider_state_dir_and_session_id(
@@ -313,7 +416,7 @@ def test_provider_run_state_for_codex_service_preserves_provider_state_dir_and_s
         encoding="utf-8",
     )
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.RESUME,
@@ -341,7 +444,7 @@ def test_provider_run_state_for_codex_service_reports_unrecoverable_fallback_rea
         encoding="utf-8",
     )
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.FRESH,
@@ -361,7 +464,7 @@ def test_provider_run_state_for_non_codex_service_is_fresh_without_provider_sess
         resumable=False,
     )
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.FRESH,
@@ -383,11 +486,11 @@ def test_provider_run_state_for_claude_service_resumes_with_role_session_uuid_wi
     provider_state_dir.mkdir(parents=True)
     provider_state_dir.joinpath("session.jsonl").write_text("{}\n", encoding="utf-8")
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.RESUME,
-        provider_session_id=rs.session_uuid(),
+        provider_session_id=_role_session_session_uuid(rs),
         provider_state_dir=provider_state_dir,
     )
 
@@ -401,7 +504,7 @@ def test_provider_run_state_for_codex_service_prefers_saved_thread_id_without_se
     provider_state_dir.mkdir(parents=True)
     rs.save_service_session_id("codex", "thread-from-sidecar")
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.RESUME,
@@ -422,7 +525,7 @@ def test_provider_run_state_for_codex_service_is_fresh_when_rollouts_are_unreada
     rollout_path.parent.mkdir(parents=True)
     rollout_path.write_bytes(b"\xff\xfe\x00")
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.FRESH,
@@ -449,7 +552,7 @@ def test_provider_run_state_for_sidecar_backed_service_resumes_with_saved_servic
     )
     rs.save_service_session_id("opencode", "sess-opencode-123")
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.RESUME,
@@ -470,7 +573,7 @@ def test_provider_run_state_for_sidecar_backed_service_falls_back_to_fresh_witho
     provider_state_dir = worktree / "custom" / "opencode-state"
     provider_state_dir.mkdir(parents=True)
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.FRESH,
@@ -492,7 +595,7 @@ def test_provider_run_state_for_opencode_downgrades_resumable_state_without_sess
         encoding="utf-8",
     )
 
-    provider_run_state = rs.provider_run_state_for_service(service)
+    provider_run_state = _provider_run_state_for_service(rs, service)
 
     assert provider_run_state == ProviderRunState(
         run_kind=RunKind.FRESH,
@@ -504,7 +607,7 @@ def test_provider_run_state_for_opencode_downgrades_resumable_state_without_sess
 
 def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):
     rs.start_fresh()
-    rs.save_service_session_metadata("codex", "thread-from-run")
+    save_service_session_metadata(rs.path, "codex", "thread-from-run")
     rs.save_service_session_id("codex", "thread-from-run")
 
     rs.mark_done()
@@ -530,8 +633,8 @@ def test_malformed_service_session_metadata_is_ignored(rs):
 
 def test_exact_transcript_service_name_is_ambiguous_with_multiple_services(rs):
     rs.start_fresh()
-    rs.save_service_session_metadata("claude", "thread-claude")
-    rs.save_service_session_metadata("opencode", "sess-opencode")
+    save_service_session_metadata(rs.path, "claude", "thread-claude")
+    save_service_session_metadata(rs.path, "opencode", "sess-opencode")
 
     assert rs.exact_transcript_service_name() is None
 
@@ -552,10 +655,16 @@ def test_role_session_reports_exact_provider_transcript_available_for_selected_o
         encoding="utf-8",
     )
     rs.save_service_session_id("opencode", "sess-opencode-123")
-    rs.save_service_session_metadata("opencode", "sess-opencode-123")
+    save_service_session_metadata(rs.path, "opencode", "sess-opencode-123")
     registry = ServiceRegistry({"opencode": cast(AgentService, service)})
 
-    assert rs.has_exact_provider_transcript_for_service(service) is True
+    assert (
+        rs.has_exact_provider_transcript_for_selected_service(
+            registry,
+            "opencode",
+        )
+        is True
+    )
     assert (
         rs.has_exact_transcript_handoff_for_selected_service(registry, "opencode")
         is True
@@ -592,7 +701,7 @@ def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_
         encoding="utf-8",
     )
     rs.save_service_session_id("codex", "thread-exact")
-    rs.save_service_session_metadata("codex", "thread-exact")
+    save_service_session_metadata(rs.path, "codex", "thread-exact")
     registry = ServiceRegistry(cast(dict[str, AgentService], registry_services))
 
     assert (
@@ -629,7 +738,7 @@ def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous
         encoding="utf-8",
     )
     rs.save_service_session_id("codex", "thread-old")
-    rs.save_service_session_metadata("codex", "thread-old")
+    save_service_session_metadata(rs.path, "codex", "thread-old")
     registry = ServiceRegistry({"codex": CodexService()})
 
     assert (
@@ -671,10 +780,13 @@ def test_role_session_reports_exact_provider_transcript_unavailable_without_exac
     if sidecar_value is not None:
         rs.save_service_session_id("opencode", sidecar_value)
     if metadata_value is not None:
-        rs.save_service_session_metadata("opencode", metadata_value)
+        save_service_session_metadata(rs.path, "opencode", metadata_value)
 
     assert (
-        rs.has_exact_provider_transcript_for_service(cast(AgentService, service))
+        rs.has_exact_provider_transcript_for_selected_service(
+            ServiceRegistry({service.name: cast(AgentService, service)}),
+            service.name,
+        )
         is False
     )
 
@@ -700,9 +812,15 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
         encoding="utf-8",
     )
     rs.save_service_session_id("codex", "thread-exact")
-    rs.save_service_session_metadata("codex", "thread-exact")
+    save_service_session_metadata(rs.path, "codex", "thread-exact")
 
-    assert rs.has_exact_provider_transcript_for_service(service) is True
+    assert (
+        rs.has_exact_provider_transcript_for_selected_service(
+            ServiceRegistry({service.name: service}),
+            service.name,
+        )
+        is True
+    )
 
     rollout_path.write_text(
         "\n".join(
@@ -715,7 +833,13 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
         encoding="utf-8",
     )
 
-    assert rs.has_exact_provider_transcript_for_service(service) is False
+    assert (
+        rs.has_exact_provider_transcript_for_selected_service(
+            ServiceRegistry({service.name: service}),
+            service.name,
+        )
+        is False
+    )
 
 
 # ── any_role_dir_present ──────────────────────────────────────────────────────

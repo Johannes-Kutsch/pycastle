@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from pycastle.services.agent_service import (
@@ -33,9 +34,41 @@ from pycastle.services.agent_service import (
     UsageLimit,
 )
 from pycastle.session import RoleSession, RunKind
+from pycastle.session.provider_session_state import (
+    load_service_session_id,
+    save_service_session_metadata,
+)
+from pycastle.session.resume import session_uuid_for_role_session_path
 from pycastle.session.service_resume_identity import (
     select_resumable_provider_session_id,
 )
+
+
+def _role_session_session_uuid(role_session: object) -> str:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        identity_uuid = session_uuid_for_role_session_path(role_session_path)
+        if identity_uuid is not None:
+            return identity_uuid
+    legacy = getattr(role_session, "session_uuid", None)
+    if callable(legacy):
+        return legacy()
+    raise AssertionError("Unable to derive role session identifier")
+
+
+def _role_session_service_session_id(
+    role_session: object,
+    service_name: str,
+) -> str | None:
+    role_session_path = getattr(role_session, "path", None)
+    if isinstance(role_session_path, Path):
+        saved_session_id = load_service_session_id(role_session_path, service_name)
+        if saved_session_id is not None:
+            return saved_session_id
+    legacy = getattr(role_session, "service_session_id", None)
+    if callable(legacy):
+        return legacy(service_name)
+    return None
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -404,7 +437,7 @@ def test_select_resumable_provider_session_id_does_not_recover_codex_rollout_thr
 
     assert selection.provider_session_id is None
     assert selection.persist_provider_session_id is False
-    assert role_session.service_session_id("codex") is None
+    assert _role_session_service_session_id(role_session, "codex") is None
 
 
 def test_provider_session_state_recovers_single_nested_codex_rollout_thread_id(
@@ -431,7 +464,9 @@ def test_provider_session_state_recovers_single_nested_codex_rollout_thread_id(
     assert provider_session_state.run_kind is RunKind.RESUME
     assert provider_session_state.provider_session_id == "thread-from-rollout"
     assert provider_session_state.persist_provider_session_id is True
-    assert role_session.service_session_id("codex") == "thread-from-rollout"
+    assert (
+        _role_session_service_session_id(role_session, "codex") == "thread-from-rollout"
+    )
 
 
 def test_provider_session_state_is_fresh_for_malformed_only_codex_rollouts(
@@ -466,7 +501,7 @@ def test_provider_session_state_is_fresh_for_malformed_only_codex_rollouts(
     assert provider_session_state.run_kind is RunKind.FRESH
     assert provider_session_state.provider_session_id is None
     assert provider_session_state.persist_provider_session_id is False
-    assert role_session.service_session_id("codex") is None
+    assert _role_session_service_session_id(role_session, "codex") is None
 
 
 def test_provider_session_state_is_fresh_for_distinct_codex_rollout_thread_ids(
@@ -499,7 +534,7 @@ def test_provider_session_state_is_fresh_for_distinct_codex_rollout_thread_ids(
     assert provider_session_state.run_kind is RunKind.FRESH
     assert provider_session_state.provider_session_id is None
     assert provider_session_state.persist_provider_session_id is False
-    assert role_session.service_session_id("codex") is None
+    assert _role_session_service_session_id(role_session, "codex") is None
 
 
 def test_provider_session_state_resumes_when_same_codex_rollout_thread_id_appears_in_multiple_files(
@@ -532,7 +567,7 @@ def test_provider_session_state_resumes_when_same_codex_rollout_thread_id_appear
     assert provider_session_state.run_kind is RunKind.RESUME
     assert provider_session_state.provider_session_id == "thread-abc"
     assert provider_session_state.persist_provider_session_id is True
-    assert role_session.service_session_id("codex") == "thread-abc"
+    assert _role_session_service_session_id(role_session, "codex") == "thread-abc"
 
 
 def test_provider_session_state_marks_exact_transcript_match_for_matching_codex_identity(
@@ -548,7 +583,7 @@ def test_provider_session_state_marks_exact_transcript_match_for_matching_codex_
         encoding="utf-8",
     )
     role_session.save_service_session_id("codex", "thread-abc")
-    role_session.save_service_session_metadata("codex", "thread-abc")
+    save_service_session_metadata(role_session.path, "codex", "thread-abc")
 
     provider_session_state = service.provider_session_state(
         ProviderSessionStateRequest(
@@ -575,7 +610,7 @@ def test_provider_session_state_accepts_exact_transcript_match_for_recovered_cod
         '{"type":"thread.started","thread_id":"thread-abc"}\n',
         encoding="utf-8",
     )
-    role_session.save_service_session_metadata("codex", "thread-abc")
+    save_service_session_metadata(role_session.path, "codex", "thread-abc")
 
     provider_session_state = service.provider_session_state(
         ProviderSessionStateRequest(
@@ -588,7 +623,7 @@ def test_provider_session_state_accepts_exact_transcript_match_for_recovered_cod
 
     assert provider_session_state.persist_provider_session_id is True
     assert provider_session_state.exact_transcript_match is True
-    assert role_session.service_session_id("codex") == "thread-abc"
+    assert _role_session_service_session_id(role_session, "codex") == "thread-abc"
 
 
 def test_provider_session_state_skips_exact_transcript_match_for_conflicting_codex_rollouts(
@@ -610,7 +645,7 @@ def test_provider_session_state_skips_exact_transcript_match_for_conflicting_cod
         encoding="utf-8",
     )
     role_session.save_service_session_id("codex", "thread-new")
-    role_session.save_service_session_metadata("codex", "thread-new")
+    save_service_session_metadata(role_session.path, "codex", "thread-new")
 
     provider_session_state = service.provider_session_state(
         ProviderSessionStateRequest(

@@ -15,6 +15,7 @@ from ..services import GitService, ServiceRegistry
 from ..services.agent_service import AgentService
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
+from ..runtime_session import session_uuid
 from ..display.status_display import StatusDisplay
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import (
@@ -269,11 +270,9 @@ async def improve_phase(
             deps=deps,
         ) as sandbox_path:
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
-            short_sid = (
-                RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
-                .session_uuid()
-                .split("-")[0]
-            )
+            short_sid = session_uuid(
+                sandbox_path, AgentRole.IMPROVE.value, "main"
+            ).split("-")[0]
             role_session_dir = role_session.path
             driver = ImprovePhaseDriver(role_session_dir, deps.cfg.diagnose_on_failure)
 
