@@ -468,18 +468,19 @@ def test_build_failure_report_scope_args_reports_usable_invocation_evidence(
 @dataclass
 class _EquivalentFailureReportSource:
     role_value: str
-    _session_dir: str
+    _session_store: str
     failure_class: str
+    worktree_path = None
 
     @property
-    def session_dir(self) -> str:
-        return self._session_dir
+    def session_store(self) -> str:
+        return self._session_store
 
 
 def test_build_failure_report_scope_args_accepts_equivalent_failed_agent_data():
     failure = _EquivalentFailureReportSource(
         role_value="planner",
-        _session_dir=".pycastle-session/planner/opencode",
+        _session_store=".pycastle-session/planner/opencode",
         failure_class="protocol_error",
     )
 
@@ -509,8 +510,10 @@ def test_agent_failed_error_session_dir_preserves_worktree_local_provider_layout
         service_name="codex",
     )
 
-    assert planner_failure.session_dir == ".pycastle-session/planner/opencode"
-    assert namespaced_failure.session_dir == ".pycastle-session/reviewer/main/codex"
+    assert str(planner_failure.session_store) == ".pycastle-session/planner/opencode"
+    assert (
+        str(namespaced_failure.session_store) == ".pycastle-session/reviewer/main/codex"
+    )
 
 
 def test_build_host_check_scope_args_builds_exact_renderable_host_check_args(

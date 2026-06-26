@@ -106,6 +106,9 @@ class ProtocolOutputAdapter:
         invocation_log_path: Path | str | None = None,
     ) -> AgentOutput:
         if isinstance(result, FailedOutput):
+            session_store = Path(".pycastle-session") / role.value / session_namespace
+            if service_name:
+                session_store = session_store / service_name
             raise AgentFailedError(
                 role_value=role.value,
                 worktree_path=mount_path,
@@ -113,6 +116,7 @@ class ProtocolOutputAdapter:
                 failure_class=result.failure_class,
                 service_name=service_name or "claude",
                 agent_invocation_log_path=invocation_log_path,
+                session_store=session_store,
             )
         return result
 

@@ -1043,15 +1043,6 @@ def test_run_session_plan_exposes_auth_seed_action_for_fresh_codex_without_auth_
     )
     assert action.missing_source_service_name == "codex"
     assert action.missing_source_status_code == 401
-    assert len(action.missing_source_observations) == 1
-    observation = action.missing_source_observations[0]
-    assert observation.service_name == "codex"
-    assert (
-        observation.raw_provider_text
-        == "Codex authentication missing: run `codex login` on the host."
-    )
-    assert observation.source_stream == "pre-dispatch host check"
-    assert observation.status_code == 401
 
 
 def test_run_session_plan_skips_auth_seed_action_for_fresh_codex_with_auth_json(
@@ -1533,10 +1524,6 @@ def test_local_auth_seed_action_require_source_raises_agent_credential_failure_w
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.service_name == "codex"
-    assert len(exc_info.value.observations) == 1
-    observation = exc_info.value.observations[0]
-    assert observation.source_stream == "pre-dispatch host check"
-    assert observation.status_code == 401
 
 
 def test_run_session_plan_capture_without_record_persists_session_id_but_not_metadata(

@@ -94,7 +94,7 @@ def test_pycastle_error_shims_preserve_legacy_service_and_session_defaults():
 
     assert hard_error.service_name == "claude"
     assert failed_error.service_name == "claude"
-    assert failed_error.session_dir == ".pycastle-session/implementer/claude"
+    assert str(failed_error.session_store) == ".pycastle-session/implementer/claude"
 
 
 def test_runtime_derived_pycastle_compatibility_errors_subclass_pycastle_error():

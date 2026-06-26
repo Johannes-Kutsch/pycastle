@@ -162,9 +162,12 @@ def test_build_command_fresh_includes_prompt_redirect():
 
 
 def test_process_stream_from_events_classifies_exact_refresh_token_reused_as_auth_lineage_exhaustion():
-    line = _error_line(
-        'Error: API request failed: 401 Unauthorized: {"type":"error","code":"refresh_token_reused","message":"This refresh token has already been used."}'
+    message = (
+        'Error: API request failed: 401 Unauthorized: {"type":"error",'
+        '"code":"refresh_token_reused","message":"This refresh token has already '
+        'been used."}'
     )
+    line = _error_line(message)
 
     with pytest.raises(AgentCredentialFailureError) as exc_info:
         process_stream_from_events(
@@ -177,13 +180,7 @@ def test_process_stream_from_events_classifies_exact_refresh_token_reused_as_aut
     assert exc_info.value.classification == "codex_auth_lineage_exhausted"
     assert exc_info.value.service_name == "codex"
     assert exc_info.value.status_code == 401
-    assert len(exc_info.value.observations) == 1
-    observation = exc_info.value.observations[0]
-    assert observation.service_name == "codex"
-    assert observation.source_stream == "json_event.error"
-    assert observation.status_code == 401
-    assert observation.provider_code == "refresh_token_reused"
-    assert "This refresh token has already been used." in observation.raw_provider_text
+    assert str(exc_info.value) == message
 
 
 # ── CodexService.build_command: resume session ───────────────────────────────

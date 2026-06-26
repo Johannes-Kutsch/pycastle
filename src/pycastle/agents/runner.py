@@ -150,12 +150,18 @@ async def translate_run_outcome(
     try:
         output = await inner
         if isinstance(output, FailedOutput):
+            session_store = Path(".pycastle-session") / request.role.value
+            if request.session_namespace:
+                session_store = session_store / request.session_namespace
+            if request.service:
+                session_store = session_store / request.service
             raise AgentFailedError(
                 role_value=request.role.value,
                 worktree_path=request.mount_path,
                 namespace=request.session_namespace,
                 failure_class=output.failure_class,
                 service_name=request.service or "claude",
+                session_store=session_store,
             )
         return output
     except AgentTimeoutError as err:

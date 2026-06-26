@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,
@@ -272,15 +271,7 @@ def test_opencode_service_routes_structured_invalid_api_key_through_shared_crede
         CredentialFailure(
             raw_message="invalid api key",
             service_name="opencode",
-            source_observations=(
-                ProviderErrorObservation(
-                    service_name="opencode",
-                    raw_provider_text="invalid api key",
-                    source_stream="json_event.error",
-                    status_code=401,
-                    error_name="AuthenticationError",
-                ),
-            ),
+            source_observations=(("json_event.error", "invalid api key"),),
             status_code=401,
             classification="operator_actionable_agent_credential_failure",
         )

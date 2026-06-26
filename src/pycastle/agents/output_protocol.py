@@ -429,14 +429,12 @@ def _translate_runtime_provider_failure(
             status_code=error.status_code,
             service_name=error.service_name,
             classification=error.classification,
-            observations=error.observations,
         ) from error
     raise HardAgentError(
         message=str(error),
         status_code=error.status_code,
         service_name=error.service_name,
         classification=error.classification,
-        observations=error.observations,
     ) from error
 
 

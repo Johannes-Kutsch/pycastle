@@ -27,7 +27,6 @@ from pycastle.agents._work_invocation import (
 from pycastle.agents.runner import AgentRunner
 from pycastle.agents.output_protocol import AgentOutput, AgentRole, CompletionOutput
 from pycastle import parsed_event_reducer
-from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.provider_session_adapter import (
     ProviderSessionPlanningFacts,
     ProviderSessionPlanningRequest,
@@ -1464,15 +1463,6 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_transient_agent_err
 
 
 def test_runtime_parsed_event_reducer_failure_surface_raises_hard_agent_error() -> None:
-    observations = (
-        ProviderErrorObservation(
-            service_name="codex",
-            raw_provider_text="provider rejected request",
-            source_stream="stderr",
-            status_code=403,
-            error_name="permission_denied",
-        ),
-    )
 
     with pytest.raises(HardAgentError) as excinfo:
         parsed_event_reducer.reduce_text_output_events(
@@ -1481,7 +1471,6 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_hard_agent_error() 
                     status_code=403,
                     raw_message="provider rejected request",
                     classification="permission_denied",
-                    observations=observations,
                 ),
             ),
             lambda _turn: None,
@@ -1491,7 +1480,6 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_hard_agent_error() 
     assert str(excinfo.value) == "provider rejected request"
     assert excinfo.value.status_code == 403
     assert excinfo.value.classification == "permission_denied"
-    assert excinfo.value.observations == observations
     assert excinfo.value.service_name == "codex"
 
 
@@ -1516,14 +1504,6 @@ def test_runtime_parsed_event_reducer_failure_surface_keeps_empty_provider_ident
 def test_runtime_parsed_event_reducer_failure_surface_raises_credential_failure() -> (
     None
 ):
-    observations = (
-        ProviderErrorObservation(
-            service_name="codex",
-            raw_provider_text="run `codex login`",
-            source_stream="stderr",
-            status_code=401,
-        ),
-    )
 
     with pytest.raises(AgentCredentialFailureError) as excinfo:
         parsed_event_reducer.reduce_text_output_events(
@@ -1532,7 +1512,9 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_credential_failure(
                     raw_message="Codex authentication missing",
                     service_name="codex",
                     classification="operator_actionable_credential_failure",
-                    source_observations=observations,
+                    source_observations=(
+                        ("json_event.error", "Codex authentication missing"),
+                    ),
                     status_code=401,
                 ),
             ),
@@ -1543,7 +1525,6 @@ def test_runtime_parsed_event_reducer_failure_surface_raises_credential_failure(
     assert str(excinfo.value) == "Codex authentication missing"
     assert excinfo.value.status_code == 401
     assert excinfo.value.classification == "operator_actionable_credential_failure"
-    assert excinfo.value.observations == observations
     assert excinfo.value.service_name == "codex"
 
 
@@ -1726,7 +1707,7 @@ def test_runtime_public_errors_do_not_default_missing_service_names_to_claude():
 
     assert hard_error.service_name == ""
     assert failed_error.service_name == ""
-    assert failed_error.session_dir == ".pycastle-session/implementer"
+    assert str(failed_error.session_store) == ".pycastle-session/implementer"
 
 
 def test_runtime_provider_state_relpath_normalizes_legacy_namespaced_layout(
@@ -1813,7 +1794,7 @@ def test_runtime_session_helpers_use_caller_supplied_session_root_and_provider_p
         service_name="codex",
     )
 
-    assert failure.session_dir == ".pycastle-session/reviewer/main/codex"
+    assert str(failure.session_store) == ".pycastle-session/reviewer/main/codex"
 
 
 def test_runtime_session_helpers_default_to_provider_neutral_relpaths():
@@ -2382,7 +2363,6 @@ def test_runtime_resident_session_plan_exposes_provider_metadata_without_persist
 def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy(
     tmp_path: Path,
 ) -> None:
-    from pycastle.provider_errors import ProviderErrorObservation
     from pycastle.agents.output_protocol import AgentRole as RuntimeAgentRole
     from pycastle.runtime_session import ProviderSessionState, RunKind
     from pycastle.session_planning import (
@@ -2394,12 +2374,6 @@ def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy
 
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "generic"
     missing = tmp_path / "host" / "generic-creds.json"
-    observation = ProviderErrorObservation(
-        service_name="generic",
-        raw_provider_text="Generic credentials missing on the host.",
-        source_stream="pre-dispatch host check",
-        status_code=403,
-    )
     role_session = _RuntimeRoleSessionStandIn(
         _RuntimeServiceSessionState(
             state_dir=state_dir,
@@ -2422,7 +2396,6 @@ def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy
                 missing_source_classification=(
                     "operator_actionable_credential_failure"
                 ),
-                missing_source_observations=(observation,),
             ),
         ),
     )
@@ -2447,7 +2420,6 @@ def test_runtime_provider_state_plan_preserves_provider_auth_seed_failure_policy
     assert excinfo.value.service_name == "generic"
     assert excinfo.value.status_code == 403
     assert excinfo.value.classification == "operator_actionable_credential_failure"
-    assert excinfo.value.observations == (observation,)
 
 
 def test_runtime_provider_state_plan_without_provider_auth_seed_policy_raises_file_not_found(
@@ -3684,7 +3656,6 @@ def test_runtime_package_prompt_entrypoint_fills_missing_credential_failure_serv
                 "credential failure from provider adapter",
                 status_code=401,
                 service_name="",
-                observations=(),
             )
 
     adapter.work_runner = _CredentialFailureRunner()
@@ -3752,7 +3723,6 @@ def test_runtime_package_prompt_entrypoint_preserves_provider_named_credential_f
                 "credential failure from provider adapter",
                 status_code=401,
                 service_name="claude",
-                observations=(),
             )
 
     adapter.work_runner = _CredentialFailureRunner()
@@ -3923,7 +3893,6 @@ def test_runtime_package_invoke_work_preserves_provider_named_credential_failure
                 "credential failure from provider adapter",
                 status_code=401,
                 service_name="claude",
-                observations=(),
             )
 
     with pytest.raises(AgentCredentialFailureError) as excinfo:
@@ -3981,7 +3950,6 @@ def test_runtime_package_invoke_work_fills_missing_credential_failure_service_na
                 "credential failure from provider adapter",
                 status_code=401,
                 service_name="",
-                observations=(),
             )
 
     with pytest.raises(AgentCredentialFailureError) as excinfo:

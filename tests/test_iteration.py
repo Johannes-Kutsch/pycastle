@@ -19,7 +19,6 @@ from pycastle.errors import (
 from pycastle.config import Config, StageOverride
 from pycastle.services import GitService
 from pycastle.services import GithubService
-from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.agent_credential_failure_routing import (
     AgentCredentialFailureRouteResult,
 )
@@ -2951,14 +2950,6 @@ def test_run_iteration_routes_failure_report_credential_failure_through_shared_t
         "Credential failure observed while running the Failure-Report agent.",
         status_code=401,
         service_name="codex",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text="Provider adapter surfaced a credential failure.",
-                source_stream="pre-dispatch host check",
-                status_code=401,
-            ),
-        ),
     )
     credential_error.caller = "Failure Report Agent"
     response_queue: list = [original_error, credential_error]
@@ -4239,14 +4230,6 @@ def test_run_iteration_preserves_codex_consuming_project_routing_for_distinct_cr
         status_code=401,
         service_name="codex",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text="credential failure observed by provider adapter",
-                source_stream="json_event.error",
-                status_code=401,
-            ),
-        ),
     )
     credential_error.caller = "Implementer"
 
@@ -4321,14 +4304,6 @@ def test_run_iteration_keeps_generic_codex_shared_classification_on_hard_provide
             status_code=401,
             service_name="codex",
             classification="operator_actionable_agent_credential_failure",
-            observations=(
-                ProviderErrorObservation(
-                    service_name="codex",
-                    raw_provider_text="Unauthorized: invalid token",
-                    source_stream="json_event.error",
-                    status_code=401,
-                ),
-            ),
         )
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
@@ -4358,7 +4333,6 @@ def test_run_iteration_keeps_generic_codex_agent_credential_failure_without_clas
             message=raw_line,
             status_code=401,
             service_name="codex",
-            observations=(),
         )
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:

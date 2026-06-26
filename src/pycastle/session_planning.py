@@ -4,7 +4,7 @@ import dataclasses
 import shutil
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from .agents.output_protocol import AgentRole
 from .services.agent_service import AgentService
@@ -46,9 +46,6 @@ class LocalAuthSeedAction:
         default=None,
         compare=False,
     )
-    missing_source_observations: tuple[Any, ...] = dataclasses.field(
-        default=(), compare=False
-    )
 
     def require_source(self) -> Path:
         if not self.source.exists():
@@ -64,7 +61,6 @@ class LocalAuthSeedAction:
                 status_code=self.missing_source_status_code,
                 service_name=self.missing_source_service_name,
                 classification=self.missing_source_classification,
-                observations=self.missing_source_observations,
             )
         return self.source
 

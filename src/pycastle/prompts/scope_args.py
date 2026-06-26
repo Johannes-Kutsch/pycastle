@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import platform
+from pathlib import Path
 from collections.abc import Sequence
 from typing import Protocol
 
@@ -15,9 +16,8 @@ _ISSUE_VALUE_KEYS = Scope.PER_ISSUE.placeholders & Scope.IMPROVE_ISSUES.placehol
 class FailureReportSource(Protocol):
     role_value: str
     failure_class: str
-
-    @property
-    def session_dir(self) -> str: ...
+    session_store: str | Path
+    worktree_path: Path
 
 
 def _format_issue_comments(comments: Sequence[dict[str, str]]) -> str:
@@ -170,14 +170,27 @@ def build_host_check_scope_args(
 
 
 def build_failure_report_scope_args(failure: FailureReportSource) -> dict[str, str]:
+    session_store = failure.session_store
+    if isinstance(session_store, Path):
+        failure_session_dir = session_store
+    else:
+        failure_session_dir = Path(session_store)
     raw_evidence_path = getattr(failure, "agent_invocation_log_path", None)
     evidence_path = str(raw_evidence_path) if raw_evidence_path is not None else ""
     has_evidence_path = "yes" if evidence_path else "no"
+    worktree_path = getattr(failure, "worktree_path", None)
+    if isinstance(worktree_path, Path):
+        try:
+            session_dir = failure_session_dir.relative_to(worktree_path).as_posix()
+        except ValueError:
+            session_dir = failure_session_dir.as_posix()
+    else:
+        session_dir = failure_session_dir.as_posix()
     return validated_scope_args_for_template(
         PromptTemplate.FAILURE_REPORT,
         {
             "FAILED_ROLE": failure.role_value,
-            "SESSION_DIR": failure.session_dir,
+            "SESSION_DIR": session_dir,
             "EVIDENCE_PATH": evidence_path,
             "HAS_EVIDENCE_PATH": has_evidence_path,
             "FAILURE_CLASS": failure.failure_class,

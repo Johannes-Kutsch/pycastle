@@ -15,7 +15,6 @@ from pycastle.services.agent_service import (
     TransientError,
     UsageLimit,
 )
-from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -169,15 +168,7 @@ def _extract_credential_failure(event: dict[str, object]) -> CredentialFailure |
             raw_message=message,
             service_name="opencode",
             classification="operator_actionable_agent_credential_failure",
-            source_observations=(
-                ProviderErrorObservation(
-                    service_name="opencode",
-                    raw_provider_text=message,
-                    source_stream="json_event.error",
-                    status_code=401,
-                    error_name="AuthenticationError",
-                ),
-            ),
+            source_observations=(("json_event.error", message),),
             status_code=401,
         )
     return None

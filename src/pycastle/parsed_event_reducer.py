@@ -55,15 +55,16 @@ def reduce_provider_failure(
             status_code=event.status_code,
             service_name=provider or "",
             classification=event.classification,
-            observations=event.observations,
         )
-    raise AgentCredentialFailureError(
+    error = AgentCredentialFailureError(
         message=event.raw_message,
         status_code=event.status_code,
         service_name=event.service_name,
         classification=event.classification,
-        observations=event.source_observations,
     )
+    if event.source_observations:
+        setattr(error, "source_observations", event.source_observations)
+    raise error
 
 
 def reduce_successful_text_output_events(

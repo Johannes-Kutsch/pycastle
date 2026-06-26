@@ -1668,7 +1668,6 @@ def test_managed_worktree_cleans_up_on_agent_credential_failure(branch_deps):
                     message="Codex authentication missing: run `codex login` on the host.",
                     status_code=401,
                     service_name="codex",
-                    observations=(),
                 )
 
     asyncio.run(_run())
@@ -1707,7 +1706,6 @@ def test_managed_worktree_preserves_independent_worktree_state_on_agent_credenti
                     message="Codex authentication missing: run `codex login` on the host.",
                     status_code=401,
                     service_name="codex",
-                    observations=(),
                 )
 
     asyncio.run(_run())
