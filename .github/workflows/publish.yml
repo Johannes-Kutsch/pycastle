@@ -34,6 +34,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          token: ${{ secrets.PUBLISH_PUSH_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:

@@ -119,6 +119,14 @@ def _run_script(
     )
 
 
+def test_publish_workflow_uses_privileged_push_token_for_autofix_retrigger():
+    workflow = (
+        Path(__file__).parent.parent / ".github" / "workflows" / "publish.yml"
+    ).read_text()
+
+    assert "token: ${{ secrets.PUBLISH_PUSH_TOKEN }}" in workflow
+
+
 def test_format_and_check_fix_are_applied_then_pushed_for_branch_context(
     tmp_path,
     ruff_shim,
@@ -335,3 +343,41 @@ def test_idempotent_second_run_without_new_changes_emits_proceed(tmp_path, ruff_
 
     assert local_before == local_after == remote_head
     assert count_before == count_after
+
+
+def test_fix_push_writes_status_output_for_workflow_handoff(tmp_path, ruff_shim):
+    repo = _bootstrap_repo_with_bare_remote(tmp_path)
+    (repo / "bad_format.py").write_text("def  format_bad(   x ):\n    return  x\n")
+    (repo / "lint_fix.py").write_text("x=2\n")
+
+    ruff_bin, _ = ruff_shim
+    script = Path(__file__).parent.parent / ".github" / "scripts" / "ci-autofix.sh"
+    output_file = tmp_path / "github_output.txt"
+
+    env = os.environ.copy()
+    env["PATH"] = f"{ruff_bin}:{env['PATH']}"
+    env["GITHUB_REF"] = "refs/heads/main"
+    env["GITHUB_OUTPUT"] = str(output_file)
+
+    result = _run_script(script, repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert output_file.read_text() == "status=fix-pushed\n"
+
+
+def test_clean_tree_writes_proceed_status_output(tmp_path, ruff_shim):
+    repo = _bootstrap_repo_with_bare_remote(tmp_path, clean_seed=True)
+
+    ruff_bin, _ = ruff_shim
+    script = Path(__file__).parent.parent / ".github" / "scripts" / "ci-autofix.sh"
+    output_file = tmp_path / "github_output.txt"
+
+    env = os.environ.copy()
+    env["PATH"] = f"{ruff_bin}:{env['PATH']}"
+    env["GITHUB_REF"] = "refs/heads/main"
+    env["GITHUB_OUTPUT"] = str(output_file)
+
+    result = _run_script(script, repo, env)
+
+    assert result.returncode == 0, result.stderr
+    assert output_file.read_text() == "status=proceed\n"
