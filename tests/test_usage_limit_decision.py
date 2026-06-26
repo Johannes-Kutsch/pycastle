@@ -14,10 +14,11 @@ from pycastle.config.types import StageOverride
 from pycastle.services.service_registry import ServiceRegistry
 from pycastle.usage_limit_decision import (
     ContinueNow,
+    PermanentlyExhausted,
     SleepUntil,
     Stop,
+    TemporaryUsageLimit,
     UsageLimitContinuationDecision,
-    UsageLimitOutcome,
     decide_usage_limit_continuation,
 )
 from pycastle.services._wake_time import compute_wake_time
@@ -25,18 +26,27 @@ from pycastle.services.agent_service import AgentService
 
 runtime: Any = SimpleNamespace(
     ContinueNow=ContinueNow,
+    PermanentlyExhausted=PermanentlyExhausted,
     ServiceRegistry=ServiceRegistry,
     SleepUntil=SleepUntil,
     StageOverride=StageOverride,
     Stop=Stop,
+    TemporaryUsageLimit=TemporaryUsageLimit,
     UsageLimitContinuationDecision=UsageLimitContinuationDecision,
-    UsageLimitOutcome=UsageLimitOutcome,
     decide_usage_limit_continuation=decide_usage_limit_continuation,
 )
 
 
 def _now() -> datetime:
     return datetime(2026, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
+
+
+def test_usage_limit_module_exports_distinct_outcome_types():
+    import pycastle.usage_limit_decision as usage_limit_module
+
+    assert usage_limit_module.TemporaryUsageLimit is TemporaryUsageLimit
+    assert usage_limit_module.PermanentlyExhausted is PermanentlyExhausted
+    assert not hasattr(usage_limit_module, "UsageLimitOutcome")
 
 
 def _make_service(*, available: bool, wake_time: datetime | None = None) -> MagicMock:
@@ -61,7 +71,7 @@ def _stage_override(
 
 
 def _decide(
-    outcome: runtime.UsageLimitOutcome,
+    outcome: runtime.TemporaryUsageLimit | runtime.PermanentlyExhausted,
     *,
     stage_override: runtime.StageOverride | None,
     service_registry: runtime.ServiceRegistry | None,
@@ -87,7 +97,7 @@ def test_decide_usage_limit_continuation_returns_continue_now_for_stage_fallback
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=_stage_override("claude", "codex"),
         service_registry=registry,
         now=_now(),
@@ -107,7 +117,7 @@ def test_decide_usage_limit_continuation_includes_same_day_switch_message():
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=_stage_override("claude", "codex"),
         service_registry=registry,
         now=_now(),
@@ -131,7 +141,7 @@ def test_decide_usage_limit_continuation_formats_same_local_day_switch_message()
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=_stage_override("claude", "codex"),
         service_registry=registry,
         now=now,
@@ -155,7 +165,7 @@ def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=_stage_override("claude", "codex"),
         service_registry=registry,
         now=_now(),
@@ -181,7 +191,7 @@ def test_decide_usage_limit_continuation_keeps_failing_service_wake_on_continue_
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(provider="claude"),
+        runtime.TemporaryUsageLimit(provider="claude"),
         stage_override=runtime.StageOverride(
             service="claude",
             fallback=runtime.StageOverride(
@@ -211,7 +221,7 @@ def test_decide_usage_limit_continuation_formats_cross_day_sleep_message():
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=_stage_override("claude", "codex"),
         service_registry=registry,
         now=now,
@@ -236,7 +246,7 @@ def test_decide_usage_limit_continuation_formats_same_local_day_sleep_message():
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=_stage_override("claude", "codex"),
         service_registry=registry,
         now=now,
@@ -261,7 +271,7 @@ def test_decide_usage_limit_continuation_ignores_exhausted_services_outside_stag
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=_stage_override("claude", "codex"),
         service_registry=registry,
         now=_now(),
@@ -285,7 +295,7 @@ def test_decide_usage_limit_continuation_ignores_available_services_outside_stag
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=runtime.StageOverride(service="missing"),
         service_registry=registry,
         now=_now(),
@@ -310,7 +320,7 @@ def test_decide_usage_limit_continuation_uses_global_fallback_when_stage_priorit
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=None,
         service_registry=registry,
         now=_now(),
@@ -333,7 +343,7 @@ def test_decide_usage_limit_continuation_uses_global_next_wake_when_stage_priori
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(),
+        runtime.TemporaryUsageLimit(),
         stage_override=None,
         service_registry=registry,
         now=_now(),
@@ -352,21 +362,16 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion():
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(is_permanent=True),
+        runtime.PermanentlyExhausted(reason="credential_failure"),
         stage_override=runtime.StageOverride(service="claude"),
         service_registry=registry,
         now=_now(),
     )
 
-    assert decision == runtime.Stop(
-        message=(
-            "claude unknown account retired for this run and will be retried on the "
-            "next run."
-        )
-    )
+    assert decision == runtime.Stop(message="credential_failure")
 
 
-def test_decide_usage_limit_continuation_returns_continue_now_for_permanent_exhaustion_with_fallback():
+def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_with_fallback():
     denial = "disabled Claude subscription access for Claude Code"
     primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
     registry = runtime.ServiceRegistry(
@@ -377,24 +382,23 @@ def test_decide_usage_limit_continuation_returns_continue_now_for_permanent_exha
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(
+        runtime.PermanentlyExhausted(
+            reason="credential_failure",
             provider="claude",
             account_label="secondary",
             raw_message=denial,
-            is_permanent=True,
         ),
         stage_override=_stage_override("claude", "codex"),
         service_registry=registry,
         now=_now(),
     )
 
-    assert decision == runtime.ContinueNow(
+    assert decision == runtime.Stop(
         message=(
             "claude secondary account retired for this run and will be retried on "
             "the next run. Claude said: disabled Claude subscription access for "
             "Claude Code"
-        ),
-        exhausted_wake_time=primary_wake,
+        )
     )
 
 
@@ -408,11 +412,11 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_without_c
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(
+        runtime.PermanentlyExhausted(
+            reason="credential_failure",
             provider="claude",
             account_label="primary",
             raw_message=denial,
-            is_permanent=True,
         ),
         stage_override=runtime.StageOverride(service="claude"),
         service_registry=registry,
@@ -434,11 +438,11 @@ def test_decide_usage_limit_continuation_uses_observed_provider_label_for_non_cl
     )
 
     decision = _decide(
-        runtime.UsageLimitOutcome(
+        runtime.PermanentlyExhausted(
+            reason="credential_failure",
             provider="OpenCode",
             account_label="primary",
             raw_message="usage limit reached for this account",
-            is_permanent=True,
         ),
         stage_override=runtime.StageOverride(service="opencode"),
         service_registry=registry,
@@ -457,7 +461,7 @@ def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
     now = _now()
 
     decision = _decide(
-        runtime.UsageLimitOutcome(reset_time=None),
+        runtime.TemporaryUsageLimit(reset_time=None),
         stage_override=None,
         service_registry=None,
         now=now,
@@ -477,7 +481,7 @@ def test_decide_usage_limit_continuation_uses_exact_reset_time_without_registry(
     reset_time = datetime(2026, 1, 1, 15, 30, 0, tzinfo=timezone.utc)
 
     decision = _decide(
-        runtime.UsageLimitOutcome(reset_time=reset_time),
+        runtime.TemporaryUsageLimit(reset_time=reset_time),
         stage_override=None,
         service_registry=None,
         now=now,
@@ -497,7 +501,7 @@ def test_decide_usage_limit_continuation_formats_cross_day_exact_reset_without_r
     reset_time = datetime(2026, 1, 2, 0, 30, 0, tzinfo=timezone.utc)
 
     decision = _decide(
-        runtime.UsageLimitOutcome(reset_time=reset_time),
+        runtime.TemporaryUsageLimit(reset_time=reset_time),
         stage_override=None,
         service_registry=None,
         now=now,
@@ -514,7 +518,7 @@ def test_decide_usage_limit_continuation_keeps_stage_key_behavior_without_regist
     now = _now()
 
     decision = _decide(
-        runtime.UsageLimitOutcome(reset_time=None),
+        runtime.TemporaryUsageLimit(reset_time=None),
         stage_override=runtime.StageOverride(service="claude"),
         service_registry=None,
         now=now,

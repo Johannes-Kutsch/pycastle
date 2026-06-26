@@ -42,8 +42,9 @@ from pycastle.errors import (
 from pycastle.work import RunSessionPlan, reduce_text_output_events
 from pycastle.usage_limit_decision import (
     ContinueNow,
+    PermanentlyExhausted,
     Stop,
-    UsageLimitOutcome,
+    TemporaryUsageLimit,
     decide_usage_limit_continuation,
 )
 from pycastle.runtime_session import (
@@ -151,8 +152,9 @@ def _runtime_namespace() -> SimpleNamespace:
         ServiceRegistry=ServiceRegistry,
         StageOverride=StageOverride,
         Stop=Stop,
+        PermanentlyExhausted=PermanentlyExhausted,
+        TemporaryUsageLimit=TemporaryUsageLimit,
         ToolPolicy=runtime_module.ToolPolicy,
-        UsageLimitOutcome=UsageLimitOutcome,
         WorktreeMount=runtime_module.WorktreeMount,
         decide_usage_limit_continuation=decide_usage_limit_continuation,
         errors=pycastle_errors,

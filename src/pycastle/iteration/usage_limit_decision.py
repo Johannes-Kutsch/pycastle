@@ -2,10 +2,11 @@ from datetime import datetime, timedelta
 
 from pycastle.usage_limit_decision import (
     ContinueNow as _ContinueNow,
+    PermanentlyExhausted,
     SleepUntil as _SleepUntil,
     Stop as _Stop,
+    TemporaryUsageLimit,
     UsageLimitContinuationDecision,
-    UsageLimitOutcome,
     decide_usage_limit_continuation as _decide_usage_limit_continuation,
 )
 from pycastle.services.service_registry import ServiceRegistry
@@ -55,14 +56,24 @@ def decide_usage_limit_continuation(
             minimum_unknown_reset_duration=minimum_unknown_reset_duration,
         )
 
-    return _decide_usage_limit_continuation(
-        UsageLimitOutcome(
+    limit_outcome: TemporaryUsageLimit | PermanentlyExhausted
+    if outcome.is_permanent:
+        limit_outcome = PermanentlyExhausted(
+            reason="credential_failure",
+            provider=outcome.provider,
+            raw_message=outcome.raw_message,
+            account_label=outcome.account_label,
+        )
+    else:
+        limit_outcome = TemporaryUsageLimit(
             reset_time=outcome.reset_time,
             provider=outcome.provider,
             raw_message=outcome.raw_message,
             account_label=outcome.account_label,
-            is_permanent=outcome.is_permanent,
-        ),
+        )
+
+    return _decide_usage_limit_continuation(
+        limit_outcome,
         stage_override=_override_for_stage_key(cfg, outcome.stage_key),
         service_registry=service_registry,
         now=now,

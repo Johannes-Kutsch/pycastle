@@ -333,10 +333,11 @@ def test_agent_runtime_package_exports_the_runtime_surface():
     from pycastle.config.types import StageOverride
     from pycastle.usage_limit_decision import (
         ContinueNow,
+        PermanentlyExhausted,
         SleepUntil,
         Stop,
+        TemporaryUsageLimit,
         UsageLimitContinuationDecision,
-        UsageLimitOutcome,
         decide_usage_limit_continuation,
     )
     from pycastle.runtime import __all__ as runtime_all
@@ -359,11 +360,12 @@ def test_agent_runtime_package_exports_the_runtime_surface():
         SleepUntil=SleepUntil,
         StageOverride=StageOverride,
         Stop=Stop,
+        PermanentlyExhausted=PermanentlyExhausted,
+        TemporaryUsageLimit=TemporaryUsageLimit,
         TransientError=TransientError,
         UnsupportedTokens=UnsupportedTokens,
         UsageLimit=UsageLimit,
         UsageLimitContinuationDecision=UsageLimitContinuationDecision,
-        UsageLimitOutcome=UsageLimitOutcome,
         decide_usage_limit_continuation=decide_usage_limit_continuation,
         iter_stage_chain=iter_stage_chain,
         __all__=runtime_all,
@@ -390,7 +392,8 @@ def test_agent_runtime_package_exports_the_runtime_surface():
     assert runtime.TransientError is TransientError
     assert runtime.UnsupportedTokens is UnsupportedTokens
     assert runtime.UsageLimitContinuationDecision is UsageLimitContinuationDecision
-    assert runtime.UsageLimitOutcome is UsageLimitOutcome
+    assert runtime.PermanentlyExhausted is PermanentlyExhausted
+    assert runtime.TemporaryUsageLimit is TemporaryUsageLimit
     assert runtime.UsageLimit is UsageLimit
     assert "AgentRunner" not in runtime.__all__
     assert "AgentRunnerProtocol" not in runtime.__all__

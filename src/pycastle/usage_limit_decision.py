@@ -9,12 +9,19 @@ from .config.types import StageOverride
 
 
 @dataclasses.dataclass(frozen=True)
-class UsageLimitOutcome:
+class TemporaryUsageLimit:
     reset_time: datetime | None = None
     provider: str | None = None
     raw_message: str | None = None
     account_label: str | None = None
-    is_permanent: bool = False
+
+
+@dataclasses.dataclass(frozen=True)
+class PermanentlyExhausted:
+    reason: str
+    provider: str | None = None
+    raw_message: str | None = None
+    account_label: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -54,7 +61,13 @@ def _sleep_message(wake: datetime, now: datetime, *, is_estimated: bool) -> str:
     )
 
 
-def _permanent_exhaustion_message(outcome: UsageLimitOutcome) -> str:
+def _permanent_exhaustion_message(outcome: PermanentlyExhausted) -> str:
+    if (
+        outcome.provider is None
+        and outcome.account_label is None
+        and outcome.raw_message is None
+    ):
+        return outcome.reason
     provider_label = outcome.provider or "claude"
     account = outcome.account_label or "unknown"
     message = (
@@ -78,7 +91,7 @@ def _provider_message_label(provider_label: str) -> str:
 
 
 def decide_usage_limit_continuation(
-    outcome: UsageLimitOutcome,
+    outcome: TemporaryUsageLimit | PermanentlyExhausted,
     *,
     stage_override: StageOverride | None,
     service_registry: ServiceRegistry | None,
@@ -94,6 +107,9 @@ def decide_usage_limit_continuation(
         has_available = service_registry.has_available_for(stage_override, now)
     else:
         has_available = service_registry.has_available(now)
+
+    if isinstance(outcome, PermanentlyExhausted):
+        return Stop(message=_permanent_exhaustion_message(outcome))
 
     if has_available:
         if service_registry is None:
@@ -117,9 +133,7 @@ def decide_usage_limit_continuation(
         else:
             exhausted_wake_time = service_registry.next_wake_time(now)
         message = None
-        if outcome.is_permanent:
-            message = _permanent_exhaustion_message(outcome)
-        elif exhausted_wake_time is not None:
+        if exhausted_wake_time is not None:
             message = (
                 f"Account exhausted until {_fmt_wake(exhausted_wake_time, now)}, "
                 "switching to next available."
@@ -128,9 +142,6 @@ def decide_usage_limit_continuation(
             message=message,
             exhausted_wake_time=exhausted_wake_time,
         )
-
-    if outcome.is_permanent:
-        return Stop(message=_permanent_exhaustion_message(outcome))
 
     if service_registry is None:
         next_wake = None
