@@ -2742,17 +2742,55 @@ def test_run_iteration_failure_report_includes_evidence_path_and_copies_invocati
     assert copied_log.read_bytes() == source_log.read_bytes()
 
 
-def test_evidence_relative_path_normalizes_windows_style_relative_paths(monkeypatch):
+def test_run_iteration_failure_report_normalizes_windows_style_evidence_path(
+    tmp_path, git_svc, logger, monkeypatch
+):
     import pycastle.iteration as iteration
+
+    calls: list[RunRequest] = []
+    expected_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    source_log = tmp_path / "captured-agent.log"
+    source_log.write_bytes(b'{"type":"result","result":"attempt-1"}\n')
+    original_error = AgentFailedError(
+        role_value="improve",
+        worktree_path=expected_path,
+        failure_class="protocol_error",
+        service_name="codex",
+    )
+    original_error.agent_invocation_log_path = source_log
+    response_queue = [original_error, IssueOutput(number=99, labels=["bug"])]
+
+    async def agent_fn(req: RunRequest):
+        calls.append(req)
+        return response_queue.pop(0)
 
     monkeypatch.setattr(
         iteration,
         "_EVIDENCE_DIR",
         PureWindowsPath(".pycastle-session") / "failure-report",
     )
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
 
-    assert iteration._evidence_relative_path() == (
-        ".pycastle-session/failure-report/agent-invocation.log"
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            agent_fn,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(
+                preflight_issue_override=StageOverride(service="codex", effort="medium")
+            ),
+        ),
+        improve_mode="endless",
+    )
+
+    asyncio.run(run_iteration(deps))
+
+    assert (
+        calls[1].prompt.scope_args["EVIDENCE_PATH"]
+        == ".pycastle-session/failure-report/agent-invocation.log"
     )
 
 
