@@ -679,10 +679,14 @@ class AgentRunner:
             request.role,
             request.session_namespace,
         )
-        state_dir_relpath = service.state_dir_relpath(request.role, request.session_namespace)
+        state_dir_relpath = service.state_dir_relpath(
+            request.role, request.session_namespace
+        )
         if state_dir_relpath is not None:
             provider_state_dir: Path = request.mount_path / state_dir_relpath
-            state_dir_container_path = str(Path(_CONTAINER_WORKSPACE) / state_dir_relpath)
+            state_dir_container_path = str(
+                Path(_CONTAINER_WORKSPACE) / state_dir_relpath
+            )
         else:
             provider_state_dir = role_session.path
             state_dir_container_path = str(
