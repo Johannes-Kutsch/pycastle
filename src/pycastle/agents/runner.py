@@ -60,6 +60,7 @@ from ..prompts.dispatch import (
     render_prompt_invocation,
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
+from ..runtime_session import ProviderSessionStateRequest
 from ..session import RoleSession, RunKind
 from ..session.agent import (
     RunSessionPlan,
@@ -678,10 +679,25 @@ class AgentRunner:
             request.role,
             request.session_namespace,
         )
-        state_dir_container_path = str(
-            Path(_CONTAINER_WORKSPACE)
-            / role_session.path.relative_to(request.mount_path)
+        state_dir_relpath = service.state_dir_relpath(request.role, request.session_namespace)
+        if state_dir_relpath is not None:
+            provider_state_dir: Path = request.mount_path / state_dir_relpath
+            state_dir_container_path = str(Path(_CONTAINER_WORKSPACE) / state_dir_relpath)
+        else:
+            provider_state_dir = role_session.path
+            state_dir_container_path = str(
+                Path(_CONTAINER_WORKSPACE)
+                / role_session.path.relative_to(request.mount_path)
+            )
+        _seed_state = service.provider_session_state(
+            ProviderSessionStateRequest(
+                role_session=role_session,
+                provider_state_dir=provider_state_dir,
+                has_resumable_provider_state=role_session.is_resumable(),
+            )
         )
+        if _seed_state.auth_seed_action is not None:
+            _seed_state.auth_seed_action.apply()
         provider_auth = _provider_auth_from_env(
             service.build_env(state_dir_container_path)
         )
