@@ -237,6 +237,7 @@ def test_container_runner_builds_argv_transform_for_container_invocation(tmp_pat
     assert transformed == (
         "docker",
         "exec",
+        "-i",
         "container-123",
         "-e",
         "CLAUDE_CODE_OAUTH_TOKEN=token-abc",
@@ -244,6 +245,21 @@ def test_container_runner_builds_argv_transform_for_container_invocation(tmp_pat
         "OPENCODE_CONFIG_CONTENT=open-code-config",
         "claude",
         "ask",
+    )
+
+
+def test_argv_transform_passes_stdin_flag_so_prompt_reaches_container(tmp_path):
+    # docker exec without -i closes the container process's stdin (/dev/null).
+    # Codex reads its prompt via stdin, so omitting -i produces
+    # "No prompt provided via stdin" and exit code 1 (#1890).
+    runner, _ = _make_runner(tmp_path=tmp_path, active_container=True)
+
+    transform = runner.provider_argv_transform()
+    transformed = transform(("codex",), Path("/home/agent/workspace"), {})
+
+    assert transformed[0:3] == ("docker", "exec", "-i"), (
+        "docker exec must include -i to forward stdin into container; "
+        "omitting it causes Codex to read /dev/null and exit 1"
     )
 
 
@@ -294,7 +310,7 @@ def test_work_builds_new_session_runtime_request_with_tool_access_and_argv_trans
         Path("/tmp"),
         {"OPENCODE_CONFIG_CONTENT": "cfg"},
     )
-    assert transformed[0:3] == ("docker", "exec", "container-123")
+    assert transformed[0:4] == ("docker", "exec", "-i", "container-123")
     assert "-e" in transformed
     assert "OPENCODE_CONFIG_CONTENT=cfg" in transformed
     assert "claude" in transformed
