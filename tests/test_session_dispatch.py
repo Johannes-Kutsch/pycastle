@@ -50,8 +50,8 @@ from pycastle.errors import HardAgentError
 from pycastle.provider_session_adapter import provider_session_adapter_for_service_name
 from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.services import ClaudeService, CodexService
-from pycastle.services.agent_service import AgentService
-from pycastle.services.opencode_service import OpenCodeService
+from pycastle.services.runtime_services import AgentService
+from pycastle.services.runtime_services import OpenCodeService
 from pycastle.session.role import session_uuid_for_role_session_path
 
 

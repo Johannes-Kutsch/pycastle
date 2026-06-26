@@ -23,8 +23,8 @@ from pycastle.iteration.improve import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService, GithubNetworkError, ServiceRegistry
-from pycastle.services.codex_service import CodexService
-from pycastle.services.opencode_service import OpenCodeService
+from pycastle.services.runtime_services import CodexService
+from pycastle.services.runtime_services import OpenCodeService
 from pycastle.session import RoleSession
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import save_service_session_metadata

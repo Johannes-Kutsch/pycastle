@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from pathlib import Path
 from typing import Any
 
 from . import _time as _time_module
 from .agents.output_protocol import AgentRole
-from .services.agent_service import ToolPolicy
 from .execution_contracts import (
     CancellationToken,
     PromptRunRequest,
@@ -16,15 +16,16 @@ from .execution_contracts import (
     PreparedRunSessionState,
     RunSessionPlan,
     TextOutputAdapter,
+    WorkModelDisplayMetadata,
     WorkInvocationRequest,
     WorktreeMount,
 )
+from .services.runtime_services import ToolPolicy
 from .services.service_registry import ServiceRegistry
 from .runtime_session import RunKind
 from .session_planning import ResidentSessionPlan
 from .config.types import StageOverride
 from .stage_priority_chain import iter_stage_chain
-from .work import invoke_work
 
 __all__ = [
     "OneShotRunRequest",
@@ -361,7 +362,7 @@ async def run_prompt(
         run_session_plan=request.run_session_plan,
     )
 
-    return await invoke_work(
+    return await _invoke_work(
         WorkInvocationRequest(
             name=request.name,
             mount_path=request.mount_path,
@@ -448,7 +449,7 @@ async def run_one_shot(
             CancellationToken() if request.token is not None else request.token
         )
         try:
-            raw_output = await invoke_work(
+            raw_output = await _invoke_work(
                 WorkInvocationRequest(
                     name=request.name,
                     mount_path=request.mount_path,
@@ -518,7 +519,7 @@ async def run_resident_prompt(
         container_workspace=dependencies.container_workspace,
         run_session_plan=plan,
     )
-    output = await invoke_work(
+    output = await _invoke_work(
         WorkInvocationRequest(
             name=request.name,
             mount_path=plan.worktree,
@@ -546,4 +547,221 @@ async def run_resident_prompt(
             session_namespace=plan.namespace,
             exact_transcript_match=plan.exact_transcript_match,
         ),
+    )
+
+
+async def _invoke_work(request: WorkInvocationRequest[Any]) -> Any:
+    status_display = request.status_display
+    if status_display is None:
+        status_display = request.dependencies.status_display_factory()
+
+    token = request.token if request.token is not None else CancellationToken()
+    if token.is_cancelled:
+        from .errors import UsageLimitError
+
+        raise UsageLimitError(
+            reset_time=None,
+            stage_key=request.dependencies.stage_key_for_role(request.role),
+        )
+
+    validate_mount_preconditions = request.dependencies.validate_mount_preconditions
+    if validate_mount_preconditions is not None:
+        validate_mount_preconditions(request.name, request.mount_path, request.role)
+
+    run_session = request.run_session
+    assert run_session is not None
+    prepared_session = request.dependencies.prepare_session(run_session)
+    non_typed_retry_done = False
+    initial_attempt = True
+
+    async with request.dependencies.status_row_factory(
+        status_display,
+        request.name,
+        kind="agent",
+        must_close=False,
+        work_body=request.work_body,
+        color_key=request.color_key,
+        model_display=_build_model_display_metadata(request),
+    ) as row:
+        session = request.dependencies.build_session(
+            request.mount_path,
+            request.service,
+            prepared_session.provider_state_dir_container_path,
+        )
+        runner = request.dependencies.build_runner(session, status_display)
+        try:
+            git_name, git_email = request.dependencies.get_git_identity()
+            await runner.setup(git_name, git_email, request.work_body)
+            prepared_session.prepare_for_run()
+            loop = asyncio.get_running_loop()
+
+            async def container_exec(cmd: str) -> str:
+                return await loop.run_in_executor(None, session.exec_simple, cmd)
+
+            retries_left = request.dependencies.timeout_retries
+            while True:
+                provider_run_session = (
+                    prepared_session.initial_provider_run_session()
+                    if initial_attempt
+                    else prepared_session.resumable_provider_run_session()
+                )
+                try:
+                    prompt = await request.output_adapter.build_prompt(
+                        run_kind=provider_run_session.run_kind,
+                        container_exec=container_exec,
+                    )
+                    result, successful_run_session = await _invoke_work_attempt(
+                        request=request,
+                        row=row,
+                        prepared_session=prepared_session,
+                        runner=runner,
+                        prompt=prompt,
+                        provider_run_session=provider_run_session,
+                    )
+                    if request.output_adapter.is_successful_result(result):
+                        successful_run_session.record_successful_run()
+                    else:
+                        row.close("failed", shutdown_style="error")
+                    return request.output_adapter.finalize_result(
+                        result,
+                        role=request.role,
+                        mount_path=request.mount_path,
+                        session_namespace=request.session_namespace,
+                        service_name=request.service.name,
+                        invocation_log_path=getattr(runner, "log_path", None),
+                    )
+                except Exception as err:
+                    from .errors import (
+                        AgentCredentialFailureError,
+                        AgentTimeoutError,
+                        HardAgentError,
+                        TransientAgentError,
+                        UsageLimitError,
+                    )
+
+                    if isinstance(err, AgentTimeoutError):
+                        if not err.role_value:
+                            err.role_value = request.role.value
+                            err.worktree_path = request.mount_path
+                        if retries_left <= 0:
+                            raise
+                        retries_left -= 1
+                        initial_attempt = False
+                        continue
+                    if isinstance(err, UsageLimitError):
+                        if err.stage_key is None:
+                            err.stage_key = request.dependencies.stage_key_for_role(
+                                request.role
+                            )
+                        request.dependencies.handle_provider_account_exhaustion(
+                            request.service,
+                            err,
+                        )
+                        token.cancel()
+                        raise
+                    if isinstance(err, TransientAgentError):
+                        token.cancel()
+                        if request.dependencies.transient_status_message is not None:
+                            status_display.print(
+                                request.name,
+                                request.dependencies.transient_status_message(err),
+                            )
+                        raise
+                    if isinstance(err, AgentCredentialFailureError):
+                        token.cancel()
+                        err.caller = request.name
+                        if not err.service_name:
+                            err.service_name = request.service.name
+                        raise
+                    if isinstance(err, HardAgentError):
+                        token.cancel()
+                        err.caller = request.name
+                        err.service_name = request.service.name
+                        raise
+                    if (
+                        not request.allow_non_typed_resume_retry
+                        or provider_run_session.run_kind != RunKind.RESUME
+                    ):
+                        raise
+                    failure_result = request.output_adapter.non_typed_failure_result()
+                    if failure_result is None:
+                        raise
+                    if non_typed_retry_done:
+                        row.close("failed", shutdown_style="error")
+                        return request.output_adapter.finalize_result(
+                            failure_result,
+                            role=request.role,
+                            mount_path=request.mount_path,
+                            session_namespace=request.session_namespace,
+                            service_name=request.service.name,
+                            invocation_log_path=getattr(runner, "log_path", None),
+                        )
+                    non_typed_retry_done = True
+        finally:
+            try:
+                session.__exit__(None, None, None)
+            except Exception:
+                pass
+
+
+async def _invoke_work_attempt(
+    *,
+    request: WorkInvocationRequest[Any],
+    row: Any,
+    prepared_session: PreparedRunSessionState,
+    runner: Any,
+    prompt: str,
+    provider_run_session: PreparedProviderRunSession,
+) -> tuple[Any, PreparedProviderRunSession]:
+    reprompt_message = request.output_adapter.protocol_reprompt_message()
+    protocol_error_result = request.output_adapter.protocol_error_result()
+    protocol_error_types = request.output_adapter.protocol_error_types()
+    max_attempts = (
+        3 if reprompt_message is not None and protocol_error_result is not None else 1
+    )
+    work_prompt = prompt
+    work_run_session = provider_run_session
+    for _ in range(max_attempts):
+        try:
+            result = await request.output_adapter.invoke(
+                runner=runner,
+                role=request.role,
+                prompt=work_prompt,
+                run_kind=work_run_session.run_kind,
+                session_uuid=work_run_session.provider_session_id,
+                on_provider_session_id=work_run_session.record_provider_session_id,
+            )
+            return result, work_run_session
+        except Exception as exc:
+            if not protocol_error_types or not isinstance(exc, protocol_error_types):
+                raise
+            if reprompt_message is None or protocol_error_result is None:
+                raise
+            next_run_session = prepared_session.protocol_reprompt_provider_run_session()
+            if next_run_session is None:
+                row.close("failed", shutdown_style="error")
+                return protocol_error_result, work_run_session
+            latest_reprompt_message = request.output_adapter.protocol_reprompt_message()
+            if latest_reprompt_message is None:
+                raise
+            work_prompt = latest_reprompt_message
+            work_run_session = next_run_session
+    row.close("failed", shutdown_style="error")
+    assert protocol_error_result is not None
+    return protocol_error_result, work_run_session
+
+
+def _build_model_display_metadata(
+    request: WorkInvocationRequest[Any],
+) -> WorkModelDisplayMetadata | None:
+    if request.dependencies.build_model_display_metadata is None:
+        return WorkModelDisplayMetadata(
+            service=request.service.name,
+            model=request.model,
+            effort=request.effort,
+        )
+    return request.dependencies.build_model_display_metadata(
+        request.service.name,
+        request.model,
+        request.effort,
     )

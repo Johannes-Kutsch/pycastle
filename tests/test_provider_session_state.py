@@ -11,7 +11,7 @@ from pycastle.runtime_session import (
     ProviderSessionPreferencesRequest,
 )
 from pycastle.services import ServiceRegistry
-from pycastle.services.codex_service import CodexService
+from pycastle.services.runtime_services import CodexService
 from pycastle.session.service_session_store import (
     has_exact_provider_transcript_for_selected_service,
     has_exact_provider_transcript_for_service,

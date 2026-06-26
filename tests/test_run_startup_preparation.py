@@ -9,8 +9,8 @@ from pycastle.run_startup_preparation import (
     StageOverrideValidationFailure,
     prepare_run_startup,
 )
-from pycastle.services.claude_service import ClaudeService
-from pycastle.services.opencode_service import OpenCodeService
+from pycastle.services.runtime_services import ClaudeService
+from pycastle.services.runtime_services import OpenCodeService
 from unittest.mock import patch
 
 

@@ -22,7 +22,7 @@ from pycastle.usage_limit_decision import (
     decide_usage_limit_continuation,
 )
 from pycastle.services._wake_time import compute_wake_time
-from pycastle.services.agent_service import AgentService
+from pycastle.services.runtime_services import AgentService
 
 runtime: Any = SimpleNamespace(
     ContinueNow=ContinueNow,

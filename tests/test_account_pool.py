@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from pycastle.services.claude_service import ClaudeService
+from pycastle.services.runtime_services import ClaudeService
 
 # Use a far-future base so exhausted_until stays > now_local() during test runs.
 _FAR = datetime(2099, 1, 1, tzinfo=timezone.utc).astimezone()

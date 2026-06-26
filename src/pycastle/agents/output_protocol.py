@@ -2,18 +2,8 @@ import dataclasses
 import enum
 import json
 import re
-from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Protocol, TypeAlias, cast
-
-from ..errors import (
-    AgentCredentialFailureError,
-    HardAgentError,
-    TransientAgentError,
-    UsageLimitError,
-)
-
-if TYPE_CHECKING:
-    from ..services.agent_service import ParsedTurn
+from collections.abc import Iterable
+from typing import Protocol, TypeAlias
 
 
 class AgentRole(enum.Enum):
@@ -403,47 +393,6 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
 assert len(_HANDLERS) == len(AgentRole)
 
 
-def _translate_runtime_provider_failure(
-    error: (
-        UsageLimitError
-        | TransientAgentError
-        | HardAgentError
-        | AgentCredentialFailureError
-    ),
-) -> None:
-    if isinstance(error, UsageLimitError):
-        raise UsageLimitError(
-            reset_time=error.reset_time,
-            raw_message=error.raw_message,
-            provider=error.provider,
-            is_permanent=error.is_permanent,
-        ) from error
-    if isinstance(error, TransientAgentError):
-        raise TransientAgentError(
-            message=str(error),
-            status_code=error.status_code,
-        ) from error
-    if isinstance(error, AgentCredentialFailureError):
-        raise AgentCredentialFailureError(
-            message=str(error),
-            status_code=error.status_code,
-            service_name=error.service_name,
-            classification=error.classification,
-        ) from error
-    raise HardAgentError(
-        message=str(error),
-        status_code=error.status_code,
-        service_name=error.service_name,
-        classification=error.classification,
-    ) from error
-
-
-@dataclasses.dataclass(frozen=True)
-class _ReducedRoleOutput:
-    output: AgentOutput
-    source_text: str | None = None
-
-
 def _inject_behaviors(result: AgentOutput, text: str) -> AgentOutput:
     if not isinstance(result, CommitMessageOutput):
         return result
@@ -455,73 +404,3 @@ def extract_output(text: str, role: AgentRole) -> AgentOutput:
     handler = _HANDLERS[role]
     tail = f"\nOutput tail: {text[-300:]!r}"
     return _inject_behaviors(handler.extract_final_output(text, tail), text)
-
-
-def process_stream_from_events(
-    events: "Iterable[ParsedTurn]",
-    on_turn: Callable[[str], None],
-    role: AgentRole,
-    on_tokens: Callable[[int], None] | None = None,
-    provider: str | None = None,
-) -> AgentOutput:
-    from .. import parsed_event_reducer as runtime_parsed_event_reducer
-
-    handler = _HANDLERS[role]
-
-    def extract_early_output(turn: str) -> _ReducedRoleOutput | None:
-        result = handler.extract_early_output(turn)
-        if result is None:
-            return None
-        return _ReducedRoleOutput(output=result)
-
-    def extract_final_output(text: str) -> _ReducedRoleOutput:
-        tail = f"\nOutput tail: {text[-300:]!r}"
-        return _ReducedRoleOutput(
-            output=handler.extract_final_output(text, tail),
-            source_text=text,
-        )
-
-    def post_process_output(
-        reduced: _ReducedRoleOutput, transcript: str
-    ) -> AgentOutput:
-        source_text = transcript if reduced.source_text is None else reduced.source_text
-        return _inject_behaviors(reduced.output, source_text)
-
-    try:
-        return cast(
-            AgentOutput,
-            runtime_parsed_event_reducer.reduce_text_output_events(
-                events,
-                on_turn,
-                on_tokens,
-                provider=cast(str, provider),
-                extract_early_output=extract_early_output,
-                extract_final_output=extract_final_output,
-                post_process_output=post_process_output,
-            ),
-        )
-    except (
-        UsageLimitError,
-        TransientAgentError,
-        HardAgentError,
-        AgentCredentialFailureError,
-    ) as error:
-        _translate_runtime_provider_failure(error)
-        raise AssertionError("unreachable")
-
-
-def process_stream(
-    lines: Iterable[str],
-    on_turn: Callable[[str], None],
-    role: AgentRole,
-    on_tokens: Callable[[int], None] | None = None,
-) -> AgentOutput:
-    from ..services.claude_service import ClaudeService
-
-    return process_stream_from_events(
-        ClaudeService().run(lines),
-        on_turn,
-        role,
-        on_tokens,
-        provider="claude",
-    )

@@ -6,7 +6,7 @@ from pathlib import Path
 from pycastle.runtime_session import RunKind
 
 from ..agents.output_protocol import AgentRole
-from ..services.agent_service import AgentService
+from ..services.runtime_services import AgentService
 from .agent import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,

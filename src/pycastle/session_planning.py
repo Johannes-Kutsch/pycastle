@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 from .agents.output_protocol import AgentRole
-from .services.agent_service import AgentService
+from .services.runtime_services import AgentService
 from .provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,

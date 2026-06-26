@@ -6,20 +6,26 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from .agents.output_protocol import AgentRole
-from .services.agent_service import (
-    AgentService,
-    ProviderSessionRecordingStore,
-    ProviderStatePreparationAction,
-)
+from .services.runtime_services import AgentService, ClaudeService
 from .runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
+    is_exact_resumable_service_session,
     load_state_dir_provider_session_id,
     provider_state_relpath,
 )
+from .session.role import session_uuid_for_role_session_path
+
+
+class ProviderStatePreparationAction(Protocol):
+    def apply(self) -> None: ...
+
+
+class ProviderSessionRecordingStore(Protocol):
+    def save_service_session_id(self, service_name: str, session_id: str) -> None: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -210,17 +216,42 @@ class _ClaudeProviderSessionAdapter(_BaseProviderSessionAdapter):
         self,
         request: ProviderSessionPreferencesRequest,
     ) -> ProviderSessionPreferences:
-        from .services.claude_service import _provider_session_preferences_for_request
-
-        return _provider_session_preferences_for_request(request)
+        return ProviderSessionPreferences(
+            preferred_provider_session_id=request.preferred_provider_session_id
+        )
 
     def provider_session_state(
         self,
         request: ProviderSessionStateRequest,
     ) -> ProviderSessionState:
-        from .services.claude_service import _provider_session_state_for_request
-
-        return _provider_session_state_for_request(request)
+        exact_transcript_match = False
+        run_kind = (
+            RunKind.RESUME
+            if request.force_resume or request.has_resumable_provider_state
+            else RunKind.FRESH
+        )
+        provider_session_id = (
+            request.preferred_provider_session_id
+            or _provider_session_uuid_for_request(request)
+        )
+        if (
+            request.require_exact_transcript_match
+            and request.has_resumable_provider_state
+            and run_kind is RunKind.RESUME
+        ):
+            exact_transcript_match = is_exact_resumable_service_session(
+                request.role_session,
+                "claude",
+                provider_session_id=provider_session_id,
+                provider_state_dir=request.provider_state_dir,
+            )
+        return ProviderSessionState(
+            run_kind=run_kind,
+            provider_session_id=provider_session_id,
+            state_dir_relpath=request.state_dir_relpath,
+            state_dir_path=request.provider_state_dir,
+            exact_transcript_match=exact_transcript_match,
+        )
 
 
 class _DelegatingProviderSessionAdapter(_BaseProviderSessionAdapter):
@@ -325,8 +356,6 @@ class _OpenCodeProviderSessionAdapter(_DelegatingProviderSessionAdapter):
 def provider_session_adapter_for_service(
     service: AgentService,
 ) -> ProviderSessionAdapter:
-    from .services.claude_service import ClaudeService
-
     if isinstance(service, ClaudeService):
         return cast(ProviderSessionAdapter, _ClaudeProviderSessionAdapter())
     if service.name == "codex":
@@ -349,6 +378,19 @@ def provider_session_adapter_for_service_name(
     if service_name == "opencode":
         return cast(ProviderSessionAdapter, _OpenCodeProviderSessionAdapter())
     return cast(ProviderSessionAdapter, _BaseProviderSessionAdapter(service_name))
+
+
+def _provider_session_uuid_for_request(
+    request: ProviderSessionStateRequest,
+) -> str | None:
+    legacy_session_uuid = getattr(request.role_session, "session_uuid", None)
+    if callable(legacy_session_uuid):
+        return legacy_session_uuid()
+
+    role_session_path = getattr(request.role_session, "path", None)
+    if not isinstance(role_session_path, Path):
+        return None
+    return session_uuid_for_role_session_path(role_session_path)
 
 
 def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:

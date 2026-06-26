@@ -23,9 +23,9 @@ from pycastle.session.service_session_store import (
     save_service_session_metadata,
     service_session_metadata_path,
 )
-from pycastle.services.agent_service import AgentService
-from pycastle.services.codex_service import CodexService
-from pycastle.services.opencode_service import OpenCodeService
+from pycastle.services.runtime_services import AgentService
+from pycastle.services.runtime_services import CodexService
+from pycastle.services.runtime_services import OpenCodeService
 from pycastle.services import ServiceRegistry
 from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.session import (

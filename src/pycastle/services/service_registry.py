@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime
 
-from .agent_service import AgentService
+from .runtime_services import AgentService
 from ..config.types import StageOverride
 from ..stage_priority_chain import (
     ConfiguredCandidateAvailability,

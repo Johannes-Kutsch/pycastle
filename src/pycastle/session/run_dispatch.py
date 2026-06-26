@@ -17,7 +17,7 @@ from pycastle.session_planning import (
 
 from ..agents.output_protocol import AgentRole
 from ..provider_session_adapter import provider_session_adapter_for_service
-from ..services.agent_service import AgentService
+from ..services.runtime_services import AgentService
 from .agent import LocalAuthSeedAction, RunSessionPlan, RunSessionPlanRequest
 from .agent._planning import plan_run_session
 from .role import RoleSession

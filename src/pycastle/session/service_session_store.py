@@ -14,7 +14,7 @@ from ..agents.output_protocol import AgentRole
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
-    from ..services.agent_service import AgentService
+    from ..services.runtime_services import AgentService
     from .role import RoleSession
 
 _SERVICE_SESSION_METADATA_FILENAME = "_service_session_metadata.json"

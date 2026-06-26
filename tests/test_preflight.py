@@ -18,7 +18,7 @@ from pycastle.services import (
     ServiceRegistry,
     UnrelatedHistoriesError,
 )
-from pycastle.services.agent_service import AgentService
+from pycastle.services.runtime_services import AgentService
 from tests.support import FakeAgentRunner, _make_deps
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (

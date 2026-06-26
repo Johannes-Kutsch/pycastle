@@ -25,15 +25,12 @@ from agent_runtime.runtime import (
 )
 
 from .. import _time as _time_module
-from pycastle.services.agent_service import AgentService as RuntimeAgentService
-from pycastle.work import (
+from ..execution_contracts import (
     RunSessionPlan as RuntimeRunSessionPlan,
     WorkModelDisplayMetadata,
     WorkInvocationDependencies,
 )
 from pycastle.services._wake_time import compute_wake_time
-
-from ._work_invocation import format_transient_status_message
 from .output_protocol import (
     AgentOutput,
     AgentOutputProtocolError,
@@ -71,9 +68,11 @@ from ..session.agent import (
 from ..session.run_dispatch import RunSessionRequest, prepare_run_session
 from ..session_planning import ProviderRunStatePlan
 from ..services import GitService
-from ..services.agent_service import AgentService
-from ..services.claude_service import ClaudeService
-from ..services.flag_profiles import AgentToolPolicyGroup
+from ..services.runtime_services import (
+    AgentService,
+    ClaudeService,
+    ToolPolicy as ServiceToolPolicy,
+)
 from ..display.status_display import (
     ModelDisplayMetadata,
     PlainStatusDisplay,
@@ -88,6 +87,13 @@ REPROMPT_MESSAGE = (
     "Please review the task requirements and try again, making sure to "
     "include the required output tag."
 )
+
+
+def format_transient_status_message(err: TransientAgentError) -> str:
+    return (
+        "transient API error: status "
+        f"{err.status_code if err.status_code is not None else 'no status'}"
+    )
 
 
 def _protocol_reprompt_message_with_expected_shape(
@@ -447,7 +453,7 @@ class AgentRunner:
             stage_key_for_role=_stage_key_for_role,
             prepare_session=_prepare_session,
             build_session=cast(
-                Callable[[Path, RuntimeAgentService, str | None], Any],
+                Callable[[Path, AgentService, str | None], Any],
                 self._build_session,
             ),
             build_runner=lambda session, status_display: ContainerRunner(
@@ -480,7 +486,7 @@ class AgentRunner:
                 )
             ),
             handle_provider_account_exhaustion=cast(
-                Callable[[RuntimeAgentService, Any], None],
+                Callable[[AgentService, Any], None],
                 _handle_provider_account_exhaustion,
             ),
             transient_status_message=format_transient_status_message,
@@ -527,7 +533,7 @@ class AgentRunner:
         model: str,
         effort: str,
         service: str,
-        tool_policy: AgentToolPolicyGroup = AgentToolPolicyGroup.FULL,
+        tool_policy: ServiceToolPolicy = ServiceToolPolicy.FULL,
         token: CancellationToken | None = None,
         status_display: Any = None,
         work_body: str = "",

@@ -31,7 +31,7 @@ from pycastle.errors import (
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession
 from pycastle.runtime_session import RunKind
-from pycastle.services.agent_service import AgentService, ToolPolicy
+from pycastle.services.runtime_services import AgentService, ToolPolicy
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )

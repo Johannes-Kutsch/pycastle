@@ -18,8 +18,8 @@ from pycastle.session.service_session_store import load_service_session_id
 from pycastle.session.service_session_store import save_service_session_metadata
 from pycastle.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService
-from pycastle.services.codex_service import CodexService
-from pycastle.services.opencode_service import OpenCodeService
+from pycastle.services.runtime_services import CodexService
+from pycastle.services.runtime_services import OpenCodeService
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.agent import RunSessionPlanRequest, plan_run_session
 from pycastle.session.run_session import (
@@ -44,7 +44,7 @@ from pycastle.runtime_session import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
-from pycastle.services.agent_service import AgentService
+from pycastle.services.runtime_services import AgentService
 
 
 def _role_session_session_uuid(role_session: object) -> str:

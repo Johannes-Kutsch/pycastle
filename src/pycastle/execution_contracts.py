@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 from .agents.output_protocol import AgentRole
-from .services.agent_service import AgentService, ToolPolicy
+from .services.runtime_services import AgentService, ToolPolicy
 from .runtime_session import RunKind
 from .config.types import StageOverride
 

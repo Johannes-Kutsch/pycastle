@@ -20,7 +20,7 @@ from ..role import RoleSession
 from ..service_session_store import store_for_role_session
 
 if TYPE_CHECKING:
-    from ...services.agent_service import AgentService
+    from ...services.runtime_services import AgentService
 
 
 @dataclasses.dataclass(frozen=True)

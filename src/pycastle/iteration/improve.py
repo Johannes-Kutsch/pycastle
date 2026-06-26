@@ -12,7 +12,7 @@ from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
 from ..prompts.pipeline import PromptTemplate
 from ..services import GitService, ServiceRegistry
-from ..services.agent_service import AgentService
+from ..services.runtime_services import AgentService
 from ..services.github_service import GithubService
 from ..session import RoleSession, has_exact_transcript_match
 from ..runtime_session import session_uuid

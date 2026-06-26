@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 from pycastle.config.types import StageOverride
 from pycastle.services.service_registry import ServiceRegistry
-from pycastle.services.agent_service import AgentService
-from pycastle.services.opencode_service import OpenCodeService
+from pycastle.services.runtime_services import AgentService
+from pycastle.services.runtime_services import OpenCodeService
 
 runtime = SimpleNamespace(ServiceRegistry=ServiceRegistry, StageOverride=StageOverride)
 

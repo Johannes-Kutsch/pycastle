@@ -34,7 +34,7 @@ from pycastle.services import (
     GitService,
     ServiceRegistry,
 )
-from pycastle.services.agent_service import AgentService
+from pycastle.services.runtime_services import AgentService
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
 from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration.orchestrator import (
@@ -2529,7 +2529,7 @@ def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
 
 
 def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
-    from pycastle.services.claude_service import ClaudeService
+    from pycastle.services.runtime_services import ClaudeService
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
@@ -2556,7 +2556,7 @@ def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
 
 
 def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
-    from pycastle.services.claude_service import ClaudeService
+    from pycastle.services.runtime_services import ClaudeService
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []

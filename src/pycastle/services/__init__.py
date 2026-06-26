@@ -2,19 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .agent_service import (
+from .runtime_services import (
     AgentService,
-    AssistantTurn,
-    ParsedTurn,
-    PromptTokens,
-    Result,
-    UnsupportedTokens,
-    UsageLimit,
+    ClaudeService,
+    CodexService,
+    OpenCodeService,
+    ToolPolicy,
 )
 
 if TYPE_CHECKING:
-    from .claude_service import ClaudeService
-    from .codex_service import CodexService
     from .docker_service import DockerService
     from .git_service import (
         GitCommandError,
@@ -33,13 +29,11 @@ if TYPE_CHECKING:
         GithubService,
         GithubServiceError,
     )
-    from .opencode_service import OpenCodeService
     from .reset_time_parser import ResetTimeSyntaxMode
     from .service_registry import ServiceRegistry
 
 __all__ = [
     "AgentService",
-    "AssistantTurn",
     "ClaudeService",
     "CodexService",
     "DockerService",
@@ -57,26 +51,14 @@ __all__ = [
     "GithubService",
     "GithubServiceError",
     "OpenCodeService",
-    "ParsedTurn",
-    "PromptTokens",
     "ResetTimeSyntaxMode",
-    "Result",
     "ServiceRegistry",
-    "UnsupportedTokens",
-    "UsageLimit",
+    "ToolPolicy",
     "parse_reset_time",
 ]
 
 
 def __getattr__(name: str):
-    if name == "ClaudeService":
-        from .claude_service import ClaudeService
-
-        return ClaudeService
-    if name == "CodexService":
-        from .codex_service import CodexService
-
-        return CodexService
     if name == "DockerService":
         from .docker_service import DockerService
 
@@ -104,14 +86,14 @@ def __getattr__(name: str):
         from . import github_service
 
         return getattr(github_service, name)
-    if name == "OpenCodeService":
-        from .opencode_service import OpenCodeService
-
-        return OpenCodeService
     if name in {"ResetTimeSyntaxMode", "parse_reset_time"}:
         from . import reset_time_parser
 
         return getattr(reset_time_parser, name)
+    if name in {"ClaudeService", "CodexService", "OpenCodeService", "ToolPolicy"}:
+        from . import runtime_services
+
+        return getattr(runtime_services, name)
     if name == "ServiceRegistry":
         from .service_registry import ServiceRegistry
 
