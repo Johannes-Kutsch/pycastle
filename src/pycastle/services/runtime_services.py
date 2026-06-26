@@ -243,6 +243,7 @@ class ClaudeService:
 
 @dataclasses.dataclass
 class CodexService:
+    api_key: str | None = None
     _exhausted_until: datetime | None = dataclasses.field(default=None, init=False)
 
     @property
@@ -417,6 +418,8 @@ class CodexService:
         env = {"TZ": "UTC"}
         if state_dir_container_path:
             env["CODEX_HOME"] = state_dir_container_path
+        if self.api_key:
+            env["OPENAI_API_KEY"] = self.api_key
         return env
 
 
