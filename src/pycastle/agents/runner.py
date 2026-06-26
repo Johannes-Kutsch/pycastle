@@ -26,9 +26,9 @@ from agent_runtime.runtime import (
 
 from .. import _time as _time_module
 from ..execution_contracts import (
-    RunSessionPlan as RuntimeRunSessionPlan,
-    WorkModelDisplayMetadata,
-    WorkInvocationDependencies,
+    RuntimeInvocationDependencies,
+    RuntimeModelDisplayMetadata,
+    RuntimeRunSession,
 )
 from pycastle.services._wake_time import compute_wake_time
 from .output_protocol import (
@@ -361,7 +361,7 @@ class AgentRunner:
         model: str,
         effort: str,
         service: AgentService,
-    ) -> WorkInvocationDependencies:
+    ) -> RuntimeInvocationDependencies:
         def _status_row_factory(
             status_display: StatusDisplay,
             caller: str,
@@ -398,7 +398,7 @@ class AgentRunner:
             )
 
         def _prepare_session(
-            run_session_plan: RuntimeRunSessionPlan,
+            run_session_plan: RuntimeRunSession,
         ):
             plan_payload = run_session_plan.run_session_plan
             if isinstance(plan_payload, ProviderRunStatePlan):
@@ -447,7 +447,7 @@ class AgentRunner:
         ) -> None:
             self._handle_provider_account_exhaustion(service_for_run, error)
 
-        return WorkInvocationDependencies(
+        return RuntimeInvocationDependencies(
             container_workspace=_CONTAINER_WORKSPACE,
             timeout_retries=self._cfg.timeout_retries,
             stage_key_for_role=_stage_key_for_role,
@@ -472,7 +472,7 @@ class AgentRunner:
             status_row_factory=_status_row_factory,
             translate_setup_failure=_translate_setup_failure,
             build_model_display_metadata=lambda service_name, model_name, effort_name: (
-                WorkModelDisplayMetadata(
+                RuntimeModelDisplayMetadata(
                     service=service_name,
                     model=model_name,
                     effort=effort_name,

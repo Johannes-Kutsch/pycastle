@@ -15,7 +15,7 @@ from .config.types import StageOverride
 if TYPE_CHECKING:
     pass
 
-WorkResultT = TypeVar("WorkResultT")
+RuntimeResultT = TypeVar("RuntimeResultT")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -39,7 +39,7 @@ class PromptRuntimeExecutionAdapter(Protocol):
         model: str,
         effort: str,
         service: AgentService,
-    ) -> WorkInvocationDependencies: ...
+    ) -> RuntimeInvocationDependencies: ...
 
 
 @dataclasses.dataclass(frozen=True)
@@ -68,7 +68,7 @@ class PromptRunRequest:
 
 
 @dataclasses.dataclass(frozen=True)
-class RunSessionPlan:
+class RuntimeRunSession:
     mount_path: Path
     role: AgentRole
     session_namespace: str
@@ -78,13 +78,13 @@ class RunSessionPlan:
 
 
 @dataclasses.dataclass(frozen=True)
-class WorkModelDisplayMetadata:
+class RuntimeModelDisplayMetadata:
     service: str
     model: str
     effort: str
 
 
-class WorkStatusDisplay(Protocol):
+class RuntimeStatusDisplay(Protocol):
     def register(
         self,
         caller: str,
@@ -93,7 +93,7 @@ class WorkStatusDisplay(Protocol):
         work_body: str = "",
         initial_phase: str = "Setup",
         color_key: int | None = None,
-        model_display: WorkModelDisplayMetadata | None = None,
+        model_display: RuntimeModelDisplayMetadata | None = None,
     ) -> None: ...
 
     def update_phase(self, name: str, phase: str) -> None: ...
@@ -112,7 +112,7 @@ class WorkStatusDisplay(Protocol):
     def print(self, caller: str, message: object, style: str | None = None) -> None: ...
 
 
-class WorkStatusRow(Protocol):
+class RuntimeStatusRow(Protocol):
     def close(
         self,
         shutdown_message: str = "finished",
@@ -145,7 +145,7 @@ class _PlainStatusDisplay:
         work_body: str = "",
         initial_phase: str = "Setup",
         color_key: int | None = None,
-        model_display: WorkModelDisplayMetadata | None = None,
+        model_display: RuntimeModelDisplayMetadata | None = None,
     ) -> None:
         del work_body, initial_phase, color_key, model_display
         if caller != "":
@@ -186,7 +186,7 @@ class _PlainStatusDisplay:
 
 
 class _StatusRowHandle:
-    def __init__(self, status_display: WorkStatusDisplay, caller: str) -> None:
+    def __init__(self, status_display: RuntimeStatusDisplay, caller: str) -> None:
         self._status_display = status_display
         self._caller = caller
         self._closed = False
@@ -214,7 +214,7 @@ class _StatusRowHandle:
 class _DefaultStatusRow:
     def __init__(
         self,
-        status_display: WorkStatusDisplay,
+        status_display: RuntimeStatusDisplay,
         caller: str,
         *,
         kind: str,
@@ -223,7 +223,7 @@ class _DefaultStatusRow:
         work_body: str = "",
         initial_phase: str = "Setup",
         startup_message: str = "started",
-        model_display: WorkModelDisplayMetadata | None = None,
+        model_display: RuntimeModelDisplayMetadata | None = None,
     ) -> None:
         self._status_display = status_display
         self._caller = caller
@@ -236,7 +236,7 @@ class _DefaultStatusRow:
         self._model_display = model_display
         self._row = _StatusRowHandle(status_display, caller)
 
-    async def __aenter__(self) -> WorkStatusRow:
+    async def __aenter__(self) -> RuntimeStatusRow:
         self._status_display.register(
             self._caller,
             self._kind,
@@ -271,12 +271,12 @@ class _DefaultStatusRow:
         return False
 
 
-def _default_status_display_factory() -> WorkStatusDisplay:
+def _default_status_display_factory() -> RuntimeStatusDisplay:
     return _PlainStatusDisplay()
 
 
 def _default_status_row_factory(
-    status_display: WorkStatusDisplay,
+    status_display: RuntimeStatusDisplay,
     caller: str,
     *,
     kind: str,
@@ -285,8 +285,8 @@ def _default_status_row_factory(
     work_body: str = "",
     initial_phase: str = "Setup",
     startup_message: str = "started",
-    model_display: WorkModelDisplayMetadata | None = None,
-) -> AbstractAsyncContextManager[WorkStatusRow]:
+    model_display: RuntimeModelDisplayMetadata | None = None,
+) -> AbstractAsyncContextManager[RuntimeStatusRow]:
     return _DefaultStatusRow(
         status_display,
         caller,
@@ -323,12 +323,11 @@ class PreparedRunSessionState(Protocol):
     ) -> PreparedProviderRunSession | None: ...
 
 
-PreparedSession = PreparedRunSessionState
-PrepareSessionAdapter = Callable[[RunSessionPlan], PreparedRunSessionState]
+SessionStatePreparer = Callable[[RuntimeRunSession], PreparedRunSessionState]
 StatusRowFactory = Callable[..., AbstractAsyncContextManager[Any]]
 SetupFailureTranslator = Callable[[AgentRole, BaseException], BaseException | None]
 ProviderAccountExhaustionHandler = Callable[[AgentService, Any], None]
-StatusDisplayFactory = Callable[[], WorkStatusDisplay]
+StatusDisplayFactory = Callable[[], RuntimeStatusDisplay]
 MountPreconditionValidator = Callable[[str, Path, AgentRole], None]
 
 
@@ -355,7 +354,7 @@ class CancellationToken:
         self._event.set()
 
 
-class WorkExecutionAdapter(Protocol):
+class RuntimeExecutionAdapter(Protocol):
     async def setup(
         self, git_name: str, git_email: str, work_body: str = ""
     ) -> None: ...
@@ -382,7 +381,7 @@ class WorkExecutionAdapter(Protocol):
     ) -> str: ...
 
 
-class WorkOutputAdapter(Protocol[WorkResultT]):
+class RuntimeOutputAdapter(Protocol[RuntimeResultT]):
     async def build_prompt(
         self,
         *,
@@ -393,44 +392,44 @@ class WorkOutputAdapter(Protocol[WorkResultT]):
     async def invoke(
         self,
         *,
-        runner: WorkExecutionAdapter,
+        runner: RuntimeExecutionAdapter,
         role: AgentRole,
         prompt: str,
         run_kind: RunKind,
         session_uuid: str | None,
         on_provider_session_id: Callable[[str], None],
-    ) -> WorkResultT: ...
+    ) -> RuntimeResultT: ...
 
-    def is_successful_result(self, result: WorkResultT) -> bool: ...
+    def is_successful_result(self, result: RuntimeResultT) -> bool: ...
 
     def protocol_reprompt_message(self) -> str | None: ...
 
-    def protocol_error_result(self) -> WorkResultT | None: ...
+    def protocol_error_result(self) -> RuntimeResultT | None: ...
 
     def protocol_error_types(self) -> tuple[type[BaseException], ...]: ...
 
-    def non_typed_failure_result(self) -> WorkResultT | None: ...
+    def non_typed_failure_result(self) -> RuntimeResultT | None: ...
 
     def finalize_result(
         self,
-        result: WorkResultT,
+        result: RuntimeResultT,
         *,
         role: AgentRole,
         mount_path: Path,
         session_namespace: str,
         service_name: str,
         invocation_log_path: Path | str | None = None,
-    ) -> WorkResultT: ...
+    ) -> RuntimeResultT: ...
 
 
 @dataclasses.dataclass(frozen=True)
-class WorkInvocationDependencies:
+class RuntimeInvocationDependencies:
     container_workspace: str
     timeout_retries: int
     stage_key_for_role: Callable[[AgentRole], str | None]
-    prepare_session: PrepareSessionAdapter
+    prepare_session: SessionStatePreparer
     build_session: Callable[[Path, AgentService, str | None], Any]
-    build_runner: Callable[[Any, Any], WorkExecutionAdapter]
+    build_runner: Callable[[Any, Any], RuntimeExecutionAdapter]
     get_git_identity: Callable[[], tuple[str, str]]
     status_display_factory: StatusDisplayFactory = _default_status_display_factory
     status_row_factory: StatusRowFactory = _default_status_row_factory
@@ -444,28 +443,28 @@ class WorkInvocationDependencies:
 
 
 @dataclasses.dataclass(frozen=True)
-class WorkInvocationRequest(Generic[WorkResultT]):
+class RuntimeInvocationRequest(Generic[RuntimeResultT]):
     name: str
     mount_path: Path
     role: AgentRole
     service: AgentService
     model: str
     effort: str
-    output_adapter: WorkOutputAdapter[WorkResultT] = dataclasses.field(repr=False)
-    dependencies: WorkInvocationDependencies = dataclasses.field(repr=False)
+    output_adapter: RuntimeOutputAdapter[RuntimeResultT] = dataclasses.field(repr=False)
+    dependencies: RuntimeInvocationDependencies = dataclasses.field(repr=False)
     status_display: Any = None
     token: CancellationToken | None = None
     work_body: str = ""
     session_namespace: str = ""
     run_session_plan: Any = None
-    run_session: RunSessionPlan | None = None
+    run_session: RuntimeRunSession | None = None
     color_key: int | None = None
     allow_non_typed_resume_retry: bool = False
 
     def __post_init__(self) -> None:
         run_session = self.run_session
         if run_session is None:
-            run_session = RunSessionPlan(
+            run_session = RuntimeRunSession(
                 mount_path=self.mount_path,
                 role=self.role,
                 session_namespace=self.session_namespace,
@@ -498,7 +497,7 @@ class TextOutputAdapter:
     async def invoke(
         self,
         *,
-        runner: WorkExecutionAdapter,
+        runner: RuntimeExecutionAdapter,
         role: AgentRole,
         prompt: str,
         run_kind: RunKind,
@@ -548,24 +547,23 @@ __all__ = [
     "CancellationToken",
     "PreparedProviderRunSession",
     "PreparedRunSessionState",
-    "PreparedSession",
-    "PrepareSessionAdapter",
+    "RuntimeExecutionAdapter",
+    "RuntimeInvocationDependencies",
+    "RuntimeInvocationRequest",
+    "RuntimeModelDisplayMetadata",
+    "RuntimeOutputAdapter",
+    "RuntimeResultT",
+    "RuntimeRunSession",
+    "RuntimeStatusDisplay",
+    "RuntimeStatusRow",
+    "SessionStatePreparer",
     "PromptRunRequest",
     "PromptRunSession",
     "PromptRuntimeExecutionAdapter",
     "ProviderAccountExhaustionHandler",
-    "RunSessionPlan",
     "SetupFailureTranslator",
     "StatusDisplayFactory",
     "StatusRowFactory",
     "TextOutputAdapter",
-    "WorkExecutionAdapter",
-    "WorkInvocationDependencies",
-    "WorkInvocationRequest",
-    "WorkModelDisplayMetadata",
-    "WorkOutputAdapter",
-    "WorkResultT",
-    "WorkStatusDisplay",
-    "WorkStatusRow",
     "WorktreeMount",
 ]

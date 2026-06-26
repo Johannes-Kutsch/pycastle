@@ -14,10 +14,10 @@ from .execution_contracts import (
     PromptRuntimeExecutionAdapter,
     PreparedProviderRunSession,
     PreparedRunSessionState,
-    RunSessionPlan,
+    RuntimeInvocationRequest,
+    RuntimeModelDisplayMetadata,
+    RuntimeRunSession,
     TextOutputAdapter,
-    WorkModelDisplayMetadata,
-    WorkInvocationRequest,
     WorktreeMount,
 )
 from .services.runtime_services import ToolPolicy
@@ -120,7 +120,7 @@ class _ResidentPreparedProviderRunSession:
 
 
 @dataclasses.dataclass
-class _ResidentPreparedSession(PreparedRunSessionState):
+class _ResidentPreparedRuntimeState(PreparedRunSessionState):
     session_plan: ResidentSessionPlan
     provider_state_dir_container_path: str | None
     _initial_session: _ResidentPreparedProviderRunSession = dataclasses.field(
@@ -353,7 +353,7 @@ async def run_prompt(
         effort=resolved_override.effort,
         service=resolved_service,
     )
-    run_session = RunSessionPlan(
+    run_session = RuntimeRunSession(
         mount_path=request.mount_path,
         role=role,
         session_namespace=request.session_namespace,
@@ -362,8 +362,8 @@ async def run_prompt(
         run_session_plan=request.run_session_plan,
     )
 
-    return await _invoke_work(
-        WorkInvocationRequest(
+    return await _execute_runtime_request(
+        RuntimeInvocationRequest(
             name=request.name,
             mount_path=request.mount_path,
             role=role,
@@ -433,7 +433,7 @@ async def run_one_shot(
             effort=resolved_override.effort,
             service=resolved_service,
         )
-        run_session = RunSessionPlan(
+        run_session = RuntimeRunSession(
             mount_path=request.mount_path,
             role=role,
             session_namespace=request.session_namespace,
@@ -449,8 +449,8 @@ async def run_one_shot(
             CancellationToken() if request.token is not None else request.token
         )
         try:
-            raw_output = await _invoke_work(
-                WorkInvocationRequest(
+            raw_output = await _execute_runtime_request(
+                RuntimeInvocationRequest(
                     name=request.name,
                     mount_path=request.mount_path,
                     role=role,
@@ -501,7 +501,7 @@ async def run_resident_prompt(
         effort=request.effort,
         service=plan.service,
     )
-    prepared_session = _ResidentPreparedSession(
+    prepared_session = _ResidentPreparedRuntimeState(
         session_plan=plan,
         provider_state_dir_container_path=plan.provider_state_dir_container_path(
             dependencies.container_workspace
@@ -511,7 +511,7 @@ async def run_resident_prompt(
         dependencies,
         prepare_session=lambda _run_session: prepared_session,
     )
-    run_session = RunSessionPlan(
+    run_session = RuntimeRunSession(
         mount_path=plan.worktree,
         role=plan.role,
         session_namespace=plan.namespace,
@@ -519,8 +519,8 @@ async def run_resident_prompt(
         container_workspace=dependencies.container_workspace,
         run_session_plan=plan,
     )
-    output = await _invoke_work(
-        WorkInvocationRequest(
+    output = await _execute_runtime_request(
+        RuntimeInvocationRequest(
             name=request.name,
             mount_path=plan.worktree,
             role=plan.role,
@@ -550,7 +550,7 @@ async def run_resident_prompt(
     )
 
 
-async def _invoke_work(request: WorkInvocationRequest[Any]) -> Any:
+async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> Any:
     status_display = request.status_display
     if status_display is None:
         status_display = request.dependencies.status_display_factory()
@@ -610,7 +610,7 @@ async def _invoke_work(request: WorkInvocationRequest[Any]) -> Any:
                         run_kind=provider_run_session.run_kind,
                         container_exec=container_exec,
                     )
-                    result, successful_run_session = await _invoke_work_attempt(
+                    result, successful_run_session = await _execute_runtime_attempt(
                         request=request,
                         row=row,
                         prepared_session=prepared_session,
@@ -704,9 +704,9 @@ async def _invoke_work(request: WorkInvocationRequest[Any]) -> Any:
                 pass
 
 
-async def _invoke_work_attempt(
+async def _execute_runtime_attempt(
     *,
-    request: WorkInvocationRequest[Any],
+    request: RuntimeInvocationRequest[Any],
     row: Any,
     prepared_session: PreparedRunSessionState,
     runner: Any,
@@ -752,10 +752,10 @@ async def _invoke_work_attempt(
 
 
 def _build_model_display_metadata(
-    request: WorkInvocationRequest[Any],
-) -> WorkModelDisplayMetadata | None:
+    request: RuntimeInvocationRequest[Any],
+) -> RuntimeModelDisplayMetadata | None:
     if request.dependencies.build_model_display_metadata is None:
-        return WorkModelDisplayMetadata(
+        return RuntimeModelDisplayMetadata(
             service=request.service.name,
             model=request.model,
             effort=request.effort,
