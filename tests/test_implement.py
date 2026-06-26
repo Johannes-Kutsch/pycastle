@@ -59,6 +59,11 @@ def _seed_prior_role_session_with_service(
     session_id: str,
 ) -> None:
     role_session = RoleSession(worktree, role)
+    role_session.start_fresh()
+    (role_session.path / "_continuation").write_text(
+        "opaque-continuation",
+        encoding="utf-8",
+    )
     role_session.save_service_session_id(service_name, session_id)
     save_service_session_metadata(role_session.path, service_name, session_id)
     state_dir = worktree / f".pycastle-session/{role.value}/{service_name}"

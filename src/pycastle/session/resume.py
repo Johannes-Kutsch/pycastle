@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 SESSION_DIR_NAME = ".pycastle-session"
 _SESSION_UUID_SEED_FILENAME = "_session_uuid_seed"
+_CONTINUATION_FILENAME = "_continuation"
 
 
 def session_uuid_for_role_session_path(
@@ -146,6 +147,17 @@ class RoleSession:
     def _session_uuid_seed_path(self) -> Path:
         return self.path / _SESSION_UUID_SEED_FILENAME
 
+    def _continuation_path(self) -> Path:
+        return self.path / _CONTINUATION_FILENAME
+
+    def write_continuation(self, serialized: str) -> None:
+        path = self._continuation_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(serialized, encoding="utf-8")
+
+    def read_continuation(self) -> str:
+        return self._continuation_path().read_text(encoding="utf-8")
+
     def _ensure_session_uuid_seed(self) -> str:
         path = self._session_uuid_seed_path()
         if path.is_file():
@@ -215,12 +227,7 @@ class RoleSession:
         )
 
     def is_resumable(self) -> bool:
-        return self.path.is_dir() and any(
-            f.is_file()
-            and not is_service_session_metadata_path(f)
-            and f.name != _SESSION_UUID_SEED_FILENAME
-            for f in self.path.rglob("*")
-        )
+        return self._continuation_path().is_file()
 
     def is_done(self) -> bool:
         return self.path.is_dir() and not self.is_resumable()
@@ -229,11 +236,9 @@ class RoleSession:
         return RunKind.RESUME if self.is_resumable() else RunKind.FRESH
 
     def start_fresh(self) -> None:
-        seed = self._ensure_session_uuid_seed()
         if self.path.is_dir():
             shutil.rmtree(self.path, onerror=_force_remove_readonly)
         self.path.mkdir(parents=True, exist_ok=True)
-        self._session_uuid_seed_path().write_text(seed, encoding="utf-8")
 
     def mark_done(self) -> None:
         if not self.path.is_dir():

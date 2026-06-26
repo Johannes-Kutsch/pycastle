@@ -251,13 +251,26 @@ def test_fresh_worktree_reports_fresh(rs):
     assert rs.is_done() is False
 
 
-def test_populated_dir_is_resumable(rs):
+def test_continuation_file_controls_resumable_state(rs):
     rs.start_fresh()
-    (rs.path / "session.jsonl").write_text("{}\n")
+    (rs.path / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    assert rs.is_resumable() is False
+
+    (rs.path / "_continuation").write_text("opaque-token", encoding="utf-8")
 
     assert rs.run_kind() == RunKind.RESUME
     assert rs.is_resumable() is True
     assert rs.is_done() is False
+
+
+def test_populated_dir_without_continuation_is_not_resumable(rs):
+    rs.start_fresh()
+    (rs.path / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    assert rs.run_kind() == RunKind.FRESH
+    assert rs.is_resumable() is False
+    assert rs.is_done() is True
 
 
 def test_mark_done_signals_done_dir_survives_next_session_is_fresh(rs, worktree):
@@ -291,6 +304,25 @@ def test_start_fresh_on_populated_dir_makes_not_resumable(rs):
     rs.start_fresh()
 
     assert rs.is_resumable() is False
+
+
+def test_start_fresh_recreates_empty_session_store(rs):
+    rs.start_fresh()
+    (rs.path / "_continuation").write_text("opaque-token", encoding="utf-8")
+    (rs.path / "nested").mkdir()
+    (rs.path / "nested" / "state.json").write_text("{}", encoding="utf-8")
+
+    rs.start_fresh()
+
+    assert rs.path.is_dir()
+    assert list(rs.path.iterdir()) == []
+
+
+def test_continuation_round_trips_via_role_session_methods(rs):
+    rs.write_continuation("serialized-state")
+
+    assert rs.is_resumable() is True
+    assert rs.read_continuation() == "serialized-state"
 
 
 def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):

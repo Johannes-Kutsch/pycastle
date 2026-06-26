@@ -46,10 +46,9 @@ def test_select_in_flight_issues_keeps_input_order_across_mixed_evidence(
         / "issue-1"
         / SESSION_DIR_NAME
         / AgentRole.IMPLEMENTER.value
-        / "claude"
     )
     role_dir.mkdir(parents=True)
-    (role_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+    (role_dir / "_continuation").write_text("opaque-token", encoding="utf-8")
 
     git_svc.verify_ref_exists.side_effect = lambda ref, _repo_root: (
         ref == "pycastle/issue-2"
@@ -100,10 +99,9 @@ def test_select_in_flight_issues_uses_only_resumable_role_session_worktree_evide
         / "issue-1"
         / SESSION_DIR_NAME
         / AgentRole.IMPLEMENTER.value
-        / "claude"
     )
     started_role_dir.mkdir(parents=True)
-    (started_role_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+    (started_role_dir / "_continuation").write_text("opaque-token", encoding="utf-8")
 
     empty_role_dir = (
         repo_root
@@ -136,9 +134,9 @@ def test_select_in_flight_issues_treats_any_role_session_dir_under_issue_worktre
         "labels": ["behavior-slice"],
     }
     issue_worktree = worktree_identity(branch_for(issue_number), tmp_path).path
-    role_dir = issue_worktree / SESSION_DIR_NAME / role.value / "claude"
+    role_dir = issue_worktree / SESSION_DIR_NAME / role.value
     role_dir.mkdir(parents=True)
-    (role_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+    (role_dir / "_continuation").write_text("opaque-token", encoding="utf-8")
 
     git_svc.verify_ref_exists.return_value = False
 
