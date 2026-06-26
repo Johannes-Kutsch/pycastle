@@ -10,15 +10,37 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.ref == 'refs/heads/main' && 'publish-main' || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout (push)
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.CI_AUTOFIX_SSH_KEY }}
+      - name: Checkout (pull request)
+        if: github.event_name != 'push'
+        uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      - name: Apply ruff auto-fixes
+        id: autofix
+        if: github.event_name == 'push'
+        env:
+          AUTOFIX_REF: ${{ github.ref }}
+        run: .github/scripts/ci-autofix.sh
+      - name: Abort current run after auto-fix push
+        if: github.event_name == 'push' && steps.autofix.outputs.status == 'fix-pushed'
+        run: |
+          echo "ruff auto-fixes were applied and pushed; re-triggering publish."
+          exit 1
       - run: ruff check
       - run: mypy src
       - run: pytest
@@ -41,16 +63,6 @@ jobs:
           python-version: "3.12"
 
       - run: pip install -e ".[dev]"
-
-      - name: Apply ruff auto-fixes and retag if needed
-        id: autofix
-        run: .github/scripts/ci-autofix.sh
-
-      - name: Abort current run after auto-fix push
-        if: steps.autofix.outputs.status == 'fix-pushed'
-        run: |
-          echo "ruff auto-fixes were applied and pushed; re-triggering publish."
-          exit 1
 
       - name: Compute version
         id: version
