@@ -9,7 +9,7 @@ from pycastle.run_startup_preparation import (
     StageOverrideValidationFailure,
     prepare_run_startup,
 )
-from pycastle.services.runtime_services import ClaudeService
+from pycastle.services.runtime_services import ClaudeService, CodexService
 from pycastle.services.runtime_services import OpenCodeService
 from unittest.mock import patch
 
@@ -199,6 +199,26 @@ def test_prepare_run_startup_keeps_provider_credentials_behind_provider_adapters
     assert opencode.build_env()["OPENCODE_GO_API_KEY"] == "opencode"
     assert "CLAUDE_CODE_OAUTH_TOKEN_SECONDARY" not in startup.shared_container_env
     assert "OPENCODE_GO_API_KEY" not in startup.shared_container_env
+
+
+def test_prepare_run_startup_passes_openai_api_key_to_codex_service_and_excludes_from_shared_env():
+    # OPENAI_API_KEY must go into the container via CodexService.build_env() so that
+    # Codex has it when launched through `docker exec` (issue #1894).
+    cfg = Config(docker_image_name="img", improve_mode="until_sleep")
+
+    startup = prepare_run_startup(
+        cfg,
+        {
+            "GH_TOKEN": "gh",
+            "OPENAI_API_KEY": "sk-test",
+        },
+        RunStartupImproveModeFlagFacts(no_improve=False, improve_mode_flag=None),
+    )
+
+    codex = startup.configured_provider_adapters["codex"]
+    assert isinstance(codex, CodexService)
+    assert codex.build_env()["OPENAI_API_KEY"] == "sk-test"
+    assert "OPENAI_API_KEY" not in startup.shared_container_env
 
 
 def test_prepare_run_startup_uses_numbered_opencode_credentials_in_priority_order():

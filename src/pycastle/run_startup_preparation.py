@@ -162,7 +162,8 @@ def configured_provider_adapters_for_run(
     service_registry: dict[str, AgentService] = {}
 
     if "codex" in referenced:
-        service_registry["codex"] = CodexService()
+        openai_key = credential_env.get("OPENAI_API_KEY") or None
+        service_registry["codex"] = CodexService(api_key=openai_key)
 
     if "opencode" in referenced:
         opencode_accounts_with_slots = parse_credential_list(
@@ -351,6 +352,7 @@ def _shared_container_env(credential_env: Mapping[str, str]) -> dict[str, str]:
     # inject what they need into the agent container at the streaming boundary.
     provider_credential_prefixes = (
         "CLAUDE_CODE_OAUTH_TOKEN",
+        "OPENAI_API_KEY",
         "OPENCODE_GO_API_KEY",
     )
     return {
