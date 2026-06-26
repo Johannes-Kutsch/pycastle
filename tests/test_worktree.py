@@ -407,13 +407,22 @@ def test_managed_worktree_logs_creation_and_prune_events_with_node_state(
     assert prune["node_type"] == "directory"
 
 
+def _create_test_symlink_or_skip(link_path: Path, target: Path) -> None:
+    try:
+        link_path.symlink_to(target)
+    except OSError as err:
+        if getattr(err, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is unavailable")
+        raise
+
+
 def test_temporary_worktree_lifecycle_log_reports_broken_symlink_node_type(
     tmp_path: Path, monkeypatch
 ):
     log_path = tmp_path / "worktree-lifecycle-debug.log"
     monkeypatch.setenv("PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG", str(log_path))
     link_path = tmp_path / "broken-worktree-link"
-    link_path.symlink_to(tmp_path / "missing-target")
+    _create_test_symlink_or_skip(link_path, tmp_path / "missing-target")
 
     log_worktree_lifecycle_event("worktree_create", link_path)
 
@@ -426,6 +435,27 @@ def test_temporary_worktree_lifecycle_log_reports_broken_symlink_node_type(
     assert entry["node_type"] == "symlink"
     assert isinstance(entry.get("uid"), int)
     assert isinstance(entry.get("gid"), int)
+
+
+def test_create_test_symlink_or_skip_skips_when_windows_symlink_privilege_missing(
+    tmp_path: Path, monkeypatch
+):
+    link_path = tmp_path / "broken-worktree-link"
+    target = tmp_path / "missing-target"
+    err = OSError("missing symlink privilege")
+    err.winerror = 1314  # type: ignore[attr-defined]
+
+    def _deny_symlink(
+        _self: Path, _target: Path, _target_is_directory: bool = False
+    ) -> None:
+        raise err
+
+    monkeypatch.setattr(Path, "symlink_to", _deny_symlink)
+
+    with pytest.raises(
+        pytest.skip.Exception, match="Windows symlink privilege is unavailable"
+    ):
+        _create_test_symlink_or_skip(link_path, target)
 
 
 def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branch_deps):

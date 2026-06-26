@@ -97,6 +97,27 @@ def test_pycastle_error_shims_preserve_legacy_service_and_session_defaults():
     assert str(failed_error.session_store) == ".pycastle-session/implementer/claude"
 
 
+def test_agent_failed_error_uses_posix_legacy_session_store_but_preserves_explicit_path():
+    legacy_failure = AgentFailedError(
+        role_value="reviewer",
+        worktree_path=Path("."),
+        namespace="main",
+        service_name="codex",
+    )
+    explicit_path = Path("/tmp/session-store")
+    runtime_failure = AgentFailedError(
+        role_value="reviewer",
+        worktree_path=Path("."),
+        service_name="codex",
+        session_store=explicit_path,
+    )
+
+    assert legacy_failure.session_store == ".pycastle-session/reviewer/main/codex"
+    assert isinstance(legacy_failure.session_store, str)
+    assert runtime_failure.session_store == explicit_path
+    assert isinstance(runtime_failure.session_store, Path)
+
+
 def test_runtime_derived_pycastle_compatibility_errors_subclass_pycastle_error():
     assert issubclass(HardAgentError, PycastleError)
     assert issubclass(AgentFailedError, PycastleError)

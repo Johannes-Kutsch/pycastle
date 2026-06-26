@@ -61,7 +61,7 @@ _EVIDENCE_FILENAME = "agent-invocation.log"
 
 
 def _evidence_relative_path() -> str:
-    return str(_EVIDENCE_DIR / _EVIDENCE_FILENAME)
+    return (_EVIDENCE_DIR / _EVIDENCE_FILENAME).as_posix()
 
 
 def _copy_invocation_log_to_evidence_area(

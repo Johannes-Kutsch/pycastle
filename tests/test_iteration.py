@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import shutil
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -2740,6 +2740,20 @@ def test_run_iteration_failure_report_includes_evidence_path_and_copies_invocati
     copied_log = expected_path / evidence_path
     assert copied_log.exists()
     assert copied_log.read_bytes() == source_log.read_bytes()
+
+
+def test_evidence_relative_path_normalizes_windows_style_relative_paths(monkeypatch):
+    import pycastle.iteration as iteration
+
+    monkeypatch.setattr(
+        iteration,
+        "_EVIDENCE_DIR",
+        PureWindowsPath(".pycastle-session") / "failure-report",
+    )
+
+    assert iteration._evidence_relative_path() == (
+        ".pycastle-session/failure-report/agent-invocation.log"
+    )
 
 
 def test_run_iteration_failure_report_handles_missing_invocation_log_without_fallback_issue(

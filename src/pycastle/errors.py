@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 class PycastleError(RuntimeError):
@@ -100,13 +100,13 @@ class AgentFailedError(PycastleError):
         role_value: str,
         namespace: str,
         service_name: str,
-    ) -> Path:
-        role_root = Path(".") / ".pycastle-session" / role_value
+    ) -> str:
+        role_root = PurePosixPath(".pycastle-session") / role_value
         if namespace:
             role_root = role_root / namespace
         if service_name:
             role_root = role_root / service_name
-        return role_root
+        return role_root.as_posix()
 
     def __init__(
         self,
@@ -125,7 +125,7 @@ class AgentFailedError(PycastleError):
         self.failure_class = failure_class
         self.service_name = service_name
         self.agent_invocation_log_path = agent_invocation_log_path
-        self.session_store: str | Path = Path(
+        self.session_store = (
             session_store
             if session_store is not None
             else self._legacy_session_store_path(role_value, namespace, service_name)
