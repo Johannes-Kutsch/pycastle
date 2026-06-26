@@ -482,7 +482,9 @@ class ContainerRunner:
         tool_policy: ServiceToolPolicy | None = None,
     ) -> NewSessionRunRequest | ResumedSessionRunRequest:
         service_name = self._service.name if self._service is not None else "claude"
-        invocation_dir = self._mount_path if self._mount_path is not None else Path.cwd()
+        invocation_dir = (
+            self._mount_path if self._mount_path is not None else Path.cwd()
+        )
         tool_access = _coerce_tool_access(
             tool_policy if tool_policy is not None else ServiceToolPolicy.FULL,
             workspace=invocation_dir,
