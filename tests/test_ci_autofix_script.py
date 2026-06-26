@@ -123,9 +123,13 @@ def test_publish_workflow_checkout_uses_default_token_and_no_publish_push_token(
     workflow = (
         Path(__file__).parent.parent / ".github" / "workflows" / "publish.yml"
     ).read_text()
+    build_job = workflow.split("\n  build:\n", maxsplit=1)[1].split(
+        "\n  publish-testpypi:\n", maxsplit=1
+    )[0]
 
-    assert "token: ${{ secrets.PUBLISH_PUSH_TOKEN }}" not in workflow
-    assert "${{ secrets.CI_AUTOFIX_SSH_KEY }}" in workflow
+    assert "PUBLISH_PUSH_TOKEN" not in workflow
+    assert "token:" not in build_job
+    assert workflow.count("CI_AUTOFIX_SSH_KEY") == 1
 
 
 def test_format_and_check_fix_are_applied_then_pushed_for_branch_context(
