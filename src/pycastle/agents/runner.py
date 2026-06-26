@@ -678,7 +678,10 @@ class AgentRunner:
             request.role,
             request.session_namespace,
         )
-        state_dir_container_path = str(role_session.path)
+        state_dir_container_path = str(
+            Path(_CONTAINER_WORKSPACE)
+            / role_session.path.relative_to(request.mount_path)
+        )
         provider_auth = _provider_auth_from_env(
             service.build_env(state_dir_container_path)
         )
