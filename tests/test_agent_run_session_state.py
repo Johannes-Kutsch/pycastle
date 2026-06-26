@@ -14,7 +14,7 @@ from pycastle.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService, CodexService, OpenCodeService
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import RoleSession, RunKind
-from pycastle.session.resume import session_uuid_for_role_session_path
+from pycastle.session.role import session_uuid_for_role_session_path
 
 
 def _role_session_session_uuid(role_session: object) -> str:

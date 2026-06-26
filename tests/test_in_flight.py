@@ -10,8 +10,8 @@ from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.iteration.in_flight import select_in_flight_issues
 from pycastle.iteration.implement import branch_for
 from pycastle.services import GitService
-from pycastle.session.provider_session_state import save_service_session_metadata
-from pycastle.session.resume import RoleSession, SESSION_DIR_NAME
+from pycastle.session.role import RoleSession, SESSION_DIR_NAME
+from pycastle.session.service_session_store import save_service_session_metadata
 
 
 def _commit(repo_root: Path, message: str, content: str) -> None:

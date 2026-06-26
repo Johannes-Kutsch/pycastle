@@ -17,7 +17,7 @@ from pycastle.services.agent_service import (
 )
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.session.provider_session_state import (
+from pycastle.session.service_session_store import (
     load_service_session_id,
     save_service_session_metadata,
 )

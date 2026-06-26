@@ -32,6 +32,9 @@ from ..prompts.scope_args import (
 from ..issue_readiness import ready_slice_outcome_for_issue
 from ..session import RoleSession, is_stage_done_for
 from ..session import RunKind
+from ..session.service_session_store import (
+    has_exact_provider_transcript_for_selected_service,
+)
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
 from ..infrastructure.worktree import (
@@ -96,11 +99,12 @@ def _prompt_run_state_for_role(
     role_session = RoleSession(mount_path, role)
     service_name = _resolved_stage_service_name(deps.cfg, role)
     has_resumable_state = role_session.is_resumable()
-    has_exact_transcript_handoff = (
-        role_session.has_exact_transcript_handoff_for_selected_service(
-            deps.service_registry,
-            service_name,
-        )
+    has_exact_transcript_handoff = has_exact_provider_transcript_for_selected_service(
+        worktree=mount_path,
+        role=role,
+        namespace="",
+        registry=deps.service_registry,
+        service_name=service_name,
     )
     run_kind = (
         role_session.run_kind()

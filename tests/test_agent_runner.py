@@ -54,11 +54,11 @@ from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import ProviderRunState, RoleSession, RunKind
-from pycastle.session._provider_session_plan import (
+from pycastle.session.run_state_plan import (
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
 )
-from pycastle.session.resume import session_uuid_for_role_session_path
+from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )

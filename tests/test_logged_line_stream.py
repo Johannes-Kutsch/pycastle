@@ -12,7 +12,7 @@ from pycastle.infrastructure._logged_line_stream import (
     stream_logged_lines,
     stream_logged_work_lines,
 )
-from pycastle.session.resume import RunKind
+from pycastle.runtime_session import RunKind
 
 
 def _collect_stream(

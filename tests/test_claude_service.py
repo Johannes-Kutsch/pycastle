@@ -32,10 +32,10 @@ from pycastle.services.agent_service import (
     Result,
     UsageLimit,
 )
-from pycastle.session.provider_session_state import save_service_session_metadata
+from pycastle.session.service_session_store import save_service_session_metadata
 from pycastle.session import RoleSession
 from pycastle.session import RunKind
-from pycastle.session.resume import session_uuid_for_role_session_path
+from pycastle.session.role import session_uuid_for_role_session_path
 
 
 def _role_session_session_uuid(role_session: object) -> str:

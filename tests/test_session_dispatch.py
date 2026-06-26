@@ -22,32 +22,35 @@ from pycastle.session.run_dispatch import (
     record_successful_provider_session_metadata,
 )
 from pycastle.session import RoleSession, RunKind
-from pycastle.session._provider_session_sidecars import service_session_metadata_path
-from pycastle.session._provider_session_decision import (
+from pycastle.session.service_session_store import (
+    load_service_session_id,
+    save_service_session_metadata,
+    service_session_metadata_path,
+    store_for_role_session,
+)
+from pycastle.session.run_session import (
     AuthSeedingRequirement,
     RecoveredSessionIdPersistence,
 )
-from pycastle.session._provider_session_plan import (
+from pycastle.session.run_state_plan import (
     ProviderRunStatePlan,
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
     provider_session_adapter_for_service_name,
 )
-from pycastle.session._provider_session_state import (
+from pycastle.session.prepared_run_state import (
     ProviderSessionStateRequest as PreparedProviderSessionStateRequest,
     prepare_provider_session_state,
 )
-from pycastle.session.service_resume_identity import (
+from pycastle.runtime_session import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
-from pycastle.session.provider_session_state import save_service_session_metadata
 from pycastle.errors import HardAgentError
 from pycastle.services import ClaudeService, CodexService
 from pycastle.services.agent_service import AgentService
 from pycastle.services.opencode_service import OpenCodeService
-from pycastle.session.resume import session_uuid_for_role_session_path
-from pycastle.session.provider_session_state import load_service_session_id
+from pycastle.session.role import session_uuid_for_role_session_path
 
 
 def _role_session_session_uuid(role_session: object) -> str:
@@ -1326,7 +1329,9 @@ def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_fo
     )
     service = _NoRecomputeOpenCodeService(fail_provider_session_state=True)
     plan = ProviderRunStatePlan(
-        role_session=RoleSession(tmp_path, AgentRole.IMPROVE, "main"),
+        role_session=store_for_role_session(
+            RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+        ),
         provider_session_adapter=provider_session_adapter_for_service_name(
             service.name
         ),

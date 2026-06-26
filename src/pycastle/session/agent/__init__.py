@@ -1,4 +1,4 @@
-from .._provider_session_decision import (
+from ..auth_seed import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
     RecoveredSessionIdPersistence,
@@ -7,6 +7,7 @@ from ._planning import (
     RunSessionPlan,
     RunSessionPlanRequest,
     plan_run_session,
+    run_session_plan_from_provider_run_state_plan,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "RunSessionPlan",
     "RunSessionPlanRequest",
     "plan_run_session",
+    "run_session_plan_from_provider_run_state_plan",
 ]

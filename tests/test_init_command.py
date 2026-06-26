@@ -89,7 +89,7 @@ def test_init_keeps_credential_flow_but_only_manages_scaffold_files(
 def test_init_all_services_skip_dockerfiles_and_runtime_state(tmp_path, monkeypatch):
     """Selecting all keeps the wizard flow but skips user-owned overrides and session state."""
     from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
+    from pycastle.session.role import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     (fake_home / ".codex").mkdir(parents=True)
@@ -2323,7 +2323,7 @@ def test_init_refresh_cli_prints_layer_summary(tmp_path, monkeypatch):
 def test_init_codex_selection_succeeds_without_host_auth_json(tmp_path, monkeypatch):
     """Selecting codex no longer requires ~/.codex/auth.json during init."""
     from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
+    from pycastle.session.role import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
@@ -2346,7 +2346,7 @@ def test_init_codex_selection_creates_no_runtime_state_even_with_host_auth(
 ):
     """Host Codex auth on disk is ignored by init; no runtime state is scaffolded."""
     from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
+    from pycastle.session.role import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     (fake_home / ".codex").mkdir(parents=True)
@@ -2368,7 +2368,7 @@ def test_init_codex_selection_creates_no_runtime_state_even_with_host_auth(
 def test_init_all_rerun_keeps_existing_env_without_runtime_state(tmp_path, monkeypatch):
     """Re-running init with all preserves existing values and adds OpenCode's key."""
     from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
+    from pycastle.session.role import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
@@ -2398,7 +2398,7 @@ def test_init_all_rerun_keeps_existing_env_without_runtime_state(tmp_path, monke
 def test_init_all_without_host_codex_auth_keeps_written_env(tmp_path, monkeypatch):
     """Selecting all with no host Codex auth keeps the normal .env flow and does not fail."""
     from pycastle.commands.init import main
-    from pycastle.session.resume import SESSION_DIR_NAME
+    from pycastle.session.role import SESSION_DIR_NAME
 
     fake_home = tmp_path / "fakehome"
     fake_home.mkdir()
@@ -2731,7 +2731,7 @@ def test_init_refresh_legacy_default_service_codex_creates_no_dockerfiles(
 def test_init_refresh_leaves_existing_role_codex_dirs_unmodified(tmp_path, monkeypatch):
     """`pycastle init --refresh` does not manage or mutate pre-existing runtime state."""
     from pycastle.commands.init import refresh
-    from pycastle.session.resume import SESSION_DIR_NAME
+    from pycastle.session.role import SESSION_DIR_NAME
 
     monkeypatch.chdir(tmp_path)
     session_file = tmp_path / SESSION_DIR_NAME / "implementer" / "codex" / "auth.json"
@@ -2752,7 +2752,7 @@ def test_init_refresh_codex_config_without_existing_codex_dirs_does_not_create_t
     """`pycastle init --refresh` on a codex config with no per-role codex dirs does not create them."""
     from pycastle.agents.output_protocol import AgentRole
     from pycastle.commands.init import main, refresh
-    from pycastle.session.resume import SESSION_DIR_NAME
+    from pycastle.session.role import SESSION_DIR_NAME
 
     monkeypatch.chdir(tmp_path)
     with (

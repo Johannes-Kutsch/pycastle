@@ -228,7 +228,7 @@ def select_resumable_provider_session_id(
         return ProviderSessionSelection(provider_session_id=None)
 
     role_session_path = getattr(role_session, "path", None)
-    from .session.provider_session_state import load_service_session_id
+    from .session.service_session_store import load_service_session_id
 
     provider_session_id = (
         load_service_session_id(role_session_path, service_name)

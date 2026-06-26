@@ -1,31 +1,30 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
 
 from ..agents.output_protocol import AgentRole
-from ._agent_run_session_state import (
+from ..services.agent_service import AgentService
+from pycastle.runtime_session import RunKind
+from .agent import (
+    AuthSeedingRequirement,
+    LocalAuthSeedAction,
+    RunSessionPlan,
+    RunSessionPlanRequest,
+    plan_run_session,
+)
+from .agent._planning import run_session_plan_from_provider_run_state_plan
+from .run_dispatch import (
     AgentRunSessionState,
     AgentRunSessionStateRequest,
     PreparedAgentProviderRunSession,
     prepare_agent_run_session_state,
 )
-from ._provider_session_decision import (
-    AuthSeedingRequirement,
-    LocalAuthSeedAction,
-)
-from ._provider_session_plan import (
+from .run_state_plan import (
     ProviderRunStatePlan,
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
 )
-from .agent import RunSessionPlan, RunSessionPlanRequest, plan_run_session
-from .resume import RunKind, RoleSession
-
-if TYPE_CHECKING:
-    from ..services.agent_service import AgentService
 
 
 @dataclasses.dataclass(frozen=True)
@@ -40,7 +39,7 @@ class ProviderSessionStateRequest:
 
 @dataclasses.dataclass
 class PreparedProviderSessionState:
-    role_session: RoleSession
+    role_session: object
     run_kind: RunKind
     provider_session_id: str | None
     service_state_dir_relpath: str | None
@@ -61,19 +60,16 @@ class PreparedProviderSessionState:
     def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
         return self._state.provider_state_dir_container_path(container_workspace)
 
-    def initial_provider_run_session(self) -> PreparedProviderRunSession:
-        return _wrap_provider_run_session(self._state.initial_provider_run_session())
+    def initial_provider_run_session(self) -> PreparedAgentProviderRunSession:
+        return self._state.initial_provider_run_session()
 
-    def resumable_provider_run_session(self) -> PreparedProviderRunSession:
-        return _wrap_provider_run_session(self._state.resumable_provider_run_session())
+    def resumable_provider_run_session(self) -> PreparedAgentProviderRunSession:
+        return self._state.resumable_provider_run_session()
 
     def protocol_reprompt_provider_run_session(
         self,
-    ) -> PreparedProviderRunSession | None:
-        state_run_session = self._state.protocol_reprompt_provider_run_session()
-        if state_run_session is None:
-            return None
-        return _wrap_provider_run_session(state_run_session)
+    ) -> PreparedAgentProviderRunSession | None:
+        return self._state.protocol_reprompt_provider_run_session()
 
     def prepare_for_run(self) -> None:
         self._state.prepare_for_run()
@@ -84,31 +80,6 @@ class PreparedProviderSessionState:
 
     def record_successful_run(self) -> None:
         self._state.record_successful_run()
-
-
-@dataclasses.dataclass(frozen=True)
-class PreparedProviderRunSession:
-    run_kind: RunKind
-    provider_session_id: str | None
-    _provider_session_id_recorder: Callable[[str], None] | None = dataclasses.field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    _success_recorder: Callable[[], None] | None = dataclasses.field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-
-    def record_provider_session_id(self, provider_session_id: str) -> None:
-        object.__setattr__(self, "provider_session_id", provider_session_id)
-        if self._provider_session_id_recorder is not None:
-            self._provider_session_id_recorder(provider_session_id)
-
-    def record_successful_run(self) -> None:
-        if self._success_recorder is not None:
-            self._success_recorder()
 
 
 def prepare_provider_session_state(
@@ -157,41 +128,12 @@ def _run_session_plan_for_request(
                 service=request.service,
             )
         )
-
-    return RunSessionPlan(
+    return run_session_plan_from_provider_run_state_plan(
         role=request.role,
         worktree=request.worktree,
         namespace=request.session_namespace,
         service=request.service,
-        run_kind=provider_run_state_plan.run_kind,
-        service_state_dir=provider_run_state_plan.service_state_dir,
-        provider_state_dir_relpath=provider_run_state_plan.provider_state_dir_relpath,
-        host_provider_state_dir=provider_run_state_plan.provider_state_dir,
-        provider_session_id=provider_run_state_plan.provider_session_id,
-        auth_seeding_requirement=provider_run_state_plan.auth_seeding_requirement,
-        recovered_session_id_persistence=(
-            provider_run_state_plan.recovered_session_id_persistence
-        ),
-        auth_seed_action=cast(
-            LocalAuthSeedAction | None,
-            provider_run_state_plan.auth_seed_action,
-        ),
-        exact_transcript_match=provider_run_state_plan.exact_transcript_match,
-        use_service_state_dir_for_container=(
-            provider_run_state_plan.use_service_state_dir_for_container
-        ),
-        _provider_run_state_plan=provider_run_state_plan,
-    )
-
-
-def _wrap_provider_run_session(
-    state_run_session: PreparedAgentProviderRunSession,
-) -> PreparedProviderRunSession:
-    return PreparedProviderRunSession(
-        run_kind=state_run_session.run_kind,
-        provider_session_id=state_run_session.provider_session_id,
-        _provider_session_id_recorder=state_run_session._provider_session_id_recorder,
-        _success_recorder=state_run_session._success_recorder,
+        provider_run_state_plan=provider_run_state_plan,
     )
 
 
@@ -213,7 +155,6 @@ def has_exact_transcript_match(
 
 
 __all__ = [
-    "PreparedProviderRunSession",
     "PreparedProviderSessionState",
     "ProviderSessionStateRequest",
     "prepare_provider_session_state",

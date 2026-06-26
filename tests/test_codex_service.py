@@ -34,12 +34,12 @@ from pycastle.services.agent_service import (
     UsageLimit,
 )
 from pycastle.session import RoleSession, RunKind
-from pycastle.session.provider_session_state import (
+from pycastle.session.service_session_store import (
     load_service_session_id,
     save_service_session_metadata,
 )
-from pycastle.session.resume import session_uuid_for_role_session_path
-from pycastle.session.service_resume_identity import (
+from pycastle.session.role import session_uuid_for_role_session_path
+from pycastle.runtime_session import (
     select_resumable_provider_session_id,
 )
 

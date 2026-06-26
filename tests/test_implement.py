@@ -18,7 +18,7 @@ from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.session import RoleSession
-from pycastle.session.provider_session_state import save_service_session_metadata
+from pycastle.session.service_session_store import save_service_session_metadata
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,

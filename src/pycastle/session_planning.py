@@ -12,6 +12,11 @@ from .provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
 )
+from .session.role import session_uuid_for_role_session_path
+from .session.service_session_store import (
+    clear_service_session_metadata,
+    save_service_session_metadata,
+)
 
 if TYPE_CHECKING:
     pass
@@ -217,11 +222,6 @@ class ProviderRunStatePlan:
         )
 
     def record_successful_run(self, provider_session_id: str | None) -> None:
-        from .session.provider_session_state import (
-            clear_service_session_metadata,
-            save_service_session_metadata,
-        )
-
         legacy_record_successful_metadata = getattr(
             self.role_session,
             "record_successful_provider_session_metadata",
@@ -472,8 +472,6 @@ def _preferred_provider_session_id(
         return None
     role_session_path = getattr(role_session, "path", None)
     if isinstance(role_session_path, Path):
-        from .session.resume import session_uuid_for_role_session_path
-
         derived_uuid = session_uuid_for_role_session_path(role_session_path)
         if derived_uuid is not None:
             return derived_uuid

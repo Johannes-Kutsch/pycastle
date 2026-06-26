@@ -1,7 +1,6 @@
 from pycastle.session_planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction as RuntimeLocalAuthSeedAction,
-    ProviderSessionDecision,
     RecoveredSessionIdPersistence,
 )
 
@@ -31,6 +30,5 @@ class LocalAuthSeedAction(RuntimeLocalAuthSeedAction):
 __all__ = [
     "AuthSeedingRequirement",
     "LocalAuthSeedAction",
-    "ProviderSessionDecision",
     "RecoveredSessionIdPersistence",
 ]

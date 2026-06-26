@@ -39,13 +39,12 @@ from ..prompts.dispatch import (
 )
 from ..prompts.pipeline import PromptRenderer, PromptTemplate
 from ..session import RunKind
-from ..session.agent import RunSessionPlan
-from ..session._provider_session_plan import ProviderRunStatePlan
-from ..session._provider_session_state import (
-    ProviderSessionStateRequest,
-    prepare_provider_session_state,
+from ..session.agent import (
+    RunSessionPlan,
+    run_session_plan_from_provider_run_state_plan,
 )
 from ..session.run_dispatch import RunSessionRequest, prepare_run_session
+from pycastle.session_planning import ProviderRunStatePlan
 from ..services import GitService
 from ..services.agent_service import AgentService
 from ..services.claude_service import ClaudeService
@@ -291,14 +290,21 @@ class AgentRunner:
         ):
             plan_payload = run_session_plan.run_session_plan
             if isinstance(plan_payload, ProviderRunStatePlan):
-                return prepare_provider_session_state(
-                    ProviderSessionStateRequest(
+                return prepare_run_session(
+                    RunSessionRequest(
                         worktree=run_session_plan.mount_path,
                         role=cast(AgentRole, run_session_plan.role),
                         session_namespace=run_session_plan.session_namespace,
                         service=cast(AgentService, run_session_plan.service),
+                        container_workspace=run_session_plan.container_workspace,
+                        run_session_plan=run_session_plan_from_provider_run_state_plan(
+                            role=cast(AgentRole, run_session_plan.role),
+                            worktree=run_session_plan.mount_path,
+                            namespace=run_session_plan.session_namespace,
+                            service=cast(AgentService, run_session_plan.service),
+                            provider_run_state_plan=plan_payload,
+                        ),
                         require_exact_transcript_for_strict_resume=True,
-                        provider_run_state_plan=plan_payload,
                     )
                 )
             return prepare_run_session(

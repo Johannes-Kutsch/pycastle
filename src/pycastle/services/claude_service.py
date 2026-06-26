@@ -16,8 +16,7 @@ from pycastle.runtime_session import (
     is_exact_resumable_service_session,
 )
 
-from ..session.resume import provider_state_relpath
-from ..session.resume import session_uuid_for_role_session_path
+from ..session.role import provider_state_relpath, session_uuid_for_role_session_path
 from pycastle.services.agent_service import (
     AssistantTurn,
     CredentialFailure,

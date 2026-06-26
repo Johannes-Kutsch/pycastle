@@ -28,13 +28,13 @@ from pycastle.runtime_session import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
-from ..session.provider_session_state import load_service_session_id
+from ..session.service_session_store import load_service_session_id
 
 from .. import _time as _time_module
 from ..agents.output_protocol import AgentOutputProtocolError
 from ..session.agent import AuthSeedingRequirement, LocalAuthSeedAction
-from ..session._provider_session_plan import provider_session_adapter_for_service_name
-from ..session.resume import provider_state_relpath
+from ..provider_session_adapter import provider_session_adapter_for_service_name
+from ..session.role import provider_state_relpath
 from ._wake_time import compute_wake_time
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
 from .reset_time_parser import ResetTimeSyntaxMode, parse_reset_time

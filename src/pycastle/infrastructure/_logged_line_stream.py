@@ -10,7 +10,7 @@ from typing import BinaryIO, cast
 
 from ..agents.output_protocol import AgentRole
 from ..errors import AgentTimeoutError
-from ..session.resume import RunKind
+from ..runtime_session import RunKind
 from .agent_invocation_log import (
     LogicalAgentInvocationLog,
     WorkInvocationLog,

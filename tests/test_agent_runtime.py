@@ -53,7 +53,7 @@ from pycastle.runtime_session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
-from pycastle.session.provider_session_state import (
+from pycastle.session.service_session_store import (
     load_service_session_metadata,
     save_service_session_id,
 )

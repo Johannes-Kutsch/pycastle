@@ -18,9 +18,10 @@ from pycastle.runtime_session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
-from pycastle.session.provider_session_state import (
+from pycastle.session.service_session_store import (
     load_service_session_id,
     save_service_session_metadata,
+    service_session_metadata_path,
 )
 from pycastle.services.agent_service import AgentService
 from pycastle.services.codex_service import CodexService
@@ -34,14 +35,12 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
-from pycastle.session._provider_session_plan import _provider_session_adapter
-from pycastle.session_planning import (
+from pycastle.session.run_state_plan import (
     ProviderRunStatePlanRequest,
-    RecoveredSessionIdPersistence,
     plan_provider_run_state,
 )
-from pycastle.session._provider_session_sidecars import service_session_metadata_path
-from pycastle.session.resume import session_uuid_for_role_session_path
+from pycastle.session_planning import RecoveredSessionIdPersistence
+from pycastle.session.role import session_uuid_for_role_session_path
 
 
 def _role_session_session_uuid(role_session: object) -> str:
@@ -99,15 +98,12 @@ def _provider_run_state_for_service(
     service: AgentService,
 ) -> ProviderRunState:
     worktree, role, namespace = _role_session_identity(role_session)
-    requested_role_session = cast(RoleSession, role_session)
     plan = plan_provider_run_state(
         ProviderRunStatePlanRequest(
             worktree=worktree,
             role=role,
             namespace=namespace,
             service=service,
-            role_session=requested_role_session,
-            provider_session_adapter=_provider_session_adapter(service),
         )
     )
     fallback_reason = None

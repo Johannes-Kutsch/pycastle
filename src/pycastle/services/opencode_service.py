@@ -26,7 +26,7 @@ from pycastle.runtime_session import (
 )
 
 from ..agents.output_protocol import AgentRole
-from ..session.resume import provider_state_relpath
+from ..session.role import provider_state_relpath
 from ..session import RunKind
 from .credential_pool import CredentialPool
 from .flag_profiles import AgentToolPolicyGroup, tool_policy_group_for
