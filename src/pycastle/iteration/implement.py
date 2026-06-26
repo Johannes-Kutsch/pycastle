@@ -31,6 +31,7 @@ from ..prompts.scope_args import (
 )
 from ..issue_readiness import ready_slice_outcome_for_issue
 from ..session import RoleSession, is_stage_done_for
+from ..session import RunKind
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
 from ..infrastructure.worktree import (
@@ -101,11 +102,41 @@ async def run_issue(
     _token = token if token is not None else CancellationToken()
 
     def _scope_args_for(mount_path: Path, role: AgentRole) -> dict[str, str]:
+        role_session = RoleSession(mount_path, role)
+        has_resumable_state = role_session.is_resumable()
+        if role is AgentRole.IMPLEMENTER:
+            service_name = deps.cfg.implement_override.service
+        elif role is AgentRole.REVIEWER:
+            service_name = deps.cfg.review_override.service
+        else:
+            raise RuntimeError(f"Unsupported role {role!r} for implement path")
+        registry = getattr(deps, "service_registry", None)
+        has_exact_owner = bool(
+            service_name
+            and registry is not None
+            and role_session.has_exact_provider_transcript_for_selected_service(
+                registry, service_name
+            )
+        )
+        run_kind = (
+            RunKind.FRESH
+            if has_resumable_state and not has_exact_owner
+            else role_session.run_kind()
+        )
+        interrupted_work_from_dirty_tree = (
+            run_kind is RunKind.FRESH
+            and has_resumable_state
+            and deps.repo_root is not None
+            and not has_exact_owner
+        )
         return build_per_issue_scope_args(
             issue,
             branch=_branch,
-            run_kind=RoleSession(mount_path, role).run_kind(),
-            is_dirty=not deps.git_svc.is_working_tree_clean(mount_path),
+            run_kind=run_kind,
+            is_dirty=(
+                interrupted_work_from_dirty_tree
+                and not deps.git_svc.is_working_tree_clean(mount_path)
+            ),
         )
 
     _implement_started = False

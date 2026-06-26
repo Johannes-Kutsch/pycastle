@@ -12,10 +12,12 @@ from pycastle.agents.output_protocol import (
     PromiseParseError,
 )
 from pycastle.agents.runner import RunRequest
-from pycastle.config import Config
+from pycastle.config import Config, StageOverride
+from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.display.status_display import PlainStatusDisplay
+from pycastle.session import RoleSession
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
@@ -25,6 +27,7 @@ from pycastle.iteration.implement import (
     run_issue,
 )
 from pycastle.services import GitService, GithubService
+from pycastle.services import ServiceRegistry
 from tests.support import (
     FakeAgentRunner,
     RecordingLogger,
@@ -33,6 +36,33 @@ from tests.support import (
 )
 
 _cfg = Config()
+
+
+@dataclasses.dataclass(frozen=True)
+class _CrossServiceTestService:
+    name: str
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        relpath = f".pycastle-session/{role.value}/{self.name}"
+        return f"{relpath}/{namespace}" if namespace else relpath
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        return state_dir.is_dir() and any(state_dir.iterdir())
+
+
+def _seed_prior_role_session_with_service(
+    worktree: Path,
+    *,
+    role: AgentRole,
+    service_name: str,
+    session_id: str,
+) -> None:
+    role_session = RoleSession(worktree, role)
+    role_session.save_service_session_id(service_name, session_id)
+    role_session.save_service_session_metadata(service_name, session_id)
+    state_dir = worktree / f".pycastle-session/{role.value}/{service_name}"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "seed").write_text("seed", encoding="utf-8")
 
 
 def _reviewer_output(message: str | None) -> CommitMessageOutput:
@@ -676,6 +706,110 @@ def test_run_issue_dispatches_implementer_then_reviewer_with_expected_stages(tmp
         ),
         (AgentRole.REVIEWER, PromptTemplate.REVIEW, "pre-review"),
     ]
+
+
+def test_run_issue_cross_service_resolved_service_uses_full_role_prompt_with_interrupted_work_clause(
+    tmp_path,
+):
+    branch = "pycastle/issue-3"
+    worktree = worktree_identity(branch, tmp_path).path
+    issue = {
+        "number": 3,
+        "title": "Handoff title",
+        "body": "A detailed issue body.",
+        "comments": [
+            {
+                "author": "alice",
+                "created_at": "2026-06-01T00:00:00Z",
+                "body": "Previous agent noted a follow-up.",
+            }
+        ],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    cfg = Config(
+        implement_override=StageOverride(service="opencode"),
+        review_override=StageOverride(service="opencode"),
+    )
+    registry = ServiceRegistry(
+        {
+            "opencode": _CrossServiceTestService("opencode"),
+            "codex": _CrossServiceTestService("codex"),
+        }
+    )
+    deps = _make_deps(tmp_path, fake, cfg=cfg, service_registry=registry)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    deps.git_svc.create_worktree(tmp_path, worktree, branch, "sha-abc")
+    _seed_prior_role_session_with_service(
+        worktree=worktree,
+        role=AgentRole.IMPLEMENTER,
+        service_name="codex",
+        session_id="codex-legacy-session",
+    )
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    implementer_call = fake.calls[0]
+    assert (
+        "Run `git diff` and `git status` to understand the current state"
+        in implementer_call.prompt.scope_args["INTERRUPTED_WORK"]
+    )
+    assert implementer_call.prompt.scope_args["ISSUE_BODY"] == issue["body"]
+
+
+def test_run_issue_same_service_resumable_session_keeps_interrupted_work_clause_blank(
+    tmp_path,
+):
+    branch = "pycastle/issue-4"
+    worktree = worktree_identity(branch, tmp_path).path
+    issue = {
+        "number": 4,
+        "title": "Same service resume",
+        "body": "Issue body.",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    cfg = Config(implement_override=StageOverride(service="opencode"))
+    registry = ServiceRegistry({"opencode": _CrossServiceTestService("opencode")})
+    deps = _make_deps(tmp_path, fake, cfg=cfg, service_registry=registry)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    deps.git_svc.create_worktree(tmp_path, worktree, branch, "sha-abc")
+    _seed_prior_role_session_with_service(
+        worktree=worktree,
+        role=AgentRole.IMPLEMENTER,
+        service_name="opencode",
+        session_id="opencode-legacy-session",
+    )
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    implementer_call = fake.calls[0]
+    assert implementer_call.prompt.scope_args["INTERRUPTED_WORK"] == ""
+    assert implementer_call.prompt.send_role_prompt_on_resume is False
+
+
+def test_run_issue_no_prior_session_starts_with_full_role_prompt_without_interrupted_clause(
+    tmp_path,
+):
+    fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    issue = {
+        "number": 5,
+        "title": "Fresh start",
+        "body": "Fresh body.",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = True
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    implementer_call = fake.calls[0]
+    assert implementer_call.prompt.scope_args["INTERRUPTED_WORK"] == ""
+    assert implementer_call.prompt.scope_args["ISSUE_BODY"] == issue["body"]
+    assert implementer_call.prompt.scope_args["ISSUE_TITLE"] == issue["title"]
 
 
 # ── Issue 349: issue_title threading ─────────────────────────────────────────
