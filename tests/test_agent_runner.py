@@ -110,6 +110,11 @@ class _PreparedRunSessionStandIn:
     def resumable_provider_run_session(self) -> "_PreparedProviderRunSessionStandIn":
         return self.resumable_session
 
+    def protocol_reprompt_provider_run_session(
+        self,
+    ) -> "_PreparedProviderRunSessionStandIn | None":
+        return None
+
 
 def _role_session_session_uuid(role_session: object) -> str:
     role_session_path = getattr(role_session, "path", None)
@@ -121,9 +126,6 @@ def _role_session_session_uuid(role_session: object) -> str:
     if callable(legacy):
         return legacy()
     raise AssertionError("Unable to derive role session identifier")
-
-    def protocol_reprompt_provider_run_session(self):
-        return None
 
 
 class _PreparedRunSessionWithRepromptStandIn(_PreparedRunSessionStandIn):
