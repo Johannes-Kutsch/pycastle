@@ -234,6 +234,90 @@ def test_tag_context_force_moves_tag_and_fast_forwards_main(tmp_path, ruff_shim)
     assert local_head == remote_tag
 
 
+def test_tag_context_leaves_remote_tag_unchanged_when_main_push_is_rejected(
+    tmp_path, ruff_shim
+):
+    repo = _bootstrap_repo_with_bare_remote(tmp_path)
+    subprocess.run(
+        ["git", "-C", str(repo), "tag", "v1.2.3", "HEAD"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "push", "origin", "refs/tags/v1.2.3"],
+        check=True,
+        capture_output=True,
+    )
+
+    remote = subprocess.run(
+        ["git", "-C", str(repo), "remote", "get-url", "origin"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    original_remote_tag = subprocess.run(
+        ["git", "-C", remote, "rev-parse", "refs/tags/v1.2.3"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    competitor = tmp_path / "competitor"
+    subprocess.run(
+        ["git", "clone", remote, str(competitor)], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(competitor), "config", "user.email", "test@test.com"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(competitor), "config", "user.name", "Test"],
+        check=True,
+        capture_output=True,
+    )
+    (competitor / "race.txt").write_text("remote wins race\n")
+    subprocess.run(
+        ["git", "-C", str(competitor), "add", "race.txt"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(competitor), "commit", "-m", "race"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(competitor), "push", "origin", "HEAD:refs/heads/main"],
+        check=True,
+        capture_output=True,
+    )
+
+    (repo / "bad_format.py").write_text("def  format_bad(   x ):\n    return  x\n")
+    (repo / "lint_fix.py").write_text("x=2\n")
+
+    ruff_bin, _ = ruff_shim
+    script = Path(__file__).parent.parent / ".github" / "scripts" / "ci-autofix.sh"
+    output_file = tmp_path / "github_output.txt"
+    env = os.environ.copy()
+    env["PATH"] = f"{ruff_bin}:{env['PATH']}"
+    env["GITHUB_REF"] = "refs/tags/v1.2.3"
+    env["GITHUB_OUTPUT"] = str(output_file)
+
+    result = _run_script(script, repo, env)
+
+    remote_tag = subprocess.run(
+        ["git", "-C", remote, "rev-parse", "refs/tags/v1.2.3"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert result.returncode != 0
+    assert remote_tag == original_remote_tag
+    assert not output_file.exists()
+
+
 def test_clean_tree_emits_proceed_and_performs_no_push(tmp_path, ruff_shim):
     repo = _bootstrap_repo_with_bare_remote(tmp_path, clean_seed=True)
     remote = subprocess.run(
