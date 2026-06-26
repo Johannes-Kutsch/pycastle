@@ -9,6 +9,10 @@ from typing import Any, Literal, Protocol, cast
 import agent_runtime
 from agent_runtime import ProviderAuth
 from agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
+from agent_runtime.errors import (
+    AgentCredentialFailureError as RuntimeAgentCredentialFailureError,
+)
+from agent_runtime.errors import HardAgentError as RuntimeHardAgentError
 from agent_runtime.errors import ProviderUnavailableReason
 from agent_runtime.runtime import (
     Cancelled,
@@ -44,9 +48,11 @@ from ..config import Config, StageOverride, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
 from ..errors import (
+    AgentCredentialFailureError,
     AgentFailedError,
     AgentTimeoutError,
     DockerError,
+    HardAgentError,
     SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
@@ -160,6 +166,23 @@ def _runtime_tool_policy_for_role(role: AgentRole) -> RuntimeToolPolicy:
     if role in {AgentRole.PLANNER, AgentRole.DIVERGENCE_RESOLVER}:
         return RuntimeToolPolicy.NO_FILE_MUTATION
     return RuntimeToolPolicy.UNRESTRICTED
+
+
+def _default_effort() -> str:
+    return "medium"
+
+
+def _default_model(service: AgentService) -> str:
+    try:
+        valid_models = service.valid_models()
+    except Exception:
+        return "gpt-5.5"
+    for candidate in ("gpt-5.5", "gpt-5.4", "haiku", "opus", "sonnet"):
+        if candidate in valid_models:
+            return candidate
+    if valid_models:
+        return sorted(valid_models)[0]
+    return "gpt-5.5"
 
 
 class _UnavailableDockerSession:
@@ -300,6 +323,32 @@ class AgentRunner:
                 _UnavailableDockerSession(str(exc)),
             )
 
+    def _handle_provider_account_exhaustion(
+        self,
+        service: AgentService,
+        error: UsageLimitError,
+    ) -> None:
+        provider = error.provider or service.name
+        minimum_unknown_reset_duration = _minimum_unknown_reset_duration_for_provider(
+            self._cfg,
+            provider,
+        )
+        mark_permanently_exhausted = getattr(
+            service,
+            "mark_permanently_exhausted",
+            None,
+        )
+        if error.is_permanent and callable(mark_permanently_exhausted):
+            error.account_label = mark_permanently_exhausted()
+            return
+        now = _time_module.now_local()
+        mark_exhausted_reset_time = _minimum_unknown_reset_or_default(
+            error.reset_time,
+            minimum_unknown_reset_duration,
+            now,
+        )
+        service.mark_exhausted(mark_exhausted_reset_time)
+
     def build_work_dependencies(
         self,
         *,
@@ -384,30 +433,7 @@ class AgentRunner:
             service_for_run: AgentService,
             error,
         ) -> None:
-            provider = error.provider or service_for_run.name
-            minimum_unknown_reset_duration = (
-                _minimum_unknown_reset_duration_for_provider(
-                    self._cfg,
-                    provider,
-                )
-            )
-            mark_permanently_exhausted = getattr(
-                service_for_run,
-                "mark_permanently_exhausted",
-                None,
-            )
-            if error.is_permanent and callable(mark_permanently_exhausted):
-                error.account_label = mark_permanently_exhausted()
-                return
-            now = _time_module.now_local()
-            mark_exhausted_reset_time = _minimum_unknown_reset_or_default(
-                error.reset_time,
-                minimum_unknown_reset_duration,
-                now,
-            )
-            service_for_run.mark_exhausted(
-                mark_exhausted_reset_time,
-            )
+            self._handle_provider_account_exhaustion(service_for_run, error)
 
         return WorkInvocationDependencies(
             container_workspace=_CONTAINER_WORKSPACE,
@@ -623,6 +649,12 @@ class AgentRunner:
     ) -> AgentOutput:
         from ..iteration._rows import status_row
 
+        token = request.token if request.token is not None else CancellationToken()
+        if token.is_cancelled:
+            raise UsageLimitError(
+                reset_time=None,
+                stage_key=_stage_key_for_role(request.role),
+            )
         status_display = (
             request.status_display
             if request.status_display is not None
@@ -637,7 +669,8 @@ class AgentRunner:
         provider_auth = _provider_auth_from_env(
             service.build_env(state_dir_container_path)
         )
-        runtime_client = agent_runtime.RuntimeClient()
+        resolved_model = request.model or _default_model(service)
+        resolved_effort = request.effort or _default_effort()
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
         session = self._build_session(
@@ -648,16 +681,17 @@ class AgentRunner:
         runner = ContainerRunner(
             request.name,
             session,
-            model=request.model,
-            effort=request.effort,
+            model=resolved_model,
+            effort=resolved_effort,
             status_display=status_display,
             cfg=self._cfg,
             service=service,
         )
+        runtime_client = runner._get_runtime_client()
         model_display = ModelDisplayMetadata(
             service=service.name,
-            model=request.model,
-            effort=request.effort,
+            model=resolved_model,
+            effort=resolved_effort,
         )
 
         async with status_row(
@@ -670,13 +704,20 @@ class AgentRunner:
             model_display=model_display,
         ) as row:
             try:
-                await runner.setup(git_name, git_email, request.work_body)
+                try:
+                    await runner.setup(git_name, git_email, request.work_body)
+                except DockerError as exc:
+                    raise SetupPhaseError(request.role.value, str(exc)) from exc
                 output = await self._invoke_runtime_attempts(
                     request=request,
+                    service=service,
                     runner=runner,
                     runtime_client=runtime_client,
                     role_session=role_session,
                     provider_auth=provider_auth,
+                    resolved_model=resolved_model,
+                    resolved_effort=resolved_effort,
+                    status_display=status_display,
                     reprompt_message=reprompt_message,
                 )
                 row.close("finished")
@@ -691,42 +732,102 @@ class AgentRunner:
         self,
         *,
         request: RunRequest,
+        service: AgentService,
         runner: ContainerRunner,
         runtime_client: Any,
         role_session: RoleSession,
         provider_auth: ProviderAuth | None,
+        resolved_model: str,
+        resolved_effort: str,
+        status_display: StatusDisplay,
         reprompt_message: str | Callable[[str | None], str],
     ) -> AgentOutput:
-        run_kind = role_session.run_kind()
         prompt = await self._render_runtime_prompt(
             request=request,
             runner=runner,
-            run_kind=run_kind,
+            run_kind=role_session.run_kind(),
         )
         current_prompt = prompt
-        current_run_kind = run_kind
+        current_run_kind = role_session.run_kind()
+        retries_left = self._cfg.timeout_retries
 
         for attempt in range(3):
-            outcome = await self._run_runtime_once(
-                request=request,
-                runner=runner,
-                runtime_client=runtime_client,
-                role_session=role_session,
-                provider_auth=provider_auth,
-                prompt=current_prompt,
-                run_kind=current_run_kind,
-            )
+            try:
+                outcome = await self._run_runtime_once(
+                    request=request,
+                    runner=runner,
+                    runtime_client=runtime_client,
+                    role_session=role_session,
+                    provider_auth=provider_auth,
+                    prompt=current_prompt,
+                    run_kind=current_run_kind,
+                    resolved_model=resolved_model,
+                    resolved_effort=resolved_effort,
+                )
+            except RuntimeAgentCredentialFailureError as err:
+                if request.token is not None:
+                    request.token.cancel()
+                mapped = AgentCredentialFailureError(
+                    str(err),
+                    service_name=err.service_name or service.name,
+                    classification=err.classification,
+                )
+                mapped.caller = request.name
+                if mapped.service_name == "opencode":
+                    transformed = UsageLimitError(
+                        reset_time=None,
+                        raw_message=str(mapped),
+                        provider=service.name,
+                        is_permanent=True,
+                    )
+                    self._handle_provider_account_exhaustion(service, transformed)
+                    if service.is_available():
+                        provider_auth = _provider_auth_from_env(
+                            service.build_env(str(role_session.path))
+                        )
+                        current_run_kind = RunKind.FRESH
+                        current_prompt = await self._render_runtime_prompt(
+                            request=request,
+                            runner=runner,
+                            run_kind=current_run_kind,
+                        )
+                        continue
+                raise mapped from err
+            except RuntimeHardAgentError as err:
+                if request.token is not None:
+                    request.token.cancel()
+                mapped_hard = HardAgentError(
+                    str(err),
+                    service_name=err.service_name or service.name,
+                    classification=err.classification,
+                )
+                mapped_hard.caller = request.name
+                raise mapped_hard from err
+
+            if not hasattr(outcome, "kind") and hasattr(outcome, "output"):
+                outcome = agent_runtime.RuntimeOutcome(
+                    kind=Completed(),
+                    result=outcome,
+                )
+            continuation = outcome.result.continuation
+            if continuation is not None and continuation.serialized is not None:
+                role_session.write_continuation(continuation.serialized)
             if isinstance(outcome.kind, Cancelled):
                 return CompletionOutput()
             if isinstance(outcome.kind, Completed):
-                continuation = outcome.result.continuation
-                if continuation is not None and continuation.serialized is not None:
-                    role_session.write_continuation(continuation.serialized)
                 try:
-                    return extract_output(outcome.result.output, request.role)
+                    parsed = extract_output(outcome.result.output, request.role)
                 except AgentOutputProtocolError as exc:
                     if attempt == 2:
-                        raise
+                        raise AgentFailedError(
+                            role_value=request.role.value,
+                            worktree_path=request.mount_path,
+                            namespace=request.session_namespace,
+                            failure_class="protocol_error",
+                            service_name=service.name,
+                            session_store=role_session.path,
+                            agent_invocation_log_path=getattr(runner, "log_path", None),
+                        ) from exc
                     current_prompt = (
                         reprompt_message
                         if isinstance(reprompt_message, str)
@@ -734,23 +835,56 @@ class AgentRunner:
                     )
                     current_run_kind = RunKind.RESUME
                     continue
+                role_session.mark_done()
+                return parsed
             if isinstance(outcome.kind, UsageLimited):
-                raise UsageLimitError(
+                error = UsageLimitError(
                     reset_time=outcome.kind.reset_time,
                     provider=outcome.result.selected.service,
                 )
+                self._handle_provider_account_exhaustion(service, error)
+                if request.token is not None:
+                    request.token.cancel()
+                raise error
             if isinstance(outcome.kind, ProviderUnavailable):
                 if outcome.kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
+                    if request.token is not None:
+                        request.token.cancel()
+                    status_display.print(
+                        request.name,
+                        format_transient_status_message(
+                            TransientAgentError(message=outcome.kind.detail)
+                        ),
+                    )
                     raise TransientAgentError(message=outcome.kind.detail)
-                raise UsageLimitError(
+                error = UsageLimitError(
                     provider=outcome.result.selected.service,
                     raw_message=outcome.kind.detail,
                 )
+                self._handle_provider_account_exhaustion(service, error)
+                if request.token is not None:
+                    request.token.cancel()
+                raise error
             if isinstance(outcome.kind, TimedOut):
-                raise AgentTimeoutError(
-                    "Provider timed out",
-                    role_value=request.role.value,
+                if retries_left <= 0:
+                    raise AgentTimeoutError(
+                        "Provider timed out",
+                        role_value=request.role.value,
+                    )
+                restart_num = self._cfg.timeout_retries - retries_left + 1
+                status_display.print(
+                    request.name,
+                    "Timeout — restarting"
+                    f" (attempt {restart_num}/{self._cfg.timeout_retries})",
                 )
+                retries_left -= 1
+                current_run_kind = RunKind.RESUME
+                current_prompt = await self._render_runtime_prompt(
+                    request=request,
+                    runner=runner,
+                    run_kind=current_run_kind,
+                )
+                continue
             raise RuntimeError("Unexpected runtime outcome kind")
 
         raise RuntimeError("Runtime reprompt loop exhausted unexpectedly")
@@ -788,10 +922,13 @@ class AgentRunner:
         provider_auth: ProviderAuth | None,
         prompt: str,
         run_kind: RunKind,
+        resolved_model: str,
+        resolved_effort: str,
     ) -> Any:
         invocation_dir = Path(_CONTAINER_WORKSPACE)
 
         def _on_live_output(event: Any) -> None:
+            runner._status_display.reset_idle_timer(runner.name)
             if getattr(event, "event_type", None) == "agent_message":
                 display_message = getattr(event, "display_message", "")
                 if display_message:
@@ -820,8 +957,8 @@ class AgentRunner:
                 invocation_dir=invocation_dir,
                 provider_selection=agent_runtime.ProviderSelection(
                     service=request.service,
-                    model=request.model,
-                    effort=request.effort,
+                    model=resolved_model,
+                    effort=resolved_effort,
                     auth=provider_auth,
                 ),
                 tool_policy=_runtime_tool_policy_for_role(request.role),
