@@ -30,6 +30,8 @@ Ar's `RuntimeClient` provides three execution patterns (`run_ephemeral`, `run_ne
 
 ## Consequences
 
+**Auth seeding.** `prepare_local_provider_run_state()` (which called `auth_seed_action.apply()`) is deleted alongside the old provider layer, but the seeding step itself must survive. In the ar path, `_run_with_runtime_client` in `AgentRunner` calls `service.provider_session_state()` with the service-specific `provider_state_dir` (derived from `service.state_dir_relpath()`, not from `role_session.path`) and applies `auth_seed_action` before handing control to ar. This preserves the invariant from ADR 0020: `CODEX_HOME/auth.json` is seeded from `~/.codex/auth.json` before the container starts.
+
 - `services/claude_service.py`, `codex_service.py`, `opencode_service.py`, `agent_service.py`, `flag_profiles.py`, `session/provider_run_state.py`, `provider_session_state.py`, `service_resume_identity.py`, `resume.py`, `parsed_event_reducer.py`, `infrastructure/_logged_line_stream.py`, `provider_errors.py`, and the `work.py` abstraction layer are deleted.
 - `RoleSession` retains lifecycle methods (`path`, `start_fresh`, `mark_done`, `discard`, `is_resumable`, `is_done`) and adds `_continuation` file read/write; all provider-specific methods are deleted.
 - `AgentFailedError` drops the `session_dir` computed property; gains a direct `Path` field for `session_store`.
