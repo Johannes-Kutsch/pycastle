@@ -1038,7 +1038,7 @@ def test_agent_runner_run_raises_agent_failed_error_for_protocol_error(tmp_path)
     assert err.worktree_path == _managed_mount(tmp_path)
     assert err.namespace == ""
     assert err.service_name == "claude"
-    assert err.session_dir == ".pycastle-session/planner/claude"
+    assert str(err.session_store) == ".pycastle-session/planner/claude"
 
 
 def test_agent_runner_failed_output_reports_selected_service_session_dir(tmp_path):
@@ -1069,7 +1069,7 @@ def test_agent_runner_failed_output_reports_selected_service_session_dir(tmp_pat
 
     err = exc_info.value
     assert err.service_name == "opencode"
-    assert err.session_dir == ".pycastle-session/planner/opencode"
+    assert str(err.session_store) == ".pycastle-session/planner/opencode"
 
 
 @pytest.mark.parametrize(
@@ -3923,12 +3923,10 @@ def test_work_invocation_exits_container_session_once_across_work_outcomes(
     credential_error = AgentCredentialFailureError(
         "credential failure",
         service_name="claude",
-        observations=(),
     )
     hard_error = HardAgentError(
         "hard failure",
         service_name="claude",
-        observations=(),
     )
     scenarios = [
         ("success", "typed", PlannerOutput(issues=[]), None),

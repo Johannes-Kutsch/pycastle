@@ -27,7 +27,6 @@ from pycastle.services.agent_service import (
     TransientError,
     UsageLimit,
 )
-from pycastle.provider_errors import ProviderErrorObservation
 from .flag_profiles import (
     AgentToolPolicyGroup,
     flag_profile_for,
@@ -117,13 +116,9 @@ def _classify_line(line: str) -> list[ParsedTurn]:
                 raw_message=line,
                 service_name="claude",
                 source_observations=(
-                    ProviderErrorObservation(
-                        service_name="claude",
-                        raw_provider_text=(
-                            denial_message if isinstance(denial_message, str) else line
-                        ),
-                        source_stream="json_event.result",
-                        status_code=403,
+                    (
+                        "json_event.result",
+                        denial_message if isinstance(denial_message, str) else line,
                     ),
                 ),
                 status_code=403,

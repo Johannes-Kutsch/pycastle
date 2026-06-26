@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-from .provider_errors import ProviderErrorObservation
-
 
 class PycastleError(RuntimeError):
     pass
@@ -67,13 +65,11 @@ class HardAgentError(PycastleError):
         status_code: int | None = None,
         service_name: str = "",
         classification: str | None = None,
-        observations: tuple[ProviderErrorObservation, ...] = (),
     ) -> None:
         self.status_code = status_code
         self.caller = ""
         self.service_name = service_name
         self.classification = classification
-        self.observations = observations
         super().__init__(message)
 
 
@@ -85,7 +81,6 @@ class AgentCredentialFailureError(HardAgentError):
         status_code: int | None = None,
         service_name: str,
         classification: str | None = None,
-        observations: tuple[ProviderErrorObservation, ...],
     ) -> None:
         self.is_operator_actionable = True
         super().__init__(
@@ -93,11 +88,26 @@ class AgentCredentialFailureError(HardAgentError):
             status_code=status_code,
             service_name=service_name,
             classification=classification,
-            observations=observations,
         )
 
 
 class AgentFailedError(PycastleError):
+    session_store: str | Path
+    worktree_path: Path
+
+    def _legacy_session_store_path(
+        self,
+        role_value: str,
+        namespace: str,
+        service_name: str,
+    ) -> Path:
+        role_root = Path(".") / ".pycastle-session" / role_value
+        if namespace:
+            role_root = role_root / namespace
+        if service_name:
+            role_root = role_root / service_name
+        return role_root
+
     def __init__(
         self,
         role_value: str,
@@ -105,6 +115,7 @@ class AgentFailedError(PycastleError):
         namespace: str = "",
         failure_class: str = "",
         service_name: str = "",
+        session_store: Path | str | None = None,
         agent_invocation_log_path: Path | str | None = None,
     ) -> None:
         super().__init__(f"Agent {role_value!r} failed irrecoverably")
@@ -114,17 +125,11 @@ class AgentFailedError(PycastleError):
         self.failure_class = failure_class
         self.service_name = service_name
         self.agent_invocation_log_path = agent_invocation_log_path
-
-    @property
-    def session_dir(self) -> str:
-        from .agents.output_protocol import AgentRole
-        from .session import RoleSession
-
-        return RoleSession(
-            self.worktree_path,
-            AgentRole(self.role_value),
-            self.namespace,
-        ).provider_state_relpath(self.service_name)
+        self.session_store: str | Path = Path(
+            session_store
+            if session_store is not None
+            else self._legacy_session_store_path(role_value, namespace, service_name)
+        )
 
 
 class DockerError(PycastleError):

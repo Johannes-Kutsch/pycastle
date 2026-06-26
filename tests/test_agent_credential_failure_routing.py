@@ -7,7 +7,6 @@ from pycastle.agent_credential_failure_routing import (
     route_agent_credential_failure,
 )
 from pycastle.errors import AgentCredentialFailureError, HardAgentError
-from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.services import GithubService
 
 
@@ -22,17 +21,6 @@ def test_route_agent_credential_failure_returns_terminal_route_result_for_shared
         status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="opencode",
-                raw_provider_text=(
-                    "OpenCode request failed: 401 invalid API key for provider "
-                    "opencode-go"
-                ),
-                source_stream="json_event.error",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -63,15 +51,6 @@ def test_route_agent_credential_failure_interprets_codex_auth_lineage_exhaustion
         status_code=401,
         service_name="codex",
         classification="codex_auth_lineage_exhausted",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text='{"code":"refresh_token_reused"}',
-                source_stream="json_event.error",
-                status_code=401,
-                provider_code="refresh_token_reused",
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -104,17 +83,6 @@ def test_route_agent_credential_failure_builds_redacted_issue_body_in_routing_mo
         status_code=401,
         service_name="codex",
         classification="codex_auth_lineage_exhausted",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text=(
-                    "The access token sk-live-abc123SECRET could not be refreshed "
-                    "because refreshToken=rt-secret-123456 was already used."
-                ),
-                source_stream="stderr",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -156,18 +124,6 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
         status_code=401,
         service_name="codex",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text=(
-                    "The access token could not be refreshed because "
-                    "refreshToken=rt-secret-123456 was already used."
-                ),
-                source_stream="stderr",
-                status_code=401,
-                provider_code="refresh_token_reused",
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -220,14 +176,6 @@ def test_route_agent_credential_failure_selects_codex_reseed_remediation_from_ad
         status_code=401,
         service_name="codex",
         classification="codex_auth_lineage_exhausted",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text="Credential failure observed by provider adapter.",
-                source_stream="json_event.error",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -253,14 +201,6 @@ def test_route_agent_credential_failure_interprets_claude_subscription_access_de
         message=message,
         status_code=403,
         service_name="claude",
-        observations=(
-            ProviderErrorObservation(
-                service_name="claude",
-                raw_provider_text=message,
-                source_stream="result",
-                status_code=403,
-            ),
-        ),
     )
     err.caller = "Planner"
 
@@ -295,14 +235,6 @@ def test_route_agent_credential_failure_uses_shared_claude_subscription_remediat
         message=message,
         status_code=403,
         service_name="claude",
-        observations=(
-            ProviderErrorObservation(
-                service_name="claude",
-                raw_provider_text=message,
-                source_stream="result",
-                status_code=403,
-            ),
-        ),
     )
     err.caller = "Planner"
 
@@ -329,14 +261,6 @@ def test_route_agent_credential_failure_selects_claude_access_remediation_from_a
         status_code=403,
         service_name="claude",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="claude",
-                raw_provider_text="Credential failure observed by provider adapter.",
-                source_stream="result",
-                status_code=403,
-            ),
-        ),
     )
     err.caller = "Planner"
 
@@ -362,17 +286,6 @@ def test_route_agent_credential_failure_reuses_existing_family_issue_in_routing_
         status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="opencode",
-                raw_provider_text=(
-                    "OpenCode request failed: 401 invalid API key for provider "
-                    "opencode-go"
-                ),
-                source_stream="json_event.error",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -406,17 +319,6 @@ def test_route_agent_credential_failure_reports_reused_issue_in_terminal_status_
         status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="opencode",
-                raw_provider_text=(
-                    "OpenCode request failed: 401 invalid API key for provider "
-                    "opencode-go"
-                ),
-                source_stream="json_event.error",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -448,16 +350,6 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_fil
         message="Codex authentication missing: run `codex login` on the host.",
         status_code=401,
         service_name="codex",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text=(
-                    "Codex authentication missing: run `codex login` on the host."
-                ),
-                source_stream="pre-dispatch host check",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Failure Report Agent"
 
@@ -489,17 +381,6 @@ def test_route_agent_credential_failure_redacts_local_fallback_evidence_when_iss
         ),
         status_code=401,
         service_name="codex",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text=(
-                    "Codex authentication missing: accessToken=at-secret-123456; "
-                    "run `codex login` on the host."
-                ),
-                source_stream="pre-dispatch host check",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Failure Report Agent"
 
@@ -530,16 +411,6 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_cre
         message="Codex authentication missing: run `codex login` on the host.",
         status_code=401,
         service_name="codex",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text=(
-                    "Codex authentication missing: run `codex login` on the host."
-                ),
-                source_stream="pre-dispatch host check",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Failure Report Agent"
 
@@ -569,7 +440,6 @@ def test_route_agent_credential_failure_uses_raw_error_as_local_evidence_without
         status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
-        observations=(),
     )
     err.caller = "Implementer"
 
@@ -601,14 +471,6 @@ def test_route_agent_credential_failure_selects_opencode_api_key_remediation_fro
         status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="opencode",
-                raw_provider_text="Credential failure observed by provider adapter.",
-                source_stream="json_event.error",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -677,14 +539,6 @@ def test_route_agent_credential_failure_does_not_route_generic_codex_auth_lookin
         status_code=401,
         service_name="codex",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text=observation_text,
-                source_stream="json_event.error",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Implementer"
 
@@ -704,7 +558,6 @@ def test_route_agent_credential_failure_does_not_route_generic_codex_auth_lookin
         message="Unauthorized: invalid token",
         status_code=401,
         service_name="codex",
-        observations=(),
     )
     err.caller = "Implementer"
 
@@ -729,17 +582,6 @@ def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issu
         status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
-        observations=(
-            ProviderErrorObservation(
-                service_name="opencode",
-                raw_provider_text=(
-                    "OpenCode request failed: 401 invalid API key for provider "
-                    "opencode-go"
-                ),
-                source_stream="json_event.error",
-                status_code=401,
-            ),
-        ),
     )
     err.caller = "Implementer"
 

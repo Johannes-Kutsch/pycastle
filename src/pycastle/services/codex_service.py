@@ -18,7 +18,6 @@ from pycastle.services.agent_service import (
     TransientError,
     UsageLimit,
 )
-from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
@@ -55,6 +54,15 @@ _HTTP_STATUS_RE = re.compile(r"\bstatus\s+(?P<status>\d{3})\b", re.IGNORECASE)
 _AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION = "codex_auth_lineage_exhausted"
 
 
+@dataclasses.dataclass(frozen=True)
+class _CodexProviderErrorObservation:
+    service_name: str
+    source_stream: str
+    raw_provider_text: str
+    provider_code: str | None = None
+    provider_error_name: str | None = None
+
+
 def _is_exact_resumable_codex_session(
     provider_session_id: str | None,
     provider_state_dir: Path | None,
@@ -86,14 +94,14 @@ def _provider_error_observation(
     status_code: int | None = None,
     provider_code: str | None = None,
     error_name: str | None = None,
-) -> ProviderErrorObservation:
-    return ProviderErrorObservation(
+) -> _CodexProviderErrorObservation:
+    del status_code
+    return _CodexProviderErrorObservation(
         service_name="codex",
-        raw_provider_text=raw_provider_text,
         source_stream=source_stream,
-        status_code=status_code,
+        raw_provider_text=raw_provider_text,
         provider_code=provider_code,
-        error_name=error_name,
+        provider_error_name=error_name,
     )
 
 
@@ -521,12 +529,5 @@ def _codex_auth_seed_action(
         missing_source_message=missing_source_message,
         missing_source_service_name="codex",
         missing_source_status_code=401,
-        missing_source_observations=(
-            ProviderErrorObservation(
-                service_name="codex",
-                raw_provider_text=missing_source_message,
-                source_stream="pre-dispatch host check",
-                status_code=401,
-            ),
-        ),
+        # Source evidence is now attached to invocation logs, not exceptions.
     )

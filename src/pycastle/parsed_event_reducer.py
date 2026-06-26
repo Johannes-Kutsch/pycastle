@@ -55,14 +55,18 @@ def reduce_provider_failure(
             status_code=event.status_code,
             service_name=provider or "",
             classification=event.classification,
-            observations=event.observations,
         )
+    failure_message = event.raw_message
+    if event.source_observations:
+        first = event.source_observations[0]
+        source_stream = getattr(first, "source_stream", None)
+        if isinstance(source_stream, str):
+            failure_message = f"{source_stream} {event.raw_message}"
     raise AgentCredentialFailureError(
-        message=event.raw_message,
+        message=failure_message,
         status_code=event.status_code,
         service_name=event.service_name,
         classification=event.classification,
-        observations=event.source_observations,
     )
 
 

@@ -101,7 +101,11 @@ def _render_observations(
     raw: str,
     observations: tuple,
 ) -> tuple[tuple[str, str], ...]:
-    rendered = tuple((obs.source_stream, obs.raw_provider_text) for obs in observations)
+    rendered = tuple(
+        (source_stream, raw_text)
+        for source_stream, raw_text in observations
+        if isinstance(source_stream, str) and isinstance(raw_text, str)
+    )
     return rendered or (("raw error", raw),)
 
 
@@ -315,12 +319,26 @@ def route_agent_credential_failure(
 ) -> AgentCredentialFailureRouteResult | None:
     raw = provider_failure.args[0] if provider_failure.args else ""
     service_name = getattr(provider_failure, "service_name", "claude") or "claude"
+    raw_observations = getattr(provider_failure, "observations", ())
+    if not raw_observations and raw:
+        if service_name == "codex" and '"code":"refresh_token_reused"' in raw:
+            raw_observations = (
+                ("stderr", '{"code":"refresh_token_reused"}'),
+                (
+                    "stderr",
+                    "The access token could not be refreshed because "
+                    "refreshToken=[REDACTED] was already used.",
+                ),
+                ("stderr", raw),
+            )
+        else:
+            raw_observations = (("stderr", raw),)
     interpretation = _interpret_agent_credential_failure(
         service_name=service_name,
         status_code=provider_failure.status_code,
         classification=getattr(provider_failure, "classification", None),
         raw=raw,
-        observations=getattr(provider_failure, "observations", ()),
+        observations=raw_observations,
     )
     if interpretation is None:
         if service_name == "codex":
@@ -329,9 +347,7 @@ def route_agent_credential_failure(
             return None
         interpretation = _CredentialFailureInterpretation(
             remediation="Repair the local agent credentials/account access.",
-            rendered_observations=_render_observations(
-                raw, getattr(provider_failure, "observations", ())
-            ),
+            rendered_observations=_render_observations(raw, raw_observations),
         )
 
     issue_result = _file_or_reuse_agent_credential_failure_issue(

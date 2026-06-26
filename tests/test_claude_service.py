@@ -23,7 +23,6 @@ from pycastle.services.agent_service import (
     TransientError as RuntimeTransientError,
     UsageLimit as RuntimeUsageLimit,
 )
-from pycastle.provider_errors import ProviderErrorObservation
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services import ClaudeService
 from pycastle.services.agent_service import (
@@ -513,14 +512,12 @@ def test_run_stops_after_credential_failure():
             raw_message=lines[0],
             service_name="claude",
             source_observations=(
-                ProviderErrorObservation(
-                    service_name="claude",
-                    raw_provider_text=(
+                (
+                    "json_event.result",
+                    (
                         "Your account has disabled Claude subscription access for "
                         "Claude Code."
                     ),
-                    source_stream="json_event.result",
-                    status_code=403,
                 ),
             ),
             status_code=403,

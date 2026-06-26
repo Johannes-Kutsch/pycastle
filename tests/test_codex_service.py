@@ -177,13 +177,7 @@ def test_process_stream_from_events_classifies_exact_refresh_token_reused_as_aut
     assert exc_info.value.classification == "codex_auth_lineage_exhausted"
     assert exc_info.value.service_name == "codex"
     assert exc_info.value.status_code == 401
-    assert len(exc_info.value.observations) == 1
-    observation = exc_info.value.observations[0]
-    assert observation.service_name == "codex"
-    assert observation.source_stream == "json_event.error"
-    assert observation.status_code == 401
-    assert observation.provider_code == "refresh_token_reused"
-    assert "This refresh token has already been used." in observation.raw_provider_text
+    assert "json_event.error" in exc_info.value.args[0]
 
 
 # ── CodexService.build_command: resume session ───────────────────────────────

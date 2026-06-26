@@ -1,16 +1,7 @@
-from __future__ import annotations
+"""Legacy provider error observation types removed.
 
-import dataclasses
+Kept intentionally empty for compatibility with imports that only need module
+availability and not the legacy symbol.
+"""
 
-
-@dataclasses.dataclass(frozen=True)
-class ProviderErrorObservation:
-    service_name: str
-    raw_provider_text: str
-    source_stream: str
-    status_code: int | None = None
-    provider_code: str | None = None
-    error_name: str | None = None
-
-
-__all__ = ["ProviderErrorObservation"]
+__all__: list[str] = []
