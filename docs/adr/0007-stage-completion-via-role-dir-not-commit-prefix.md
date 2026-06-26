@@ -1,5 +1,7 @@
 # Stage completion signaled by role-session-dir state, not commit-message prefix
 
+> **Amended (ADR 0049).** Session state content shifts from per-service provider transcript files (`<role>/<service>/`) to a single `_continuation` file (`<role>/_continuation`). The stage-done predicate — `is_dir() AND not is_resumable()` — is unchanged; `mark_done()` clears `_continuation` and any ar session files. `is_resumable()` checks for `_continuation` file presence instead of scanning for non-metadata service files.
+
 The orchestrator decides whether Implementer/Reviewer is done by inspecting `.pycastle-session/<role>/` rather than scanning commit subjects for `RALPH: Implement -` / `RALPH: Review -`. `<commit_message>` becomes optional input to the host-side commit body — absence triggers synthetic fallback (`Implement #<n> - <title>`), not a failed run.
 
 The trigger was issue #514: the Implementer self-committed without the prefix and emitted no `<commit_message>`, putting the orchestrator into a 14-iteration retry loop. Conflating "describe the work" (commit prefix) with "mark stage done" (resume idempotency token) had no recovery path once either side broke.

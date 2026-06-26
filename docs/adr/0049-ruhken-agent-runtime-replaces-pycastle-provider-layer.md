@@ -1,0 +1,39 @@
+# ruhken-agent-runtime replaces pycastle provider layer
+
+> **Supersedes:** ADR 0006 (session resume via derived UUID), ADR 0015 (pluggable AgentService), ADR 0023 (three-bucket Claude API error handling), ADR 0024 (per-agent CLI flag profiles), ADR 0029 (CLI version pins and Codex sandbox), ADR 0038 (service-aware Failure-Report session dir), ADR 0039 (shared credential failure routing), ADR 0043 (OpenCode timeout exhaustion path).
+
+Pycastle's own provider execution layer — `AgentService`, `ClaudeService`, `CodexService`, `OpenCodeService`, `flag_profiles.py`, `parsed_event_reducer.py`, `session/resume.py`, `session/provider_session_state.py`, `session/provider_run_state.py`, `session/service_resume_identity.py`, `infrastructure/_logged_line_stream.py`, and the `work.py` abstraction layer (`invoke_work` and associated protocols) — is replaced by `ruhken-agent-runtime` (`ar`, package `agent_runtime`).
+
+Ar's `RuntimeClient` provides three execution patterns (`run_ephemeral`, `run_new_session`, `run_resumed_session`) returning a closed `RuntimeOutcome` set. Ar retains subprocess execution ownership — stdin, idle timeout, exit codes, provider CLI version management. Pycastle retains orchestration, config, GitHub, Docker lifecycle, worktrees, prompts, and XML output parsing.
+
+## Key decisions
+
+**Session state and resume.** Ar's `Continuation` token (opaque serialized pointer carrying provider resume state, service, model, effort, and tool access) replaces pycastle's derived-UUID session IDs, `--resume`/`--session-id` flags, `CLAUDE_CONFIG_DIR`, and per-service transcript files. Pycastle persists `Continuation.serialized` to a `_continuation` file inside `session_store` (= `RoleSession.path`) after every interrupted run. `is_resumable()` detects this file; `mark_done()` clears it. Fresh vs. Resume dispatch is based on `_continuation` file presence alone.
+
+**Error routing.** Ar surfaces typed exceptions (`HardAgentError`, `AgentCredentialFailureError`) and outcome kinds instead of pycastle's per-service stream-parsing rules. Pycastle routes ar outcomes: `UsageLimited` and `ProviderUnavailable(SERVICE_NOT_AVAILABLE)` → `TemporaryUsageLimit`; `AgentCredentialFailureError` → `PermanentlyExhausted(reason="credential_failure")`; `ProviderUnavailable(TRANSIENT_API_ERROR)` → `TransientAgentError`; `TimedOut` → resume via `run_resumed_session` + RESUME prompt up to `timeout_retries`; `ar.HardAgentError` → `pycastle.HardAgentError` (status_code and observations dropped).
+
+**Tool policy.** Ar's `ToolPolicy` enum (`NONE`, `NO_FILE_MUTATION`, `UNRESTRICTED`) replaces `flag_profiles.py`. Restricted roles (Planner, Divergence-Resolver) use `NO_FILE_MUTATION`; all other roles use `UNRESTRICTED`. Per-service CLI flag matrices are deleted; ar manages provider-specific flag construction internally.
+
+**Usage limit types.** `UsageLimitOutcome(is_permanent: bool)` is replaced by two explicit types: `TemporaryUsageLimit(reset_time: datetime | None)` (sleep and retry) and `PermanentlyExhausted(reason: str)` (rotate credential/service). `decide_usage_limit_continuation()` becomes a type dispatch on these two types; the `is_permanent` flag is removed.
+
+**`AgentFailedError`.** Stays in pycastle — raised by pycastle on output-protocol failure after reprompt exhaustion, not by ar. The computed `session_dir` property (which reconstructed the path from `RoleSession` + service name) is replaced by a direct `Path` field set by the raising call site to the `session_store` path. `provider_errors.ProviderErrorObservation` is dropped; the invocation log covers raw output evidence.
+
+**`model` config field.** Empty string (`model=""`) is forbidden at config load time and raises `ConfigValidationError`. Every `StageOverride` must name a model explicitly. The `config.py.example` scaffold already lists explicit models for every stage.
+
+**Work invocation layer.** `invoke_work`, `WorkInvocationRequest`, `WorkOutputAdapter`, `PrepareSessionAdapter`, and related protocols are deleted. Iteration phases call `RuntimeClient` directly.
+
+## Considered options
+
+- **Keep `AgentService` abstraction, add an ar adapter behind it.** Rejected: the `invoke_work` / `PreparedSession` / `WorkOutputAdapter` layer exists to decouple iteration from `ContainerRunner` + `AgentService`; ar makes this seam redundant. Two execution models would coexist, doubling the surface to maintain.
+- **Wrap ar in a pycastle-shaped adapter.** Rejected: adapting ar to the old interface defeats the point of adopting ar as the shared execution boundary.
+- **Keep `model=""` CLI-default escape hatch.** Rejected: ar's `ProviderSelection` requires non-empty model; the escape hatch was a convenience shortcut that now becomes a silent misconfiguration path.
+
+## Consequences
+
+- `services/claude_service.py`, `codex_service.py`, `opencode_service.py`, `agent_service.py`, `flag_profiles.py`, `session/provider_run_state.py`, `provider_session_state.py`, `service_resume_identity.py`, `resume.py`, `parsed_event_reducer.py`, `infrastructure/_logged_line_stream.py`, `provider_errors.py`, and the `work.py` abstraction layer are deleted.
+- `RoleSession` retains lifecycle methods (`path`, `start_fresh`, `mark_done`, `discard`, `is_resumable`, `is_done`) and adds `_continuation` file read/write; all provider-specific methods are deleted.
+- `AgentFailedError` drops the `session_dir` computed property; gains a direct `Path` field for `session_store`.
+- `decide_usage_limit_continuation()` signature changes from `outcome: UsageLimitOutcome` to `TemporaryUsageLimit | PermanentlyExhausted`.
+- All resumable ar runs require a `session_store` path; pycastle passes `RoleSession.path`.
+- Protocol reprompt on `AgentOutputProtocolError` is implemented as a `run_resumed_session` call with the reprompt text and the `Continuation` from the previous `Completed` run.
+- `ContainerRunner` drops all provider-CLI invocation logic; see ADR 0050.
