@@ -50,8 +50,8 @@ if [[ "$_REF" == refs/heads/main ]]; then
 elif [[ "$_REF" == refs/tags/v* ]]; then
     _TAG_NAME="${_REF#refs/tags/}"
     git tag -f "$_TAG_NAME" HEAD
-    git push "$_REMOTE_NAME" "$_TAG_NAME" --force
     git push "$_REMOTE_NAME" HEAD:refs/heads/main
+    git push "$_REMOTE_NAME" "$_TAG_NAME" --force
 else
     echo "error: unsupported ref context '$_REF'" >&2
     exit 1
