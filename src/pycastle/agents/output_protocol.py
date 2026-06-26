@@ -451,6 +451,12 @@ def _inject_behaviors(result: AgentOutput, text: str) -> AgentOutput:
     return CommitMessageOutput(message=result.message, behaviors=behaviors)
 
 
+def extract_output(text: str, role: AgentRole) -> AgentOutput:
+    handler = _HANDLERS[role]
+    tail = f"\nOutput tail: {text[-300:]!r}"
+    return _inject_behaviors(handler.extract_final_output(text, tail), text)
+
+
 def process_stream_from_events(
     events: "Iterable[ParsedTurn]",
     on_turn: Callable[[str], None],
