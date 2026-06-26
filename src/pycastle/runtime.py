@@ -588,7 +588,7 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
             request.service,
             prepared_session.provider_state_dir_container_path,
         )
-        runner = request.dependencies.build_runner(session, status_display)
+        runner = request.dependencies.build_runner(session, status_display, request.mount_path)
         try:
             git_name, git_email = request.dependencies.get_git_identity()
             await runner.setup(git_name, git_email, request.work_body)

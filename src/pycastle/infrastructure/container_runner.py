@@ -163,6 +163,7 @@ class ContainerRunner:
         cfg: Config,
         service: AgentService | None = None,
         runtime_client: Any | None = None,
+        mount_path: Path | None = None,
     ) -> None:
         self.name = name
         self._session = session
@@ -172,6 +173,7 @@ class ContainerRunner:
         self._logs_dir = resolve_logs_dir(cfg)
         self._service = service
         self._runtime_client = runtime_client
+        self._mount_path = mount_path
         self._invocation_log = AgentInvocationLog()
         self._logical_session = self._invocation_log.start_logical_session(
             agent_name=name,
@@ -480,7 +482,7 @@ class ContainerRunner:
         tool_policy: ServiceToolPolicy | None = None,
     ) -> NewSessionRunRequest | ResumedSessionRunRequest:
         service_name = self._service.name if self._service is not None else "claude"
-        invocation_dir = Path("/home/agent/workspace")
+        invocation_dir = self._mount_path if self._mount_path is not None else Path.cwd()
         tool_access = _coerce_tool_access(
             tool_policy if tool_policy is not None else ServiceToolPolicy.FULL,
             workspace=invocation_dir,

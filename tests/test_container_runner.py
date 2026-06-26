@@ -175,6 +175,7 @@ def _make_runner(
     effort: str = "medium",
     runtime_client: FakeRuntimeClient | None = None,
     active_container: bool = False,
+    mount_path: Path | None = None,
 ) -> tuple[ContainerRunner, FakeDockerSession]:
     if session is None:
         session = FakeDockerSession()
@@ -191,6 +192,7 @@ def _make_runner(
         cfg=cfg,
         service=cast(AgentService, _FakeService("claude")),
         runtime_client=runtime_client,
+        mount_path=mount_path,
     )
     return runner, session
 
@@ -264,12 +266,15 @@ def test_work_builds_new_session_runtime_request_with_tool_access_and_argv_trans
     runtime = FakeRuntimeClient(
         [_make_runtime_complete_outcome("<commit_message>done</commit_message>")]
     )
+    mount = tmp_path / "mount"
+    mount.mkdir()
     runner, _ = _make_runner(
         tmp_path=tmp_path,
         model="gpt-4",
         effort="high",
         runtime_client=runtime,
         active_container=True,
+        mount_path=mount,
     )
 
     result = asyncio.run(runner.work(_ROLE, "implement this change"))
@@ -280,10 +285,10 @@ def test_work_builds_new_session_runtime_request_with_tool_access_and_argv_trans
     assert request.provider_selection == ProviderSelection(
         service="claude", model="gpt-4", effort="high"
     )
-    assert request.invocation_dir == Path("/home/agent/workspace")
-    assert request.session_store == Path("/home/agent/workspace")
+    assert request.invocation_dir == mount
+    assert request.session_store == mount
     assert request.tool_access.kind == "workspace_backed"
-    assert request.tool_access.workspace == Path("/home/agent/workspace")
+    assert request.tool_access.workspace == mount
     transformed = request.argv_transform(
         ("claude", "ask"),
         Path("/tmp"),
@@ -295,16 +300,47 @@ def test_work_builds_new_session_runtime_request_with_tool_access_and_argv_trans
     assert "claude" in transformed
 
 
+def test_work_invocation_dir_is_a_valid_host_path_not_container_workspace(tmp_path):
+    # invocation_dir is forwarded to agent_runtime as cwd for subprocess.Popen on
+    # the HOST.  The docker argv_transform wraps the command with `docker exec <id>`
+    # and discards invocation_dir for the in-container working directory, but
+    # Python's subprocess.Popen validates cwd existence on the host BEFORE forking.
+    # Hardcoding the container-internal path /home/agent/workspace therefore causes
+    # FileNotFoundError on any host that hasn't mounted that path locally.
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    runtime = FakeRuntimeClient(
+        [_make_runtime_complete_outcome("<commit_message>done</commit_message>")]
+    )
+    runner, _ = _make_runner(
+        tmp_path=tmp_path,
+        runtime_client=runtime,
+        active_container=True,
+        mount_path=worktree,
+    )
+
+    asyncio.run(runner.work(_ROLE, "implement this change"))
+
+    request = runtime.new_session_requests[0]
+    assert request.invocation_dir == worktree, (
+        "invocation_dir must be the host-side worktree path; "
+        "/home/agent/workspace only exists inside the Docker container"
+    )
+
+
 def test_work_builds_resumed_session_runtime_request_with_continuation_state(tmp_path):
     runtime = FakeRuntimeClient(
         [_make_runtime_complete_outcome("<commit_message>done</commit_message>")]
     )
+    mount = tmp_path / "mount"
+    mount.mkdir()
     runner, _ = _make_runner(
         tmp_path=tmp_path,
         model="gpt-4",
         effort="high",
         runtime_client=runtime,
         active_container=True,
+        mount_path=mount,
     )
 
     asyncio.run(
@@ -314,8 +350,8 @@ def test_work_builds_resumed_session_runtime_request_with_continuation_state(tmp
     request = runtime.resumed_session_requests[0]
     assert request.model == "gpt-4"
     assert request.effort == "high"
-    assert request.invocation_dir == Path("/home/agent/workspace")
-    assert request.session_store == Path("/home/agent/workspace")
+    assert request.invocation_dir == mount
+    assert request.session_store == mount
     assert request.continuation is not None
     assert request.continuation.provider_resume_state == {
         "provider_session_id": "prov-1"

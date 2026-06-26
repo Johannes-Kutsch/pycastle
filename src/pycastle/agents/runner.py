@@ -456,7 +456,7 @@ class AgentRunner:
                 Callable[[Path, AgentService, str | None], Any],
                 self._build_session,
             ),
-            build_runner=lambda session, status_display: ContainerRunner(
+            build_runner=lambda session, status_display, mount_path: ContainerRunner(
                 name,
                 session,
                 model=model,
@@ -464,6 +464,7 @@ class AgentRunner:
                 status_display=status_display,
                 cfg=self._cfg,
                 service=service,
+                mount_path=mount_path,
             ),
             get_git_identity=lambda: (
                 self._git_service.get_user_name(),
@@ -698,6 +699,7 @@ class AgentRunner:
             status_display=status_display,
             cfg=self._cfg,
             service=service,
+            mount_path=request.mount_path,
         )
         runtime_client = runner._get_runtime_client()
         model_display = ModelDisplayMetadata(
@@ -937,7 +939,7 @@ class AgentRunner:
         resolved_model: str,
         resolved_effort: str,
     ) -> Any:
-        invocation_dir = Path(_CONTAINER_WORKSPACE)
+        invocation_dir = request.mount_path
 
         def _on_live_output(event: Any) -> None:
             runner._status_display.reset_idle_timer(runner.name)

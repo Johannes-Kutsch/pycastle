@@ -429,7 +429,7 @@ class RuntimeInvocationDependencies:
     stage_key_for_role: Callable[[AgentRole], str | None]
     prepare_session: SessionStatePreparer
     build_session: Callable[[Path, AgentService, str | None], Any]
-    build_runner: Callable[[Any, Any], RuntimeExecutionAdapter]
+    build_runner: Callable[[Any, Any, Path | None], RuntimeExecutionAdapter]
     get_git_identity: Callable[[], tuple[str, str]]
     status_display_factory: StatusDisplayFactory = _default_status_display_factory
     status_row_factory: StatusRowFactory = _default_status_row_factory
