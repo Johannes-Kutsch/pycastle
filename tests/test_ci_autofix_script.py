@@ -315,7 +315,9 @@ def test_tag_context_rebases_and_force_moves_tag_when_concurrent_push_advances_m
     ).stdout.strip()
 
     assert result.returncode == 0, result.stderr
-    assert remote_tag != original_remote_tag, "tag must be force-moved to the rebased commit"
+    assert remote_tag != original_remote_tag, (
+        "tag must be force-moved to the rebased commit"
+    )
     assert output_file.read_text() == "status=fix-pushed\n"
 
 
