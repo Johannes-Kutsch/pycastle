@@ -234,7 +234,7 @@ def test_tag_context_force_moves_tag_and_fast_forwards_main(tmp_path, ruff_shim)
     assert local_head == remote_tag
 
 
-def test_tag_context_leaves_remote_tag_unchanged_when_main_push_is_rejected(
+def test_tag_context_rebases_and_force_moves_tag_when_concurrent_push_advances_main(
     tmp_path, ruff_shim
 ):
     repo = _bootstrap_repo_with_bare_remote(tmp_path)
@@ -262,6 +262,7 @@ def test_tag_context_leaves_remote_tag_unchanged_when_main_push_is_rejected(
         text=True,
     ).stdout.strip()
 
+    # Simulate the concurrent branch-push run landing a commit on main first.
     competitor = tmp_path / "competitor"
     subprocess.run(
         ["git", "clone", remote, str(competitor)], check=True, capture_output=True
@@ -313,9 +314,9 @@ def test_tag_context_leaves_remote_tag_unchanged_when_main_push_is_rejected(
         text=True,
     ).stdout.strip()
 
-    assert result.returncode != 0
-    assert remote_tag == original_remote_tag
-    assert not output_file.exists()
+    assert result.returncode == 0, result.stderr
+    assert remote_tag != original_remote_tag, "tag must be force-moved to the rebased commit"
+    assert output_file.read_text() == "status=fix-pushed\n"
 
 
 def test_clean_tree_emits_proceed_and_performs_no_push(tmp_path, ruff_shim):

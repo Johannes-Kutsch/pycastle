@@ -50,7 +50,14 @@ if [[ "$_REF" == refs/heads/main ]]; then
 elif [[ "$_REF" == refs/tags/v* ]]; then
     _TAG_NAME="${_REF#refs/tags/}"
     git tag -f "$_TAG_NAME" HEAD
-    git push "$_REMOTE_NAME" HEAD:refs/heads/main
+    if ! git push "$_REMOTE_NAME" HEAD:refs/heads/main; then
+        # Concurrent branch-push run already landed on main; rebase our autofix commit
+        # onto the updated main so the tag can still be force-moved to a clean commit.
+        git fetch "$_REMOTE_NAME" refs/heads/main
+        git rebase FETCH_HEAD
+        git tag -f "$_TAG_NAME" HEAD
+        git push "$_REMOTE_NAME" HEAD:refs/heads/main
+    fi
     git push "$_REMOTE_NAME" "$_TAG_NAME" --force
 else
     echo "error: unsupported ref context '$_REF'" >&2
