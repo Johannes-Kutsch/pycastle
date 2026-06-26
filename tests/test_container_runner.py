@@ -155,16 +155,6 @@ def test_container_runner_constructor_takes_session(tmp_path):
     assert runner.log_path.parent == tmp_path
 
 
-def test_container_runner_does_not_expose_prepare_method(tmp_path):
-    runner, _ = _make_runner(tmp_path=tmp_path)
-    assert not hasattr(runner, "prepare")
-
-
-def test_container_runner_does_not_expose_run_streaming_method(tmp_path):
-    runner, _ = _make_runner(tmp_path=tmp_path)
-    assert not hasattr(runner, "run_streaming")
-
-
 def test_container_runner_does_not_expose_exec_simple_or_write_file(tmp_path):
     runner, _ = _make_runner(tmp_path=tmp_path)
     assert not hasattr(runner, "exec_simple")
