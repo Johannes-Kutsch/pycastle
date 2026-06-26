@@ -511,6 +511,31 @@ def test_load_config_rejects_empty_stage_model(tmp_path):
         load_config(repo_root=tmp_path)
 
 
+def test_load_config_rejects_empty_nested_fallback_stage_model(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        "plan_override = StageOverride(\n"
+        '    service="opencode",\n'
+        '    model="kimi-k2.6",\n'
+        '    effort="medium",\n'
+        "    fallback=StageOverride(\n"
+        '        service="codex",\n'
+        '        model="gpt-5.4-mini",\n'
+        '        effort="low",\n'
+        "        fallback=StageOverride(\n"
+        '            service="claude",\n'
+        '            model="",\n'
+        '            effort="low",\n'
+        "        ),\n"
+        "    ),\n"
+        ")\n"
+    )
+
+    with pytest.raises(ConfigValidationError, match=r"stage=plan fallback 2: model"):
+        load_config(repo_root=tmp_path)
+
+
 def test_load_config_all_stage_model_strings_pass_through(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(

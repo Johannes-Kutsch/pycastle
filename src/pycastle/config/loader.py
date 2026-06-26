@@ -17,11 +17,7 @@ from pycastle.layout import (
     resolve_layout,
 )
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
-from pycastle.stage_priority_chain import (
-    iter_stage_chain,
-    referenced_service_names,
-    validation_labels,
-)
+from pycastle.stage_priority_chain import iter_stage_chain, referenced_service_names
 
 __all__ = [
     "Config",
@@ -335,7 +331,7 @@ def _validate_stage_override_models(cfg: Config) -> None:
         ("improve", cfg.improve_override),
     ):
         for override_label, chain_entry in zip(
-            validation_labels(stage_name, override),
+            _stage_override_model_labels(stage_name, override),
             iter_stage_chain(override),
             strict=True,
         ):
@@ -344,6 +340,20 @@ def _validate_stage_override_models(cfg: Config) -> None:
                     f"stage={override_label}: model is required for each stage override",
                     invalid_value="",
                 )
+
+
+def _stage_override_model_labels(
+    stage_name: str, override: StageOverride
+) -> tuple[str, ...]:
+    labels: list[str] = []
+    for index, _chain_entry in enumerate(iter_stage_chain(override)):
+        if index == 0:
+            labels.append(stage_name)
+        elif index == 1:
+            labels.append(f"{stage_name} fallback")
+        else:
+            labels.append(f"{stage_name} fallback {index}")
+    return tuple(labels)
 
 
 def _validate_improve_max(cfg: Config) -> None:
