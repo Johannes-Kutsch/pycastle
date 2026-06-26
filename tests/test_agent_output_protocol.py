@@ -1124,6 +1124,37 @@ def test_process_stream_from_events_implementer_returns_commit_message():
     assert result.message == "add feature"
 
 
+def test_extract_output_parses_planner_output():
+    from pycastle.agents import output_protocol
+
+    result = output_protocol.extract_output(
+        text='<plan>{"issues": [{"number": 1, "title": "Fix bug"}]}</plan>',
+        role=AgentRole.PLANNER,
+    )
+    assert isinstance(result, PlannerOutput)
+    assert result.issues == [{"number": 1, "title": "Fix bug"}]
+
+
+def test_extract_output_raises_for_missing_required_tags():
+    from pycastle.agents import output_protocol
+
+    with pytest.raises(AgentOutputProtocolError):
+        output_protocol.extract_output(
+            text="no tags",
+            role=AgentRole.PLANNER,
+        )
+
+
+def test_process_stream_still_importable_for_compatibility():
+    result = process_stream(
+        [_result_line("<commit_message>legacy stream path</commit_message>")],
+        on_turn=lambda t: None,
+        role=AgentRole.IMPLEMENTER,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message == "legacy stream path"
+
+
 # ── <behavior> tag — per-behavior emission ────────────────────────────────────
 
 
