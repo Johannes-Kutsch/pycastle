@@ -393,7 +393,7 @@ class CodexService:
                 parts.append("--dangerously-bypass-approvals-and-sandbox")
             else:
                 parts.append("--sandbox danger-full-access")
-        elif policy_group is AgentToolPolicyGroup.PARTIAL:
+        elif policy_group is not AgentToolPolicyGroup.RESTRICTED:
             parts.append("--dangerously-bypass-approvals-and-sandbox")
         if run_kind == RunKind.RESUME and session_uuid:
             parts.append(session_uuid)
