@@ -500,6 +500,17 @@ def test_load_config_full_model_id_passes_through_unchanged(tmp_path):
     assert cfg.plan_override.model == "claude-sonnet-4-6"
 
 
+def test_load_config_rejects_empty_stage_model(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        "from pycastle import StageOverride\n"
+        'plan_override = StageOverride(service="codex", model="", effort="high")\n'
+    )
+
+    with pytest.raises(ConfigValidationError, match=r"stage=plan: model"):
+        load_config(repo_root=tmp_path)
+
+
 def test_load_config_all_stage_model_strings_pass_through(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(
@@ -522,7 +533,7 @@ def test_load_config_validate_valid_efforts_pass(tmp_path):
     for effort in ("low", "medium", "high", "xhigh", "max"):
         config_dir.joinpath("config.py").write_text(
             "from pycastle import StageOverride\n"
-            f'plan_override = StageOverride(model="", effort="{effort}")\n'
+            f'plan_override = StageOverride(model="haiku", effort="{effort}")\n'
         )
         cfg = load_config(repo_root=tmp_path)
         assert cfg.plan_override.effort == effort
@@ -534,7 +545,19 @@ def test_load_config_accepts_codex_efforts_at_load_time(tmp_path):
     for effort in ("none", "minimal"):
         config_dir.joinpath("config.py").write_text(
             "from pycastle import StageOverride\n"
-            f'plan_override = StageOverride(model="", effort="{effort}")\n'
+            f'plan_override = StageOverride(service="codex", model="gpt-5.4", effort="{effort}")\n'
+        )
+        cfg = load_config(repo_root=tmp_path)
+        assert cfg.plan_override.effort == effort
+
+
+def test_load_config_validate_valid_efforts_with_non_empty_model(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    config_dir = tmp_path / "pycastle"
+    for effort in ("low", "medium", "high", "xhigh", "max"):
+        config_dir.joinpath("config.py").write_text(
+            "from pycastle import StageOverride\n"
+            f'plan_override = StageOverride(service="claude", model="haiku", effort="{effort}")\n'
         )
         cfg = load_config(repo_root=tmp_path)
         assert cfg.plan_override.effort == effort

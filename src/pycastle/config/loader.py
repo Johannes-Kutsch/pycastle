@@ -17,7 +17,11 @@ from pycastle.layout import (
     resolve_layout,
 )
 from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
-from pycastle.stage_priority_chain import referenced_service_names
+from pycastle.stage_priority_chain import (
+    iter_stage_chain,
+    referenced_service_names,
+    validation_labels,
+)
 
 __all__ = [
     "Config",
@@ -273,6 +277,7 @@ def load_config(
     _validate_improve_max(cfg)
     _validate_improve_mode(cfg)
     _validate_minimum_unknown_reset_duration_hours(cfg)
+    _validate_stage_override_models(cfg)
     object.__setattr__(cfg, "repo_root", layout.repo_root)
     object.__setattr__(
         cfg,
@@ -318,6 +323,27 @@ def _validate_improve_mode(cfg: Config) -> None:
             suggestion="until_sleep",
             valid_options=sorted(valid),
         )
+
+
+def _validate_stage_override_models(cfg: Config) -> None:
+    for stage_name, override in (
+        ("plan", cfg.plan_override),
+        ("implement", cfg.implement_override),
+        ("review", cfg.review_override),
+        ("merge", cfg.merge_override),
+        ("preflight_issue", cfg.preflight_issue_override),
+        ("improve", cfg.improve_override),
+    ):
+        for override_label, chain_entry in zip(
+            validation_labels(stage_name, override),
+            iter_stage_chain(override),
+            strict=True,
+        ):
+            if not chain_entry.model:
+                raise ConfigValidationError(
+                    f"stage={override_label}: model is required for each stage override",
+                    invalid_value="",
+                )
 
 
 def _validate_improve_max(cfg: Config) -> None:

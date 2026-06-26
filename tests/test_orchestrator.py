@@ -681,9 +681,13 @@ def test_cross_service_config_threads_service_to_core_phase_requests(tmp_path):
         _fake_run_agent,
         git_service=_make_git_svc(try_merge_side_effect=[False]),
         github_service=_make_github_svc(),
-        implement_override=StageOverride(service="codex", model="", effort="medium"),
-        review_override=StageOverride(service="claude", model="", effort="medium"),
-        merge_override=StageOverride(service="codex", model="", effort="medium"),
+        implement_override=StageOverride(
+            service="codex", model="gpt-5.3-codex-spark", effort="medium"
+        ),
+        review_override=StageOverride(
+            service="claude", model="sonnet", effort="medium"
+        ),
+        merge_override=StageOverride(service="codex", model="gpt-5.5", effort="medium"),
     )
 
     impl_call = next(c for c in captured if "Implement Agent" in c["name"])
@@ -2977,6 +2981,7 @@ def test_opencode_timeout_usage_exhaustion_switches_to_fallback_instead_of_sleep
             service_registry=ServiceRegistry({"opencode": opencode, "codex": codex}),
             implement_override=StageOverride(
                 service="opencode",
+                model="kimi-k2.6",
                 effort="low",
                 fallback=StageOverride(service="codex", effort="high", model="gpt-5.2"),
             ),
