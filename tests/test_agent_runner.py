@@ -2,6 +2,7 @@
 
 import asyncio
 import docker
+import agent_runtime
 import json
 import threading
 from collections.abc import Callable, Iterable, Iterator
@@ -5303,6 +5304,98 @@ def test_agent_runner_run_delegates_work_prompt_rendering_to_prompt_dispatch(
     assert dispatch_call["rendered_prompt"] == result
     assert dispatch_call["run_kind"] is RunKind.RESUME
     assert dispatch_call["exec_fn"] is _noop_exec
+
+
+def test_agent_runner_run_uses_runtime_client_instead_of_invoke_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pycastle.work as runtime_work
+    from agent_runtime.runtime import Completed, RuntimeOutcome, RunResult
+    from agent_runtime.types import ResolvedProvider
+
+    class _FakeRuntimeClient:
+        def __init__(self) -> None:
+            self.new_session_requests: list[object] = []
+
+        async def run_new_session(self, request) -> RuntimeOutcome:
+            self.new_session_requests.append(request)
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output='<plan>{"issues":[]}</plan>',
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="claude",
+                        model="sonnet",
+                        effort="high",
+                    ),
+                ),
+            )
+
+    fake_runtime = _FakeRuntimeClient()
+
+    class _FakeContainerRunner:
+        def __init__(
+            self,
+            name,
+            session,
+            model="",
+            effort="",
+            status_display=None,
+            *,
+            cfg,
+            service=None,
+            runtime_client=None,
+        ) -> None:
+            del session, runtime_client
+            self.name = name
+            self.model = model
+            self.effort = effort
+            self._cfg = cfg
+            self._service = service
+            self._status_display = status_display
+            self.log_path = tmp_path / "agent.log"
+
+        async def setup(
+            self, git_name: str, git_email: str, work_body: str = ""
+        ) -> None:
+            del git_name, git_email, work_body
+
+        def provider_argv_transform(self):
+            return lambda argv, invocation_dir, env: ("docker", "exec", "cid", *argv)
+
+    async def _fail_invoke_work(*_args, **_kwargs):
+        raise AssertionError("invoke_work should not be called")
+
+    monkeypatch.setattr(runtime_work, "invoke_work", _fail_invoke_work)
+    monkeypatch.setattr("pycastle.agents.runner.ContainerRunner", _FakeContainerRunner)
+    monkeypatch.setattr(agent_runtime, "RuntimeClient", lambda: fake_runtime)
+
+    runner = AgentRunner({}, _make_cfg(tmp_path), _make_git_service())
+    monkeypatch.setattr(
+        runner,
+        "_build_session",
+        lambda mount_path, service, state_dir_container_path=None: cast(Any, object()),
+    )
+
+    result = asyncio.run(
+        runner.run(
+            _run_request(
+                name="Planner",
+                template=_PLAN_TEMPLATE,
+                scope_args=_PLAN_SCOPE_ARGS,
+                mount_path=_managed_mount(tmp_path),
+                role=AgentRole.PLANNER,
+                model="sonnet",
+                effort="high",
+            )
+        )
+    )
+
+    assert result == PlannerOutput(issues=[])
+    assert len(fake_runtime.new_session_requests) == 1
 
 
 def test_agent_runner_run_expands_shell_expressions_via_container_exec(
