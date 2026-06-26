@@ -39,6 +39,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - run: pip install -e ".[dev]"
+
+      - name: Apply ruff auto-fixes and retag if needed
+        id: autofix
+        run: .github/scripts/ci-autofix.sh
+
+      - name: Abort current run after auto-fix push
+        if: steps.autofix.outputs.status == 'fix-pushed'
+        run: |
+          echo "ruff auto-fixes were applied and pushed; re-triggering publish."
+          exit 1
+
       - name: Compute version
         id: version
         run: |
