@@ -1145,6 +1145,19 @@ def test_extract_output_raises_for_missing_required_tags():
         )
 
 
+def test_extract_output_implementer_surfaces_behavior_output():
+    from pycastle.agents import output_protocol
+
+    result = output_protocol.extract_output(
+        text=_behavior_block() + "\n<commit_message>add feature</commit_message>",
+        role=AgentRole.IMPLEMENTER,
+    )
+    assert isinstance(result, CommitMessageOutput)
+    assert result.message == "add feature"
+    assert len(result.behaviors) == 1
+    assert result.behaviors[0].name == "per-behavior emission"
+
+
 def test_process_stream_still_importable_for_compatibility():
     result = process_stream(
         [_result_line("<commit_message>legacy stream path</commit_message>")],
