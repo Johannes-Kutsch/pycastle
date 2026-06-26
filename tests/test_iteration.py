@@ -3557,7 +3557,10 @@ def test_run_iteration_aborted_timeout_preserves_worktree_when_session_populated
     async def agent_fn(req: RunRequest):
         session = RoleSession(req.mount_path, AgentRole.IMPROVE)
         session.path.mkdir(parents=True, exist_ok=True)
-        (session.path / "conversation.jsonl").write_text("{}")
+        (session.path / "_continuation").write_text(
+            "opaque-token",
+            encoding="utf-8",
+        )
         raise AgentTimeoutError("timeout")
 
     deps = dataclasses.replace(
