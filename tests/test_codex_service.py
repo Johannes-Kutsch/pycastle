@@ -241,6 +241,23 @@ def test_build_command_resume_improve_keeps_partial_role_bypass_before_session_i
     assert "--sandbox" not in cmd
 
 
+@pytest.mark.parametrize(
+    "role",
+    [AgentRole.IMPLEMENTER, AgentRole.REVIEWER, AgentRole.MERGER],
+)
+def test_build_command_resume_full_roles_keep_no_inner_sandbox_flag(role: AgentRole):
+    cmd = CodexService().build_command(
+        role=role,
+        run_kind=RunKind.RESUME,
+        session_uuid="thread-xyz",
+    )
+    assert "codex exec resume " in cmd
+    assert "thread-xyz" in cmd
+    assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+    assert "--sandbox danger-full-access" not in cmd
+    assert "-c approval_policy=never" in cmd
+
+
 # ── CodexService.build_env ────────────────────────────────────────────────────
 
 
