@@ -27,6 +27,7 @@ from pycastle.services.agent_service import AgentService
 from pycastle.services.codex_service import CodexService
 from pycastle.services.opencode_service import OpenCodeService
 from pycastle.services import ServiceRegistry
+from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.session import (
     ProviderFreshFallbackReason,
     ProviderRunState,
@@ -35,11 +36,12 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
-from pycastle.session.run_state_plan import (
+from pycastle.session.service_session_store import store_for_role_session
+from pycastle.session_planning import (
     ProviderRunStatePlanRequest,
+    RecoveredSessionIdPersistence,
     plan_provider_run_state,
 )
-from pycastle.session_planning import RecoveredSessionIdPersistence
 from pycastle.session.role import session_uuid_for_role_session_path
 
 
@@ -104,6 +106,8 @@ def _provider_run_state_for_service(
             role=role,
             namespace=namespace,
             service=service,
+            role_session=store_for_role_session(RoleSession(worktree, role, namespace)),
+            provider_session_adapter=provider_session_adapter_for_service(service),
         )
     )
     fallback_reason = None

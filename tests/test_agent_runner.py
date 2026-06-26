@@ -50,11 +50,12 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import ProviderRunState, RoleSession, RunKind
-from pycastle.session.run_state_plan import (
+from pycastle.session_planning import (
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
 )
@@ -69,6 +70,23 @@ from pycastle.services.claude_service import ClaudeService
 from pycastle.services.flag_profiles import AgentToolPolicyGroup
 from pycastle.display.status_display import ModelDisplayMetadata
 from tests.support import FakeAgentRunner, RecordingStatusDisplay
+
+
+def _provider_run_state_plan_request(
+    *,
+    worktree: Path,
+    role: AgentRole,
+    namespace: str,
+    service: Any,
+) -> ProviderRunStatePlanRequest:
+    return ProviderRunStatePlanRequest(
+        worktree=worktree,
+        role=role,
+        namespace=namespace,
+        service=service,
+        role_session=RoleSession(worktree, role, namespace),
+        provider_session_adapter=provider_session_adapter_for_service(service),
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -3001,7 +3019,7 @@ def test_agent_runner_prepare_session_accepts_runtime_provider_run_state_plan_fo
 
     service = ClaudeService()
     provider_run_state_plan = plan_provider_run_state(
-        ProviderRunStatePlanRequest(
+        _provider_run_state_plan_request(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             namespace="",
@@ -3057,7 +3075,7 @@ def test_agent_runner_prepare_session_restarts_strict_resume_when_exact_transcri
 
     service = CodexService()
     provider_run_state_plan = plan_provider_run_state(
-        ProviderRunStatePlanRequest(
+        _provider_run_state_plan_request(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             namespace="",
@@ -3125,7 +3143,7 @@ def test_agent_runner_prepare_session_keeps_ambiguous_codex_recovery_fresh_for_o
 
     service = CodexService()
     provider_run_state_plan = plan_provider_run_state(
-        ProviderRunStatePlanRequest(
+        _provider_run_state_plan_request(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             namespace="",
@@ -3188,7 +3206,7 @@ def test_agent_runner_prepare_session_accepts_runtime_provider_run_state_plan_fo
 
     service = CodexService()
     provider_run_state_plan = plan_provider_run_state(
-        ProviderRunStatePlanRequest(
+        _provider_run_state_plan_request(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             namespace="",

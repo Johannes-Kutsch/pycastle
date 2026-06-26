@@ -34,7 +34,12 @@ from pycastle.session import (
     has_exact_transcript_match,
     provider_state_relpath,
 )
-from pycastle.session.run_state_plan import record_observed_provider_session_id
+from pycastle.provider_session_adapter import provider_session_adapter_for_service_name
+from pycastle.session.service_session_store import store_for_role_session
+from pycastle.session_planning import (
+    ProviderRunStatePlan,
+    record_observed_provider_session_id,
+)
 from pycastle.runtime_session import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
@@ -1198,13 +1203,23 @@ def test_record_observed_provider_session_id_persists_codex_thread_id_sidecar(
     tmp_path: Path,
 ):
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    plan = ProviderRunStatePlan(
+        role_session=store_for_role_session(
+            RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+        ),
+        provider_session_adapter=provider_session_adapter_for_service_name("codex"),
+        service_name="codex",
+        run_kind=RunKind.FRESH,
+        provider_state_dir=state_dir,
+        provider_state_dir_relpath=".pycastle-session/implementer/codex/",
+        provider_session_id=None,
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+        service_state_dir=state_dir,
+    )
 
     record_observed_provider_session_id(
-        worktree=tmp_path,
-        role=AgentRole.IMPLEMENTER,
-        namespace="",
-        service_name="codex",
-        service_state_dir=state_dir,
+        provider_run_state_plan=plan,
         provider_session_id="thread-codex-456",
     )
 
@@ -1217,13 +1232,23 @@ def test_record_observed_provider_session_id_persists_generic_service_session_id
     tmp_path: Path,
 ):
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "fake"
+    plan = ProviderRunStatePlan(
+        role_session=store_for_role_session(
+            RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+        ),
+        provider_session_adapter=provider_session_adapter_for_service_name("fake"),
+        service_name="fake",
+        run_kind=RunKind.FRESH,
+        provider_state_dir=state_dir,
+        provider_state_dir_relpath=".pycastle-session/implementer/fake/",
+        provider_session_id=None,
+        auth_seeding_requirement=AuthSeedingRequirement.NOT_REQUIRED,
+        recovered_session_id_persistence=RecoveredSessionIdPersistence.SKIP,
+        service_state_dir=state_dir,
+    )
 
     record_observed_provider_session_id(
-        worktree=tmp_path,
-        role=AgentRole.IMPLEMENTER,
-        namespace="",
-        service_name="fake",
-        service_state_dir=state_dir,
+        provider_run_state_plan=plan,
         provider_session_id="thread-fake-456",
     )
 

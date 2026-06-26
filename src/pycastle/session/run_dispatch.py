@@ -10,8 +10,13 @@ from pycastle.runtime_session import (
     ProviderSessionStateRequest,
     RunKind,
 )
+from pycastle.session_planning import (
+    ProviderRunStatePlanRequest,
+    plan_provider_run_state,
+)
 
 from ..agents.output_protocol import AgentRole
+from ..provider_session_adapter import provider_session_adapter_for_service
 from ..services.agent_service import AgentService
 from .agent import LocalAuthSeedAction, RunSessionPlan, RunSessionPlanRequest
 from .agent._planning import plan_run_session
@@ -306,14 +311,16 @@ def has_exact_transcript_match(
     session_namespace: str,
     service: AgentService,
 ) -> bool:
-    from .run_state_plan import ProviderRunStatePlanRequest, plan_provider_run_state
-
     return plan_provider_run_state(
         ProviderRunStatePlanRequest(
             worktree=worktree,
             role=role,
             namespace=session_namespace,
             service=service,
+            role_session=store_for_role_session(
+                RoleSession(worktree, role, session_namespace)
+            ),
+            provider_session_adapter=provider_session_adapter_for_service(service),
         )
     ).exact_transcript_match
 
