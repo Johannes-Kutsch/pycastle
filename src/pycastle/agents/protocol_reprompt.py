@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal, TypeAlias
 
 from ..prompts.dispatch import PromptInvocation
@@ -40,29 +41,34 @@ ProtocolRepromptPlan: TypeAlias = (
     | TemplateSpecificProtocolReprompt
 )
 
-_HOST_PARSED_PROTOCOL_TEMPLATES = frozenset(
+_TEMPLATE_SPECIFIC_PROTOCOL_POLICY = MappingProxyType(
     {
-        PromptTemplate.IMPLEMENT_BEHAVIOR,
-        PromptTemplate.IMPLEMENT_REFACTOR,
-        PromptTemplate.IMPLEMENT_DOCS,
-        PromptTemplate.REVIEW,
-        PromptTemplate.PREFLIGHT_ISSUE,
-        PromptTemplate.FAILURE_REPORT,
-        PromptTemplate.HOST_CHECK_ISSUE,
-    }
-)
-_COORDINATION_PROTOCOL_TEMPLATES = frozenset(
-    {
-        PromptTemplate.MERGE,
-        PromptTemplate.DIVERGENCE_RESOLVE,
-    }
-)
-_IMPROVE_PROTOCOL_TEMPLATES = frozenset(
-    {
-        PromptTemplate.IMPROVE_SCAN,
-        PromptTemplate.IMPROVE_PRD,
-        PromptTemplate.IMPROVE_ISSUES,
-        PromptTemplate.IMPROVE_NO_CANDIDATE,
+        AgentRole.PLANNER: frozenset({PromptTemplate.PLAN}),
+        AgentRole.IMPLEMENTER: frozenset(
+            {
+                PromptTemplate.IMPLEMENT_BEHAVIOR,
+                PromptTemplate.IMPLEMENT_REFACTOR,
+                PromptTemplate.IMPLEMENT_DOCS,
+            }
+        ),
+        AgentRole.REVIEWER: frozenset({PromptTemplate.REVIEW}),
+        AgentRole.PREFLIGHT_ISSUE: frozenset(
+            {
+                PromptTemplate.PREFLIGHT_ISSUE,
+                PromptTemplate.HOST_CHECK_ISSUE,
+            }
+        ),
+        AgentRole.MERGER: frozenset({PromptTemplate.MERGE}),
+        AgentRole.IMPROVE: frozenset(
+            {
+                PromptTemplate.IMPROVE_SCAN,
+                PromptTemplate.IMPROVE_PRD,
+                PromptTemplate.IMPROVE_ISSUES,
+                PromptTemplate.IMPROVE_NO_CANDIDATE,
+            }
+        ),
+        AgentRole.FAILURE_REPORT: frozenset({PromptTemplate.FAILURE_REPORT}),
+        AgentRole.DIVERGENCE_RESOLVER: frozenset({PromptTemplate.DIVERGENCE_RESOLVE}),
     }
 )
 
@@ -96,6 +102,10 @@ def plan_protocol_reprompt(
     if invocation.template is PromptTemplate.RESUME:
         return UnsupportedProtocolReprompt()
 
+    supported_templates = _TEMPLATE_SPECIFIC_PROTOCOL_POLICY.get(role, frozenset())
+    if invocation.template not in supported_templates:
+        return GenericProtocolReprompt()
+
     if role is AgentRole.PLANNER:
         return TemplateSpecificProtocolReprompt(
             message=_protocol_reprompt_message_with_expected_shape(
@@ -109,7 +119,7 @@ def plan_protocol_reprompt(
             ),
         )
 
-    if invocation.template in _COORDINATION_PROTOCOL_TEMPLATES:
+    if role in {AgentRole.MERGER, AgentRole.DIVERGENCE_RESOLVER}:
         return TemplateSpecificProtocolReprompt(
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
@@ -117,7 +127,12 @@ def plan_protocol_reprompt(
             ),
         )
 
-    if invocation.template in _HOST_PARSED_PROTOCOL_TEMPLATES:
+    if role in {
+        AgentRole.IMPLEMENTER,
+        AgentRole.REVIEWER,
+        AgentRole.PREFLIGHT_ISSUE,
+        AgentRole.FAILURE_REPORT,
+    }:
         return TemplateSpecificProtocolReprompt(
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
@@ -125,7 +140,7 @@ def plan_protocol_reprompt(
             ),
         )
 
-    if invocation.template in _IMPROVE_PROTOCOL_TEMPLATES:
+    if role is AgentRole.IMPROVE:
         return TemplateSpecificProtocolReprompt(
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,

@@ -505,3 +505,17 @@ def test_plan_protocol_reprompt_returns_generic_fallback_without_rendering():
 
     assert plan == GenericProtocolReprompt(message=GENERIC_PROTOCOL_REPROMPT_MESSAGE)
     assert calls == []
+
+
+def test_plan_protocol_reprompt_returns_generic_fallback_for_mismatched_role_policy():
+    calls: list[object] = []
+
+    plan = plan_protocol_reprompt(
+        role=AgentRole.PLANNER,
+        invocation=_invocation(PromptTemplate.MERGE),
+        parser_error="missing plan tag",
+        render_expected_output_shape=lambda _invocation: calls.append(object()) or "",
+    )
+
+    assert plan == GenericProtocolReprompt(message=GENERIC_PROTOCOL_REPROMPT_MESSAGE)
+    assert calls == []
