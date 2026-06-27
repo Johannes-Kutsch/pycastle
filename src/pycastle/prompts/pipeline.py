@@ -240,7 +240,8 @@ class PromptRenderer:
             "diagnostics/_expected-output-shape-failure-report.md",
         ),
         PromptTemplate.IMPROVE_NO_CANDIDATE: PromptReference(
-            "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-03-issues.md"
+            "EXPECTED_OUTPUT_SHAPE",
+            "improve/_expected-output-shape-04-no-candidate-report.md",
         ),
     }
 

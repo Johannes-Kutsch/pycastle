@@ -1,3 +1,6 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.protocol_reprompt import (
     GENERIC_PROTOCOL_REPROMPT_MESSAGE,
@@ -7,7 +10,31 @@ from pycastle.agents.protocol_reprompt import (
     plan_protocol_reprompt,
 )
 from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
-from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.pipeline import PromptRenderer, PromptTemplate
+
+_SHIPPED_PROMPTS_DIR = (
+    Path(__file__).parent.parent / "src" / "pycastle" / "defaults" / "prompts"
+)
+
+
+def _renderer() -> PromptRenderer:
+    return PromptRenderer(
+        SimpleNamespace(
+            prompts_dir=_SHIPPED_PROMPTS_DIR,
+            preflight_checks=(("pytest suite", "pytest"),),
+            bug_label="bug",
+            issue_label="ready-for-agent",
+            hitl_label="human-in-the-loop",
+            enhancement_label="enhancement",
+            needs_triage_label="needs-triage",
+            needs_info_label="needs-info",
+            wontfix_label="wontfix",
+            refactor_slice_label="refactor-slice",
+            behavior_slice_label="behavior-slice",
+            docs_slice_label="docs-slice",
+            implement_checks=("ruff check --fix", "ruff format --check", "mypy ."),
+        )
+    )
 
 
 def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
@@ -345,6 +372,125 @@ def test_plan_protocol_reprompt_returns_improve_specific_message():
             ]
         )
     )
+
+
+def test_plan_protocol_reprompt_preserves_exact_improve_phase_invocations():
+    seen: list[PromptInvocation] = []
+    invocations: list[PromptInvocation] = []
+
+    for template, expected_scope_fragment in (
+        (PromptTemplate.IMPROVE_SCAN, "RECENT_IMPROVE_PRD_TITLES=[]"),
+        (PromptTemplate.IMPROVE_PRD, "RECENT_IMPROVE_PRDS=[]"),
+        (PromptTemplate.IMPROVE_ISSUES, "ISSUE_NUMBER=1928"),
+        (PromptTemplate.IMPROVE_NO_CANDIDATE, "RECENT_IMPROVE_PRDS=[]"),
+    ):
+        invocation = _invocation(template)
+        invocations.append(invocation)
+
+        plan = plan_protocol_reprompt(
+            role=AgentRole.IMPROVE,
+            invocation=invocation,
+            parser_error=(
+                "unexpected <issue>123</issue> while ignoring "
+                "<promise>COMPLETE</promise>"
+            ),
+            render_expected_output_shape=lambda received_invocation: (
+                seen.append(received_invocation)
+                or f"shape for {received_invocation.template.name} with "
+                f"{expected_scope_fragment}"
+            ),
+        )
+
+        assert plan == TemplateSpecificProtocolReprompt(
+            message="\n".join(
+                [
+                    "Your last response did not include the required protocol output.",
+                    "Please review the task requirements and try again, making sure to include the required output tag.",
+                    "The parser reported the following error:",
+                    "unexpected <issue>123</issue> while ignoring <promise>COMPLETE</promise>",
+                    "Use this Improve output shape exactly:",
+                    f"shape for {template.name} with {expected_scope_fragment}",
+                ]
+            )
+        )
+
+    assert seen == invocations
+    assert seen[0] is invocations[0]
+    assert seen[0].scope_args["RECENT_IMPROVE_PRD_TITLES"] == "[]"
+    assert seen[1] is invocations[1]
+    assert seen[1].scope_args["RECENT_IMPROVE_PRDS"] == "[]"
+    assert seen[2] is invocations[2]
+    assert seen[2].scope_args["ISSUE_NUMBER"] == "1928"
+    assert seen[3] is invocations[3]
+    assert seen[3].scope_args["RECENT_IMPROVE_PRDS"] == "[]"
+
+
+def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
+    renderer = _renderer()
+    issues_invocation = _invocation(PromptTemplate.IMPROVE_ISSUES)
+    no_candidate_invocation = _invocation(PromptTemplate.IMPROVE_NO_CANDIDATE)
+    parser_error = "unexpected <issue>17</issue> before <promise>COMPLETE</promise>"
+    issues_shape = renderer.render_expected_output_shape(
+        issues_invocation.template,
+        issues_invocation.scope_args,
+    )
+    no_candidate_shape = renderer.render_expected_output_shape(
+        no_candidate_invocation.template,
+        no_candidate_invocation.scope_args,
+    )
+
+    issues_plan = plan_protocol_reprompt(
+        role=AgentRole.IMPROVE,
+        invocation=issues_invocation,
+        parser_error=parser_error,
+        render_expected_output_shape=lambda invocation: (
+            renderer.render_expected_output_shape(
+                invocation.template,
+                invocation.scope_args,
+            )
+        ),
+    )
+    no_candidate_plan = plan_protocol_reprompt(
+        role=AgentRole.IMPROVE,
+        invocation=no_candidate_invocation,
+        parser_error=parser_error,
+        render_expected_output_shape=lambda invocation: (
+            renderer.render_expected_output_shape(
+                invocation.template,
+                invocation.scope_args,
+            )
+        ),
+    )
+
+    assert issues_plan == TemplateSpecificProtocolReprompt(
+        message="\n".join(
+            [
+                "Your last response did not include the required protocol output.",
+                "Please review the task requirements and try again, making sure to include the required output tag.",
+                "The parser reported the following error:",
+                "unexpected <issue>17</issue> before <promise>COMPLETE</promise>",
+                "Use this Improve output shape exactly:",
+                issues_shape,
+            ]
+        )
+    )
+    assert "Output each filed PRD issue number as `<issue>N</issue>`." in (
+        no_candidate_shape
+    )
+    assert no_candidate_shape != issues_shape
+    assert no_candidate_plan == TemplateSpecificProtocolReprompt(
+        message="\n".join(
+            [
+                "Your last response did not include the required protocol output.",
+                "Please review the task requirements and try again, making sure to include the required output tag.",
+                "The parser reported the following error:",
+                "unexpected <issue>17</issue> before <promise>COMPLETE</promise>",
+                "Use this Improve output shape exactly:",
+                no_candidate_shape,
+            ]
+        )
+    )
+    assert no_candidate_plan != issues_plan
 
 
 def test_plan_protocol_reprompt_returns_generic_fallback_without_rendering():
