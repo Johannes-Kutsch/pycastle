@@ -195,7 +195,10 @@ def _plan_step(
     role_name = _role_name(role)
     commit_fallback_subject = CommitFallbackSubject(
         commit_prefix=f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} #{issue['number']} - ",
-        fallback_subject=issue["title"],
+        fallback_subject=(
+            f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} "
+            f"#{issue['number']} - {issue['title']}"
+        ),
     )
 
     if skip_reason is not None:

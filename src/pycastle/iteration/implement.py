@@ -106,6 +106,20 @@ def _build_run_request(
     )
 
 
+def _planned_commit_subject(
+    step: IssueRoleStepPlan, issue: dict, message: str | None
+) -> str:
+    fallback = step.commit_fallback_subject
+    if fallback is None:
+        prefix = "Implement" if step.role is AgentRole.IMPLEMENTER else "Review"
+        if message is None:
+            return f"{prefix} #{issue['number']} - {issue['title']}"
+        return f"{prefix} #{issue['number']} - {message}"
+    if message is None:
+        return fallback.fallback_subject
+    return f"{fallback.commit_prefix}{message}"
+
+
 async def run_issue(
     issue: dict,
     deps: _ImplementDeps,
@@ -193,11 +207,12 @@ async def run_issue(
                     )
                 )
                 if isinstance(result, CommitMessageOutput):
-                    _msg = result.message or issue["title"]
                     deps.git_svc.commit(
                         impl_mount_path,
                         deps.repo_root,
-                        f"Implement #{issue['number']} - {_msg}",
+                        _planned_commit_subject(
+                            implementer_step, issue, result.message
+                        ),
                     )
                     RoleSession(
                         impl_mount_path, AgentRole.IMPLEMENTER
@@ -228,11 +243,12 @@ async def run_issue(
                     )
                 )
                 if isinstance(review_result, CommitMessageOutput):
-                    _rev_msg = review_result.message or issue["title"]
                     deps.git_svc.commit(
                         review_mount_path,
                         deps.repo_root,
-                        f"Review #{issue['number']} - {_rev_msg}",
+                        _planned_commit_subject(
+                            reviewer_step, issue, review_result.message
+                        ),
                     )
                     RoleSession(
                         review_mount_path, AgentRole.REVIEWER

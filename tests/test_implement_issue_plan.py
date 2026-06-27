@@ -125,7 +125,7 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     )
     assert (
         plan.implementer_step.commit_fallback_subject.fallback_subject
-        == "Scaffold implement issue execution planning module"
+        == "Implement #1909 - Scaffold implement issue execution planning module"
     )
 
     assert plan.reviewer_step.outcome == "run"
@@ -145,6 +145,10 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     assert plan.reviewer_step.service == deps.cfg.review_override.service
     assert plan.reviewer_step.mount_setup_failure is None
     assert plan.reviewer_step.commit_fallback_subject.commit_prefix == "Review #1909 - "
+    assert (
+        plan.reviewer_step.commit_fallback_subject.fallback_subject
+        == "Review #1909 - Scaffold implement issue execution planning module"
+    )
 
 
 def test_plan_issue_execution_skips_both_steps_when_review_stage_done_signal_exists(

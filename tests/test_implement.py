@@ -29,8 +29,10 @@ from pycastle.iteration.implement import (
     run_issue,
 )
 from pycastle.iteration.implement_issue_plan import (
+    CommitFallbackSubject,
     IssueExecutionPlan,
     IssueRoleStepPlan,
+    plan_issue_execution,
 )
 from pycastle.services import GitService, GithubService
 from pycastle.services import ServiceRegistry
@@ -237,6 +239,33 @@ def test_pick_slice_mode_prefers_carried_ready_outcome_over_fallback_mode():
     }
 
     assert pick_slice_mode(issue, _cfg) == "docs"
+
+
+def test_plan_issue_execution_sets_implementer_fallback_commit_subject():
+    issue = {
+        "number": 1916,
+        "title": "Plan host-owned commit fallback subjects",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([])
+    deps = _make_deps(Path.cwd(), fake)
+
+    plan = plan_issue_execution(
+        issue=issue,
+        deps=deps,
+        sha="sha-abc",
+        implement_mount_path=Path("/tmp/implement"),
+        review_mount_path=Path("/tmp/review"),
+        implement_done=False,
+        review_done=False,
+    )
+
+    assert plan.implementer_step.commit_fallback_subject == CommitFallbackSubject(
+        commit_prefix="Implement #1916 - ",
+        fallback_subject="Implement #1916 - Plan host-owned commit fallback subjects",
+    )
 
 
 def test_pick_implement_template_raises_runtime_error_for_malformed_issue():
@@ -1877,6 +1906,113 @@ def test_run_issue_commits_implementer_with_title_when_no_commit_message_tag(tmp
 
     impl_call = deps.git_svc.commit.call_args_list[0]
     assert impl_call[0][2] == "Implement #43 - Fix the login bug"
+
+
+def test_run_issue_uses_planned_implementer_fallback_when_commit_message_omitted(
+    tmp_path, monkeypatch
+):
+    issue = {
+        "number": 53,
+        "title": "Issue title should not be reconstructed directly",
+        "body": "Issue body.",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([CommitMessageOutput(message=None), CompletionOutput()])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    impl_session_dir = (
+        tmp_path
+        / "pycastle"
+        / ".worktrees"
+        / "issue-53"
+        / ".pycastle-session"
+        / "implementer"
+    )
+    original_create = deps.git_svc.create_worktree.side_effect
+
+    def _seeding_create(repo, path, branch, sha=None):
+        original_create(repo, path, branch, sha)
+        if not impl_session_dir.is_dir():
+            impl_session_dir.mkdir(parents=True, exist_ok=True)
+            (impl_session_dir / "session.json").write_text("{}", encoding="utf-8")
+
+    deps.git_svc.create_worktree.side_effect = _seeding_create
+    planned_implement_args = {
+        "ISSUE_NUMBER": "53",
+        "BRANCH": "pycastle/issue-53",
+        "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": issue["body"],
+        "ISSUE_COMMENTS": "",
+        "INTERRUPTED_WORK": "",
+    }
+    planned_review_args = {
+        "ISSUE_NUMBER": "53",
+        "BRANCH": "pycastle/issue-53",
+        "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": issue["body"],
+        "ISSUE_COMMENTS": "",
+        "INTERRUPTED_WORK": "",
+    }
+    issue_plan = IssueExecutionPlan(
+        issue_number=issue["number"],
+        issue_title=issue["title"],
+        branch="pycastle/issue-53",
+        planner_sha="sha-abc",
+        slice_mode_display_name="behavior",
+        issue_outcome="incomplete",
+        implementer_step=IssueRoleStepPlan(
+            outcome="run",
+            role_name="implementer",
+            role=AgentRole.IMPLEMENTER,
+            stage="pre-implementation",
+            run_kind=RunKind.FRESH,
+            work_body='planned implement work body "docs"',
+            prompt_template=PromptTemplate.IMPLEMENT_DOCS,
+            prompt_scope_args=planned_implement_args,
+            model="planned-implement-model",
+            effort="planned-implement-effort",
+            service="planned-implement-service",
+            mount_setup_failure=None,
+            commit_fallback_subject=CommitFallbackSubject(
+                commit_prefix="Implement #53 - ",
+                fallback_subject="Implement #53 - planned implement fallback",
+            ),
+        ),
+        reviewer_step=IssueRoleStepPlan(
+            outcome="skip",
+            role_name="reviewer",
+            role=AgentRole.REVIEWER,
+            stage="pre-review",
+            run_kind=RunKind.FRESH,
+            work_body='planned review work body "docs"',
+            prompt_template=PromptTemplate.REVIEW,
+            prompt_scope_args=planned_review_args,
+            model="planned-review-model",
+            effort="planned-review-effort",
+            service="planned-review-service",
+            mount_setup_failure=None,
+            commit_fallback_subject=CommitFallbackSubject(
+                commit_prefix="Review #53 - ",
+                fallback_subject="Review #53 - planned review fallback",
+            ),
+            skip_reason="review stage already complete",
+        ),
+    )
+
+    def _planned_issue_execution_from_worktree(**_: Any) -> IssueExecutionPlan:
+        return issue_plan
+
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.plan_issue_execution_from_worktree",
+        _planned_issue_execution_from_worktree,
+    )
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    impl_call = deps.git_svc.commit.call_args_list[0]
+    assert impl_call[0][2] == "Implement #53 - planned implement fallback"
+    assert RoleSession(impl_call[0][0], AgentRole.IMPLEMENTER).is_done()
 
 
 def test_run_issue_commits_reviewer_with_issue_number_and_message(tmp_path):
