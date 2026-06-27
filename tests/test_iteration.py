@@ -3808,7 +3808,7 @@ def test_run_iteration_routes_merge_time_preflight_afk_at_iteration_boundary(
     def _close_issue(issue_number: int):
         action_log.append(("close_issue", issue_number))
 
-    github_svc.close_issue.side_effect = _close_issue
+    github_svc.close_issue_with_parents.side_effect = _close_issue
 
     def _delete_branch(branch: str, repo_root: Path):
         action_log.append(("delete_branch", branch))
@@ -3855,7 +3855,7 @@ def test_run_iteration_routes_merge_time_preflight_afk_at_iteration_boundary(
     assert pinned_shas_by_branch["pycastle/issue-2"] == "plan-sha"
     assert pinned_shas_by_branch["pycastle/issue-181"] == "merge-sha"
     closed_issue_numbers = [
-        call.args[0] for call in github_svc.close_issue.call_args_list
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
     ]
     assert closed_issue_numbers == [1, 181]
     deleted_branches = [call.args[0] for call in git_svc.delete_branch.call_args_list]
@@ -3904,8 +3904,8 @@ def test_run_iteration_aborts_on_merge_time_preflight_hitl_at_iteration_boundary
         },
     ]
     github_svc.get_all_open_issues_lightweight.return_value = []
-    github_svc.close_issue.side_effect = lambda issue_number: action_log.append(
-        ("close_issue", issue_number)
+    github_svc.close_issue_with_parents.side_effect = lambda issue_number: (
+        action_log.append(("close_issue", issue_number))
     )
 
     git_svc.delete_branch.side_effect = lambda branch, repo_root: action_log.append(
@@ -3943,7 +3943,7 @@ def test_run_iteration_aborts_on_merge_time_preflight_hitl_at_iteration_boundary
     assert call_count == 2
     assert implemented_issue_numbers == [1, 2]
     closed_issue_numbers = [
-        call.args[0] for call in github_svc.close_issue.call_args_list
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
     ]
     assert closed_issue_numbers == [1]
     deleted_branches = [call.args[0] for call in git_svc.delete_branch.call_args_list]
@@ -3992,8 +3992,8 @@ def test_run_iteration_merge_time_preflight_issue_agent_failure_aborts_normally(
         },
     ]
     github_svc.get_all_open_issues_lightweight.return_value = []
-    github_svc.close_issue.side_effect = lambda issue_number: action_log.append(
-        ("close_issue", issue_number)
+    github_svc.close_issue_with_parents.side_effect = lambda issue_number: (
+        action_log.append(("close_issue", issue_number))
     )
 
     git_svc.delete_branch.side_effect = lambda branch, repo_root: action_log.append(
@@ -4033,7 +4033,7 @@ def test_run_iteration_merge_time_preflight_issue_agent_failure_aborts_normally(
     assert implemented_issue_numbers == [1, 2]
     assert ("agent", "Failure Report Agent") in action_log
     closed_issue_numbers = [
-        call.args[0] for call in github_svc.close_issue.call_args_list
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
     ]
     assert closed_issue_numbers == [1]
 

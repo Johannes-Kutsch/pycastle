@@ -100,14 +100,16 @@ def test_clean_merge_returns_all_issues_as_clean(deps):
 def test_clean_merge_closes_each_issue(deps, github_svc):
     issues = [{"number": 7, "title": "Fix A"}, {"number": 8, "title": "Fix B"}]
     _run(issues, deps)
-    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
+    ]
     assert sorted(closed) == [7, 8]
 
 
-def test_clean_merge_calls_close_completed_parent_issues_once(deps, github_svc):
+def test_clean_merge_does_not_call_close_completed_parent_issues(deps, github_svc):
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
     _run(issues, deps)
-    assert github_svc.close_completed_parent_issues.call_count == 1
+    assert not hasattr(github_svc, "close_completed_parent_issues")
 
 
 def test_clean_merge_does_not_spawn_merger(deps, agent_runner):
@@ -341,15 +343,19 @@ def test_conflict_closes_conflict_issue_after_merger(deps, git_svc, github_svc):
     git_svc.try_merge.side_effect = _conflict_on([2])
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, deps)
-    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
+    ]
     assert 2 in closed
 
 
-def test_conflict_calls_close_completed_parent_issues(deps, git_svc, github_svc):
+def test_conflict_does_not_call_close_completed_parent_issues(
+    deps, git_svc, github_svc
+):
     git_svc.try_merge.side_effect = _conflict_on([1])
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    assert github_svc.close_completed_parent_issues.call_count == 1
+    assert not hasattr(github_svc, "close_completed_parent_issues")
 
 
 def test_conflict_deletes_sandbox_branch(deps, git_svc):
@@ -376,9 +382,11 @@ def test_multiple_conflict_issues_all_closed(deps, git_svc, github_svc):
         {"number": 12, "title": "C"},
     ]
     _run(issues, deps)
-    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
+    ]
     assert sorted(closed) == [10, 11, 12]
-    assert github_svc.close_completed_parent_issues.call_count == 1
+    assert not hasattr(github_svc, "close_completed_parent_issues")
 
 
 def test_multiple_conflict_branches_recover_one_branch_per_sandbox(
@@ -417,7 +425,9 @@ def test_multiple_conflict_branches_recover_one_branch_per_sandbox(
         deps,
     )
 
-    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
+    ]
     assert result.conflicts == [
         {"number": 1, "title": "Conflict one"},
         {"number": 2, "title": "Conflict two"},
@@ -456,7 +466,9 @@ def test_later_conflict_failure_returns_partial_success_for_earlier_verified_bra
 
     assert result.completed_conflicts == [{"number": 1, "title": "Conflict one"}]
     assert result.pending_conflicts == [{"number": 2, "title": "Conflict two"}]
-    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
+    ]
     assert closed == [1]
     deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
     assert "pycastle/issue-1" in deleted
@@ -663,8 +675,8 @@ def test_merger_without_active_branch_ancestry_keeps_conflict_issue_open(
 
     result = _run([{"number": 1, "title": "Conflict"}], local_deps)
 
-    github_svc.close_issue.assert_not_called()
-    github_svc.close_completed_parent_issues.assert_not_called()
+    github_svc.close_issue_with_parents.assert_not_called()
+    assert not hasattr(github_svc, "close_completed_parent_issues")
     assert result.pending_conflicts == [{"number": 1, "title": "Conflict"}]
 
 
@@ -879,7 +891,7 @@ def test_preflight_skip_closes_parent_issues_for_clean_issues(
     )
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, local_deps)
-    local_deps.github_svc.close_completed_parent_issues.assert_called_once()
+    assert not hasattr(local_deps.github_svc, "close_completed_parent_issues")
 
 
 # ── Already-merged branch guard ──────────────────────────────────────────────
@@ -922,7 +934,9 @@ def test_already_merged_conflict_branch_closes_issue(tmp_path, git_svc, github_s
         github_svc=github_svc,
     )
     _run([{"number": 1, "title": "Conflict"}], local_deps)
-    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
+    ]
     assert 1 in closed
 
 
@@ -1024,8 +1038,8 @@ def test_empty_completed_list_returns_empty_result(deps, github_svc, agent_runne
     result = _run([], deps)
     assert result.clean == []
     assert result.conflicts == []
-    github_svc.close_issue.assert_not_called()
-    github_svc.close_completed_parent_issues.assert_not_called()
+    github_svc.close_issue_with_parents.assert_not_called()
+    assert not hasattr(github_svc, "close_completed_parent_issues")
     assert agent_runner.calls == []
 
 
@@ -2008,7 +2022,7 @@ def test_all_branches_processed_in_parallel_teardown(recording_deps, git_svc):
 
 def test_close_issue_failure_does_not_abort_merge_phase(recording_deps, github_svc):
     deps, recording = recording_deps
-    github_svc.close_issue.side_effect = RuntimeError("API error")
+    github_svc.close_issue_with_parents.side_effect = RuntimeError("API error")
     issues = [{"number": 1, "title": "Fix A"}]
     result = _run(issues, deps)
     assert result.clean == issues
@@ -2021,7 +2035,9 @@ def test_close_issue_failure_in_conflict_path_does_not_abort(
 ):
     deps, recording = recording_deps
     git_svc.try_merge.return_value = False
-    github_svc.close_issue.side_effect = RuntimeError("conflict close failed")
+    github_svc.close_issue_with_parents.side_effect = RuntimeError(
+        "conflict close failed"
+    )
     issues = [{"number": 1, "title": "Conflict"}]
     result = _run(issues, deps)
     assert result.conflicts == issues
@@ -2034,7 +2050,9 @@ def test_conflict_close_failure_does_not_advance_closing_progress(
 ):
     deps, recording = recording_deps
     git_svc.try_merge.return_value = False
-    github_svc.close_issue.side_effect = RuntimeError("conflict close failed")
+    github_svc.close_issue_with_parents.side_effect = RuntimeError(
+        "conflict close failed"
+    )
 
     _run([{"number": 1, "title": "Conflict"}], deps)
 
@@ -2053,7 +2071,7 @@ def test_close_issue_all_failures_reported_via_status_display(
     def _side_effect(number):
         raise errors[number]
 
-    github_svc.close_issue.side_effect = _side_effect
+    github_svc.close_issue_with_parents.side_effect = _side_effect
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
     _run(issues, deps)
     print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
@@ -2273,7 +2291,7 @@ def test_merge_phase_proceeds_to_branch_deletion_when_all_closes_fail(
 ):
     """Branch deletion runs even when every close_issue raises."""
     deps, _ = recording_deps
-    github_svc.close_issue.side_effect = _api_error(500)
+    github_svc.close_issue_with_parents.side_effect = _api_error(500)
     issues = [{"number": 1, "title": "A"}, {"number": 2, "title": "B"}]
     _run(issues, deps)
     deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
@@ -2284,12 +2302,12 @@ def test_merge_phase_proceeds_to_branch_deletion_when_all_closes_fail(
 def test_merge_phase_proceeds_to_parent_close_when_all_closes_fail(
     recording_deps, github_svc
 ):
-    """close_completed_parent_issues runs even when every close_issue raises."""
+    """No global parent scan runs even when every issue close raises."""
     deps, _ = recording_deps
-    github_svc.close_issue.side_effect = _api_error(500)
+    github_svc.close_issue_with_parents.side_effect = _api_error(500)
     issues = [{"number": 1, "title": "A"}]
     _run(issues, deps)
-    assert github_svc.close_completed_parent_issues.call_count == 1
+    assert not hasattr(github_svc, "close_completed_parent_issues")
 
 
 def test_merge_phase_surfaces_close_failure_via_status_display(
@@ -2297,7 +2315,7 @@ def test_merge_phase_surfaces_close_failure_via_status_display(
 ):
     """A close_issue failure is printed to status_display with the issue number and message."""
     deps, recording = recording_deps
-    github_svc.close_issue.side_effect = _api_error(500)
+    github_svc.close_issue_with_parents.side_effect = _api_error(500)
     issues = [{"number": 42, "title": "A"}]
     _run(issues, deps)
     print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
@@ -2314,11 +2332,13 @@ def test_merge_phase_partial_close_failure_still_closes_successful_issue(
         if number == 1:
             raise _api_error(500)
 
-    github_svc.close_issue.side_effect = _side_effect
+    github_svc.close_issue_with_parents.side_effect = _side_effect
     issues = [{"number": 1, "title": "Fail"}, {"number": 2, "title": "OK"}]
     result = _run(issues, deps)
     assert result.clean == issues
-    closed = [call.args[0] for call in github_svc.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
+    ]
     assert 2 in closed
 
 
@@ -2332,7 +2352,7 @@ def test_merge_phase_keeps_merged_branch_progress_when_conflict_close_fails(
         if number == 2:
             raise _api_error(500)
 
-    github_svc.close_issue.side_effect = _close_issue
+    github_svc.close_issue_with_parents.side_effect = _close_issue
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, deps)
 
@@ -2368,7 +2388,7 @@ def test_conflict_branch_stays_incomplete_until_target_branch_is_verified_merged
     assert "merging 2/2 branches, closing 2/2 issues" not in merge_updates
     assert result.completed_conflicts == []
     assert result.pending_conflicts == [{"number": 2, "title": "Conflict"}]
-    github_svc.close_issue.assert_called_once_with(1)
+    github_svc.close_issue_with_parents.assert_called_once_with(1)
 
 
 def test_merge_phase_shows_only_remaining_merge_work_while_merger_is_active(

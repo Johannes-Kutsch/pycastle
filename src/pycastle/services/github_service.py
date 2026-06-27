@@ -367,16 +367,6 @@ class GithubService:
             return
         self.close_issue_with_parents(parent)
 
-    def get_open_issue_numbers(self) -> list[int]:
-        results = self._paginate(f"/repos/{self.repo}/issues?state=open&per_page=100")
-        return [
-            int(item["number"])
-            for item in results
-            if isinstance(item, dict)
-            and "number" in item
-            and "pull_request" not in item
-        ]
-
     def _filter_recently_closed_open_issue_items(
         self, issues: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -450,16 +440,6 @@ class GithubService:
             }
             for issue in issues
         ]
-
-    def close_completed_parent_issues(self) -> None:
-        changed = True
-        while changed:
-            changed = False
-            for issue_num in self.get_open_issue_numbers():
-                all_subs = self._get_all_sub_issues(issue_num)
-                if all_subs and all(s.get("state") == "closed" for s in all_subs):
-                    self.close_issue(issue_num)
-                    changed = True
 
     def list_labels(self) -> list[dict[str, Any]]:
         results = self._paginate(f"/repos/{self.repo}/labels?per_page=100")

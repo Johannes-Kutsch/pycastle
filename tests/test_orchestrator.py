@@ -941,11 +941,10 @@ def test_clean_merges_skip_merger(tmp_path):
     )
 
 
-def test_clean_merge_calls_close_issue_per_issue_and_close_completed_parent_issues(
+def test_clean_merge_calls_close_issue_with_parents_per_issue(
     tmp_path,
 ):
-    """Each cleanly-merged issue must be closed via close_issue(); close_completed_parent_issues()
-    must be called once after all merges."""
+    """Each cleanly-merged issue must be closed via close_issue_with_parents()."""
     issues = [
         {
             "number": 7,
@@ -976,11 +975,11 @@ def test_clean_merge_calls_close_issue_per_issue_and_close_completed_parent_issu
         github_service=mock_github,
     )
 
-    closed = [call.args[0] for call in mock_github.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in mock_github.close_issue_with_parents.call_args_list
+    ]
     assert sorted(closed) == [7, 8], f"Expected issues 7 and 8 closed; got {closed}"
-    assert mock_github.close_completed_parent_issues.call_count == 1, (
-        "close_completed_parent_issues must be called once after all merges"
-    )
+    assert not hasattr(mock_github, "close_completed_parent_issues")
 
 
 def test_conflict_branch_spawns_merger_with_only_failing_branch(tmp_path):
@@ -1060,15 +1059,17 @@ def test_conflict_branch_closed_after_merger_agent(tmp_path):
         github_service=mock_github,
     )
 
-    closed = [call.args[0] for call in mock_github.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in mock_github.close_issue_with_parents.call_args_list
+    ]
     assert 2 in closed, (
         f"Conflict issue #2 must be closed after Merger; closed: {closed}"
     )
     assert 1 in closed, f"Clean issue #1 must also be closed; closed: {closed}"
 
 
-def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
-    """After conflict branches are merged, close_completed_parent_issues must be called once."""
+def test_conflict_merge_does_not_call_close_completed_parent_issues(tmp_path):
+    """Conflict merge relies on per-issue cascade and skips the global parent scan."""
     issues = [{"number": 5, "title": "Conflict", "body": "x" * 100, "comments": []}]
 
     async def _fake_run_agent(request: RunRequest):
@@ -1084,9 +1085,7 @@ def test_conflict_merge_calls_close_completed_parent_issues(tmp_path):
         github_service=mock_github,
     )
 
-    assert mock_github.close_completed_parent_issues.call_count == 1, (
-        "close_completed_parent_issues must be called exactly once after conflict merge"
-    )
+    assert not hasattr(mock_github, "close_completed_parent_issues")
 
 
 def test_merger_does_not_receive_issues_prompt_arg(tmp_path):
@@ -1171,11 +1170,13 @@ def test_multiple_conflict_issues_all_closed_after_merger(tmp_path):
         github_service=mock_github,
     )
 
-    closed = [call.args[0] for call in mock_github.close_issue.call_args_list]
+    closed = [
+        call.args[0] for call in mock_github.close_issue_with_parents.call_args_list
+    ]
     assert 10 in closed, f"Conflict issue #10 must be closed; closed: {closed}"
     assert 11 in closed, f"Conflict issue #11 must be closed; closed: {closed}"
     assert 12 in closed, f"Conflict issue #12 must be closed; closed: {closed}"
-    assert mock_github.close_completed_parent_issues.call_count == 1
+    assert not hasattr(mock_github, "close_completed_parent_issues")
 
 
 def test_preflight_issue_receives_correct_command_and_output(tmp_path):
@@ -2303,7 +2304,7 @@ def test_run_full_iteration_cold_path(git_repo):
 
     closed_issues: list[int] = []
     mock_github = _make_github_svc()
-    mock_github.close_issue.side_effect = lambda n: closed_issues.append(n)
+    mock_github.close_issue_with_parents.side_effect = lambda n: closed_issues.append(n)
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
