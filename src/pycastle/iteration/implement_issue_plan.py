@@ -47,6 +47,8 @@ class CommitFallbackSubject:
 
 @dataclasses.dataclass(frozen=True)
 class MountSetupFailure:
+    role_value: str
+    rejection_code: str
     rejection: ManagedWorktreeMountRejected
     error_message: str
 
@@ -235,6 +237,8 @@ def _plan_step(
             prompt_template=prompt_template,
             prompt_scope_args=prompt_scope_args,
             mount_setup_failure=MountSetupFailure(
+                role_value=mount_decision.role or role.value,
+                rejection_code=mount_decision.rejection_code,
                 rejection=mount_decision,
                 error_message=describe_managed_worktree_mount_rejection(mount_decision),
             ),

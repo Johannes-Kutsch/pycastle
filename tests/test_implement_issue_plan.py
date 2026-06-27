@@ -10,6 +10,10 @@ from pycastle.iteration.implement_issue_plan import (
     plan_issue_execution_from_worktree,
     plan_ready_issue_slice,
 )
+from pycastle.managed_worktree_mount_policy import (
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+)
 from pycastle.issue_readiness import (
     IssueReadiness,
     IssueReadinessKind,
@@ -329,14 +333,25 @@ def test_plan_issue_execution_reports_mount_setup_failure_for_invalid_managed_wo
         review_done=False,
     )
 
+    rejection = decide_managed_worktree_mount(
+        repo_root=tmp_path,
+        mount_path=implement_mount_path,
+        caller="Implement Agent #1909",
+        role=AgentRole.IMPLEMENTER.value,
+    )
+
     assert plan.implementer_step.outcome == "setup_failure"
     assert plan.implementer_step.mount_setup_failure is not None
     assert (
-        plan.implementer_step.mount_setup_failure.rejection.rejection_code
-        == "invalid_mount_path"
+        plan.implementer_step.mount_setup_failure.role_value
+        == AgentRole.IMPLEMENTER.value
     )
-    assert "managed worktree mount" in (
+    assert (
+        plan.implementer_step.mount_setup_failure.rejection_code == "invalid_mount_path"
+    )
+    assert (
         plan.implementer_step.mount_setup_failure.error_message
+        == describe_managed_worktree_mount_rejection(rejection)
     )
     assert plan.reviewer_step.outcome == "run"
 

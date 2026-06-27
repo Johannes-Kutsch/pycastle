@@ -18,12 +18,6 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from ..managed_worktree_mount_policy import (
-    ManagedWorktreeMountRejected,
-    decide_managed_worktree_mount,
-    describe_managed_worktree_mount_rejection,
-    should_reject_managed_worktree_mount,
-)
 from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..issue_readiness import require_ready_slice_outcome_for_issue
@@ -154,25 +148,17 @@ async def run_issue(
                     planner_sha=sha,
                 ) as impl_mount_path,
             ):
-                _impl_scope_args = planned_steps["implementer"].prompt_scope_args
-                mount_decision = decide_managed_worktree_mount(
-                    repo_root=deps.repo_root,
-                    mount_path=impl_mount_path,
-                    caller=f"Implement Agent #{issue['number']}",
-                    role=AgentRole.IMPLEMENTER.value,
-                )
-                if isinstance(
-                    mount_decision, ManagedWorktreeMountRejected
-                ) and should_reject_managed_worktree_mount(mount_decision):
+                implementer_step = planned_steps["implementer"]
+                if implementer_step.mount_setup_failure is not None:
                     raise SetupPhaseError(
-                        AgentRole.IMPLEMENTER.value,
-                        describe_managed_worktree_mount_rejection(mount_decision),
+                        implementer_step.mount_setup_failure.role_value,
+                        implementer_step.mount_setup_failure.error_message,
                     )
                 result = await _bounded_run_agent(
                     RunRequest(
                         name=f"Implement Agent #{issue['number']}",
                         prompt=build_prompt_invocation(
-                            _impl_template, _impl_scope_args
+                            _impl_template, implementer_step.prompt_scope_args
                         ),
                         mount_path=impl_mount_path,
                         role=AgentRole.IMPLEMENTER,
@@ -206,26 +192,18 @@ async def run_issue(
                     deps=deps,
                 ) as review_mount_path,
             ):
-                _review_scope_args = planned_steps["reviewer"].prompt_scope_args
-                mount_decision = decide_managed_worktree_mount(
-                    repo_root=deps.repo_root,
-                    mount_path=review_mount_path,
-                    caller=f"Review Agent #{issue['number']}",
-                    role=AgentRole.REVIEWER.value,
-                )
-                if isinstance(
-                    mount_decision, ManagedWorktreeMountRejected
-                ) and should_reject_managed_worktree_mount(mount_decision):
+                reviewer_step = planned_steps["reviewer"]
+                if reviewer_step.mount_setup_failure is not None:
                     raise SetupPhaseError(
-                        AgentRole.REVIEWER.value,
-                        describe_managed_worktree_mount_rejection(mount_decision),
+                        reviewer_step.mount_setup_failure.role_value,
+                        reviewer_step.mount_setup_failure.error_message,
                     )
                 review_result = await _bounded_run_agent(
                     RunRequest(
                         name=f"Review Agent #{issue['number']}",
                         prompt=build_prompt_invocation(
                             PromptTemplate.REVIEW,
-                            _review_scope_args,
+                            reviewer_step.prompt_scope_args,
                         ),
                         mount_path=review_mount_path,
                         role=AgentRole.REVIEWER,
