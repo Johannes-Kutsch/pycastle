@@ -96,10 +96,6 @@ class PromiseParseError(AgentOutputProtocolError):
     pass
 
 
-class CommitMessageParseError(AgentOutputProtocolError):
-    pass
-
-
 def _strip_markdown_fence(s: str) -> str:
     s = s.strip()
     if s.startswith("```"):
@@ -306,9 +302,7 @@ class _CommitMessageHandler:
     def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         body = _last_tag_block(text, "commit_message")
         if body is None:
-            raise CommitMessageParseError(
-                f"Agent produced no <commit_message>...</commit_message> tag.{tail}"
-            )
+            return CommitMessageOutput(message=None)
         return CommitMessageOutput(message=body.strip())
 
 

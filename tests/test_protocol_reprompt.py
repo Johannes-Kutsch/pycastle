@@ -171,20 +171,25 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_host_check
 
 
 def test_plan_protocol_reprompt_returns_template_specific_message_for_work_family_templates():
-    for template in (
-        PromptTemplate.IMPLEMENT_BEHAVIOR,
-        PromptTemplate.IMPLEMENT_REFACTOR,
-        PromptTemplate.IMPLEMENT_DOCS,
-        PromptTemplate.REVIEW,
+    render_calls: list[PromptInvocation] = []
+
+    for role, template in (
+        (AgentRole.IMPLEMENTER, PromptTemplate.IMPLEMENT_BEHAVIOR),
+        (AgentRole.IMPLEMENTER, PromptTemplate.IMPLEMENT_REFACTOR),
+        (AgentRole.IMPLEMENTER, PromptTemplate.IMPLEMENT_DOCS),
+        (AgentRole.REVIEWER, PromptTemplate.REVIEW),
     ):
         invocation = _invocation(template)
         plan = plan_protocol_reprompt(
-            role=AgentRole.IMPLEMENTER,
+            role=role,
             invocation=invocation,
             parser_error="missing commit_message tag",
             render_expected_output_shape=lambda received_invocation: (
-                f"shape for {received_invocation.template.name} "
-                f"with {received_invocation.scope_args['BRANCH']}"
+                (render_calls.append(received_invocation) or "")
+                + (
+                    f"shape for {received_invocation.template.name} "
+                    f"with {received_invocation.scope_args['BRANCH']}"
+                )
             ),
         )
 
@@ -200,6 +205,13 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_work_famil
                 ]
             )
         )
+
+    assert render_calls == [
+        _invocation(PromptTemplate.IMPLEMENT_BEHAVIOR),
+        _invocation(PromptTemplate.IMPLEMENT_REFACTOR),
+        _invocation(PromptTemplate.IMPLEMENT_DOCS),
+        _invocation(PromptTemplate.REVIEW),
+    ]
 
 
 def test_plan_protocol_reprompt_returns_improve_specific_message():
