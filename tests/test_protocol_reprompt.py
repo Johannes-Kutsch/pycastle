@@ -170,6 +170,67 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_host_check
     )
 
 
+def test_plan_protocol_reprompt_returns_template_specific_message_for_all_diagnostic_templates():
+    seen: list[PromptInvocation] = []
+    invocations: list[PromptInvocation] = []
+
+    for role, template, expected_scope_fragment in (
+        (
+            AgentRole.PREFLIGHT_ISSUE,
+            PromptTemplate.PREFLIGHT_ISSUE,
+            "ruff check",
+        ),
+        (
+            AgentRole.PREFLIGHT_ISSUE,
+            PromptTemplate.HOST_CHECK_ISSUE,
+            "abc123",
+        ),
+        (
+            AgentRole.FAILURE_REPORT,
+            PromptTemplate.FAILURE_REPORT,
+            "protocol_error",
+        ),
+    ):
+        invocation = _invocation(template)
+        invocations.append(invocation)
+
+        plan = plan_protocol_reprompt(
+            role=role,
+            invocation=invocation,
+            parser_error="unexpected <issue> tag while ignoring <promise>COMPLETE</promise>",
+            render_expected_output_shape=lambda received_invocation: (
+                seen.append(received_invocation)
+                or f"shape for {received_invocation.template.name}"
+                f" with {expected_scope_fragment}"
+            ),
+        )
+
+        assert plan == TemplateSpecificProtocolReprompt(
+            message="\n".join(
+                [
+                    "Your last response did not include the required protocol output.",
+                    "Please review the task requirements and try again, making sure to include the required output tag.",
+                    "The parser reported the following error:",
+                    "unexpected <issue> tag while ignoring <promise>COMPLETE</promise>",
+                    "Use this output shape exactly:",
+                    f"shape for {template.name} with {expected_scope_fragment}",
+                ]
+            )
+        )
+
+    assert seen == invocations
+    assert seen[0] is invocations[0]
+    assert seen[0].scope_args is invocations[0].scope_args
+    assert seen[1] is invocations[1]
+    assert seen[1].scope_args is invocations[1].scope_args
+    assert seen[2] is invocations[2]
+    assert seen[2].scope_args is invocations[2].scope_args
+    assert seen[1].scope_args["HOST_OS"] == "Linux"
+    assert seen[1].scope_args["CHECKED_SHA"] == "abc123"
+    assert seen[2].scope_args["FAILED_ROLE"] == "reviewer"
+    assert seen[2].scope_args["FAILURE_CLASS"] == "HardAgentError"
+
+
 def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes():
     seen: list[PromptInvocation] = []
     invocations: list[PromptInvocation] = []
