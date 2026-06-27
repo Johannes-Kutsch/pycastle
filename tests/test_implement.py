@@ -24,8 +24,6 @@ from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
     implement_phase,
-    pick_implement_template,
-    pick_slice_mode,
     run_issue,
 )
 from pycastle.iteration.implement_issue_plan import (
@@ -43,8 +41,6 @@ from tests.support import (
     RecordingStatusDisplay,
     _make_deps,
 )
-
-_cfg = Config()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -116,131 +112,6 @@ def test_branch_for_uses_issue_number():
     assert branch_for(42) == "pycastle/issue-42"
 
 
-# ── pick_implement_template ───────────────────────────────────────────────────
-
-
-def test_pick_implement_template_behavior_slice_resolves_to_behavior_template():
-    from pycastle.prompts.pipeline import PromptTemplate
-
-    issue = {"number": 1, "title": "T", "labels": ["behavior-slice"]}
-    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_BEHAVIOR
-
-
-def test_pick_implement_template_refactor_slice_resolves_to_refactor_template():
-    from pycastle.prompts.pipeline import PromptTemplate
-
-    issue = {"number": 1, "title": "T", "labels": ["refactor-slice"]}
-    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_REFACTOR
-
-
-def test_pick_implement_template_docs_slice_resolves_to_docs_template():
-    from pycastle.prompts.pipeline import PromptTemplate
-
-    issue = {"number": 1, "title": "T", "labels": ["docs-slice"]}
-    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_DOCS
-
-
-def test_pick_implement_template_ignores_unrelated_labels():
-    from pycastle.prompts.pipeline import PromptTemplate
-
-    issue = {
-        "number": 1,
-        "title": "T",
-        "labels": ["bug", "ready-for-agent", "behavior-slice"],
-    }
-    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_BEHAVIOR
-
-
-def test_pick_implement_template_uses_carried_readiness_mode_over_labels():
-    from pycastle.issue_readiness import (
-        IssueReadiness,
-        IssueReadinessKind,
-        SliceMode,
-        WellFormed,
-        WellFormedBody,
-    )
-    from pycastle.prompts.pipeline import PromptTemplate
-
-    readiness = IssueReadiness(
-        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
-        body_floor_status=WellFormedBody(stripped_length=100),
-        is_ready=True,
-        selected_mode=SliceMode.REFACTOR,
-        kind=IssueReadinessKind.READY_AFK,
-    )
-    # Labels say docs-slice but the carried readiness result says refactor
-    issue = {
-        "number": 1,
-        "title": "T",
-        "labels": ["docs-slice"],
-        "readiness": readiness,
-    }
-
-    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_REFACTOR
-
-
-def test_pick_implement_template_prefers_carried_ready_outcome_over_fallback_mode():
-    from pycastle.issue_readiness import (
-        IssueReadiness,
-        IssueReadinessKind,
-        ReadyIssueOutcome,
-        SliceMode,
-        WellFormed,
-        WellFormedBody,
-    )
-
-    readiness = IssueReadiness(
-        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
-        body_floor_status=WellFormedBody(stripped_length=100),
-        is_ready=True,
-        selected_mode=None,
-        ready=ReadyIssueOutcome(
-            display_name="docs",
-            template=PromptTemplate.IMPLEMENT_DOCS,
-        ),
-        kind=IssueReadinessKind.READY_AFK,
-    )
-    issue = {
-        "number": 1,
-        "title": "T",
-        "labels": ["behavior-slice"],
-        "readiness": readiness,
-    }
-
-    assert pick_implement_template(issue, _cfg) == PromptTemplate.IMPLEMENT_DOCS
-
-
-def test_pick_slice_mode_prefers_carried_ready_outcome_over_fallback_mode():
-    from pycastle.issue_readiness import (
-        IssueReadiness,
-        IssueReadinessKind,
-        ReadyIssueOutcome,
-        SliceMode,
-        WellFormed,
-        WellFormedBody,
-    )
-
-    readiness = IssueReadiness(
-        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
-        body_floor_status=WellFormedBody(stripped_length=100),
-        is_ready=True,
-        selected_mode=None,
-        ready=ReadyIssueOutcome(
-            display_name="docs",
-            template=PromptTemplate.IMPLEMENT_DOCS,
-        ),
-        kind=IssueReadinessKind.READY_AFK,
-    )
-    issue = {
-        "number": 1,
-        "title": "T",
-        "labels": ["behavior-slice"],
-        "readiness": readiness,
-    }
-
-    assert pick_slice_mode(issue, _cfg) == "docs"
-
-
 def test_plan_issue_execution_sets_implementer_fallback_commit_subject():
     issue = {
         "number": 1916,
@@ -266,24 +137,6 @@ def test_plan_issue_execution_sets_implementer_fallback_commit_subject():
         commit_prefix="Implement #1916 - ",
         fallback_subject="Implement #1916 - Plan host-owned commit fallback subjects",
     )
-
-
-def test_pick_implement_template_raises_runtime_error_for_malformed_issue():
-    issue = {"number": 42, "title": "Bad", "labels": []}
-
-    with pytest.raises(RuntimeError, match="not implement-ready"):
-        pick_implement_template(issue, _cfg)
-
-
-def test_pick_implement_template_raises_runtime_error_for_multiple_slice_labels():
-    issue = {
-        "number": 99,
-        "title": "Ambiguous",
-        "labels": ["behavior-slice", "refactor-slice"],
-    }
-
-    with pytest.raises(RuntimeError, match="not implement-ready"):
-        pick_implement_template(issue, _cfg)
 
 
 # ── implement_phase: parallel execution (tracer bullet) ───────────────────────
