@@ -70,12 +70,18 @@ class _FakeService:
 class _FakeDockerSession:
     def __init__(self) -> None:
         self._container = type("Container", (), {"id": "container-123"})()
+        self.exec_calls: list[str] = []
 
     def __enter__(self):
         return self
 
     def __exit__(self, *_args) -> None:
         return None
+
+    def exec_simple(self, command: str, timeout: float | None = None) -> str:
+        del timeout
+        self.exec_calls.append(command)
+        return ""
 
 
 class _FakeRuntimeClient:
@@ -129,6 +135,39 @@ class _AssertingRuntimeClient:
 
     async def run_new_session(self, request):
         assert (self._agent_name, "Work") in self._status_display.phase_updates
+        return RuntimeOutcome(
+            kind=Completed(),
+            result=RunResult(
+                output="<commit_message>done</commit_message>",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+class _BlockingRuntimeClient:
+    def __init__(
+        self,
+        status_display: RecordingStatusDisplay,
+        agent_name: str,
+        started: asyncio.Event,
+        finish: asyncio.Event,
+    ) -> None:
+        self._status_display = status_display
+        self._agent_name = agent_name
+        self._started = started
+        self._finish = finish
+
+    async def run_new_session(self, request):
+        del request
+        assert (self._agent_name, "Work") in self._status_display.phase_updates
+        self._started.set()
+        await self._finish.wait()
         return RuntimeOutcome(
             kind=Completed(),
             result=RunResult(
@@ -482,3 +521,185 @@ def test_agent_runner_switches_runtime_rows_to_work_before_runtime_invocation(
 
     assert isinstance(result, CommitMessageOutput)
     assert (agent_name, "Work") in status_display.phase_updates
+
+
+def test_agent_runner_parallel_runtime_rows_switch_to_work_independently(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo" / "pycastle" / ".worktrees"
+    mount_a = repo_root / "issue-1905-a"
+    mount_b = repo_root / "issue-1905-b"
+    mount_a.mkdir(parents=True)
+    mount_b.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+    status_display = RecordingStatusDisplay()
+    agent_a = "Implement Agent #1905-A"
+    agent_b = "Implement Agent #1905-B"
+    setup_a = asyncio.Event()
+    setup_b = asyncio.Event()
+    runtime_a_started = asyncio.Event()
+    runtime_b_started = asyncio.Event()
+    finish_a = asyncio.Event()
+    finish_b = asyncio.Event()
+    runtime_clients = {
+        agent_a: _BlockingRuntimeClient(
+            status_display, agent_a, runtime_a_started, finish_a
+        ),
+        agent_b: _BlockingRuntimeClient(
+            status_display, agent_b, runtime_b_started, finish_b
+        ),
+    }
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="prompt"),
+    )
+
+    async def setup_side_effect(self, git_name, git_email, work_body=""):
+        del git_name, git_email, work_body
+        if self.name == agent_a:
+            await setup_a.wait()
+            return None
+        if self.name == agent_b:
+            await setup_b.wait()
+            return None
+        raise AssertionError(f"unexpected setup call for {self.name}")
+
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        setup_side_effect,
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda self: runtime_clients[self.name],
+    )
+
+    async def run_agents() -> tuple[CommitMessageOutput, CommitMessageOutput]:
+        task_a = asyncio.create_task(
+            runner.run(
+                RunRequest(
+                    name=agent_a,
+                    prompt=PromptInvocation(
+                        template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                        scope_args={
+                            "ISSUE_NUMBER": "1905",
+                            "ISSUE_TITLE": "Fix Setup to Work phase transition",
+                            "ISSUE_BODY": "",
+                            "ISSUE_COMMENTS": "",
+                            "BRANCH": "issue-1905-a",
+                            "INTERRUPTED_WORK": "",
+                        },
+                    ),
+                    mount_path=mount_a,
+                    role=AgentRole.IMPLEMENTER,
+                    model="gpt-5.5",
+                    effort="medium",
+                    service="codex",
+                    status_display=status_display,
+                )
+            )
+        )
+        task_b = asyncio.create_task(
+            runner.run(
+                RunRequest(
+                    name=agent_b,
+                    prompt=PromptInvocation(
+                        template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                        scope_args={
+                            "ISSUE_NUMBER": "1906",
+                            "ISSUE_TITLE": "Keep parallel runtime rows independent",
+                            "ISSUE_BODY": "",
+                            "ISSUE_COMMENTS": "",
+                            "BRANCH": "issue-1905-b",
+                            "INTERRUPTED_WORK": "",
+                        },
+                    ),
+                    mount_path=mount_b,
+                    role=AgentRole.IMPLEMENTER,
+                    model="gpt-5.5",
+                    effort="medium",
+                    service="codex",
+                    status_display=status_display,
+                )
+            )
+        )
+
+        setup_a.set()
+        await runtime_a_started.wait()
+        assert (agent_a, "Work") in status_display.phase_updates
+        assert (agent_b, "Work") not in status_display.phase_updates
+
+        setup_b.set()
+        await runtime_b_started.wait()
+        finish_a.set()
+        finish_b.set()
+        return await asyncio.gather(task_a, task_b)
+
+    result_a, result_b = asyncio.run(run_agents())
+
+    assert isinstance(result_a, CommitMessageOutput)
+    assert isinstance(result_b, CommitMessageOutput)
+    assert (agent_a, "Work") in status_display.phase_updates
+    assert (agent_b, "Work") in status_display.phase_updates
+
+
+def test_agent_runner_preflight_keeps_container_preflight_phase_names(
+    tmp_path,
+    monkeypatch,
+):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1905"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(
+            logs_dir=tmp_path / "logs",
+            preflight_checks=[
+                ("Ruff", "ruff check"),
+                ("Pytest", "pytest"),
+            ],
+        ),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+    status_display = RecordingStatusDisplay()
+
+    monkeypatch.setattr(
+        runner,
+        "_build_preflight_session",
+        lambda *_args, **_kwargs: _FakeDockerSession(),
+    )
+
+    failures = asyncio.run(
+        runner.run_preflight(
+            name="Preflight Agent #1905",
+            mount_path=mount_path,
+            stage="implement",
+            status_display=status_display,
+            work_body="Fix Setup to Work phase transition",
+        )
+    )
+
+    assert failures == []
+    assert ("Preflight Agent #1905", "Work") not in status_display.phase_updates
+    assert status_display.phase_updates == [
+        ("Preflight Agent #1905", "Running Ruff (1/2)"),
+        ("Preflight Agent #1905", "Running Pytest (2/2)"),
+    ]
