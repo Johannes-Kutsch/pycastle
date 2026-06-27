@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
 from ..prompts.dispatch import PromptInvocation
@@ -31,6 +31,7 @@ class GenericProtocolReprompt:
 @dataclass(frozen=True)
 class TemplateSpecificProtocolReprompt:
     message: str
+    template: PromptTemplate | None = field(default=None, compare=False)
     kind: Literal["template_specific"] = "template_specific"
 
 
@@ -46,11 +47,15 @@ _HOST_PARSED_PROTOCOL_TEMPLATES = frozenset(
         PromptTemplate.IMPLEMENT_REFACTOR,
         PromptTemplate.IMPLEMENT_DOCS,
         PromptTemplate.REVIEW,
-        PromptTemplate.MERGE,
         PromptTemplate.PREFLIGHT_ISSUE,
         PromptTemplate.FAILURE_REPORT,
-        PromptTemplate.DIVERGENCE_RESOLVE,
         PromptTemplate.HOST_CHECK_ISSUE,
+    }
+)
+_COORDINATION_PROTOCOL_TEMPLATES = frozenset(
+    {
+        PromptTemplate.MERGE,
+        PromptTemplate.DIVERGENCE_RESOLVE,
     }
 )
 _IMPROVE_PROTOCOL_TEMPLATES = frozenset(
@@ -94,6 +99,7 @@ def plan_protocol_reprompt(
 
     if role is AgentRole.PLANNER:
         return TemplateSpecificProtocolReprompt(
+            template=invocation.template,
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
                 expected_shape=render_expected_output_shape(invocation),
@@ -102,24 +108,35 @@ def plan_protocol_reprompt(
                     "(do not quote or escape the JSON)."
                 ),
                 shape_label="Use this Planner output shape exactly:",
-            )
+            ),
+        )
+
+    if invocation.template in _COORDINATION_PROTOCOL_TEMPLATES:
+        return TemplateSpecificProtocolReprompt(
+            template=invocation.template,
+            message=_protocol_reprompt_message_with_expected_shape(
+                parser_error=parser_error,
+                expected_shape=render_expected_output_shape(invocation),
+            ),
         )
 
     if invocation.template in _HOST_PARSED_PROTOCOL_TEMPLATES:
         return TemplateSpecificProtocolReprompt(
+            template=invocation.template,
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
                 expected_shape=render_expected_output_shape(invocation),
-            )
+            ),
         )
 
     if invocation.template in _IMPROVE_PROTOCOL_TEMPLATES:
         return TemplateSpecificProtocolReprompt(
+            template=invocation.template,
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
                 expected_shape=render_expected_output_shape(invocation),
                 shape_label="Use this Improve output shape exactly:",
-            )
+            ),
         )
 
     return GenericProtocolReprompt()

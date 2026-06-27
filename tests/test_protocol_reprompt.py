@@ -170,6 +170,62 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_host_check
     )
 
 
+def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes():
+    seen: list[PromptInvocation] = []
+
+    for role, template, scope_key, scope_value in (
+        (AgentRole.MERGER, PromptTemplate.MERGE, "BRANCHES", "main,feature"),
+        (
+            AgentRole.DIVERGENCE_RESOLVER,
+            PromptTemplate.DIVERGENCE_RESOLVE,
+            "BRANCH",
+            "pycastle/issue-1928",
+        ),
+    ):
+        invocation = PromptInvocation(
+            template=template,
+            scope_args=_scope_args_for(template),
+            send_role_prompt_on_resume=True,
+        )
+
+        plan = plan_protocol_reprompt(
+            role=role,
+            invocation=invocation,
+            parser_error="unexpected <promise>COMPLETE</promise> tag",
+            render_expected_output_shape=lambda received_invocation: (
+                seen.append(received_invocation)
+                or f"shape for {received_invocation.template.name}"
+                f" with {received_invocation.scope_args[scope_key]}"
+            ),
+        )
+
+        assert isinstance(plan, TemplateSpecificProtocolReprompt)
+        assert plan.template is template
+        assert plan.message == "\n".join(
+            [
+                "Your last response did not include the required protocol output.",
+                "Please review the task requirements and try again, making sure to include the required output tag.",
+                "The parser reported the following error:",
+                "unexpected <promise>COMPLETE</promise> tag",
+                "Use this output shape exactly:",
+                f"shape for {template.name} with {scope_value}",
+            ]
+        )
+
+    assert seen == [
+        PromptInvocation(
+            template=PromptTemplate.MERGE,
+            scope_args=_scope_args_for(PromptTemplate.MERGE),
+            send_role_prompt_on_resume=True,
+        ),
+        PromptInvocation(
+            template=PromptTemplate.DIVERGENCE_RESOLVE,
+            scope_args=_scope_args_for(PromptTemplate.DIVERGENCE_RESOLVE),
+            send_role_prompt_on_resume=True,
+        ),
+    ]
+
+
 def test_plan_protocol_reprompt_returns_template_specific_message_for_work_family_templates():
     render_calls: list[PromptInvocation] = []
 
