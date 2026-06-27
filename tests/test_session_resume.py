@@ -264,13 +264,13 @@ def test_continuation_file_controls_resumable_state(rs):
     assert rs.is_done() is False
 
 
-def test_populated_dir_without_continuation_is_not_resumable(rs):
+def test_populated_dir_without_done_is_not_resumable_or_done(rs):
     rs.start_fresh()
     (rs.path / "session.jsonl").write_text("{}\n", encoding="utf-8")
 
     assert rs.run_kind() == RunKind.FRESH
     assert rs.is_resumable() is False
-    assert rs.is_done() is True
+    assert rs.is_done() is False
 
 
 def test_completion_signal_done_dir_survives_next_session_is_fresh(rs, worktree):
@@ -316,6 +316,7 @@ def test_start_fresh_recreates_empty_session_store(rs):
 
     assert rs.path.is_dir()
     assert list(rs.path.iterdir()) == []
+    assert rs.is_done() is False
 
 
 def test_continuation_round_trips_via_role_session_methods(rs):
@@ -951,9 +952,30 @@ def test_discard_sibling_safe(worktree):
     rs_review = RoleSession(worktree, AgentRole.REVIEWER)
     rs_impl.start_fresh()
     rs_review.start_fresh()
+    rs_review.clear_provider_state_and_signal_completion()
 
     rs_impl.discard()
 
     assert any_role_dir_present(worktree) is True
     assert rs_review.is_resumable() is False
     assert rs_review.is_done() is True
+
+
+def test_start_fresh_after_completion_clears_done_signal(rs):
+    rs.start_fresh()
+    rs.clear_provider_state_and_signal_completion()
+
+    rs.start_fresh()
+
+    assert rs.is_done() is False
+    assert rs.is_resumable() is False
+
+
+def test_discard_after_completion_clears_done_signal(rs):
+    rs.start_fresh()
+    rs.clear_provider_state_and_signal_completion()
+
+    rs.discard()
+
+    assert rs.is_done() is False
+    assert rs.is_resumable() is False

@@ -1059,17 +1059,29 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
 
 
 def _seed_review_stage_done(tmp_path: Path, issue_number: int) -> None:
-    """Create empty reviewer session dir to signal review stage done."""
+    """Create a completed reviewer session."""
     wt_path = tmp_path / "pycastle" / ".worktrees" / f"issue-{issue_number}"
-    rev_dir = wt_path / ".pycastle-session" / "reviewer"
-    rev_dir.mkdir(parents=True)
+    role_session = RoleSession(wt_path, AgentRole.REVIEWER)
+    role_session.start_fresh()
+    role_session.clear_provider_state_and_signal_completion()
 
 
 def _seed_implement_stage_done(tmp_path: Path, issue_number: int) -> None:
-    """Create empty implementer session dir to signal implement stage done."""
+    """Create a completed implementer session."""
     wt_path = tmp_path / "pycastle" / ".worktrees" / f"issue-{issue_number}"
-    impl_dir = wt_path / ".pycastle-session" / "implementer"
-    impl_dir.mkdir(parents=True)
+    role_session = RoleSession(wt_path, AgentRole.IMPLEMENTER)
+    role_session.start_fresh()
+    role_session.clear_provider_state_and_signal_completion()
+
+
+def _seed_implement_provider_state_without_done(
+    tmp_path: Path, issue_number: int
+) -> None:
+    """Create provider state side-effects without the stage-done sentinel."""
+    wt_path = tmp_path / "pycastle" / ".worktrees" / f"issue-{issue_number}"
+    provider_dir = wt_path / ".pycastle-session" / "implementer" / "codex"
+    provider_dir.mkdir(parents=True)
+    (provider_dir / "auth.json").write_text("{}", encoding="utf-8")
 
 
 def test_run_issue_review_skip_returns_issue_without_invoking_any_agent(tmp_path):
@@ -1157,6 +1169,27 @@ def test_run_issue_no_stage_done_signal_runs_both_agents(tmp_path):
 
     issue = {
         "number": 24,
+        "title": "Fix auth",
+        "body": "",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    result = asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    assert result == issue
+    assert len(fake.calls) == 2
+    assert "Implement Agent" in fake.calls[0].name
+    assert "Review Agent" in fake.calls[1].name
+
+
+def test_run_issue_provider_state_without_done_runs_implementer(tmp_path):
+    """Provider state alone must not be treated as an implement-stage done signal."""
+    fake = FakeAgentRunner([CompletionOutput()] * 2)
+    deps = _make_deps(tmp_path, fake)
+    _seed_implement_provider_state_without_done(tmp_path, 25)
+
+    issue = {
+        "number": 25,
         "title": "Fix auth",
         "body": "",
         "comments": [],
@@ -1665,9 +1698,9 @@ def test_run_issue_clears_implementer_session_dir_contents_after_commit(tmp_path
     }
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
-    # Dir exists (not removed) but is empty (contents cleared = stage-done signal).
+    # Dir exists (not removed) and only the explicit done sentinel remains.
     assert impl_session_dir.is_dir()
-    assert not any(impl_session_dir.iterdir())
+    assert sorted(path.name for path in impl_session_dir.iterdir()) == ["_done"]
 
 
 def test_run_issue_clears_reviewer_session_dir_contents_after_commit(tmp_path):
@@ -1705,7 +1738,7 @@ def test_run_issue_clears_reviewer_session_dir_contents_after_commit(tmp_path):
     asyncio.run(run_issue(issue, deps, "sha-abc"))
 
     assert rev_session_dir.is_dir()
-    assert not any(rev_session_dir.iterdir())
+    assert sorted(path.name for path in rev_session_dir.iterdir()) == ["_done"]
 
 
 # ── Issue 886: concurrency bounds ─────────────────────────────────────────────

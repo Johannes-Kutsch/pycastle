@@ -13,6 +13,7 @@ from pycastle.runtime_session import (
 
 SESSION_DIR_NAME = ".pycastle-session"
 _CONTINUATION_FILENAME = "_continuation"
+_DONE_FILENAME = "_done"
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
@@ -91,6 +92,9 @@ class RoleSession:
 
     def _continuation_path(self) -> Path:
         return self.path / _CONTINUATION_FILENAME
+
+    def _done_path(self) -> Path:
+        return self.path / _DONE_FILENAME
 
     @staticmethod
     def provider_state_relpath_for(
@@ -184,7 +188,7 @@ class RoleSession:
         return self._continuation_path().is_file()
 
     def is_done(self) -> bool:
-        return self.path.is_dir() and not self.is_resumable()
+        return self._done_path().is_file()
 
     def run_kind(self) -> RunKind:
         return RunKind.RESUME if self.is_resumable() else RunKind.FRESH
@@ -206,6 +210,7 @@ class RoleSession:
                 child.unlink(missing_ok=True)
             elif child.is_dir():
                 shutil.rmtree(child, onerror=_force_remove_readonly)
+        self._done_path().write_text("", encoding="utf-8")
 
     def discard(self) -> None:
         if self.path.is_dir():
