@@ -199,6 +199,18 @@ def ready_slice_outcome_for_issue(issue: dict, cfg: Config) -> ReadyIssueOutcome
     )
 
 
+def require_ready_slice_outcome_for_issue(
+    issue: dict, cfg: Config
+) -> ReadyIssueOutcome:
+    ready = ready_slice_outcome_for_issue(issue, cfg)
+    if ready is None:
+        raise RuntimeError(
+            f"Issue #{issue['number']} is not implement-ready: missing a ready "
+            "slice-mode selection."
+        )
+    return ready
+
+
 def issue_readiness_error_for_issue(
     *,
     caller: str,

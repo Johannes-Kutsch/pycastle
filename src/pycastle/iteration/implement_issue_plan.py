@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 from ..agents.output_protocol import AgentRole
 from ..config import Config
-from ..issue_readiness import ready_slice_outcome_for_issue
+from ..issue_readiness import require_ready_slice_outcome_for_issue
 from ..managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
@@ -83,13 +83,7 @@ class ReadyIssueSlicePlan:
 
 
 def plan_ready_issue_slice(issue: dict, cfg: Config) -> ReadyIssueSlicePlan:
-    ready = ready_slice_outcome_for_issue(issue, cfg)
-    if ready is None:
-        raise RuntimeError(
-            f"Issue #{issue['number']} is not implement-ready: missing a ready "
-            "slice-mode selection."
-        )
-
+    ready = require_ready_slice_outcome_for_issue(issue, cfg)
     issue_title = issue["title"]
     return ReadyIssueSlicePlan(
         display_name=ready.display_name,

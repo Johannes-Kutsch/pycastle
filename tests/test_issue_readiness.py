@@ -1,3 +1,5 @@
+import pytest
+
 from pycastle.config import Config
 from pycastle.issue_readiness import (
     AFKBlockedOutcome,
@@ -17,6 +19,7 @@ from pycastle.issue_readiness import (
     evaluate_issue_afk_readiness,
     issue_readiness_error_for_issue,
     ready_slice_outcome_for_issue,
+    require_ready_slice_outcome_for_issue,
     resolve_issue_readiness,
     selected_mode_for_issue,
 )
@@ -615,3 +618,39 @@ def test_ready_slice_outcome_for_issue_returns_none_when_no_ready_result_can_be_
     issue = {"number": 1, "labels": [], "body": "x" * 100, "readiness": readiness}
 
     assert ready_slice_outcome_for_issue(issue, _cfg) is None
+
+
+def test_require_ready_slice_outcome_for_issue_returns_ready_payload_when_available():
+    ready = ReadyIssueOutcome(
+        display_name="docs",
+        template=SliceMode.DOCS.template,
+    )
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.BEHAVIOR, label="behavior-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ready,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        "number": 19,
+        "labels": ["behavior-slice"],
+        "body": "x" * 100,
+        "readiness": readiness,
+    }
+
+    assert require_ready_slice_outcome_for_issue(issue, _cfg) is ready
+
+
+def test_require_ready_slice_outcome_for_issue_raises_implement_ready_failure_for_missing_slice_mode():
+    issue = {"number": 20, "labels": [], "body": "x" * 100}
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"Issue #20 is not implement-ready: missing a ready "
+            r"slice-mode selection\."
+        ),
+    ):
+        require_ready_slice_outcome_for_issue(issue, _cfg)
