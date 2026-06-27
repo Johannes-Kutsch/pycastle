@@ -119,7 +119,7 @@ class Config:
     timeout_retries: int = 1
     claude_minimum_unknown_reset_duration_hours: int | float = 0.0
     codex_minimum_unknown_reset_duration_hours: int | float = 0.0
-    opencode_minimum_unknown_reset_duration_hours: int | float = 0.0
+    opencode_minimum_unknown_reset_duration_hours: int | float = 1.0
     plan_override: StageOverride = dataclasses.field(
         default_factory=lambda: StageOverride(
             service="opencode",

@@ -562,6 +562,48 @@ def test_iteration_usage_limit_continuation_uses_provider_minimum_duration_for_u
     )
 
 
+def test_iteration_usage_limit_continuation_defaults_opencode_unknown_reset_to_one_hour():
+    decision = decide_iteration_usage_limit_continuation(
+        AbortedUsageLimit(
+            provider="opencode",
+            reset_time=None,
+            stage_key="plan",
+        ),
+        Config(),
+        service_registry=None,
+        now=_now(),
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == datetime(2026, 1, 1, 16, 2, 0, tzinfo=timezone.utc)
+    assert decision.is_estimated is True
+    assert (
+        decision.message == "Usage limit reached. Sleeping until 16:02 (estimated)."
+        " Press Ctrl+C to abort."
+    )
+
+
+def test_iteration_usage_limit_continuation_explicit_zero_opencode_unknown_reset_uses_next_hour():
+    decision = decide_iteration_usage_limit_continuation(
+        AbortedUsageLimit(
+            provider="opencode",
+            reset_time=None,
+            stage_key="plan",
+        ),
+        Config(opencode_minimum_unknown_reset_duration_hours=0.0),
+        service_registry=None,
+        now=_now(),
+    )
+
+    assert isinstance(decision, SleepUntil)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc)
+    assert decision.is_estimated is True
+    assert (
+        decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
+        " Press Ctrl+C to abort."
+    )
+
+
 def test_iteration_usage_limit_continuation_keeps_parsed_reset_time_authoritative():
     reset_time = datetime(2026, 1, 1, 15, 30, 0, tzinfo=timezone.utc)
 

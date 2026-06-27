@@ -36,6 +36,16 @@ def test_load_config_exposes_separate_default_host_checks(tmp_path):
     )
 
 
+def test_config_defaults_use_one_hour_only_for_opencode_unknown_reset_duration() -> (
+    None
+):
+    cfg = Config()
+
+    assert cfg.claude_minimum_unknown_reset_duration_hours == 0.0
+    assert cfg.codex_minimum_unknown_reset_duration_hours == 0.0
+    assert cfg.opencode_minimum_unknown_reset_duration_hours == 1.0
+
+
 def test_load_config_overrides_host_checks_without_changing_preflight_checks(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text(

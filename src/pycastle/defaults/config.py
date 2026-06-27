@@ -12,7 +12,7 @@ from pycastle import StageOverride
 # The wake estimate is aligned to the next hour boundary plus 2 minutes and may be further in the future.
 # claude_minimum_unknown_reset_duration_hours = 0.0
 # codex_minimum_unknown_reset_duration_hours = 0.0
-# opencode_minimum_unknown_reset_duration_hours = 0.0
+# opencode_minimum_unknown_reset_duration_hours = 1.0
 
 # --- Docker ---
 # Local-only build artifact name used by `pycastle build`.

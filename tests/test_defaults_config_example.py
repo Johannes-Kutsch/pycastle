@@ -11,4 +11,4 @@ def test_rendered_config_example_includes_unknown_reset_duration_fields() -> Non
     assert "# Minimum unknown-reset duration (hours)" in example
     assert "claude_minimum_unknown_reset_duration_hours = 0.0" in example
     assert "codex_minimum_unknown_reset_duration_hours = 0.0" in example
-    assert "opencode_minimum_unknown_reset_duration_hours = 0.0" in example
+    assert "opencode_minimum_unknown_reset_duration_hours = 1.0" in example
