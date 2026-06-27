@@ -208,7 +208,7 @@ class ContainerRunner:
             env: Mapping[str, str],
         ) -> tuple[str, ...]:
             del invocation_dir
-            transformed: list[str] = ["docker", "exec", "-i", container_id]
+            transformed: list[str] = ["docker", "exec", "-i"]
             for key, value in env.items():
                 if (
                     key == "OPENCODE_CONFIG_CONTENT"
@@ -216,6 +216,7 @@ class ContainerRunner:
                     or key.endswith("_KEY")
                 ):
                     transformed.extend(["-e", f"{key}={value}"])
+            transformed.append(container_id)
             transformed.extend(argv)
             return tuple(transformed)
 

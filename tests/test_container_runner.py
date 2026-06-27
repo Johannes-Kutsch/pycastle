@@ -238,13 +238,31 @@ def test_container_runner_builds_argv_transform_for_container_invocation(tmp_pat
         "docker",
         "exec",
         "-i",
-        "container-123",
         "-e",
         "CLAUDE_CODE_OAUTH_TOKEN=token-abc",
         "-e",
         "OPENCODE_CONFIG_CONTENT=open-code-config",
+        "container-123",
         "claude",
         "ask",
+    )
+
+
+def test_argv_transform_env_flags_precede_container_id(tmp_path):
+    # docker exec places OPTIONS before CONTAINER; anything after the container
+    # name is the command to run. Passing -e after the container ID causes the
+    # OCI runtime to exec "-e" as a binary → exit 127 (#1900).
+    runner, _ = _make_runner(tmp_path=tmp_path, active_container=True)
+    transform = runner.provider_argv_transform()
+    transformed = transform(
+        ("opencode",), Path("/tmp"), {"OPENCODE_CONFIG_CONTENT": "cfg"}
+    )
+
+    container_id_idx = transformed.index("container-123")
+    dash_e_idx = transformed.index("-e")
+    assert dash_e_idx < container_id_idx, (
+        "docker exec -e flags must precede the container ID; "
+        "placing them after causes Docker to treat -e as the container command (exit 127)"
     )
 
 
@@ -310,10 +328,12 @@ def test_work_builds_new_session_runtime_request_with_tool_access_and_argv_trans
         Path("/tmp"),
         {"OPENCODE_CONFIG_CONTENT": "cfg"},
     )
-    assert transformed[0:4] == ("docker", "exec", "-i", "container-123")
+    assert transformed[0:3] == ("docker", "exec", "-i")
+    assert "container-123" in transformed
     assert "-e" in transformed
     assert "OPENCODE_CONFIG_CONTENT=cfg" in transformed
     assert "claude" in transformed
+    assert transformed.index("-e") < transformed.index("container-123")
 
 
 def test_work_invocation_dir_is_a_valid_host_path_not_container_workspace(tmp_path):
