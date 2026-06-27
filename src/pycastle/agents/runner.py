@@ -963,52 +963,80 @@ class AgentRunner:
         resolved_effort: str,
     ) -> Any:
         invocation_dir = request.mount_path
+        logged_lines = [False]
 
         def _on_live_output(event: Any) -> None:
             runner._status_display.reset_idle_timer(runner.name)
+            raw_provider_output = getattr(event, "raw_provider_output", "")
+            if raw_provider_output and runner._current_work_invocation is not None:
+                chunk = raw_provider_output
+                if not chunk.endswith("\n"):
+                    chunk += "\n"
+                runner._current_work_invocation.append_provider_chunk(chunk.encode())
+                logged_lines[0] = True
             if getattr(event, "type", None) == "agent_message":
                 display_message = getattr(event, "display_message", "")
                 if display_message:
                     runner._status_display.print(runner.name, display_message)
 
-        if run_kind is RunKind.RESUME and role_session.is_resumable():
-            return await runtime_client.run_resumed_session(
-                ResumedSessionRunRequest(
-                    prompt=prompt,
-                    invocation_dir=invocation_dir,
-                    continuation=agent_runtime.Continuation(
-                        serialized=role_session.read_continuation()
-                    ),
-                    provider_auth=provider_auth,
-                    session_store=role_session.path,
-                    timeout_seconds=self._cfg.idle_timeout,
-                    on_live_output=_on_live_output,
-                    token=cast(Any, request.token),
-                    argv_transform=runner.provider_argv_transform(),
-                )
-            )
-
-        return await runtime_client.run_new_session(
-            NewSessionRunRequest(
-                prompt=prompt,
-                invocation_dir=invocation_dir,
-                provider_selection=agent_runtime.ProviderSelection(
-                    service=request.service,
-                    model=resolved_model,
-                    effort=resolved_effort,
-                    auth=provider_auth,
-                ),
-                tool_policy=_runtime_tool_policy_for_role(request.role),
-                session_store=role_session.path,
-                timeout_seconds=self._cfg.idle_timeout,
-                name=request.name,
-                status_display=request.status_display,
-                work_body=request.work_body,
-                token=cast(Any, request.token),
-                on_live_output=_on_live_output,
-                argv_transform=runner.provider_argv_transform(),
-            )
-        )
+        with runner._logical_session.open_work_invocation(
+            role=request.role,
+            run_kind=run_kind,
+            session_uuid=None,
+            prompt=prompt,
+        ) as work_invocation:
+            runner._current_work_invocation = work_invocation
+            try:
+                if run_kind is RunKind.RESUME and role_session.is_resumable():
+                    outcome = await runtime_client.run_resumed_session(
+                        ResumedSessionRunRequest(
+                            prompt=prompt,
+                            invocation_dir=invocation_dir,
+                            continuation=agent_runtime.Continuation(
+                                serialized=role_session.read_continuation()
+                            ),
+                            provider_auth=provider_auth,
+                            session_store=role_session.path,
+                            timeout_seconds=self._cfg.idle_timeout,
+                            on_live_output=_on_live_output,
+                            token=cast(Any, request.token),
+                            argv_transform=runner.provider_argv_transform(),
+                        )
+                    )
+                else:
+                    outcome = await runtime_client.run_new_session(
+                        NewSessionRunRequest(
+                            prompt=prompt,
+                            invocation_dir=invocation_dir,
+                            provider_selection=agent_runtime.ProviderSelection(
+                                service=request.service,
+                                model=resolved_model,
+                                effort=resolved_effort,
+                                auth=provider_auth,
+                            ),
+                            tool_policy=_runtime_tool_policy_for_role(request.role),
+                            session_store=role_session.path,
+                            timeout_seconds=self._cfg.idle_timeout,
+                            name=request.name,
+                            status_display=request.status_display,
+                            work_body=request.work_body,
+                            token=cast(Any, request.token),
+                            on_live_output=_on_live_output,
+                            argv_transform=runner.provider_argv_transform(),
+                        )
+                    )
+                if not logged_lines[0] and outcome.result.output:
+                    work_invocation_output = (
+                        outcome.result.output
+                        if outcome.result.output.endswith("\n")
+                        else f"{outcome.result.output}\n"
+                    )
+                    work_invocation.append_provider_chunk(
+                        work_invocation_output.encode()
+                    )
+            finally:
+                runner._current_work_invocation = None
+        return outcome
 
     async def run_preflight(
         self,

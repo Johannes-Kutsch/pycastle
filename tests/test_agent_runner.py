@@ -275,6 +275,79 @@ def test_agent_runner_captures_raw_provider_output_for_all_live_events_in_log(
     assert '{"type":"turn.completed"}\n' in log_text
 
 
+def test_agent_runner_captures_final_response_when_live_output_has_no_raw_provider_log(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    mount_path = repo_root / "pycastle" / ".worktrees" / "issue-1899"
+    mount_path.mkdir(parents=True)
+    logs_dir = tmp_path / "logs"
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=logs_dir),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+    runtime_client = _FakeRuntimeClientWithEvents(
+        [SimpleNamespace(type="protocol", display_message="thread.started")],
+        output="<commit_message>done</commit_message>",
+    )
+    status_display = RecordingStatusDisplay()
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #1899",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "1899",
+                        "ISSUE_TITLE": "Wire agent invocation log capture in AgentRunner",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-1899",
+                        "INTERRUPTED_WORK": "",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    log_files = list(logs_dir.glob("*.log"))
+    assert len(log_files) == 1
+    log_text = log_files[0].read_text(encoding="utf-8")
+    assert "<commit_message>done</commit_message>\n" in log_text
+
+
 def test_agent_runner_prints_live_agent_message_events_without_event_type(
     tmp_path,
     monkeypatch,
