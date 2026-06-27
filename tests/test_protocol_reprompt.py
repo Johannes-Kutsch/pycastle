@@ -170,6 +170,38 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_host_check
     )
 
 
+def test_plan_protocol_reprompt_returns_template_specific_message_for_work_family_templates():
+    for template in (
+        PromptTemplate.IMPLEMENT_BEHAVIOR,
+        PromptTemplate.IMPLEMENT_REFACTOR,
+        PromptTemplate.IMPLEMENT_DOCS,
+        PromptTemplate.REVIEW,
+    ):
+        invocation = _invocation(template)
+        plan = plan_protocol_reprompt(
+            role=AgentRole.IMPLEMENTER,
+            invocation=invocation,
+            parser_error="missing commit_message tag",
+            render_expected_output_shape=lambda received_invocation: (
+                f"shape for {received_invocation.template.name} "
+                f"with {received_invocation.scope_args['BRANCH']}"
+            ),
+        )
+
+        assert plan == TemplateSpecificProtocolReprompt(
+            message="\n".join(
+                [
+                    "Your last response did not include the required protocol output.",
+                    "Please review the task requirements and try again, making sure to include the required output tag.",
+                    "The parser reported the following error:",
+                    "missing commit_message tag",
+                    "Use this output shape exactly:",
+                    f"shape for {template.name} with pycastle/issue-1928",
+                ]
+            )
+        )
+
+
 def test_plan_protocol_reprompt_returns_improve_specific_message():
     plan = plan_protocol_reprompt(
         role=AgentRole.IMPROVE,
