@@ -16,7 +16,7 @@ from ..managed_worktree_mount_policy import (
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import build_per_issue_scope_args
 from ..services import GitService
-from ..session import RoleSession, RunKind
+from ..session import RoleSession, RunKind, is_stage_done_for
 from ..session.service_session_store import (
     has_exact_provider_transcript_for_selected_service,
 )
@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 RoleName: TypeAlias = Literal["implementer", "reviewer"]
 IssueStage: TypeAlias = Literal["pre-implementation", "pre-review"]
 StepOutcome: TypeAlias = Literal["skip", "run", "setup_failure"]
+IssueOutcome: TypeAlias = Literal["complete", "incomplete"]
 
 
 class ImplementIssuePlanDeps(Protocol):
@@ -70,8 +71,17 @@ class IssueExecutionPlan:
     branch: str
     planner_sha: str | None
     slice_mode_display_name: str
+    issue_outcome: IssueOutcome
     implementer_step: IssueRoleStepPlan
     reviewer_step: IssueRoleStepPlan
+
+    @property
+    def steps(self) -> tuple[IssueRoleStepPlan, IssueRoleStepPlan]:
+        return (self.implementer_step, self.reviewer_step)
+
+    @property
+    def run_steps(self) -> tuple[IssueRoleStepPlan, ...]:
+        return tuple(step for step in self.steps if step.outcome == "run")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -111,6 +121,7 @@ def plan_issue_execution(
         branch=branch,
         planner_sha=sha,
         slice_mode_display_name=ready_slice.display_name,
+        issue_outcome="complete" if review_done else "incomplete",
         implementer_step=_plan_step(
             issue=issue,
             deps=deps,
@@ -139,6 +150,26 @@ def plan_issue_execution(
             mount_path=review_mount_path,
             skip_reason="review stage already complete" if review_done else None,
         ),
+    )
+
+
+def plan_issue_execution_from_worktree(
+    *,
+    issue: dict,
+    deps: ImplementIssuePlanDeps,
+    sha: str | None,
+    worktree_path: Path,
+    implement_mount_path: Path,
+    review_mount_path: Path,
+) -> IssueExecutionPlan:
+    return plan_issue_execution(
+        issue=issue,
+        deps=deps,
+        sha=sha,
+        implement_mount_path=implement_mount_path,
+        review_mount_path=review_mount_path,
+        implement_done=is_stage_done_for(worktree_path, AgentRole.IMPLEMENTER),
+        review_done=is_stage_done_for(worktree_path, AgentRole.REVIEWER),
     )
 
 

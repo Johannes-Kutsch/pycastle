@@ -44,6 +44,7 @@ from ..infrastructure.worktree import (
     worktree_identity,
 )
 from ._deps import Logger
+from .implement_issue_plan import plan_issue_execution_from_worktree
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
@@ -186,13 +187,21 @@ async def run_issue(
         _wt_name = _worktree.name
         _wt_path = _worktree.path
 
-        implement_done = is_stage_done_for(_wt_path, AgentRole.IMPLEMENTER)
-        review_done = is_stage_done_for(_wt_path, AgentRole.REVIEWER)
+        issue_plan = plan_issue_execution_from_worktree(
+            issue=issue,
+            deps=deps,
+            sha=sha,
+            worktree_path=_wt_path,
+            implement_mount_path=_wt_path,
+            review_mount_path=_wt_path,
+        )
 
-        if review_done:
+        if issue_plan.issue_outcome == "complete":
             return issue
 
-        if not implement_done:
+        runnable_roles = {step.role_name for step in issue_plan.run_steps}
+
+        if "implementer" in runnable_roles:
             async with (
                 worktree_semaphore or contextlib.nullcontext(),
                 durable_issue_worktree(
@@ -247,57 +256,60 @@ async def run_issue(
                         impl_mount_path, AgentRole.IMPLEMENTER
                     ).clear_provider_state_and_signal_completion()
 
-        async with (
-            worktree_semaphore or contextlib.nullcontext(),
-            durable_issue_worktree(
-                issue["number"],
-                intent=DurableIssueWorktreeIntent.REVIEWER,
-                deps=deps,
-            ) as review_mount_path,
-        ):
-            _review_scope_args = _scope_args_for(review_mount_path, AgentRole.REVIEWER)
-            mount_decision = decide_managed_worktree_mount(
-                repo_root=deps.repo_root,
-                mount_path=review_mount_path,
-                caller=f"Review Agent #{issue['number']}",
-                role=AgentRole.REVIEWER.value,
-            )
-            if isinstance(
-                mount_decision, ManagedWorktreeMountRejected
-            ) and should_reject_managed_worktree_mount(mount_decision):
-                raise SetupPhaseError(
-                    AgentRole.REVIEWER.value,
-                    describe_managed_worktree_mount_rejection(mount_decision),
-                )
-            review_result = await _bounded_run_agent(
-                RunRequest(
-                    name=f"Review Agent #{issue['number']}",
-                    prompt=build_prompt_invocation(
-                        PromptTemplate.REVIEW,
-                        _review_scope_args,
-                    ),
-                    mount_path=review_mount_path,
-                    role=AgentRole.REVIEWER,
-                    model=deps.cfg.review_override.model,
-                    effort=deps.cfg.review_override.effort,
-                    service=deps.cfg.review_override.service,
-                    stage="pre-review",
-                    status_display=deps.status_display,
-                    issue_title=issue["title"],
-                    work_body=f'reviewing {_slice_mode} "{issue["title"]}"',
-                    token=_token,
-                )
-            )
-            if isinstance(review_result, CommitMessageOutput):
-                _rev_msg = review_result.message or issue["title"]
-                deps.git_svc.commit(
-                    review_mount_path,
-                    deps.repo_root,
-                    f"Review #{issue['number']} - {_rev_msg}",
-                )
-                RoleSession(
+        if "reviewer" in runnable_roles:
+            async with (
+                worktree_semaphore or contextlib.nullcontext(),
+                durable_issue_worktree(
+                    issue["number"],
+                    intent=DurableIssueWorktreeIntent.REVIEWER,
+                    deps=deps,
+                ) as review_mount_path,
+            ):
+                _review_scope_args = _scope_args_for(
                     review_mount_path, AgentRole.REVIEWER
-                ).clear_provider_state_and_signal_completion()
+                )
+                mount_decision = decide_managed_worktree_mount(
+                    repo_root=deps.repo_root,
+                    mount_path=review_mount_path,
+                    caller=f"Review Agent #{issue['number']}",
+                    role=AgentRole.REVIEWER.value,
+                )
+                if isinstance(
+                    mount_decision, ManagedWorktreeMountRejected
+                ) and should_reject_managed_worktree_mount(mount_decision):
+                    raise SetupPhaseError(
+                        AgentRole.REVIEWER.value,
+                        describe_managed_worktree_mount_rejection(mount_decision),
+                    )
+                review_result = await _bounded_run_agent(
+                    RunRequest(
+                        name=f"Review Agent #{issue['number']}",
+                        prompt=build_prompt_invocation(
+                            PromptTemplate.REVIEW,
+                            _review_scope_args,
+                        ),
+                        mount_path=review_mount_path,
+                        role=AgentRole.REVIEWER,
+                        model=deps.cfg.review_override.model,
+                        effort=deps.cfg.review_override.effort,
+                        service=deps.cfg.review_override.service,
+                        stage="pre-review",
+                        status_display=deps.status_display,
+                        issue_title=issue["title"],
+                        work_body=f'reviewing {_slice_mode} "{issue["title"]}"',
+                        token=_token,
+                    )
+                )
+                if isinstance(review_result, CommitMessageOutput):
+                    _rev_msg = review_result.message or issue["title"]
+                    deps.git_svc.commit(
+                        review_mount_path,
+                        deps.repo_root,
+                        f"Review #{issue['number']} - {_rev_msg}",
+                    )
+                    RoleSession(
+                        review_mount_path, AgentRole.REVIEWER
+                    ).clear_provider_state_and_signal_completion()
     finally:
         if lock is not None and lock.locked():
             lock.release()
