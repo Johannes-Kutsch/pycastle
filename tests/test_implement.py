@@ -280,6 +280,62 @@ def test_implement_phase_empty_issues_returns_empty_result(tmp_path):
     assert fake.calls == []
 
 
+def test_implement_phase_rejects_missing_slice_mode_before_progress_update(tmp_path):
+    issues = [
+        {
+            "number": 1,
+            "title": "Malformed",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": [],
+        }
+    ]
+    fake = FakeAgentRunner([])
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"Issue #1 is not implement-ready: missing a ready "
+            r"slice-mode selection\."
+        ),
+    ):
+        asyncio.run(implement_phase(issues, deps, "sha-abc"))
+
+    assert [call for call in sd.calls if call[0] == "update_phase"] == []
+    assert fake.calls == []
+
+
+def test_implement_phase_rejects_multiple_slice_modes_before_progress_update(
+    tmp_path,
+):
+    issues = [
+        {
+            "number": 1,
+            "title": "Malformed",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice", "docs-slice"],
+        }
+    ]
+    fake = FakeAgentRunner([])
+    sd = RecordingStatusDisplay()
+    deps = _make_deps(tmp_path, fake, status_display=sd)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"Issue #1 is not implement-ready: missing a ready "
+            r"slice-mode selection\."
+        ),
+    ):
+        asyncio.run(implement_phase(issues, deps, "sha-abc"))
+
+    assert [call for call in sd.calls if call[0] == "update_phase"] == []
+    assert fake.calls == []
+
+
 # ── implement_phase: usage-limit signalling ───────────────────────────────────
 
 
@@ -1053,6 +1109,30 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
     results = asyncio.run(_two_concurrent())
     errors = [r for r in results if isinstance(r, Exception)]
     assert any(isinstance(e, BranchCollisionError) for e in errors)
+
+
+def test_run_issue_rejects_missing_slice_mode_before_creating_branch_lock(tmp_path):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    issue = {
+        "number": 25,
+        "title": "Malformed",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    branch_locks: dict[str, asyncio.Lock] = {}
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"Issue #25 is not implement-ready: missing a ready "
+            r"slice-mode selection\."
+        ),
+    ):
+        asyncio.run(run_issue(issue, deps, "sha-abc", branch_locks=branch_locks))
+
+    assert branch_locks == {}
+    assert not worktree_identity(branch_for(25), tmp_path).path.exists()
 
 
 # ── run_issue: role-dir stage-done skip logic ─────────────────────────────────

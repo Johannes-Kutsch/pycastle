@@ -145,6 +145,7 @@ async def run_issue(
 ) -> dict:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
+    _slice_mode, _impl_template = _resolve_slice(issue, deps.cfg)
 
     def _scope_args_for(mount_path: Path, role: AgentRole) -> dict[str, str]:
         run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
@@ -195,8 +196,6 @@ async def run_issue(
 
         if review_done:
             return issue
-
-        _slice_mode, _impl_template = _resolve_slice(issue, deps.cfg)
 
         if not implement_done:
             async with (
@@ -319,6 +318,8 @@ async def implement_phase(
     token: CancellationToken | None = None,
 ) -> ImplementResult:
     _token = token if token is not None else CancellationToken()
+    for issue in issues:
+        _resolve_slice(issue, deps.cfg)
     semaphore = asyncio.Semaphore(deps.cfg.max_parallel)
     worktree_semaphore = asyncio.Semaphore(deps.cfg.max_parallel + 1)
     branch_locks: dict[str, asyncio.Lock] = {}

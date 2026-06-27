@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.config import Config, StageOverride
 from pycastle.iteration.implement_issue_plan import (
@@ -178,6 +180,70 @@ def test_plan_issue_execution_reports_mount_setup_failure_for_invalid_managed_wo
         plan.implementer_step.mount_setup_failure.error_message
     )
     assert plan.reviewer_step.outcome == "run"
+
+
+def test_plan_issue_execution_raises_not_implement_ready_before_mount_checks_for_missing_slice_mode(
+    tmp_path,
+):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    issue = {
+        **_issue(),
+        "labels": [],
+        "body": "x" * 100,
+    }
+    implement_mount_path = tmp_path / "outside-implement"
+    implement_mount_path.mkdir()
+    review_mount_path = tmp_path / "outside-review"
+    review_mount_path.mkdir()
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"Issue #1909 is not implement-ready: missing a ready "
+            r"slice-mode selection\."
+        ),
+    ):
+        plan_issue_execution(
+            issue=issue,
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
+
+
+def test_plan_issue_execution_raises_not_implement_ready_before_mount_checks_for_multiple_slice_modes(
+    tmp_path,
+):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    issue = {
+        **_issue(),
+        "labels": ["behavior-slice", "docs-slice"],
+        "body": "x" * 100,
+    }
+    implement_mount_path = tmp_path / "outside-implement"
+    implement_mount_path.mkdir()
+    review_mount_path = tmp_path / "outside-review"
+    review_mount_path.mkdir()
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"Issue #1909 is not implement-ready: missing a ready "
+            r"slice-mode selection\."
+        ),
+    ):
+        plan_issue_execution(
+            issue=issue,
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
 
 
 def test_plan_issue_execution_marks_interrupted_work_for_cross_service_dirty_role_session(
