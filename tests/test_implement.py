@@ -913,6 +913,48 @@ def test_run_issue_uses_planned_resume_prompt_when_exact_handoff_fact_changes_af
     assert implementer_call.prompt.send_role_prompt_on_resume is False
 
 
+def test_run_issue_reviewer_uses_planned_resume_prompt_when_exact_handoff_fact_changes_after_planning(
+    tmp_path,
+):
+    branch = "pycastle/issue-42"
+    worktree = worktree_identity(branch, tmp_path).path
+    issue = {
+        "number": 42,
+        "title": "Planned reviewer resume",
+        "body": "Issue body.",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    fake = FakeAgentRunner([CompletionOutput()])
+    cfg = Config(review_override=StageOverride(service="opencode"))
+    registry = ServiceRegistry(
+        {
+            "opencode": _FlakyResumableTestService(
+                "opencode",
+                resumable_by_call=[True, False],
+            )
+        }
+    )
+    deps = _make_deps(tmp_path, fake, cfg=cfg, service_registry=registry)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    deps.git_svc.create_worktree(tmp_path, worktree, branch, "sha-abc")
+    _mark_role_stage_done(worktree, role=AgentRole.IMPLEMENTER)
+    _seed_prior_role_session_with_service(
+        worktree=worktree,
+        role=AgentRole.REVIEWER,
+        service_name="opencode",
+        session_id="opencode-review-session",
+    )
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    reviewer_call = fake.calls[0]
+    assert reviewer_call.role is AgentRole.REVIEWER
+    assert reviewer_call.prompt.scope_args["INTERRUPTED_WORK"] == ""
+    assert reviewer_call.prompt.send_role_prompt_on_resume is False
+
+
 def test_run_issue_no_prior_session_starts_with_full_role_prompt_without_interrupted_clause(
     tmp_path,
 ):
