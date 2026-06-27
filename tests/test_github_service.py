@@ -1760,6 +1760,61 @@ def test_close_issue_with_parents_warns_and_returns_when_sub_issue_query_fails()
     transport.assert_exhausted()
 
 
+def test_close_issue_with_parents_warns_and_stops_recursive_parent_chain_when_parent_lookup_fails():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/5",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/50/sub_issues",
+                payload=[{"number": 5, "state": "closed"}],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/50",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/50",
+                error=GithubHttpTransportAuthError(
+                    "boom",
+                    status=502,
+                    body='{"message":"bad gateway"}',
+                ),
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.warns(
+        UserWarning,
+        match=r"Unable to continue parent cascade after closing issue #50: boom",
+    ):
+        svc.close_issue_with_parents(5)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}
+        ),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/5", None),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/50/sub_issues", None),
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/50", {"state": "closed"}
+        ),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/50", None),
+    ]
+    transport.assert_exhausted()
+
+
 def test_close_issue_with_parents_propagates_child_close_failure():
     transport = _ScriptedGithubTransport(
         [
