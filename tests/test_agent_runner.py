@@ -1,14 +1,24 @@
 import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from agent_runtime.runtime import Completed, RunResult, RuntimeOutcome
+import pytest
+from agent_runtime.runtime import (
+    Completed,
+    Continuation,
+    RunResult,
+    RuntimeOutcome,
+    TimedOut,
+)
+from agent_runtime.contracts import ToolAccess, ToolPolicy
 from agent_runtime.types import ResolvedProvider
 
 from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.prompts.dispatch import PromptInvocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.runtime_session import ProviderSessionState
@@ -65,6 +75,16 @@ class _FakeService:
             provider_session_id=None,
             auth_seed_action=None,
         )
+
+
+class _RecordingService(_FakeService):
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.mark_exhausted_calls: list[object] = []
+
+    def mark_exhausted(self, reset_time, *, _now=None) -> None:
+        del _now
+        self.mark_exhausted_calls.append(reset_time)
 
 
 class _FakeDockerSession:
@@ -174,6 +194,76 @@ class _BlockingRuntimeClient:
                 output="<commit_message>done</commit_message>",
                 usage=None,
                 continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+class _TimedOutRuntimeClient:
+    def __init__(self, continuation: Continuation) -> None:
+        self.continuation = continuation
+        self.new_session_calls = 0
+        self.resumed_session_calls = 0
+
+    async def run_new_session(self, request):
+        del request
+        self.new_session_calls += 1
+        return RuntimeOutcome(
+            kind=TimedOut(),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=self.continuation,
+                selected=ResolvedProvider(
+                    service="opencode",
+                    model="open-code",
+                    effort="medium",
+                ),
+            ),
+        )
+
+    async def run_resumed_session(self, request):
+        del request
+        self.resumed_session_calls += 1
+        raise AssertionError("OpenCode timeout should not enter the resume loop")
+
+
+class _RetryingTimedOutRuntimeClient:
+    def __init__(self, continuation: Continuation) -> None:
+        self.continuation = continuation
+        self.new_session_calls = 0
+        self.resumed_session_calls = 0
+
+    async def run_new_session(self, request):
+        del request
+        self.new_session_calls += 1
+        return RuntimeOutcome(
+            kind=TimedOut(),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=self.continuation,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+    async def run_resumed_session(self, request):
+        del request
+        self.resumed_session_calls += 1
+        return RuntimeOutcome(
+            kind=TimedOut(),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=self.continuation,
                 selected=ResolvedProvider(
                     service="codex",
                     model="gpt-5.5",
@@ -703,3 +793,184 @@ def test_agent_runner_preflight_keeps_container_preflight_phase_names(
         ("Preflight Agent #1905", "Running Ruff (1/2)"),
         ("Preflight Agent #1905", "Running Pytest (2/2)"),
     ]
+
+
+def test_agent_runner_routes_opencode_timeout_to_usage_limit_without_retries(
+    tmp_path,
+    monkeypatch,
+):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1920"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    service = _RecordingService("opencode")
+    runner = AgentRunner(
+        env={},
+        cfg=Config(
+            logs_dir=tmp_path / "logs",
+            timeout_retries=3,
+            opencode_minimum_unknown_reset_duration_hours=1.0,
+        ),
+        git_service=git_service,
+        service_registry={"opencode": service},
+    )
+    status_display = RecordingStatusDisplay()
+    continuation = Continuation(serialized="opaque-continuation")
+    runtime_client = _TimedOutRuntimeClient(continuation)
+    now = datetime(2026, 6, 27, 12, 30, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+    monkeypatch.setattr("pycastle.agents.runner._time_module.now_local", lambda: now)
+
+    with pytest.raises(UsageLimitError) as excinfo:
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Implement Agent #1920",
+                    prompt=PromptInvocation(
+                        template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                        scope_args={
+                            "ISSUE_NUMBER": "1920",
+                            "ISSUE_TITLE": "Route OpenCode TimedOut to UsageLimitError",
+                            "ISSUE_BODY": "",
+                            "ISSUE_COMMENTS": "",
+                            "BRANCH": "issue-1920",
+                            "INTERRUPTED_WORK": "",
+                        },
+                    ),
+                    mount_path=mount_path,
+                    role=AgentRole.IMPLEMENTER,
+                    model="open-code",
+                    effort="medium",
+                    service="opencode",
+                    status_display=status_display,
+                )
+            )
+        )
+
+    assert excinfo.value.provider == "opencode"
+    assert runtime_client.new_session_calls == 1
+    assert runtime_client.resumed_session_calls == 0
+    assert service.mark_exhausted_calls == [
+        datetime(2026, 6, 27, 14, 0, tzinfo=timezone.utc)
+    ]
+    assert not any(
+        call[0] == "print" and "Timeout — restarting" in str(call[2])
+        for call in status_display.calls
+    )
+    assert (
+        mount_path / ".pycastle-session" / "implementer" / "_continuation"
+    ).read_text(encoding="utf-8") == "opaque-continuation"
+    assert {
+        "caller": "Implement Agent #1920",
+        "shutdown_message": "usage limit reached",
+        "shutdown_style": "interrupted",
+    } in status_display.remove_calls
+
+
+def test_agent_runner_keeps_retry_loop_for_non_opencode_timeouts(
+    tmp_path,
+    monkeypatch,
+):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1920-codex"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs", timeout_retries=1),
+        git_service=git_service,
+        service_registry={"codex": _RecordingService("codex")},
+    )
+    status_display = RecordingStatusDisplay()
+    continuation = Continuation(
+        selected_service="codex",
+        selected_model="gpt-5.5",
+        selected_effort="medium",
+        tool_access=ToolAccess(
+            kind="none",
+            workspace=None,
+            tool_policy=ToolPolicy.NONE,
+        ),
+        provider_resume_state={},
+    )
+    runtime_client = _RetryingTimedOutRuntimeClient(continuation)
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    with pytest.raises(AgentTimeoutError):
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Implement Agent #1920 Codex",
+                    prompt=PromptInvocation(
+                        template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                        scope_args={
+                            "ISSUE_NUMBER": "1920",
+                            "ISSUE_TITLE": "Keep retries for non-OpenCode timeouts",
+                            "ISSUE_BODY": "",
+                            "ISSUE_COMMENTS": "",
+                            "BRANCH": "issue-1920-codex",
+                            "INTERRUPTED_WORK": "",
+                        },
+                    ),
+                    mount_path=mount_path,
+                    role=AgentRole.IMPLEMENTER,
+                    model="gpt-5.5",
+                    effort="medium",
+                    service="codex",
+                    status_display=status_display,
+                )
+            )
+        )
+
+    assert runtime_client.new_session_calls == 1
+    assert runtime_client.resumed_session_calls == 1
+    assert (
+        mount_path / ".pycastle-session" / "implementer" / "_continuation"
+    ).read_text(encoding="utf-8") == continuation.serialized
+    assert (
+        "print",
+        "Implement Agent #1920 Codex",
+        "Timeout — restarting (attempt 1/1)",
+        None,
+    ) in status_display.calls
+    assert {
+        "caller": "Implement Agent #1920 Codex",
+        "shutdown_message": "timed out",
+        "shutdown_style": "interrupted",
+    } in status_display.remove_calls

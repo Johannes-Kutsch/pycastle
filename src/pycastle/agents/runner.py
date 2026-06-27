@@ -905,6 +905,14 @@ class AgentRunner:
                     request.token.cancel()
                 raise error
             if isinstance(outcome.kind, TimedOut):
+                if outcome.result.selected.service == "opencode":
+                    error = UsageLimitError(
+                        provider=outcome.result.selected.service,
+                    )
+                    self._handle_provider_account_exhaustion(service, error)
+                    if request.token is not None:
+                        request.token.cancel()
+                    raise error
                 if retries_left <= 0:
                     raise AgentTimeoutError(
                         "Provider timed out",
