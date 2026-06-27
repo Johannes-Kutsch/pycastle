@@ -1887,8 +1887,10 @@ def test_run_issue_commits_implementer_with_issue_number_and_message(tmp_path):
     assert impl_call[0][2] == "Implement #40 - add foo"
 
 
-def test_run_issue_commits_implementer_with_title_when_no_commit_message_tag(tmp_path):
-    """After Implementer returns CommitMessageOutput(message=None), commit uses issue title as fallback."""
+def test_run_issue_commits_implementer_with_planned_fallback_when_no_commit_message_tag(
+    tmp_path,
+):
+    """After Implementer omits <commit_message>, commit uses the planned fallback subject."""
     fake = FakeAgentRunner(
         [CommitMessageOutput(message=None), CommitMessageOutput(message=None)]
     )
@@ -2039,8 +2041,10 @@ def test_run_issue_commits_reviewer_with_issue_number_and_message(tmp_path):
     assert review_call[0][2] == "Review #41 - rename var"
 
 
-def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_path):
-    """After Reviewer returns CommitMessageOutput(message=None), commit uses issue title as fallback."""
+def test_run_issue_commits_reviewer_with_planned_fallback_when_no_commit_message_tag(
+    tmp_path,
+):
+    """After Reviewer omits <commit_message>, commit uses the planned fallback subject."""
     fake = FakeAgentRunner([CommitMessageOutput(message=None), _reviewer_output(None)])
     deps = _make_deps(tmp_path, fake)
     deps.git_svc.is_working_tree_clean.return_value = True
@@ -2056,6 +2060,113 @@ def test_run_issue_commits_reviewer_with_title_when_no_commit_message_tag(tmp_pa
 
     review_call = deps.git_svc.commit.call_args_list[1]
     assert review_call[0][2] == "Review #44 - Add dark mode"
+
+
+def test_run_issue_uses_planned_reviewer_fallback_when_commit_message_omitted(
+    tmp_path, monkeypatch
+):
+    issue = {
+        "number": 54,
+        "title": "Issue title should not be reconstructed directly",
+        "body": "Issue body.",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([_reviewer_output(None)])
+    deps = _make_deps(tmp_path, fake)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    review_session_dir = (
+        tmp_path
+        / "pycastle"
+        / ".worktrees"
+        / "issue-54"
+        / ".pycastle-session"
+        / "reviewer"
+    )
+    original_create = deps.git_svc.create_worktree.side_effect
+
+    def _seeding_create(repo, path, branch, sha=None):
+        original_create(repo, path, branch, sha)
+        if not review_session_dir.is_dir():
+            review_session_dir.mkdir(parents=True, exist_ok=True)
+            (review_session_dir / "session.json").write_text("{}", encoding="utf-8")
+
+    deps.git_svc.create_worktree.side_effect = _seeding_create
+    planned_implement_args = {
+        "ISSUE_NUMBER": "54",
+        "BRANCH": "pycastle/issue-54",
+        "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": issue["body"],
+        "ISSUE_COMMENTS": "",
+        "INTERRUPTED_WORK": "",
+    }
+    planned_review_args = {
+        "ISSUE_NUMBER": "54",
+        "BRANCH": "pycastle/issue-54",
+        "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": issue["body"],
+        "ISSUE_COMMENTS": "",
+        "INTERRUPTED_WORK": "",
+    }
+    issue_plan = IssueExecutionPlan(
+        issue_number=issue["number"],
+        issue_title=issue["title"],
+        branch="pycastle/issue-54",
+        planner_sha="sha-abc",
+        slice_mode_display_name="behavior",
+        issue_outcome="incomplete",
+        implementer_step=IssueRoleStepPlan(
+            outcome="skip",
+            role_name="implementer",
+            role=AgentRole.IMPLEMENTER,
+            stage="pre-implementation",
+            run_kind=RunKind.FRESH,
+            work_body='planned implement work body "docs"',
+            prompt_template=PromptTemplate.IMPLEMENT_DOCS,
+            prompt_scope_args=planned_implement_args,
+            model="planned-implement-model",
+            effort="planned-implement-effort",
+            service="planned-implement-service",
+            mount_setup_failure=None,
+            commit_fallback_subject=CommitFallbackSubject(
+                commit_prefix="Implement #54 - ",
+                fallback_subject="Implement #54 - planned implement fallback",
+            ),
+            skip_reason="implement stage already complete",
+        ),
+        reviewer_step=IssueRoleStepPlan(
+            outcome="run",
+            role_name="reviewer",
+            role=AgentRole.REVIEWER,
+            stage="pre-review",
+            run_kind=RunKind.FRESH,
+            work_body='planned review work body "docs"',
+            prompt_template=PromptTemplate.REVIEW,
+            prompt_scope_args=planned_review_args,
+            model="planned-review-model",
+            effort="planned-review-effort",
+            service="planned-review-service",
+            mount_setup_failure=None,
+            commit_fallback_subject=CommitFallbackSubject(
+                commit_prefix="Review #54 - ",
+                fallback_subject="Review #54 - planned review fallback",
+            ),
+        ),
+    )
+
+    def _planned_issue_execution_from_worktree(**_: Any) -> IssueExecutionPlan:
+        return issue_plan
+
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.plan_issue_execution_from_worktree",
+        _planned_issue_execution_from_worktree,
+    )
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    review_call = deps.git_svc.commit.call_args_list[0]
+    assert review_call[0][2] == "Review #54 - planned review fallback"
+    assert RoleSession(review_call[0][0], AgentRole.REVIEWER).is_done()
 
 
 def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
