@@ -745,6 +745,7 @@ class AgentRunner:
                     await runner.setup(git_name, git_email, request.work_body)
                 except DockerError as exc:
                     raise SetupPhaseError(request.role.value, str(exc)) from exc
+                status_display.update_phase(request.name, "Work")
                 output = await self._invoke_runtime_attempts(
                     request=request,
                     service=service,

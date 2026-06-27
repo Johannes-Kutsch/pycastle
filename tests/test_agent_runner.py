@@ -122,6 +122,28 @@ class _FakeRuntimeClientWithEvents:
         )
 
 
+class _AssertingRuntimeClient:
+    def __init__(self, status_display: RecordingStatusDisplay, agent_name: str) -> None:
+        self._status_display = status_display
+        self._agent_name = agent_name
+
+    async def run_new_session(self, request):
+        assert (self._agent_name, "Work") in self._status_display.phase_updates
+        return RuntimeOutcome(
+            kind=Completed(),
+            result=RunResult(
+                output="<commit_message>done</commit_message>",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
 def _run_agent_with_live_event(tmp_path, monkeypatch, event: object):
     repo_root = tmp_path / "repo"
     mount_path = repo_root / "pycastle" / ".worktrees" / "issue-1898"
@@ -394,3 +416,69 @@ def test_agent_runner_skips_blank_live_agent_message_events(tmp_path, monkeypatc
         call[0] == "print" and call[1] == "Implement Agent #1898"
         for call in status_display.calls
     )
+
+
+def test_agent_runner_switches_runtime_rows_to_work_before_runtime_invocation(
+    tmp_path,
+    monkeypatch,
+):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1905"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+    agent_name = "Implement Agent #1905"
+    status_display = RecordingStatusDisplay()
+    runtime_client = _AssertingRuntimeClient(status_display, agent_name)
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name=agent_name,
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "1905",
+                        "ISSUE_TITLE": "Fix Setup to Work phase transition",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-1905",
+                        "INTERRUPTED_WORK": "",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert (agent_name, "Work") in status_display.phase_updates
