@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.protocol_reprompt import (
     GENERIC_PROTOCOL_REPROMPT_MESSAGE,
@@ -111,14 +113,57 @@ def _invocation(template: PromptTemplate):
     return build_prompt_invocation(template, _scope_args_for(template))
 
 
+_TEMPLATE_SPECIFIC_PROTOCOL_CASES = (
+    (AgentRole.PLANNER, PromptTemplate.PLAN),
+    (AgentRole.IMPLEMENTER, PromptTemplate.IMPLEMENT_BEHAVIOR),
+    (AgentRole.IMPLEMENTER, PromptTemplate.IMPLEMENT_REFACTOR),
+    (AgentRole.IMPLEMENTER, PromptTemplate.IMPLEMENT_DOCS),
+    (AgentRole.REVIEWER, PromptTemplate.REVIEW),
+    (AgentRole.PREFLIGHT_ISSUE, PromptTemplate.PREFLIGHT_ISSUE),
+    (AgentRole.PREFLIGHT_ISSUE, PromptTemplate.HOST_CHECK_ISSUE),
+    (AgentRole.MERGER, PromptTemplate.MERGE),
+    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SCAN),
+    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_PRD),
+    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_ISSUES),
+    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_NO_CANDIDATE),
+    (AgentRole.FAILURE_REPORT, PromptTemplate.FAILURE_REPORT),
+    (AgentRole.DIVERGENCE_RESOLVER, PromptTemplate.DIVERGENCE_RESOLVE),
+)
+
+
 def test_plan_protocol_reprompt_returns_unsupported_for_resume_without_rendering():
     calls: list[object] = []
+
+    def render_expected_output_shape(_invocation: PromptInvocation) -> str:
+        calls.append(object())
+        return ""
 
     plan = plan_protocol_reprompt(
         role=AgentRole.PLANNER,
         invocation=_invocation(PromptTemplate.RESUME),
         parser_error="missing tag",
-        render_expected_output_shape=lambda _invocation: calls.append(object()) or "",
+        render_expected_output_shape=render_expected_output_shape,
+    )
+
+    assert plan == UnsupportedProtocolReprompt()
+    assert calls == []
+
+
+@pytest.mark.parametrize("role", tuple(AgentRole))
+def test_plan_protocol_reprompt_returns_unsupported_for_resume_for_every_role(
+    role: AgentRole,
+):
+    calls: list[object] = []
+
+    def render_expected_output_shape(_invocation: PromptInvocation) -> str:
+        calls.append(object())
+        return ""
+
+    plan = plan_protocol_reprompt(
+        role=role,
+        invocation=_invocation(PromptTemplate.RESUME),
+        parser_error="missing tag",
+        render_expected_output_shape=render_expected_output_shape,
     )
 
     assert plan == UnsupportedProtocolReprompt()
@@ -159,13 +204,15 @@ def test_plan_protocol_reprompt_calls_expected_output_shape_callback_with_origin
     )
     seen: list[object] = []
 
+    def render_expected_output_shape(received_invocation: PromptInvocation) -> str:
+        seen.append(received_invocation)
+        return "<plan>{...}</plan>"
+
     plan = plan_protocol_reprompt(
         role=AgentRole.PLANNER,
         invocation=invocation,
         parser_error="invalid json",
-        render_expected_output_shape=lambda received_invocation: (
-            seen.append(received_invocation) or "<plan>{...}</plan>"
-        ),
+        render_expected_output_shape=render_expected_output_shape,
     )
 
     assert isinstance(plan, TemplateSpecificProtocolReprompt)
@@ -318,17 +365,21 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_work_famil
         (AgentRole.REVIEWER, PromptTemplate.REVIEW),
     ):
         invocation = _invocation(template)
+
+        def render_expected_output_shape(
+            received_invocation: PromptInvocation,
+        ) -> str:
+            render_calls.append(received_invocation)
+            return (
+                f"shape for {received_invocation.template.name} "
+                f"with {received_invocation.scope_args['BRANCH']}"
+            )
+
         plan = plan_protocol_reprompt(
             role=role,
             invocation=invocation,
             parser_error="missing commit_message tag",
-            render_expected_output_shape=lambda received_invocation: (
-                (render_calls.append(received_invocation) or "")
-                + (
-                    f"shape for {received_invocation.template.name} "
-                    f"with {received_invocation.scope_args['BRANCH']}"
-                )
-            ),
+            render_expected_output_shape=render_expected_output_shape,
         )
 
         assert plan == TemplateSpecificProtocolReprompt(
@@ -496,11 +547,15 @@ def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
 def test_plan_protocol_reprompt_returns_generic_fallback_without_rendering():
     calls: list[object] = []
 
+    def render_expected_output_shape(_invocation: PromptInvocation) -> str:
+        calls.append(object())
+        return ""
+
     plan = plan_protocol_reprompt(
         role=AgentRole.IMPLEMENTER,
         invocation=_invocation(PromptTemplate.PLAN),
         parser_error="missing tag",
-        render_expected_output_shape=lambda _invocation: calls.append(object()) or "",
+        render_expected_output_shape=render_expected_output_shape,
     )
 
     assert plan == GenericProtocolReprompt(message=GENERIC_PROTOCOL_REPROMPT_MESSAGE)
@@ -510,11 +565,66 @@ def test_plan_protocol_reprompt_returns_generic_fallback_without_rendering():
 def test_plan_protocol_reprompt_returns_generic_fallback_for_mismatched_role_policy():
     calls: list[object] = []
 
+    def render_expected_output_shape(_invocation: PromptInvocation) -> str:
+        calls.append(object())
+        return ""
+
     plan = plan_protocol_reprompt(
         role=AgentRole.PLANNER,
         invocation=_invocation(PromptTemplate.MERGE),
         parser_error="missing plan tag",
-        render_expected_output_shape=lambda _invocation: calls.append(object()) or "",
+        render_expected_output_shape=render_expected_output_shape,
+    )
+
+    assert plan == GenericProtocolReprompt(message=GENERIC_PROTOCOL_REPROMPT_MESSAGE)
+    assert calls == []
+
+
+@pytest.mark.parametrize(("role", "template"), _TEMPLATE_SPECIFIC_PROTOCOL_CASES)
+def test_plan_protocol_reprompt_returns_template_specific_only_for_supported_role_template_pairs(
+    role: AgentRole, template: PromptTemplate
+):
+    calls: list[PromptInvocation] = []
+
+    def render_expected_output_shape(invocation: PromptInvocation) -> str:
+        calls.append(invocation)
+        return "<shape/>"
+
+    plan = plan_protocol_reprompt(
+        role=role,
+        invocation=_invocation(template),
+        parser_error="missing tag",
+        render_expected_output_shape=render_expected_output_shape,
+    )
+
+    assert isinstance(plan, TemplateSpecificProtocolReprompt)
+    assert calls == [_invocation(template)]
+
+
+@pytest.mark.parametrize(
+    ("role", "template"),
+    tuple(
+        (role, template)
+        for role in AgentRole
+        for template in PromptTemplate
+        if template is not PromptTemplate.RESUME
+        and (role, template) not in _TEMPLATE_SPECIFIC_PROTOCOL_CASES
+    ),
+)
+def test_plan_protocol_reprompt_returns_generic_fallback_for_every_non_policy_template(
+    role: AgentRole, template: PromptTemplate
+):
+    calls: list[object] = []
+
+    def render_expected_output_shape(_invocation: PromptInvocation) -> str:
+        calls.append(object())
+        return ""
+
+    plan = plan_protocol_reprompt(
+        role=role,
+        invocation=_invocation(template),
+        parser_error="missing tag",
+        render_expected_output_shape=render_expected_output_shape,
     )
 
     assert plan == GenericProtocolReprompt(message=GENERIC_PROTOCOL_REPROMPT_MESSAGE)
