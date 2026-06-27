@@ -623,6 +623,54 @@ def test_prepare_planning_issue_set_recomputes_readiness_from_normalized_prepare
     assert prepared.malformed_slice_mode_issues == ()
 
 
+def test_prepare_planning_issue_set_preserves_carried_ready_readiness_for_normalized_ready_issue():
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        ReadyIssueOutcome,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+    from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+    from pycastle.prompts.pipeline import PromptTemplate
+
+    cfg = Config()
+    carried_readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=140),
+        is_ready=True,
+        selected_mode=None,
+        ready=ReadyIssueOutcome(
+            display_name="docs",
+            template=PromptTemplate.IMPLEMENT_DOCS,
+        ),
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    raw_issue = {
+        "number": 34,
+        "title": "Ready after normalization",
+        "body": "Summary\n\nBlocked by #99\n\n" + ("x" * 120),
+        "comments": None,
+        "labels": ["behavior-slice"],
+        "readiness": carried_readiness,
+    }
+
+    prepared = prepare_planning_issue_set([raw_issue], cfg)
+
+    assert prepared.prepared_issues == (
+        {
+            "number": 34,
+            "title": "Ready after normalization",
+            "body": "Summary\n\n" + ("x" * 120),
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    )
+    assert prepared.ready_candidates == prepared.prepared_issues
+    assert prepared.ready_readiness_by_number[34] is carried_readiness
+
+
 def test_prepare_planning_issue_set_drops_stale_ready_readiness_for_normalized_malformed_issue():
     from pycastle.issue_readiness import classify_issue_readiness
     from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set

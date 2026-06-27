@@ -267,8 +267,13 @@ def _classify_planning_issue_set(
     ready_candidates: list[dict] = []
     ready_readiness_by_number: dict[int, IssueReadiness] = {}
 
-    for issue in prepared_issues:
-        readiness = resolve_issue_readiness(issue, cfg)
+    for raw_issue, issue in zip(issues, prepared_issues, strict=True):
+        normalized_readiness = resolve_issue_readiness(issue, cfg)
+        readiness = _planning_ready_readiness(
+            raw_issue=raw_issue,
+            normalized_readiness=normalized_readiness,
+            cfg=cfg,
+        )
         issues_with_readiness.append((issue, readiness))
 
         if readiness.kind is IssueReadinessKind.READY_AFK:
@@ -303,6 +308,25 @@ def _classify_planning_issue_set(
             malformed_body_readiness=tuple(body_malformed_readiness),
         ),
     )
+
+
+def _planning_ready_readiness(
+    *,
+    raw_issue: dict,
+    normalized_readiness: IssueReadiness,
+    cfg: Config,
+) -> IssueReadiness:
+    if normalized_readiness.kind is not IssueReadinessKind.READY_AFK:
+        return normalized_readiness
+
+    carried_readiness = raw_issue.get("readiness")
+    if not isinstance(carried_readiness, IssueReadiness):
+        return normalized_readiness
+
+    resolved_raw_readiness = resolve_issue_readiness(raw_issue, cfg)
+    if resolved_raw_readiness.kind is not IssueReadinessKind.READY_AFK:
+        return normalized_readiness
+    return resolved_raw_readiness
 
 
 def evaluate_planning_readiness(

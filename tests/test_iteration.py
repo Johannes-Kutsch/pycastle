@@ -1189,6 +1189,63 @@ def test_implementer_and_reviewer_run_calls_pass_work_body_with_issue_title(
     assert reviewer_calls[0].work_body == f'reviewing behavior "{issue_title}"'
 
 
+def test_single_ready_issue_planning_uses_carried_ready_slice_outcome_for_work_body_and_template(
+    tmp_path, git_svc, github_svc, logger
+):
+    from pycastle.issue_readiness import (
+        IssueReadiness,
+        IssueReadinessKind,
+        ReadyIssueOutcome,
+        SliceMode,
+        WellFormed,
+        WellFormedBody,
+    )
+
+    issue_title = "Fix auth bug"
+    carried_readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ReadyIssueOutcome(
+            display_name="docs",
+            template=PromptTemplate.IMPLEMENT_DOCS,
+        ),
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 3,
+            "title": issue_title,
+            "body": "x" * 100,
+            "labels": ["behavior-slice"],
+            "readiness": carried_readiness,
+        }
+    ]
+    recording_runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path, None, git_svc=git_svc, github_svc=github_svc, logger=logger
+        ),
+        agent_runner=recording_runner,
+    )
+
+    asyncio.run(run_iteration(deps))
+
+    implementer_calls = [
+        c for c in recording_runner.calls if "Implement Agent" in c.name
+    ]
+    reviewer_calls = [c for c in recording_runner.calls if "Review Agent" in c.name]
+    assert len(implementer_calls) == 1
+    assert implementer_calls[0].prompt.template == PromptTemplate.IMPLEMENT_DOCS
+    assert implementer_calls[0].work_body == f'implementing docs "{issue_title}"'
+    assert len(reviewer_calls) == 1
+    assert reviewer_calls[0].work_body == f'reviewing docs "{issue_title}"'
+
+
 @pytest.mark.parametrize(
     "label,mode",
     [
