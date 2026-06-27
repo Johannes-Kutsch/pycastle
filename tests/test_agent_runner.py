@@ -15,7 +15,12 @@ from agent_runtime.runtime import (
 from agent_runtime.contracts import ToolAccess, ToolPolicy
 from agent_runtime.types import ResolvedProvider
 
-from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
+from pycastle.agents.output_protocol import (
+    AgentRole,
+    CommitMessageOutput,
+    PlannerOutput,
+)
+from pycastle.agents.protocol_reprompt import TemplateSpecificProtocolReprompt
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
@@ -264,6 +269,41 @@ class _RetryingTimedOutRuntimeClient:
                 output="",
                 usage=None,
                 continuation=self.continuation,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+class _PlannerProtocolRetryRuntimeClient:
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    async def run_new_session(self, request):
+        self.prompts.append(request.prompt)
+        if len(self.prompts) == 1:
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output='<plan>"{\\"issues\\": []}"</plan>',
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="codex",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+        return RuntimeOutcome(
+            kind=Completed(),
+            result=RunResult(
+                output='<plan>{"issues": [], "blocked": []}</plan>',
+                usage=None,
+                continuation=None,
                 selected=ResolvedProvider(
                     service="codex",
                     model="gpt-5.5",
@@ -974,3 +1014,124 @@ def test_agent_runner_keeps_retry_loop_for_non_opencode_timeouts(
         "shutdown_message": "timed out",
         "shutdown_style": "interrupted",
     } in status_display.remove_calls
+
+
+def test_agent_runner_uses_protocol_reprompt_planning_for_malformed_planner_output(
+    tmp_path,
+    monkeypatch,
+):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "plan"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+    status_display = RecordingStatusDisplay()
+    runtime_client = _PlannerProtocolRetryRuntimeClient()
+    protocol_reprompt_calls: list[dict[str, object]] = []
+    shape_render_calls: list[tuple[PromptTemplate, dict[str, str]]] = []
+
+    invocation = PromptInvocation(
+        template=PromptTemplate.PLAN,
+        scope_args={
+            "ALL_OPEN_ISSUES_JSON": '[{"number": 1, "title": "Fix A"}]',
+            "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 1, "title": "Fix A"}]',
+        },
+    )
+
+    def _fake_plan_protocol_reprompt(
+        *,
+        role: AgentRole,
+        invocation: PromptInvocation,
+        parser_error: str,
+        render_expected_output_shape,
+    ):
+        expected_shape = render_expected_output_shape(invocation)
+        protocol_reprompt_calls.append(
+            {
+                "role": role,
+                "template": invocation.template,
+                "scope_args": invocation.scope_args,
+                "parser_error": parser_error,
+                "expected_shape": expected_shape,
+            }
+        )
+        return TemplateSpecificProtocolReprompt(
+            message=f"retry via module\n{parser_error}\n{expected_shape}"
+        )
+
+    def _record_expected_output_shape(
+        template: PromptTemplate,
+        scope_args: dict[str, str],
+    ) -> str:
+        shape_render_calls.append((template, scope_args))
+        return "<plan>{...}</plan>"
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="initial planner prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+    monkeypatch.setattr(
+        "pycastle.agents.protocol_reprompt.plan_protocol_reprompt",
+        _fake_plan_protocol_reprompt,
+    )
+    monkeypatch.setattr(
+        runner._renderer,
+        "render_expected_output_shape",
+        _record_expected_output_shape,
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Plan Agent",
+                prompt=invocation,
+                mount_path=mount_path,
+                role=AgentRole.PLANNER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert result == PlannerOutput(issues=[], blocked=[])
+    assert runtime_client.prompts == [
+        "initial planner prompt",
+        "retry via module\n"
+        "Plan JSON must be an object, got str.\n"
+        'Output tail: \'<plan>"{\\\\"issues\\\\": []}"</plan>\'\n'
+        "<plan>{...}</plan>",
+    ]
+    assert protocol_reprompt_calls == [
+        {
+            "role": AgentRole.PLANNER,
+            "template": PromptTemplate.PLAN,
+            "scope_args": invocation.scope_args,
+            "parser_error": (
+                "Plan JSON must be an object, got str.\n"
+                'Output tail: \'<plan>"{\\\\"issues\\\\": []}"</plan>\''
+            ),
+            "expected_shape": "<plan>{...}</plan>",
+        }
+    ]
+    assert shape_render_calls == [(PromptTemplate.PLAN, invocation.scope_args)]

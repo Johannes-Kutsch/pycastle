@@ -59,7 +59,7 @@ from ..prompts.dispatch import (
     PromptInvocation,
     render_prompt_invocation,
 )
-from ..prompts.pipeline import PromptRenderer, PromptTemplate
+from ..prompts.pipeline import PromptRenderer
 from ..runtime_session import ProviderSessionStateRequest
 from ..session import RoleSession, RunKind
 from ..session.agent import (
@@ -74,6 +74,7 @@ from ..services.runtime_services import (
     ClaudeService,
     ToolPolicy as ServiceToolPolicy,
 )
+from . import protocol_reprompt
 from ..display.status_display import (
     ModelDisplayMetadata,
     PlainStatusDisplay,
@@ -84,37 +85,12 @@ from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailu
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
-REPROMPT_MESSAGE = (
-    "Your last response did not include the required protocol output. "
-    "Please review the task requirements and try again, making sure to "
-    "include the required output tag."
-)
-
 
 def format_transient_status_message(err: TransientAgentError) -> str:
     return (
         "transient API error: status "
         f"{err.status_code if err.status_code is not None else 'no status'}"
     )
-
-
-def _protocol_reprompt_message_with_expected_shape(
-    *,
-    parser_error: str | None,
-    expected_shape: str,
-    retry_instruction: str | None = None,
-    shape_label: str = "Use this output shape exactly:",
-) -> str:
-    lines = [
-        "Your last response did not include the required protocol output.",
-        "Please review the task requirements and try again, making sure to include the required output tag.",
-        "The parser reported the following error:",
-        parser_error if parser_error is not None else "unknown",
-    ]
-    if retry_instruction is not None:
-        lines.append(retry_instruction)
-    lines.extend([shape_label, expected_shape])
-    return "\n".join(lines)
 
 
 def _stage_key_for_role(role: AgentRole) -> str | None:
@@ -584,68 +560,26 @@ class AgentRunner:
             if issue_number_str.isdigit():
                 color_key = int(issue_number_str)
 
-        reprompt_message: str | Callable[[str | None], str]
-        if request.role is AgentRole.PLANNER:
+        def _render_expected_output_shape(
+            prompt_invocation: PromptInvocation,
+        ) -> str:
+            return self._renderer.render_expected_output_shape(
+                prompt_invocation.template,
+                prompt_invocation.scope_args,
+            )
 
-            def planner_reprompt_message(parser_error: str | None) -> str:
-                expected_shape = self._renderer.render_expected_output_shape(
-                    invocation.template,
-                    invocation.scope_args,
-                )
-                return _protocol_reprompt_message_with_expected_shape(
-                    parser_error=parser_error,
-                    expected_shape=expected_shape,
-                    retry_instruction=(
-                        "On retry, return a raw JSON object in a `<plan>` tag "
-                        "(do not quote or escape the JSON)."
-                    ),
-                    shape_label="Use this Planner output shape exactly:",
-                )
+        def _planned_reprompt_message(parser_error: str | None) -> str:
+            reprompt_plan = protocol_reprompt.plan_protocol_reprompt(
+                role=request.role,
+                invocation=invocation,
+                parser_error=parser_error if parser_error is not None else "unknown",
+                render_expected_output_shape=_render_expected_output_shape,
+            )
+            if isinstance(reprompt_plan, protocol_reprompt.UnsupportedProtocolReprompt):
+                return protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
+            return reprompt_plan.message
 
-            reprompt_message = planner_reprompt_message
-        elif invocation.template in {
-            PromptTemplate.IMPLEMENT_BEHAVIOR,
-            PromptTemplate.IMPLEMENT_REFACTOR,
-            PromptTemplate.IMPLEMENT_DOCS,
-            PromptTemplate.REVIEW,
-            PromptTemplate.MERGE,
-            PromptTemplate.PREFLIGHT_ISSUE,
-            PromptTemplate.FAILURE_REPORT,
-            PromptTemplate.DIVERGENCE_RESOLVE,
-        }:
-
-            def host_parsed_template_reprompt_message(parser_error: str | None) -> str:
-                expected_shape = self._renderer.render_expected_output_shape(
-                    invocation.template,
-                    invocation.scope_args,
-                )
-                return _protocol_reprompt_message_with_expected_shape(
-                    parser_error=parser_error,
-                    expected_shape=expected_shape,
-                )
-
-            reprompt_message = host_parsed_template_reprompt_message
-        elif invocation.template in {
-            PromptTemplate.IMPROVE_SCAN,
-            PromptTemplate.IMPROVE_PRD,
-            PromptTemplate.IMPROVE_ISSUES,
-            PromptTemplate.IMPROVE_NO_CANDIDATE,
-        }:
-
-            def improve_reprompt_message(parser_error: str | None) -> str:
-                expected_shape = self._renderer.render_expected_output_shape(
-                    invocation.template,
-                    invocation.scope_args,
-                )
-                return _protocol_reprompt_message_with_expected_shape(
-                    parser_error=parser_error,
-                    expected_shape=expected_shape,
-                    shape_label="Use this Improve output shape exactly:",
-                )
-
-            reprompt_message = improve_reprompt_message
-        else:
-            reprompt_message = REPROMPT_MESSAGE
+        reprompt_message: str | Callable[[str | None], str] = _planned_reprompt_message
 
         return await self._run_with_runtime_client(
             request=request,
