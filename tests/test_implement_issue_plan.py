@@ -203,6 +203,33 @@ def test_plan_issue_execution_from_worktree_skips_implementer_when_only_implemen
     assert plan.reviewer_step.outcome == "run"
 
 
+def test_plan_issue_execution_from_worktree_marks_issue_complete_when_review_stage_done_signal_exists(
+    tmp_path,
+):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    issue_worktree = _issue_worktree(tmp_path, 1909)
+    RoleSession(issue_worktree, AgentRole.REVIEWER).start_fresh()
+    RoleSession(
+        issue_worktree, AgentRole.REVIEWER
+    ).clear_provider_state_and_signal_completion()
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+
+    plan = plan_issue_execution_from_worktree(
+        issue=_issue(),
+        deps=deps,
+        sha="sha-abc",
+        worktree_path=issue_worktree,
+        implement_mount_path=implement_mount_path,
+        review_mount_path=review_mount_path,
+    )
+
+    assert plan.issue_outcome == "complete"
+    assert plan.implementer_step.outcome == "skip"
+    assert plan.reviewer_step.outcome == "skip"
+    assert plan.run_steps == ()
+
+
 def test_plan_issue_execution_from_worktree_orders_run_steps_when_no_stage_done_signal_exists(
     tmp_path,
 ):
@@ -251,6 +278,34 @@ def test_plan_issue_execution_from_worktree_keeps_provider_state_without_done_ru
         "implementer",
         "reviewer",
     ]
+
+
+def test_plan_issue_execution_from_worktree_keeps_reviewer_provider_state_without_done_runnable(
+    tmp_path,
+):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    issue_worktree = _issue_worktree(tmp_path, 1909)
+    RoleSession(issue_worktree, AgentRole.IMPLEMENTER).start_fresh()
+    RoleSession(
+        issue_worktree, AgentRole.IMPLEMENTER
+    ).clear_provider_state_and_signal_completion()
+    provider_dir = issue_worktree / ".pycastle-session" / "reviewer" / "codex"
+    provider_dir.mkdir(parents=True, exist_ok=True)
+    (provider_dir / "auth.json").write_text("{}", encoding="utf-8")
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+
+    plan = plan_issue_execution_from_worktree(
+        issue=_issue(),
+        deps=deps,
+        sha="sha-abc",
+        worktree_path=issue_worktree,
+        implement_mount_path=implement_mount_path,
+        review_mount_path=review_mount_path,
+    )
+
+    assert plan.issue_outcome == "incomplete"
+    assert [step.role_name for step in plan.run_steps] == ["reviewer"]
 
 
 def test_plan_issue_execution_reports_mount_setup_failure_for_invalid_managed_worktree_mount(
