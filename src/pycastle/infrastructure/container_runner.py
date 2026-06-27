@@ -27,7 +27,7 @@ from agent_runtime.types import ProviderSelection
 
 from ..agents.output_protocol import AgentOutput, AgentRole, extract_output
 from ..config import Config, resolve_logs_dir
-from ..display.status_display import PlainStatusDisplay
+from ..display.status_display import PlainStatusDisplay, WORK_PHASE
 from .agent_invocation_log import AgentInvocationLog
 from ..services.runtime_services import AgentService, ToolPolicy as ServiceToolPolicy
 from .docker_session import DockerSession
@@ -274,7 +274,7 @@ class ContainerRunner:
         session_uuid: str | None = None,
         on_provider_session_id: Callable[[str], None] | None = None,
     ) -> AgentOutput:
-        self._status_display.update_phase(self.name, "Work")
+        self._status_display.update_phase(self.name, WORK_PHASE)
         if self._service is None:
             raise RuntimeError("ContainerRunner.work requires an agent service")
 
@@ -309,7 +309,7 @@ class ContainerRunner:
         session_uuid: str | None = None,
         on_provider_session_id: Callable[[str], None] | None = None,
     ) -> str:
-        self._status_display.update_phase(self.name, "Work")
+        self._status_display.update_phase(self.name, WORK_PHASE)
         if self._service is None:
             raise RuntimeError("ContainerRunner.work_text requires an agent service")
 

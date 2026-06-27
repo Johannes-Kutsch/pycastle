@@ -78,6 +78,7 @@ from ..display.status_display import (
     ModelDisplayMetadata,
     PlainStatusDisplay,
     StatusDisplay,
+    WORK_PHASE,
 )
 from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailure
 
@@ -745,7 +746,7 @@ class AgentRunner:
                     await runner.setup(git_name, git_email, request.work_body)
                 except DockerError as exc:
                     raise SetupPhaseError(request.role.value, str(exc)) from exc
-                status_display.update_phase(request.name, "Work")
+                status_display.update_phase(request.name, WORK_PHASE)
                 output = await self._invoke_runtime_attempts(
                     request=request,
                     service=service,

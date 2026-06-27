@@ -8,7 +8,7 @@ from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
-from .status_display import ModelDisplayMetadata
+from .status_display import ModelDisplayMetadata, WORK_PHASE
 from .status_print_sequencing import Kind, OutputEvent, StatusPrintSequencer
 
 
@@ -164,7 +164,7 @@ class RichStatusDisplay:
                 row.name, _agent_name_style(row.color_key)
             )
 
-            body = row.work_body if row.phase == "Work" else row.phase
+            body = row.work_body if row.phase == WORK_PHASE else row.phase
 
             table.add_row(
                 Text(_format_duration(row.elapsed_seconds()), style="dim"),
