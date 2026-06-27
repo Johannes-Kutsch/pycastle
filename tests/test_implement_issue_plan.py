@@ -356,6 +356,72 @@ def test_plan_issue_execution_reports_mount_setup_failure_for_invalid_managed_wo
     assert plan.reviewer_step.outcome == "run"
 
 
+@pytest.mark.parametrize(
+    ("role", "role_name", "mount_name"),
+    [
+        (AgentRole.IMPLEMENTER, "implementer", "outside-implement"),
+        (AgentRole.REVIEWER, "reviewer", "outside-review"),
+    ],
+)
+def test_plan_issue_execution_reports_actionable_managed_worktree_mount_rejection_without_probing_rejected_mount_state(
+    tmp_path,
+    role,
+    role_name,
+    mount_name,
+):
+    git_svc = MagicMock(spec=GitService)
+    git_svc.is_working_tree_clean.side_effect = AssertionError(
+        "planning should reject actionable mounts before git cleanliness checks"
+    )
+    deps = _make_deps(tmp_path, FakeAgentRunner([]), git_svc=git_svc)
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+    target_mount_path = tmp_path / mount_name
+    target_mount_path.mkdir()
+    _seed_prior_role_session_with_service(
+        target_mount_path,
+        role=role,
+        service_name="codex",
+        session_id="session-1",
+    )
+
+    if role is AgentRole.IMPLEMENTER:
+        implement_mount_path = target_mount_path
+    else:
+        review_mount_path = target_mount_path
+
+    plan = plan_issue_execution(
+        issue=_issue(),
+        deps=deps,
+        sha="sha-abc",
+        implement_mount_path=implement_mount_path,
+        review_mount_path=review_mount_path,
+        implement_done=False,
+        review_done=False,
+    )
+
+    step = (
+        plan.implementer_step if role is AgentRole.IMPLEMENTER else plan.reviewer_step
+    )
+    rejection = decide_managed_worktree_mount(
+        repo_root=tmp_path,
+        mount_path=target_mount_path,
+        caller=f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} Agent #1909",
+        role=role.value,
+    )
+
+    assert step.role_name == role_name
+    assert step.outcome == "setup_failure"
+    assert step.mount_setup_failure is not None
+    assert step.mount_setup_failure.role_value == role.value
+    assert step.mount_setup_failure.rejection_code == "invalid_mount_path"
+    assert (
+        step.mount_setup_failure.error_message
+        == describe_managed_worktree_mount_rejection(rejection)
+    )
+    git_svc.is_working_tree_clean.assert_not_called()
+
+
 def test_plan_issue_execution_raises_not_implement_ready_before_mount_checks_for_missing_slice_mode(
     tmp_path,
 ):

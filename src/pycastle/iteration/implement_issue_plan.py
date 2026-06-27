@@ -189,23 +189,23 @@ def _plan_step(
     skip_reason: str | None,
 ) -> IssueRoleStepPlan:
     role_name = _role_name(role)
-    run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
-        mount_path=mount_path,
-        role=role,
-        deps=deps,
-    )
-    prompt_scope_args = build_per_issue_scope_args(
-        issue,
-        branch=branch,
-        run_kind=run_kind,
-        is_dirty=interrupted_work_from_dirty_tree,
-    )
     commit_fallback_subject = CommitFallbackSubject(
         commit_prefix=f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} #{issue['number']} - ",
         fallback_subject=issue["title"],
     )
 
     if skip_reason is not None:
+        run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
+            mount_path=mount_path,
+            role=role,
+            deps=deps,
+        )
+        prompt_scope_args = build_per_issue_scope_args(
+            issue,
+            branch=branch,
+            run_kind=run_kind,
+            is_dirty=interrupted_work_from_dirty_tree,
+        )
         return IssueRoleStepPlan(
             outcome="skip",
             role_name=role_name,
@@ -232,10 +232,15 @@ def _plan_step(
             outcome="setup_failure",
             role_name=role_name,
             stage=stage,
-            run_kind=run_kind,
+            run_kind=RunKind.FRESH,
             work_body=work_body,
             prompt_template=prompt_template,
-            prompt_scope_args=prompt_scope_args,
+            prompt_scope_args=build_per_issue_scope_args(
+                issue,
+                branch=branch,
+                run_kind=RunKind.FRESH,
+                is_dirty=False,
+            ),
             mount_setup_failure=MountSetupFailure(
                 role_value=mount_decision.role or role.value,
                 rejection_code=mount_decision.rejection_code,
@@ -245,6 +250,17 @@ def _plan_step(
             commit_fallback_subject=commit_fallback_subject,
         )
 
+    run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
+        mount_path=mount_path,
+        role=role,
+        deps=deps,
+    )
+    prompt_scope_args = build_per_issue_scope_args(
+        issue,
+        branch=branch,
+        run_kind=run_kind,
+        is_dirty=interrupted_work_from_dirty_tree,
+    )
     return IssueRoleStepPlan(
         outcome="run",
         role_name=role_name,
