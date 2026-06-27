@@ -105,6 +105,19 @@ def _extract_legacy_hard_error_text(raw: str) -> str:
     return error_text
 
 
+def _extract_hard_error_status_code(raw: str, fallback: int | None) -> int | None:
+    if fallback is not None:
+        return fallback
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return fallback
+    if not isinstance(parsed, dict):
+        return fallback
+    status = parsed.get("status")
+    return status if isinstance(status, int) else fallback
+
+
 def _route_and_abort_agent_credential_failure(
     err: HardAgentError,
     deps: Deps,
@@ -442,6 +455,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         if routed_result is not None:
             return routed_result
 
+        effective_status_code = _extract_hard_error_status_code(raw, err.status_code)
         error_text = _extract_legacy_hard_error_text(raw)
         first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
         service_label = {
@@ -449,22 +463,24 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             "codex": "Codex",
             "opencode": "OpenCode",
         }.get(service_name, service_name)
-        title = f"[pycastle] {service_label} API {err.status_code}: {first_line}"
+        title = f"[pycastle] {service_label} API {effective_status_code}: {first_line}"
         body = (
             f"## Raw result envelope\n\n```json\n{raw}\n```\n\n"
-            f"Status: {err.status_code}\n"
+            f"Status: {effective_status_code}\n"
             f"Agent: {err.caller or '<unknown>'}\n"
             f"Service: {service_name}\n"
         )
         url = auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
         status_code_str = (
-            str(err.status_code) if err.status_code is not None else "no status"
+            str(effective_status_code)
+            if effective_status_code is not None
+            else "no status"
         )
         deps.status_display.print(
             err.caller,
             f"hard API error: status {status_code_str}" + (f" — {url}" if url else ""),
         )
-        return AbortedHardApiError(status_code=err.status_code)
+        return AbortedHardApiError(status_code=effective_status_code)
     except SetupPhaseError as err:
         return AbortedSetup(
             phase=err.phase,
