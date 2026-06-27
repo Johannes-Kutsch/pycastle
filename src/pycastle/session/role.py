@@ -194,7 +194,7 @@ class RoleSession:
             shutil.rmtree(self.path, onerror=_force_remove_readonly)
         self.path.mkdir(parents=True, exist_ok=True)
 
-    def mark_done(self) -> None:
+    def clear_provider_state_and_signal_completion(self) -> None:
         from .service_session_store import is_service_session_metadata_path
 
         if not self.path.is_dir():

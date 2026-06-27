@@ -8,9 +8,9 @@ The invariant broken by ADR 0049 was: "dir appears only when agent first starts.
 
 ## Decision
 
-`mark_done()` writes a `_done` sentinel file inside `role_session.path` after clearing all provider state files. `is_done()` checks for the presence of `_done` only. Completion is now a positive signal — something explicitly written — rather than an inference from the absence of a resume signal.
+`clear_provider_state_and_signal_completion()` writes a `_done` sentinel file inside `role_session.path` after clearing all provider state files. `is_done()` checks for the presence of `_done` only. Completion is now a positive signal — something explicitly written — rather than an inference from the absence of a resume signal.
 
-`mark_done()` is renamed to make the dual responsibility (purge state + write completion marker) explicit to readers.
+`clear_provider_state_and_signal_completion()` is named to make the dual responsibility (purge state + write completion marker) explicit to readers.
 
 ## Considered options
 
@@ -22,8 +22,8 @@ The invariant broken by ADR 0049 was: "dir appears only when agent first starts.
 ## Consequences
 
 - `is_done()` becomes `self._done_path().is_file()` — no dir check needed.
-- `mark_done()` renamed; callers updated (`runner._invoke_runtime_attempts` and `implement.run_issue` for IMPLEMENTER and REVIEWER).
-- `discard()` behaviour unchanged — it removes the entire session dir including any `_done` file. Ephemeral roles (Merger, Divergence-Resolver, Planner, Preflight-Issue, Improve) continue to call `discard()` rather than the renamed `mark_done()`.
+- `clear_provider_state_and_signal_completion()` replaces the old completion method; callers updated (`runner._invoke_runtime_attempts` and `implement.run_issue` for IMPLEMENTER and REVIEWER).
+- `discard()` behaviour unchanged — it removes the entire session dir including any `_done` file. Ephemeral roles (Merger, Divergence-Resolver, Planner, Preflight-Issue, Improve) continue to call `discard()` rather than the renamed completion method.
 - `start_fresh()` behaviour unchanged — `shutil.rmtree` already removes `_done` as part of the full directory deletion.
 - Migration: sessions completed before this change have no `_done` file and will be re-run once. Re-running an already-complete Implementer or Reviewer is an acceptable one-time cost.
 - The CONTEXT.md **stage-done signal** entry is updated to reflect the `_done`-file contract.

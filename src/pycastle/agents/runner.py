@@ -872,7 +872,7 @@ class AgentRunner:
                     )
                     current_run_kind = RunKind.RESUME
                     continue
-                role_session.mark_done()
+                role_session.clear_provider_state_and_signal_completion()
                 return parsed
             if isinstance(outcome.kind, UsageLimited):
                 error = UsageLimitError(

@@ -20,7 +20,7 @@ Interrupted agents resume via `--session-id <UUID>` (Fresh) or `--resume <UUID>`
 - **Prompt-shape contract:** Fresh → role prompt; Resume → continuation prompt only.
 - **Broadened preservation rule:** `dirty OR usage_limit OR session_resumable`.
 - `managed_worktree.__aenter__` reuse: if worktree exists, branch matches, role dir resumable → skip create.
-- **Cleanup-on-success load-bearing**: `RoleSession(...).mark_done()` inside worktree context after commit/merge. `shutil.rmtree` uses `onerror` handler clearing read-only flags (Codex creates RO git pack files).
+- **Cleanup-on-success load-bearing**: `RoleSession(...).clear_provider_state_and_signal_completion()` inside worktree context after commit/merge. `shutil.rmtree` uses `onerror` handler clearing read-only flags (Codex creates RO git pack files).
 - **Non-typed Resume retry (#640):** exception on Resume not in `{UsageLimitError, AgentTimeoutError, AgentOutputProtocolError}` triggers one in-call retry. Second failure → `FailedOutput(failure_class="non_typed_crash")` → `AbortedAgentFailure`.
 - Session gitignoring via `.git/info/exclude`: `.pycastle-session/` and `.claude/` appended at startup.
 - Continuation prompt at `shared/resume.md`. Improve mode layers on top — subsumed by ADR 0010.

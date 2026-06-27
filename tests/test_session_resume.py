@@ -273,10 +273,10 @@ def test_populated_dir_without_continuation_is_not_resumable(rs):
     assert rs.is_done() is True
 
 
-def test_mark_done_signals_done_dir_survives_next_session_is_fresh(rs, worktree):
+def test_completion_signal_done_dir_survives_next_session_is_fresh(rs, worktree):
     rs.start_fresh()
     (rs.path / "session.jsonl").write_text("{}\n")
-    rs.mark_done()
+    rs.clear_provider_state_and_signal_completion()
 
     assert rs.is_done() is True
     assert rs.is_resumable() is False
@@ -284,7 +284,7 @@ def test_mark_done_signals_done_dir_survives_next_session_is_fresh(rs, worktree)
     assert RoleSession(worktree, AgentRole.IMPLEMENTER).run_kind() == RunKind.FRESH
 
 
-def test_mark_done_removes_readonly_files(rs):
+def test_completion_signal_removes_readonly_files(rs):
     rs.start_fresh()
     pack_dir = rs.path / "codex" / ".tmp" / "plugins" / ".git" / "objects" / "pack"
     pack_dir.mkdir(parents=True)
@@ -292,7 +292,7 @@ def test_mark_done_removes_readonly_files(rs):
     pack_file.write_bytes(b"data")
     os.chmod(pack_file, stat.S_IREAD)
 
-    rs.mark_done()
+    rs.clear_provider_state_and_signal_completion()
 
     assert rs.is_done() is True
     assert rs.is_resumable() is False
@@ -637,12 +637,14 @@ def test_provider_run_state_for_opencode_downgrades_resumable_state_without_sess
     )
 
 
-def test_mark_done_preserves_service_session_metadata_without_counting_as_resumable(rs):
+def test_completion_signal_preserves_service_session_metadata_without_counting_as_resumable(
+    rs,
+):
     rs.start_fresh()
     save_service_session_metadata(rs.path, "codex", "thread-from-run")
     rs.save_service_session_id("codex", "thread-from-run")
 
-    rs.mark_done()
+    rs.clear_provider_state_and_signal_completion()
 
     assert rs.service_session_metadata("codex") == {
         "service": "codex",
@@ -889,7 +891,7 @@ def test_any_role_dir_present_true_once_a_role_dir_exists(worktree):
 def test_any_role_dir_present_true_regardless_of_done_state(worktree):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
     rs.start_fresh()
-    rs.mark_done()
+    rs.clear_provider_state_and_signal_completion()
     assert any_role_dir_present(worktree) is True
 
 
@@ -900,11 +902,11 @@ def test_is_stage_done_for_false_when_absent(worktree):
     assert is_stage_done_for(worktree, AgentRole.IMPLEMENTER) is False
 
 
-def test_is_stage_done_for_true_after_mark_done(worktree):
+def test_is_stage_done_for_true_after_completion_signal(worktree):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
     rs.start_fresh()
     (rs.path / "session.jsonl").write_text("{}\n")
-    rs.mark_done()
+    rs.clear_provider_state_and_signal_completion()
     assert is_stage_done_for(worktree, AgentRole.IMPLEMENTER) is True
 
 

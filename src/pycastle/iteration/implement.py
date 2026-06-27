@@ -249,7 +249,9 @@ async def run_issue(
                         deps.repo_root,
                         f"Implement #{issue['number']} - {_msg}",
                     )
-                    RoleSession(impl_mount_path, AgentRole.IMPLEMENTER).mark_done()
+                    RoleSession(
+                        impl_mount_path, AgentRole.IMPLEMENTER
+                    ).clear_provider_state_and_signal_completion()
 
         async with (
             worktree_semaphore or contextlib.nullcontext(),
@@ -299,7 +301,9 @@ async def run_issue(
                     deps.repo_root,
                     f"Review #{issue['number']} - {_rev_msg}",
                 )
-                RoleSession(review_mount_path, AgentRole.REVIEWER).mark_done()
+                RoleSession(
+                    review_mount_path, AgentRole.REVIEWER
+                ).clear_provider_state_and_signal_completion()
     finally:
         if lock is not None and lock.locked():
             lock.release()

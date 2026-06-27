@@ -74,7 +74,7 @@ def _seed_prior_role_session_with_service(
 def _mark_role_stage_done(worktree: Path, *, role: AgentRole) -> None:
     role_session = RoleSession(worktree, role)
     role_session.start_fresh()
-    role_session.mark_done()
+    role_session.clear_provider_state_and_signal_completion()
 
 
 def _reviewer_output(message: str | None) -> CommitMessageOutput:

@@ -1578,7 +1578,7 @@ def test_prepared_provider_run_session_capture_without_success_leaves_metadata_a
     assert role_session.service_session_metadata("opencode") is None
 
 
-def test_prepared_provider_run_session_metadata_survives_mark_done_cleanup(
+def test_prepared_provider_run_session_metadata_survives_completion_cleanup(
     tmp_path: Path,
 ):
     state = prepare_provider_session_state(
@@ -1595,7 +1595,7 @@ def test_prepared_provider_run_session_metadata_survives_mark_done_cleanup(
     run_session.record_successful_run()
 
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    role_session.mark_done()
+    role_session.clear_provider_state_and_signal_completion()
 
     assert role_session.service_session_metadata("opencode") == {
         "service": "opencode",
