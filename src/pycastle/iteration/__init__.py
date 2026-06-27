@@ -205,6 +205,11 @@ class AbortedOperatorActionable:
     attempt_count: int
 
 
+@dataclasses.dataclass(frozen=True)
+class MergeCloseFailure:
+    filed_issue_numbers: list[int]
+
+
 IterationOutcome: TypeAlias = (
     Continue
     | Done
@@ -217,6 +222,7 @@ IterationOutcome: TypeAlias = (
     | AbortedAgentCredentialFailure
     | AbortedSetup
     | AbortedOperatorActionable
+    | MergeCloseFailure
 )
 
 

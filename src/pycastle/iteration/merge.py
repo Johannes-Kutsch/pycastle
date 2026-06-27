@@ -155,7 +155,7 @@ async def _close_issues_parallel(
 
     async def _close_one(issue: dict) -> None:
         nonlocal done
-        await asyncio.to_thread(github_svc.close_issue, issue["number"])
+        await asyncio.to_thread(github_svc.close_issue_with_parents, issue["number"])
         done += 1
         if on_progress is not None:
             on_progress(done, n)
@@ -223,7 +223,6 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
 
         if clean_issues:
             await _close_issues(clean_issues)
-            deps.github_svc.close_completed_parent_issues()
 
         clean_deleted = await _delete_branches(
             [branch_for(i["number"]) for i in clean_issues]
@@ -259,8 +258,6 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 progress=progress,
                 deps=deps,
             )
-            if recovery.has_completed_conflicts:
-                deps.github_svc.close_completed_parent_issues()
             _close_merge_row(
                 build_merge_close_message(
                     clean_deleted + recovery.deleted_conflict_branches,

@@ -645,7 +645,9 @@ def test_paginate_returns_single_page_when_link_has_no_next():
     )
     svc = _make_service(transport=transport)
 
-    assert svc.get_open_issue_numbers() == [1]
+    assert svc.get_all_open_issues_lightweight() == [
+        {"number": 1, "title": "", "labels": []}
+    ]
     transport.assert_exhausted()
 
 
@@ -1843,30 +1845,6 @@ def test_close_issue_with_parents_propagates_child_close_failure():
     transport.assert_exhausted()
 
 
-# ── get_open_issue_numbers ───────────────────────────────────────────────────
-
-
-def test_get_open_issue_numbers_excludes_pull_requests():
-    transport = _ScriptedGithubTransport(
-        [
-            _script_step(
-                "GET",
-                "/repos/owner/repo/issues?state=open&per_page=100",
-                payload=[
-                    {"number": 1},
-                    {"number": 2, "pull_request": {"url": "x"}},
-                    {"number": 3},
-                ],
-                headers={},
-            )
-        ]
-    )
-    svc = _make_service(transport=transport)
-
-    assert svc.get_open_issue_numbers() == [1, 3]
-    transport.assert_exhausted()
-
-
 # ── get_open_issues ──────────────────────────────────────────────────────────
 
 
@@ -2313,66 +2291,6 @@ def test_get_all_open_issues_lightweight_normalizes_mixed_open_issue_payload():
         {"number": 3, "title": "Keep me", "labels": ["feat"]},
     ]
     transport.assert_exhausted()
-
-
-# ── close_completed_parent_issues ────────────────────────────────────────────
-
-
-def test_close_completed_parent_issues_closes_parents_with_all_closed_subs():
-    open_list_path = "/repos/owner/repo/issues?state=open&per_page=100"
-    transport = _ScriptedGithubTransport(
-        [
-            _script_step(
-                "GET",
-                open_list_path,
-                payload=[{"number": 10}, {"number": 11}],
-                headers={"Link": ""},
-            ),
-            _script_step(
-                "GET",
-                "/repos/owner/repo/issues/10/sub_issues",
-                payload=[{"number": 1, "state": "closed"}],
-                headers={"Link": ""},
-            ),
-            _script_step(
-                "PATCH",
-                "/repos/owner/repo/issues/10",
-                data={"state": "closed"},
-            ),
-            _script_step(
-                "GET",
-                "/repos/owner/repo/issues/11/sub_issues",
-                payload=[{"number": 2, "state": "open"}],
-                headers={"Link": ""},
-            ),
-            _script_step(
-                "GET",
-                open_list_path,
-                payload=[{"number": 11}],
-                headers={"Link": ""},
-            ),
-            _script_step(
-                "GET",
-                "/repos/owner/repo/issues/11/sub_issues",
-                payload=[{"number": 2, "state": "open"}],
-                headers={"Link": ""},
-            ),
-        ]
-    )
-    svc = _make_service(transport=transport)
-
-    svc.close_completed_parent_issues()
-
-    assert transport.requests == [
-        _GithubTransportRequest("GET", open_list_path, None),
-        _GithubTransportRequest("GET", "/repos/owner/repo/issues/10/sub_issues", None),
-        _GithubTransportRequest(
-            "PATCH", "/repos/owner/repo/issues/10", {"state": "closed"}
-        ),
-        _GithubTransportRequest("GET", "/repos/owner/repo/issues/11/sub_issues", None),
-        _GithubTransportRequest("GET", open_list_path, None),
-        _GithubTransportRequest("GET", "/repos/owner/repo/issues/11/sub_issues", None),
-    ]
 
 
 # ── list_labels / create_label / delete_label ────────────────────────────────

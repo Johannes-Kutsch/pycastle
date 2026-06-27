@@ -122,7 +122,7 @@ async def _delete_conflict_branch(
 
 def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> bool:
     try:
-        deps.github_svc.close_issue(issue["number"])
+        deps.github_svc.close_issue_with_parents(issue["number"])
     except Exception as exc:
         deps.status_display.print(
             "Merge",
