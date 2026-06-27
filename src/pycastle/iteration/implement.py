@@ -26,15 +26,8 @@ from ..managed_worktree_mount_policy import (
 )
 from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import (
-    build_per_issue_scope_args,
-)
 from ..issue_readiness import require_ready_slice_outcome_for_issue
 from ..session import RoleSession, is_stage_done_for
-from ..session import RunKind
-from ..session.service_session_store import (
-    has_exact_provider_transcript_for_selected_service,
-)
 from ..display.status_display import StatusDisplay
 from ..services import GitService, GithubService
 from ..infrastructure.worktree import (
@@ -78,44 +71,6 @@ def pick_slice_mode(issue: dict, cfg: Config) -> str:
     return _resolve_slice(issue, cfg)[0]
 
 
-def _resolved_stage_service_name(cfg: Config, role: AgentRole) -> str:
-    if role is AgentRole.IMPLEMENTER:
-        return cfg.implement_override.service
-    if role is AgentRole.REVIEWER:
-        return cfg.review_override.service
-    raise RuntimeError(f"Unsupported role {role!r} for implement path")
-
-
-def _prompt_run_state_for_role(
-    *,
-    mount_path: Path,
-    role: AgentRole,
-    deps: _ImplementDeps,
-) -> tuple[RunKind, bool]:
-    role_session = RoleSession(mount_path, role)
-    service_name = _resolved_stage_service_name(deps.cfg, role)
-    has_resumable_state = role_session.is_resumable()
-    has_exact_transcript_handoff = has_exact_provider_transcript_for_selected_service(
-        worktree=mount_path,
-        role=role,
-        namespace="",
-        registry=deps.service_registry,
-        service_name=service_name,
-    )
-    run_kind = (
-        role_session.run_kind()
-        if has_exact_transcript_handoff or not has_resumable_state
-        else RunKind.FRESH
-    )
-    interrupted_work_from_dirty_tree = (
-        run_kind is RunKind.FRESH
-        and has_resumable_state
-        and not has_exact_transcript_handoff
-        and not deps.git_svc.is_working_tree_clean(mount_path)
-    )
-    return run_kind, interrupted_work_from_dirty_tree
-
-
 @dataclasses.dataclass
 class ImplementResult:
     completed: list[dict]
@@ -142,19 +97,6 @@ async def run_issue(
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
     _slice_mode, _impl_template = _resolve_slice(issue, deps.cfg)
-
-    def _scope_args_for(mount_path: Path, role: AgentRole) -> dict[str, str]:
-        run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
-            mount_path=mount_path,
-            role=role,
-            deps=deps,
-        )
-        return build_per_issue_scope_args(
-            issue,
-            branch=_branch,
-            run_kind=run_kind,
-            is_dirty=interrupted_work_from_dirty_tree,
-        )
 
     _implement_started = False
     _review_started = False
@@ -200,6 +142,7 @@ async def run_issue(
             return issue
 
         runnable_roles = {step.role_name for step in issue_plan.run_steps}
+        planned_steps = {step.role_name: step for step in issue_plan.steps}
 
         if "implementer" in runnable_roles:
             async with (
@@ -211,9 +154,7 @@ async def run_issue(
                     planner_sha=sha,
                 ) as impl_mount_path,
             ):
-                _impl_scope_args = _scope_args_for(
-                    impl_mount_path, AgentRole.IMPLEMENTER
-                )
+                _impl_scope_args = planned_steps["implementer"].prompt_scope_args
                 mount_decision = decide_managed_worktree_mount(
                     repo_root=deps.repo_root,
                     mount_path=impl_mount_path,
@@ -265,9 +206,7 @@ async def run_issue(
                     deps=deps,
                 ) as review_mount_path,
             ):
-                _review_scope_args = _scope_args_for(
-                    review_mount_path, AgentRole.REVIEWER
-                )
+                _review_scope_args = planned_steps["reviewer"].prompt_scope_args
                 mount_decision = decide_managed_worktree_mount(
                     repo_root=deps.repo_root,
                     mount_path=review_mount_path,

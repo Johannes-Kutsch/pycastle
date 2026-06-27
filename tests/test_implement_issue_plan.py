@@ -20,7 +20,7 @@ from pycastle.issue_readiness import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService, ServiceRegistry
-from pycastle.session import RoleSession
+from pycastle.session import RoleSession, RunKind
 from pycastle.session.service_session_store import save_service_session_metadata
 from tests.support import FakeAgentRunner, _make_deps
 
@@ -99,6 +99,7 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     assert plan.slice_mode_display_name == "behavior"
 
     assert plan.implementer_step.outcome == "run"
+    assert plan.implementer_step.run_kind is RunKind.FRESH
     assert plan.implementer_step.role_name == "implementer"
     assert plan.implementer_step.stage == "pre-implementation"
     assert (
@@ -120,6 +121,7 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     )
 
     assert plan.reviewer_step.outcome == "run"
+    assert plan.reviewer_step.run_kind is RunKind.FRESH
     assert plan.reviewer_step.role_name == "reviewer"
     assert plan.reviewer_step.stage == "pre-review"
     assert (
@@ -447,6 +449,137 @@ def test_plan_issue_execution_marks_interrupted_work_for_cross_service_dirty_rol
         in (plan.implementer_step.prompt_scope_args["INTERRUPTED_WORK"])
     )
     assert plan.reviewer_step.prompt_scope_args["INTERRUPTED_WORK"] == ""
+
+
+@pytest.mark.parametrize(
+    ("role", "cfg"),
+    [
+        (
+            AgentRole.IMPLEMENTER,
+            Config(implement_override=StageOverride(service="opencode")),
+        ),
+        (
+            AgentRole.REVIEWER,
+            Config(review_override=StageOverride(service="opencode")),
+        ),
+    ],
+)
+def test_plan_issue_execution_uses_resume_run_kind_for_exact_selected_service_handoff(
+    tmp_path,
+    role,
+    cfg,
+):
+    registry = ServiceRegistry({"opencode": _CrossServiceTestService("opencode")})
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([]),
+        cfg=cfg,
+        service_registry=registry,
+    )
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+    target_mount_path = (
+        implement_mount_path if role is AgentRole.IMPLEMENTER else review_mount_path
+    )
+    _seed_prior_role_session_with_service(
+        target_mount_path,
+        role=role,
+        service_name="opencode",
+        session_id="session-1",
+    )
+
+    plan = plan_issue_execution(
+        issue=_issue(),
+        deps=deps,
+        sha="sha-abc",
+        implement_mount_path=implement_mount_path,
+        review_mount_path=review_mount_path,
+        implement_done=False,
+        review_done=False,
+    )
+
+    step = (
+        plan.implementer_step if role is AgentRole.IMPLEMENTER else plan.reviewer_step
+    )
+    assert step.run_kind is RunKind.RESUME
+    assert step.prompt_scope_args["INTERRUPTED_WORK"] == ""
+
+
+@pytest.mark.parametrize(
+    ("role", "is_dirty", "expected_interrupted_work"),
+    [
+        (AgentRole.IMPLEMENTER, False, ""),
+        (
+            AgentRole.IMPLEMENTER,
+            True,
+            "This worktree has uncommitted changes from a previous agent run.",
+        ),
+        (AgentRole.REVIEWER, False, ""),
+        (
+            AgentRole.REVIEWER,
+            True,
+            "This worktree has uncommitted changes from a previous agent run.",
+        ),
+    ],
+)
+def test_plan_issue_execution_uses_fresh_run_kind_for_transcript_mismatch_and_only_adds_interrupted_work_when_dirty(
+    tmp_path,
+    role,
+    is_dirty,
+    expected_interrupted_work,
+):
+    git_svc = MagicMock(spec=GitService)
+    git_svc.is_working_tree_clean.return_value = not is_dirty
+    cfg = (
+        Config(implement_override=StageOverride(service="codex"))
+        if role is AgentRole.IMPLEMENTER
+        else Config(review_override=StageOverride(service="codex"))
+    )
+    registry = ServiceRegistry(
+        {
+            "codex": _CrossServiceTestService("codex"),
+            "opencode": _CrossServiceTestService("opencode"),
+        }
+    )
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([]),
+        cfg=cfg,
+        git_svc=git_svc,
+        service_registry=registry,
+    )
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+    target_mount_path = (
+        implement_mount_path if role is AgentRole.IMPLEMENTER else review_mount_path
+    )
+    _seed_prior_role_session_with_service(
+        target_mount_path,
+        role=role,
+        service_name="opencode",
+        session_id="session-1",
+    )
+    if is_dirty:
+        (target_mount_path / "dirty.txt").write_text("dirty", encoding="utf-8")
+
+    plan = plan_issue_execution(
+        issue=_issue(),
+        deps=deps,
+        sha="sha-abc",
+        implement_mount_path=implement_mount_path,
+        review_mount_path=review_mount_path,
+        implement_done=False,
+        review_done=False,
+    )
+
+    step = (
+        plan.implementer_step if role is AgentRole.IMPLEMENTER else plan.reviewer_step
+    )
+    assert step.run_kind is RunKind.FRESH
+    if expected_interrupted_work:
+        assert expected_interrupted_work in step.prompt_scope_args["INTERRUPTED_WORK"]
+    else:
+        assert step.prompt_scope_args["INTERRUPTED_WORK"] == ""
 
 
 def test_plan_issue_execution_uses_carried_ready_slice_outcome_for_template_and_display(

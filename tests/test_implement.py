@@ -51,6 +51,21 @@ class _CrossServiceTestService:
         return state_dir.is_dir() and any(state_dir.iterdir())
 
 
+@dataclasses.dataclass
+class _FlakyResumableTestService:
+    name: str
+    resumable_by_call: list[bool]
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        relpath = f".pycastle-session/{role.value}/{self.name}"
+        return f"{relpath}/{namespace}" if namespace else relpath
+
+    def is_resumable(self, state_dir: Path) -> bool:
+        if self.resumable_by_call:
+            return self.resumable_by_call.pop(0)
+        return state_dir.is_dir() and any(state_dir.iterdir())
+
+
 def _seed_prior_role_session_with_service(
     worktree: Path,
     *,
@@ -841,6 +856,46 @@ def test_run_issue_same_service_resumable_session_keeps_interrupted_work_clause_
     fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
     cfg = Config(implement_override=StageOverride(service="opencode"))
     registry = ServiceRegistry({"opencode": _CrossServiceTestService("opencode")})
+    deps = _make_deps(tmp_path, fake, cfg=cfg, service_registry=registry)
+    deps.git_svc.is_working_tree_clean.return_value = False
+    deps.git_svc.create_worktree(tmp_path, worktree, branch, "sha-abc")
+    _seed_prior_role_session_with_service(
+        worktree=worktree,
+        role=AgentRole.IMPLEMENTER,
+        service_name="opencode",
+        session_id="opencode-legacy-session",
+    )
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    implementer_call = fake.calls[0]
+    assert implementer_call.prompt.scope_args["INTERRUPTED_WORK"] == ""
+    assert implementer_call.prompt.send_role_prompt_on_resume is False
+
+
+def test_run_issue_uses_planned_resume_prompt_when_exact_handoff_fact_changes_after_planning(
+    tmp_path,
+):
+    branch = "pycastle/issue-41"
+    worktree = worktree_identity(branch, tmp_path).path
+    issue = {
+        "number": 41,
+        "title": "Planned resume",
+        "body": "Issue body.",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    cfg = Config(implement_override=StageOverride(service="opencode"))
+    registry = ServiceRegistry(
+        {
+            "opencode": _FlakyResumableTestService(
+                "opencode",
+                resumable_by_call=[True, False],
+            )
+        }
+    )
     deps = _make_deps(tmp_path, fake, cfg=cfg, service_registry=registry)
     deps.git_svc.is_working_tree_clean.return_value = False
     deps.git_svc.create_worktree(tmp_path, worktree, branch, "sha-abc")

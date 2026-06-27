@@ -56,6 +56,7 @@ class IssueRoleStepPlan:
     outcome: StepOutcome
     role_name: RoleName
     stage: IssueStage
+    run_kind: RunKind
     work_body: str
     prompt_template: PromptTemplate
     prompt_scope_args: dict[str, str]
@@ -186,12 +187,16 @@ def _plan_step(
     skip_reason: str | None,
 ) -> IssueRoleStepPlan:
     role_name = _role_name(role)
-    prompt_scope_args = _scope_args_for_issue(
-        issue=issue,
-        branch=branch,
+    run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
         mount_path=mount_path,
         role=role,
         deps=deps,
+    )
+    prompt_scope_args = build_per_issue_scope_args(
+        issue,
+        branch=branch,
+        run_kind=run_kind,
+        is_dirty=interrupted_work_from_dirty_tree,
     )
     commit_fallback_subject = CommitFallbackSubject(
         commit_prefix=f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} #{issue['number']} - ",
@@ -203,6 +208,7 @@ def _plan_step(
             outcome="skip",
             role_name=role_name,
             stage=stage,
+            run_kind=run_kind,
             work_body=work_body,
             prompt_template=prompt_template,
             prompt_scope_args=prompt_scope_args,
@@ -224,6 +230,7 @@ def _plan_step(
             outcome="setup_failure",
             role_name=role_name,
             stage=stage,
+            run_kind=run_kind,
             work_body=work_body,
             prompt_template=prompt_template,
             prompt_scope_args=prompt_scope_args,
@@ -238,6 +245,7 @@ def _plan_step(
         outcome="run",
         role_name=role_name,
         stage=stage,
+        run_kind=run_kind,
         work_body=work_body,
         prompt_template=prompt_template,
         prompt_scope_args=prompt_scope_args,
@@ -260,27 +268,6 @@ def _resolved_stage_service_name(cfg: Config, role: AgentRole) -> str:
     if role is AgentRole.REVIEWER:
         return cfg.review_override.service
     raise RuntimeError(f"Unsupported role {role!r} for implement issue planning")
-
-
-def _scope_args_for_issue(
-    *,
-    issue: dict,
-    branch: str,
-    mount_path: Path,
-    role: AgentRole,
-    deps: ImplementIssuePlanDeps,
-) -> dict[str, str]:
-    run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
-        mount_path=mount_path,
-        role=role,
-        deps=deps,
-    )
-    return build_per_issue_scope_args(
-        issue,
-        branch=branch,
-        run_kind=run_kind,
-        is_dirty=interrupted_work_from_dirty_tree,
-    )
 
 
 def _prompt_run_state_for_role(
