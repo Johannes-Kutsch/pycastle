@@ -98,7 +98,7 @@ def _extract_legacy_hard_error_text(raw: str) -> str:
                 data = error.get("data")
                 if isinstance(data, dict) and data.get("message"):
                     error_text = str(data["message"])
-                elif error.get("message"):
+                elif not isinstance(data, dict) and error.get("message"):
                     error_text = str(error["message"])
     except (json.JSONDecodeError, TypeError):
         pass
