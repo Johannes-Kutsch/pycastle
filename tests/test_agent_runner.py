@@ -20,7 +20,6 @@ from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     PlannerOutput,
 )
-from pycastle.agents.protocol_reprompt import TemplateSpecificProtocolReprompt
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import AgentTimeoutError, UsageLimitError
@@ -1016,7 +1015,7 @@ def test_agent_runner_keeps_retry_loop_for_non_opencode_timeouts(
     } in status_display.remove_calls
 
 
-def test_agent_runner_uses_protocol_reprompt_planning_for_malformed_planner_output(
+def test_agent_runner_retries_malformed_planner_output_with_planner_specific_protocol_correction(
     tmp_path,
     monkeypatch,
 ):
@@ -1034,8 +1033,6 @@ def test_agent_runner_uses_protocol_reprompt_planning_for_malformed_planner_outp
     )
     status_display = RecordingStatusDisplay()
     runtime_client = _PlannerProtocolRetryRuntimeClient()
-    protocol_reprompt_calls: list[dict[str, object]] = []
-    shape_render_calls: list[tuple[PromptTemplate, dict[str, str]]] = []
 
     invocation = PromptInvocation(
         template=PromptTemplate.PLAN,
@@ -1044,34 +1041,6 @@ def test_agent_runner_uses_protocol_reprompt_planning_for_malformed_planner_outp
             "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 1, "title": "Fix A"}]',
         },
     )
-
-    def _fake_plan_protocol_reprompt(
-        *,
-        role: AgentRole,
-        invocation: PromptInvocation,
-        parser_error: str,
-        render_expected_output_shape,
-    ):
-        expected_shape = render_expected_output_shape(invocation)
-        protocol_reprompt_calls.append(
-            {
-                "role": role,
-                "template": invocation.template,
-                "scope_args": invocation.scope_args,
-                "parser_error": parser_error,
-                "expected_shape": expected_shape,
-            }
-        )
-        return TemplateSpecificProtocolReprompt(
-            message=f"retry via module\n{parser_error}\n{expected_shape}"
-        )
-
-    def _record_expected_output_shape(
-        template: PromptTemplate,
-        scope_args: dict[str, str],
-    ) -> str:
-        shape_render_calls.append((template, scope_args))
-        return "<plan>{...}</plan>"
 
     monkeypatch.setattr(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
@@ -1090,13 +1059,13 @@ def test_agent_runner_uses_protocol_reprompt_planning_for_malformed_planner_outp
         lambda _self: runtime_client,
     )
     monkeypatch.setattr(
-        "pycastle.agents.protocol_reprompt.plan_protocol_reprompt",
-        _fake_plan_protocol_reprompt,
-    )
-    monkeypatch.setattr(
         runner._renderer,
         "render_expected_output_shape",
-        _record_expected_output_shape,
+        lambda template, scope_args: (
+            "<plan>{...}</plan>"
+            if template is PromptTemplate.PLAN and scope_args is invocation.scope_args
+            else ""
+        ),
     )
 
     result = asyncio.run(
@@ -1117,21 +1086,12 @@ def test_agent_runner_uses_protocol_reprompt_planning_for_malformed_planner_outp
     assert result == PlannerOutput(issues=[], blocked=[])
     assert runtime_client.prompts == [
         "initial planner prompt",
-        "retry via module\n"
+        "Your last response did not include the required protocol output.\n"
+        "Please review the task requirements and try again, making sure to include the required output tag.\n"
+        "The parser reported the following error:\n"
         "Plan JSON must be an object, got str.\n"
         'Output tail: \'<plan>"{\\\\"issues\\\\": []}"</plan>\'\n'
+        "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).\n"
+        "Use this Planner output shape exactly:\n"
         "<plan>{...}</plan>",
     ]
-    assert protocol_reprompt_calls == [
-        {
-            "role": AgentRole.PLANNER,
-            "template": PromptTemplate.PLAN,
-            "scope_args": invocation.scope_args,
-            "parser_error": (
-                "Plan JSON must be an object, got str.\n"
-                'Output tail: \'<plan>"{\\\\"issues\\\\": []}"</plan>\''
-            ),
-            "expected_shape": "<plan>{...}</plan>",
-        }
-    ]
-    assert shape_render_calls == [(PromptTemplate.PLAN, invocation.scope_args)]

@@ -6,7 +6,7 @@ from pycastle.agents.protocol_reprompt import (
     UnsupportedProtocolReprompt,
     plan_protocol_reprompt,
 )
-from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 
 
@@ -119,6 +119,33 @@ def test_plan_protocol_reprompt_returns_planner_specific_message():
             ]
         )
     )
+
+
+def test_plan_protocol_reprompt_calls_expected_output_shape_callback_with_original_invocation():
+    scope_args = {
+        "ALL_OPEN_ISSUES_JSON": '[{"number": 1, "title": "Fix A"}]',
+        "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 1, "title": "Fix A"}]',
+    }
+    invocation = PromptInvocation(
+        template=PromptTemplate.PLAN,
+        scope_args=scope_args,
+    )
+    seen: list[object] = []
+
+    plan = plan_protocol_reprompt(
+        role=AgentRole.PLANNER,
+        invocation=invocation,
+        parser_error="invalid json",
+        render_expected_output_shape=lambda received_invocation: (
+            seen.append(received_invocation) or "<plan>{...}</plan>"
+        ),
+    )
+
+    assert isinstance(plan, TemplateSpecificProtocolReprompt)
+    assert len(seen) == 1
+    assert seen[0] is invocation
+    assert seen[0].template is PromptTemplate.PLAN
+    assert seen[0].scope_args is scope_args
 
 
 def test_plan_protocol_reprompt_returns_template_specific_message_for_host_check_issue():
