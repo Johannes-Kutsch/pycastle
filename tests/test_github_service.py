@@ -1690,6 +1690,104 @@ def test_close_issue_with_parents_ignores_just_closed_child_when_checking_siblin
     transport.assert_exhausted()
 
 
+def test_close_issue_with_parents_warns_and_returns_when_parent_lookup_fails():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/5",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/5",
+                error=GithubHttpTransportAuthError(
+                    "boom",
+                    status=502,
+                    body='{"message":"bad gateway"}',
+                ),
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.warns(UserWarning, match="parent"):
+        svc.close_issue_with_parents(5)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}
+        ),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/5", None),
+    ]
+    transport.assert_exhausted()
+
+
+def test_close_issue_with_parents_warns_and_returns_when_sub_issue_query_fails():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/5",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/50/sub_issues",
+                error=GithubHttpTransportAuthError(
+                    "boom",
+                    status=502,
+                    body='{"message":"bad gateway"}',
+                ),
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.warns(UserWarning, match="parent"):
+        svc.close_issue_with_parents(5)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}
+        ),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/5", None),
+        _GithubTransportRequest("GET", "/repos/owner/repo/issues/50/sub_issues", None),
+    ]
+    transport.assert_exhausted()
+
+
+def test_close_issue_with_parents_propagates_child_close_failure():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/5",
+                data={"state": "closed"},
+                error=GithubHttpTransportAuthError(
+                    "boom",
+                    status=502,
+                    body='{"message":"bad gateway"}',
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAuthError, match="boom"):
+        svc.close_issue_with_parents(5)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "PATCH", "/repos/owner/repo/issues/5", {"state": "closed"}
+        )
+    ]
+    transport.assert_exhausted()
+
+
 # ── get_open_issue_numbers ───────────────────────────────────────────────────
 
 

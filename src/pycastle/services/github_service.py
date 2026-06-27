@@ -340,12 +340,30 @@ class GithubService:
             data={"sub_issue_id": child_number},
         )
 
+    def _warn_parent_cascade_failure(
+        self, number: int, exc: GithubServiceError
+    ) -> None:
+        warnings.warn(
+            f"Unable to continue parent cascade after closing issue #{number}: {exc}",
+            UserWarning,
+            stacklevel=3,
+        )
+
     def close_issue_with_parents(self, number: int) -> None:
         self.close_issue(number)
-        parent = self.get_parent(number)
+        try:
+            parent = self.get_parent(number)
+        except GithubServiceError as exc:
+            self._warn_parent_cascade_failure(number, exc)
+            return
         if parent is None:
             return
-        if self.get_open_sub_issues(parent):
+        try:
+            open_sub_issues = self.get_open_sub_issues(parent)
+        except GithubServiceError as exc:
+            self._warn_parent_cascade_failure(number, exc)
+            return
+        if open_sub_issues:
             return
         self.close_issue_with_parents(parent)
 
