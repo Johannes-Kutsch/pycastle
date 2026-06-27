@@ -966,7 +966,7 @@ class AgentRunner:
 
         def _on_live_output(event: Any) -> None:
             runner._status_display.reset_idle_timer(runner.name)
-            if getattr(event, "event_type", None) == "agent_message":
+            if getattr(event, "type", None) == "agent_message":
                 display_message = getattr(event, "display_message", "")
                 if display_message:
                     runner._status_display.print(runner.name, display_message)
