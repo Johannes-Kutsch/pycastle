@@ -3,7 +3,18 @@ from unittest.mock import MagicMock
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.config import Config, StageOverride
-from pycastle.iteration.implement_issue_plan import plan_issue_execution
+from pycastle.iteration.implement_issue_plan import (
+    plan_issue_execution,
+    plan_ready_issue_slice,
+)
+from pycastle.issue_readiness import (
+    IssueReadiness,
+    IssueReadinessKind,
+    ReadyIssueOutcome,
+    SliceMode,
+    WellFormed,
+    WellFormedBody,
+)
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService, ServiceRegistry
 from pycastle.session import RoleSession
@@ -213,3 +224,80 @@ def test_plan_issue_execution_marks_interrupted_work_for_cross_service_dirty_rol
         in (plan.implementer_step.prompt_scope_args["INTERRUPTED_WORK"])
     )
     assert plan.reviewer_step.prompt_scope_args["INTERRUPTED_WORK"] == ""
+
+
+def test_plan_issue_execution_uses_carried_ready_slice_outcome_for_template_and_display(
+    tmp_path,
+):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ReadyIssueOutcome(
+            display_name="docs",
+            template=PromptTemplate.IMPLEMENT_DOCS,
+        ),
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        **_issue(),
+        "labels": ["behavior-slice"],
+        "readiness": readiness,
+    }
+
+    plan = plan_issue_execution(
+        issue=issue,
+        deps=deps,
+        sha="sha-abc",
+        implement_mount_path=implement_mount_path,
+        review_mount_path=review_mount_path,
+        implement_done=False,
+        review_done=False,
+    )
+
+    assert plan.slice_mode_display_name == "docs"
+    assert plan.implementer_step.prompt_template == PromptTemplate.IMPLEMENT_DOCS
+    assert (
+        plan.implementer_step.work_body
+        == 'implementing docs "Scaffold implement issue execution planning module"'
+    )
+    assert (
+        plan.reviewer_step.work_body
+        == 'reviewing docs "Scaffold implement issue execution planning module"'
+    )
+
+
+def test_plan_ready_issue_slice_returns_prompt_and_shared_display_bodies_from_carried_readiness():
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=None,
+        ready=ReadyIssueOutcome(
+            display_name="docs",
+            template=PromptTemplate.IMPLEMENT_DOCS,
+        ),
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        **_issue(),
+        "labels": ["behavior-slice"],
+        "readiness": readiness,
+    }
+
+    ready_slice = plan_ready_issue_slice(issue, Config())
+
+    assert ready_slice.display_name == "docs"
+    assert ready_slice.implement_prompt_template == PromptTemplate.IMPLEMENT_DOCS
+    assert (
+        ready_slice.implement_work_body
+        == 'implementing docs "Scaffold implement issue execution planning module"'
+    )
+    assert (
+        ready_slice.review_work_body
+        == 'reviewing docs "Scaffold implement issue execution planning module"'
+    )

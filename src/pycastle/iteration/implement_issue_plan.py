@@ -74,6 +74,31 @@ class IssueExecutionPlan:
     reviewer_step: IssueRoleStepPlan
 
 
+@dataclasses.dataclass(frozen=True)
+class ReadyIssueSlicePlan:
+    display_name: str
+    implement_prompt_template: PromptTemplate
+    implement_work_body: str
+    review_work_body: str
+
+
+def plan_ready_issue_slice(issue: dict, cfg: Config) -> ReadyIssueSlicePlan:
+    ready = ready_slice_outcome_for_issue(issue, cfg)
+    if ready is None:
+        raise RuntimeError(
+            f"Issue #{issue['number']} is not implement-ready: missing a ready "
+            "slice-mode selection."
+        )
+
+    issue_title = issue["title"]
+    return ReadyIssueSlicePlan(
+        display_name=ready.display_name,
+        implement_prompt_template=ready.template,
+        implement_work_body=f'implementing {ready.display_name} "{issue_title}"',
+        review_work_body=f'reviewing {ready.display_name} "{issue_title}"',
+    )
+
+
 def plan_issue_execution(
     *,
     issue: dict,
@@ -84,28 +109,22 @@ def plan_issue_execution(
     implement_done: bool,
     review_done: bool,
 ) -> IssueExecutionPlan:
-    ready = ready_slice_outcome_for_issue(issue, deps.cfg)
-    if ready is None:
-        raise RuntimeError(
-            f"Issue #{issue['number']} is not implement-ready: missing a ready "
-            "slice-mode selection."
-        )
-
+    ready_slice = plan_ready_issue_slice(issue, deps.cfg)
     branch = issue_branch(issue["number"])
     return IssueExecutionPlan(
         issue_number=issue["number"],
         issue_title=issue["title"],
         branch=branch,
         planner_sha=sha,
-        slice_mode_display_name=ready.display_name,
+        slice_mode_display_name=ready_slice.display_name,
         implementer_step=_plan_step(
             issue=issue,
             deps=deps,
             branch=branch,
             role=AgentRole.IMPLEMENTER,
             stage="pre-implementation",
-            prompt_template=ready.template,
-            work_body=f'implementing {ready.display_name} "{issue["title"]}"',
+            prompt_template=ready_slice.implement_prompt_template,
+            work_body=ready_slice.implement_work_body,
             mount_path=implement_mount_path,
             skip_reason=(
                 "review stage already complete"
@@ -122,7 +141,7 @@ def plan_issue_execution(
             role=AgentRole.REVIEWER,
             stage="pre-review",
             prompt_template=PromptTemplate.REVIEW,
-            work_body=f'reviewing {ready.display_name} "{issue["title"]}"',
+            work_body=ready_slice.review_work_body,
             mount_path=review_mount_path,
             skip_reason="review stage already complete" if review_done else None,
         ),
