@@ -172,6 +172,7 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_host_check
 
 def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes():
     seen: list[PromptInvocation] = []
+    invocations: list[PromptInvocation] = []
 
     for role, template, scope_key, scope_value in (
         (AgentRole.MERGER, PromptTemplate.MERGE, "BRANCHES", "main,feature"),
@@ -187,6 +188,7 @@ def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes(
             scope_args=_scope_args_for(template),
             send_role_prompt_on_resume=True,
         )
+        invocations.append(invocation)
 
         plan = plan_protocol_reprompt(
             role=role,
@@ -200,7 +202,6 @@ def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes(
         )
 
         assert isinstance(plan, TemplateSpecificProtocolReprompt)
-        assert plan.template is template
         assert plan.message == "\n".join(
             [
                 "Your last response did not include the required protocol output.",
@@ -212,18 +213,11 @@ def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes(
             ]
         )
 
-    assert seen == [
-        PromptInvocation(
-            template=PromptTemplate.MERGE,
-            scope_args=_scope_args_for(PromptTemplate.MERGE),
-            send_role_prompt_on_resume=True,
-        ),
-        PromptInvocation(
-            template=PromptTemplate.DIVERGENCE_RESOLVE,
-            scope_args=_scope_args_for(PromptTemplate.DIVERGENCE_RESOLVE),
-            send_role_prompt_on_resume=True,
-        ),
-    ]
+    assert seen == invocations
+    assert seen[0] is invocations[0]
+    assert seen[0].scope_args is invocations[0].scope_args
+    assert seen[1] is invocations[1]
+    assert seen[1].scope_args is invocations[1].scope_args
 
 
 def test_plan_protocol_reprompt_returns_template_specific_message_for_work_family_templates():

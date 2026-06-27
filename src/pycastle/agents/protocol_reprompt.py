@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from ..prompts.dispatch import PromptInvocation
@@ -31,7 +31,6 @@ class GenericProtocolReprompt:
 @dataclass(frozen=True)
 class TemplateSpecificProtocolReprompt:
     message: str
-    template: PromptTemplate | None = field(default=None, compare=False)
     kind: Literal["template_specific"] = "template_specific"
 
 
@@ -99,7 +98,6 @@ def plan_protocol_reprompt(
 
     if role is AgentRole.PLANNER:
         return TemplateSpecificProtocolReprompt(
-            template=invocation.template,
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
                 expected_shape=render_expected_output_shape(invocation),
@@ -113,7 +111,6 @@ def plan_protocol_reprompt(
 
     if invocation.template in _COORDINATION_PROTOCOL_TEMPLATES:
         return TemplateSpecificProtocolReprompt(
-            template=invocation.template,
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
                 expected_shape=render_expected_output_shape(invocation),
@@ -122,7 +119,6 @@ def plan_protocol_reprompt(
 
     if invocation.template in _HOST_PARSED_PROTOCOL_TEMPLATES:
         return TemplateSpecificProtocolReprompt(
-            template=invocation.template,
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
                 expected_shape=render_expected_output_shape(invocation),
@@ -131,7 +127,6 @@ def plan_protocol_reprompt(
 
     if invocation.template in _IMPROVE_PROTOCOL_TEMPLATES:
         return TemplateSpecificProtocolReprompt(
-            template=invocation.template,
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
                 expected_shape=render_expected_output_shape(invocation),
