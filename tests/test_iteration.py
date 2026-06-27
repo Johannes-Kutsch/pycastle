@@ -4460,6 +4460,63 @@ def test_run_iteration_keeps_generic_codex_agent_credential_failure_without_clas
     github_svc.create_issue_in.assert_not_called()
 
 
+def test_run_iteration_uses_codex_error_message_from_error_envelope_in_hard_error_title(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = (
+        '{"type": "error", "error": {"type": "invalid_request_error", '
+        '"message": "Bad request: invalid model"}}'
+    )
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=400, service_name="codex")
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    mock_file.assert_called_once()
+    title, body, _labels = mock_file.call_args[0]
+    assert title == "[pycastle] Codex API 400: Bad request: invalid model"
+    assert raw_line in body
+    github_svc.create_issue_in.assert_not_called()
+
+
+def test_run_iteration_keeps_raw_invalid_json_hard_error_title(
+    tmp_path, git_svc, github_svc, logger
+):
+    raw_line = "Bad request: invalid model"
+
+    async def agent_fn(req: RunRequest):
+        if req.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
+            )
+        raise HardAgentError(message=raw_line, status_code=400, service_name="codex")
+
+    with patch("pycastle.iteration.auto_file_issue") as mock_file:
+        mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
+        deps = _make_deps(
+            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
+        )
+        result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHardApiError)
+    mock_file.assert_called_once()
+    title, body, _labels = mock_file.call_args[0]
+    assert title == "[pycastle] Codex API 400: Bad request: invalid model"
+    assert raw_line in body
+    github_svc.create_issue_in.assert_not_called()
+
+
 def test_run_iteration_keeps_legacy_raw_title_for_unrelated_top_level_message_hard_error(
     tmp_path, git_svc, github_svc, logger
 ):
