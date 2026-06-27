@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -27,8 +28,13 @@ from pycastle.iteration.implement import (
     pick_slice_mode,
     run_issue,
 )
+from pycastle.iteration.implement_issue_plan import (
+    IssueExecutionPlan,
+    IssueRoleStepPlan,
+)
 from pycastle.services import GitService, GithubService
 from pycastle.services import ServiceRegistry
+from pycastle.session import RunKind
 from tests.support import (
     FakeAgentRunner,
     RecordingLogger,
@@ -1091,6 +1097,105 @@ def test_run_issue_uses_carried_ready_outcome_for_template_and_work_bodies(tmp_p
     assert fake.calls[0].prompt.template == PromptTemplate.IMPLEMENT_DOCS
     assert fake.calls[0].work_body == 'implementing docs "Update ADR"'
     assert fake.calls[1].work_body == 'reviewing docs "Update ADR"'
+
+
+def test_run_issue_projects_run_requests_from_issue_execution_plan(
+    tmp_path, monkeypatch
+):
+    issue = {
+        "number": 52,
+        "title": "Project request fields from plan",
+        "body": "Issue body.",
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    fake = FakeAgentRunner([CompletionOutput(), CompletionOutput()])
+    deps = _make_deps(tmp_path, fake)
+    planned_implement_args = {
+        "ISSUE_NUMBER": "52",
+        "BRANCH": "planned-branch",
+        "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": issue["body"],
+        "ISSUE_COMMENTS": "",
+        "INTERRUPTED_WORK": "planned implement interrupted work",
+    }
+    planned_review_args = {
+        "ISSUE_NUMBER": "52",
+        "BRANCH": "planned-branch",
+        "ISSUE_TITLE": issue["title"],
+        "ISSUE_BODY": issue["body"],
+        "ISSUE_COMMENTS": "",
+        "INTERRUPTED_WORK": "planned review interrupted work",
+    }
+    issue_plan = IssueExecutionPlan(
+        issue_number=issue["number"],
+        issue_title=issue["title"],
+        branch="pycastle/issue-52",
+        planner_sha="sha-abc",
+        slice_mode_display_name="behavior",
+        issue_outcome="incomplete",
+        implementer_step=IssueRoleStepPlan(
+            outcome="run",
+            role_name="implementer",
+            role=AgentRole.IMPLEMENTER,
+            stage="planned-implement-stage",  # type: ignore[arg-type]
+            run_kind=RunKind.RESUME,
+            work_body='planned implement work body "docs"',
+            prompt_template=PromptTemplate.IMPLEMENT_DOCS,
+            prompt_scope_args=planned_implement_args,
+            model="planned-implement-model",
+            effort="planned-implement-effort",
+            service="planned-implement-service",
+            mount_setup_failure=None,
+            commit_fallback_subject=None,
+        ),
+        reviewer_step=IssueRoleStepPlan(
+            outcome="run",
+            role_name="reviewer",
+            role=AgentRole.REVIEWER,
+            stage="planned-review-stage",  # type: ignore[arg-type]
+            run_kind=RunKind.FRESH,
+            work_body='planned review work body "docs"',
+            prompt_template=PromptTemplate.IMPLEMENT_REFACTOR,
+            prompt_scope_args=planned_review_args,
+            model="planned-review-model",
+            effort="planned-review-effort",
+            service="planned-review-service",
+            mount_setup_failure=None,
+            commit_fallback_subject=None,
+        ),
+    )
+
+    def _planned_issue_execution_from_worktree(**_: Any) -> IssueExecutionPlan:
+        return issue_plan
+
+    monkeypatch.setattr(
+        "pycastle.iteration.implement.plan_issue_execution_from_worktree",
+        _planned_issue_execution_from_worktree,
+    )
+
+    asyncio.run(run_issue(issue, deps, "sha-abc"))
+
+    implementer_call, reviewer_call = fake.calls
+    assert implementer_call.name == "Implement Agent #52"
+    assert implementer_call.role is AgentRole.IMPLEMENTER
+    assert implementer_call.stage == "planned-implement-stage"
+    assert implementer_call.prompt.template == PromptTemplate.IMPLEMENT_DOCS
+    assert implementer_call.prompt.scope_args == planned_implement_args
+    assert implementer_call.model == "planned-implement-model"
+    assert implementer_call.effort == "planned-implement-effort"
+    assert implementer_call.service == "planned-implement-service"
+    assert implementer_call.work_body == 'planned implement work body "docs"'
+
+    assert reviewer_call.name == "Review Agent #52"
+    assert reviewer_call.role is AgentRole.REVIEWER
+    assert reviewer_call.stage == "planned-review-stage"
+    assert reviewer_call.prompt.template == PromptTemplate.IMPLEMENT_REFACTOR
+    assert reviewer_call.prompt.scope_args == planned_review_args
+    assert reviewer_call.model == "planned-review-model"
+    assert reviewer_call.effort == "planned-review-effort"
+    assert reviewer_call.service == "planned-review-service"
+    assert reviewer_call.work_body == 'planned review work body "docs"'
 
 
 # ── run_issue: worktree lifecycle ─────────────────────────────────────────────

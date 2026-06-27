@@ -105,6 +105,7 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     assert plan.implementer_step.outcome == "run"
     assert plan.implementer_step.run_kind is RunKind.FRESH
     assert plan.implementer_step.role_name == "implementer"
+    assert plan.implementer_step.role is AgentRole.IMPLEMENTER
     assert plan.implementer_step.stage == "pre-implementation"
     assert (
         plan.implementer_step.work_body
@@ -114,6 +115,9 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     assert plan.implementer_step.prompt_scope_args["ISSUE_NUMBER"] == "1909"
     assert plan.implementer_step.prompt_scope_args["BRANCH"] == "pycastle/issue-1909"
     assert plan.implementer_step.prompt_scope_args["INTERRUPTED_WORK"] == ""
+    assert plan.implementer_step.model == deps.cfg.implement_override.model
+    assert plan.implementer_step.effort == deps.cfg.implement_override.effort
+    assert plan.implementer_step.service == deps.cfg.implement_override.service
     assert plan.implementer_step.mount_setup_failure is None
     assert (
         plan.implementer_step.commit_fallback_subject.commit_prefix
@@ -127,6 +131,7 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     assert plan.reviewer_step.outcome == "run"
     assert plan.reviewer_step.run_kind is RunKind.FRESH
     assert plan.reviewer_step.role_name == "reviewer"
+    assert plan.reviewer_step.role is AgentRole.REVIEWER
     assert plan.reviewer_step.stage == "pre-review"
     assert (
         plan.reviewer_step.work_body
@@ -135,6 +140,9 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     assert plan.reviewer_step.prompt_template == PromptTemplate.REVIEW
     assert plan.reviewer_step.prompt_scope_args["BRANCH"] == "pycastle/issue-1909"
     assert plan.reviewer_step.prompt_scope_args["INTERRUPTED_WORK"] == ""
+    assert plan.reviewer_step.model == deps.cfg.review_override.model
+    assert plan.reviewer_step.effort == deps.cfg.review_override.effort
+    assert plan.reviewer_step.service == deps.cfg.review_override.service
     assert plan.reviewer_step.mount_setup_failure is None
     assert plan.reviewer_step.commit_fallback_subject.commit_prefix == "Review #1909 - "
 
