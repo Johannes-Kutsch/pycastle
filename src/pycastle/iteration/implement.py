@@ -31,7 +31,7 @@ from ..infrastructure.worktree import (
     worktree_identity,
 )
 from ._deps import Logger
-from .implement_issue_plan import plan_issue_execution_from_worktree
+from .implement_issue_plan import IssueRoleStepPlan, plan_issue_execution_from_worktree
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
@@ -77,6 +77,35 @@ class ImplementResult:
     usage_limit_is_permanent: bool = False
 
 
+def _request_name(step: IssueRoleStepPlan, issue_number: int) -> str:
+    prefix = "Implement" if step.role_name == "implementer" else "Review"
+    return f"{prefix} Agent #{issue_number}"
+
+
+def _build_run_request(
+    *,
+    issue: dict,
+    step: IssueRoleStepPlan,
+    mount_path: Path,
+    status_display: StatusDisplay,
+    token: CancellationToken,
+) -> RunRequest:
+    return RunRequest(
+        name=_request_name(step, issue["number"]),
+        prompt=build_prompt_invocation(step.prompt_template, step.prompt_scope_args),
+        mount_path=mount_path,
+        role=step.role,
+        model=step.model,
+        effort=step.effort,
+        service=step.service,
+        stage=step.stage,
+        status_display=status_display,
+        issue_title=issue["title"],
+        work_body=step.work_body,
+        token=token,
+    )
+
+
 async def run_issue(
     issue: dict,
     deps: _ImplementDeps,
@@ -90,7 +119,7 @@ async def run_issue(
 ) -> dict:
     _branch = branch_for(issue["number"])
     _token = token if token is not None else CancellationToken()
-    _slice_mode, _impl_template = _resolve_slice(issue, deps.cfg)
+    _resolve_slice(issue, deps.cfg)
 
     _implement_started = False
     _review_started = False
@@ -155,20 +184,11 @@ async def run_issue(
                         implementer_step.mount_setup_failure.error_message,
                     )
                 result = await _bounded_run_agent(
-                    RunRequest(
-                        name=f"Implement Agent #{issue['number']}",
-                        prompt=build_prompt_invocation(
-                            _impl_template, implementer_step.prompt_scope_args
-                        ),
+                    _build_run_request(
+                        issue=issue,
+                        step=implementer_step,
                         mount_path=impl_mount_path,
-                        role=AgentRole.IMPLEMENTER,
-                        model=deps.cfg.implement_override.model,
-                        effort=deps.cfg.implement_override.effort,
-                        service=deps.cfg.implement_override.service,
-                        stage="pre-implementation",
                         status_display=deps.status_display,
-                        issue_title=issue["title"],
-                        work_body=f'implementing {_slice_mode} "{issue["title"]}"',
                         token=_token,
                     )
                 )
@@ -199,21 +219,11 @@ async def run_issue(
                         reviewer_step.mount_setup_failure.error_message,
                     )
                 review_result = await _bounded_run_agent(
-                    RunRequest(
-                        name=f"Review Agent #{issue['number']}",
-                        prompt=build_prompt_invocation(
-                            PromptTemplate.REVIEW,
-                            reviewer_step.prompt_scope_args,
-                        ),
+                    _build_run_request(
+                        issue=issue,
+                        step=reviewer_step,
                         mount_path=review_mount_path,
-                        role=AgentRole.REVIEWER,
-                        model=deps.cfg.review_override.model,
-                        effort=deps.cfg.review_override.effort,
-                        service=deps.cfg.review_override.service,
-                        stage="pre-review",
                         status_display=deps.status_display,
-                        issue_title=issue["title"],
-                        work_body=f'reviewing {_slice_mode} "{issue["title"]}"',
                         token=_token,
                     )
                 )

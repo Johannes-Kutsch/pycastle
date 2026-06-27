@@ -57,11 +57,15 @@ class MountSetupFailure:
 class IssueRoleStepPlan:
     outcome: StepOutcome
     role_name: RoleName
+    role: AgentRole
     stage: IssueStage
     run_kind: RunKind
     work_body: str
     prompt_template: PromptTemplate
     prompt_scope_args: dict[str, str]
+    model: str
+    effort: str
+    service: str
     mount_setup_failure: MountSetupFailure | None
     commit_fallback_subject: CommitFallbackSubject | None
     skip_reason: str | None = None
@@ -209,11 +213,15 @@ def _plan_step(
         return IssueRoleStepPlan(
             outcome="skip",
             role_name=role_name,
+            role=role,
             stage=stage,
             run_kind=run_kind,
             work_body=work_body,
             prompt_template=prompt_template,
             prompt_scope_args=prompt_scope_args,
+            model=_resolved_stage_model(deps.cfg, role),
+            effort=_resolved_stage_effort(deps.cfg, role),
+            service=_resolved_stage_service_name(deps.cfg, role),
             mount_setup_failure=None,
             commit_fallback_subject=commit_fallback_subject,
             skip_reason=skip_reason,
@@ -231,6 +239,7 @@ def _plan_step(
         return IssueRoleStepPlan(
             outcome="setup_failure",
             role_name=role_name,
+            role=role,
             stage=stage,
             run_kind=RunKind.FRESH,
             work_body=work_body,
@@ -241,6 +250,9 @@ def _plan_step(
                 run_kind=RunKind.FRESH,
                 is_dirty=False,
             ),
+            model=_resolved_stage_model(deps.cfg, role),
+            effort=_resolved_stage_effort(deps.cfg, role),
+            service=_resolved_stage_service_name(deps.cfg, role),
             mount_setup_failure=MountSetupFailure(
                 role_value=mount_decision.role or role.value,
                 rejection_code=mount_decision.rejection_code,
@@ -264,11 +276,15 @@ def _plan_step(
     return IssueRoleStepPlan(
         outcome="run",
         role_name=role_name,
+        role=role,
         stage=stage,
         run_kind=run_kind,
         work_body=work_body,
         prompt_template=prompt_template,
         prompt_scope_args=prompt_scope_args,
+        model=_resolved_stage_model(deps.cfg, role),
+        effort=_resolved_stage_effort(deps.cfg, role),
+        service=_resolved_stage_service_name(deps.cfg, role),
         mount_setup_failure=None,
         commit_fallback_subject=commit_fallback_subject,
     )
@@ -287,6 +303,22 @@ def _resolved_stage_service_name(cfg: Config, role: AgentRole) -> str:
         return cfg.implement_override.service
     if role is AgentRole.REVIEWER:
         return cfg.review_override.service
+    raise RuntimeError(f"Unsupported role {role!r} for implement issue planning")
+
+
+def _resolved_stage_model(cfg: Config, role: AgentRole) -> str:
+    if role is AgentRole.IMPLEMENTER:
+        return cfg.implement_override.model
+    if role is AgentRole.REVIEWER:
+        return cfg.review_override.model
+    raise RuntimeError(f"Unsupported role {role!r} for implement issue planning")
+
+
+def _resolved_stage_effort(cfg: Config, role: AgentRole) -> str:
+    if role is AgentRole.IMPLEMENTER:
+        return cfg.implement_override.effort
+    if role is AgentRole.REVIEWER:
+        return cfg.review_override.effort
     raise RuntimeError(f"Unsupported role {role!r} for implement issue planning")
 
 
