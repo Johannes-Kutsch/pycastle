@@ -191,3 +191,18 @@ def test_agent_runner_suppresses_non_agent_live_output_events(tmp_path, monkeypa
     assert ("print", "Implement Agent #1898", "thread.started", None) not in (
         status_display.calls
     )
+
+
+def test_agent_runner_skips_blank_live_agent_message_events(tmp_path, monkeypatch):
+    result, status_display = _run_agent_with_live_event(
+        tmp_path,
+        monkeypatch,
+        SimpleNamespace(type="agent_message", display_message=""),
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert ("reset_idle_timer", "Implement Agent #1898") in status_display.calls
+    assert not any(
+        call[0] == "print" and call[1] == "Implement Agent #1898"
+        for call in status_display.calls
+    )
