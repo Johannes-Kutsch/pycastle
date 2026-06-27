@@ -560,31 +560,26 @@ class AgentRunner:
             if issue_number_str.isdigit():
                 color_key = int(issue_number_str)
 
-        def _render_expected_output_shape(
-            prompt_invocation: PromptInvocation,
-        ) -> str:
+        def _render_expected_output_shape() -> str:
             return self._renderer.render_expected_output_shape(
-                prompt_invocation.template,
-                prompt_invocation.scope_args,
+                invocation.template,
+                invocation.scope_args,
             )
 
-        def _planned_reprompt_message(parser_error: str | None) -> str:
-            reprompt_plan = protocol_reprompt.plan_protocol_reprompt(
+        def _planned_protocol_reprompt(
+            parser_error: str | None,
+        ) -> protocol_reprompt.ProtocolRepromptPlan:
+            return protocol_reprompt.plan_protocol_reprompt(
                 role=request.role,
                 invocation=invocation,
                 parser_error=parser_error if parser_error is not None else "unknown",
                 render_expected_output_shape=_render_expected_output_shape,
             )
-            if isinstance(reprompt_plan, protocol_reprompt.UnsupportedProtocolReprompt):
-                return protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
-            return reprompt_plan.message
-
-        reprompt_message: str | Callable[[str | None], str] = _planned_reprompt_message
 
         return await self._run_with_runtime_client(
             request=request,
             service=service,
-            reprompt_message=reprompt_message,
+            protocol_reprompt_plan=_planned_protocol_reprompt,
             color_key=color_key,
         )
 
@@ -593,7 +588,9 @@ class AgentRunner:
         *,
         request: RunRequest,
         service: AgentService,
-        reprompt_message: str | Callable[[str | None], str],
+        protocol_reprompt_plan: Callable[
+            [str | None], protocol_reprompt.ProtocolRepromptPlan
+        ],
         color_key: int | None,
     ) -> AgentOutput:
         from ..iteration._rows import status_row
@@ -691,7 +688,7 @@ class AgentRunner:
                     resolved_model=resolved_model,
                     resolved_effort=resolved_effort,
                     status_display=status_display,
-                    reprompt_message=reprompt_message,
+                    protocol_reprompt_plan=protocol_reprompt_plan,
                 )
                 row.close("finished")
                 return output
@@ -713,7 +710,9 @@ class AgentRunner:
         resolved_model: str,
         resolved_effort: str,
         status_display: StatusDisplay,
-        reprompt_message: str | Callable[[str | None], str],
+        protocol_reprompt_plan: Callable[
+            [str | None], protocol_reprompt.ProtocolRepromptPlan
+        ],
     ) -> AgentOutput:
         prompt = await self._render_runtime_prompt(
             request=request,
@@ -801,10 +800,14 @@ class AgentRunner:
                             session_store=role_session.path,
                             agent_invocation_log_path=getattr(runner, "log_path", None),
                         ) from exc
+                    reprompt = protocol_reprompt_plan(str(exc))
                     current_prompt = (
-                        reprompt_message
-                        if isinstance(reprompt_message, str)
-                        else reprompt_message(str(exc))
+                        protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
+                        if isinstance(
+                            reprompt,
+                            protocol_reprompt.UnsupportedProtocolReprompt,
+                        )
+                        else reprompt.message
                     )
                     current_run_kind = RunKind.RESUME
                     continue

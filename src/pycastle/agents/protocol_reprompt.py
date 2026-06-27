@@ -15,7 +15,7 @@ GENERIC_PROTOCOL_REPROMPT_MESSAGE = (
     "include the required output tag."
 )
 
-ExpectedOutputShapeRenderer: TypeAlias = Callable[[PromptInvocation], str]
+ExpectedOutputShapeRenderer: TypeAlias = Callable[[], str]
 
 
 @dataclass(frozen=True)
@@ -110,7 +110,7 @@ def plan_protocol_reprompt(
         return TemplateSpecificProtocolReprompt(
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
-                expected_shape=render_expected_output_shape(invocation),
+                expected_shape=render_expected_output_shape(),
                 retry_instruction=(
                     "On retry, return a raw JSON object in a `<plan>` tag "
                     "(do not quote or escape the JSON)."
@@ -123,7 +123,7 @@ def plan_protocol_reprompt(
         return TemplateSpecificProtocolReprompt(
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
-                expected_shape=render_expected_output_shape(invocation),
+                expected_shape=render_expected_output_shape(),
             ),
         )
 
@@ -136,7 +136,7 @@ def plan_protocol_reprompt(
         return TemplateSpecificProtocolReprompt(
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
-                expected_shape=render_expected_output_shape(invocation),
+                expected_shape=render_expected_output_shape(),
             ),
         )
 
@@ -144,7 +144,7 @@ def plan_protocol_reprompt(
         return TemplateSpecificProtocolReprompt(
             message=_protocol_reprompt_message_with_expected_shape(
                 parser_error=parser_error,
-                expected_shape=render_expected_output_shape(invocation),
+                expected_shape=render_expected_output_shape(),
                 shape_label="Use this Improve output shape exactly:",
             ),
         )
