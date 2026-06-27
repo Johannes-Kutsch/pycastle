@@ -115,7 +115,9 @@ def _extract_hard_error_status_code(raw: str, fallback: int | None) -> int | Non
     if not isinstance(parsed, dict):
         return fallback
     status = parsed.get("status")
-    return status if isinstance(status, int) else fallback
+    return (
+        status if isinstance(status, int) and not isinstance(status, bool) else fallback
+    )
 
 
 def _route_and_abort_agent_credential_failure(
