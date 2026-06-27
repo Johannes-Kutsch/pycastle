@@ -9,6 +9,7 @@ from pycastle.display.status_display import (
     ModelDisplayMetadata,
     PlainStatusDisplay,
     StatusDisplay,
+    WORK_PHASE,
 )
 from pycastle.display.rich_status_display import RichStatusDisplay
 
@@ -303,6 +304,20 @@ def test_rich_body_shows_work_body_during_work() -> None:
 
     assert "Creating Plan from 3 issues" in output
     assert "Work" not in output
+
+
+def test_rich_body_shows_work_body_during_shared_work_phase() -> None:
+    d = RichStatusDisplay()
+    d.register("Plan Agent", "agent", work_body="Creating Plan from 3 issues")
+    d.update_phase("Plan Agent", WORK_PHASE)
+
+    console = Console(record=True, width=200)
+    console.print(d)
+    output = console.export_text()
+    d.stop()
+
+    assert "Creating Plan from 3 issues" in output
+    assert WORK_PHASE not in output
 
 
 def test_rich_body_is_unstyled() -> None:
