@@ -99,6 +99,29 @@ class _FakeRuntimeClient:
         )
 
 
+class _FakeRuntimeClientWithEvents:
+    def __init__(self, events: list[object], *, output: str) -> None:
+        self._events = events
+        self._output = output
+
+    async def run_new_session(self, request):
+        for event in self._events:
+            request.on_live_output(event)
+        return RuntimeOutcome(
+            kind=Completed(),
+            result=RunResult(
+                output=self._output,
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
 def _run_agent_with_live_event(tmp_path, monkeypatch, event: object):
     repo_root = tmp_path / "repo"
     mount_path = repo_root / "pycastle" / ".worktrees" / "issue-1898"
@@ -158,6 +181,98 @@ def _run_agent_with_live_event(tmp_path, monkeypatch, event: object):
         )
     )
     return result, status_display
+
+
+def test_agent_runner_captures_raw_provider_output_for_all_live_events_in_log(
+    tmp_path,
+    monkeypatch,
+):
+    repo_root = tmp_path / "repo"
+    mount_path = repo_root / "pycastle" / ".worktrees" / "issue-1899"
+    mount_path.mkdir(parents=True)
+    logs_dir = tmp_path / "logs"
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=logs_dir),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+    runtime_client = _FakeRuntimeClientWithEvents(
+        [
+            SimpleNamespace(
+                type="protocol",
+                display_message="thread.started",
+                raw_provider_output='{"type":"thread.started"}',
+            ),
+            SimpleNamespace(
+                type="agent_message",
+                display_message="live output text",
+                raw_provider_output='{"type":"agent_message","text":"live output text"}',
+            ),
+            SimpleNamespace(
+                type="protocol",
+                display_message="turn.completed",
+                raw_provider_output='{"type":"turn.completed"}',
+            ),
+        ],
+        output="<commit_message>done</commit_message>",
+    )
+    status_display = RecordingStatusDisplay()
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #1899",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "1899",
+                        "ISSUE_TITLE": "Wire agent invocation log capture in AgentRunner",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-1899",
+                        "INTERRUPTED_WORK": "",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    log_files = list(logs_dir.glob("*.log"))
+    assert len(log_files) == 1
+    log_text = log_files[0].read_text(encoding="utf-8")
+    assert log_text
+    assert '{"type":"thread.started"}\n' in log_text
+    assert '{"type":"agent_message","text":"live output text"}\n' in log_text
+    assert '{"type":"turn.completed"}\n' in log_text
 
 
 def test_agent_runner_prints_live_agent_message_events_without_event_type(
