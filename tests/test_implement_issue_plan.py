@@ -45,7 +45,7 @@ def _issue() -> dict:
     return {
         "number": 1909,
         "title": "Scaffold implement issue execution planning module",
-        "body": "",
+        "body": "x" * 100,
         "comments": [],
         "labels": ["behavior-slice"],
     }
@@ -149,6 +149,79 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
         plan.reviewer_step.commit_fallback_subject.fallback_subject
         == "Review #1909 - Scaffold implement issue execution planning module"
     )
+
+
+@pytest.mark.parametrize(
+    ("label", "display_name", "prompt_template"),
+    [
+        ("behavior-slice", "behavior", PromptTemplate.IMPLEMENT_BEHAVIOR),
+        ("refactor-slice", "refactor", PromptTemplate.IMPLEMENT_REFACTOR),
+        ("docs-slice", "docs", PromptTemplate.IMPLEMENT_DOCS),
+    ],
+)
+def test_plan_ready_issue_slice_maps_slice_label_to_display_and_template(
+    label: str,
+    display_name: str,
+    prompt_template: PromptTemplate,
+):
+    ready_slice = plan_ready_issue_slice({**_issue(), "labels": [label]}, Config())
+
+    assert ready_slice.display_name == display_name
+    assert ready_slice.implement_prompt_template == prompt_template
+    assert (
+        ready_slice.implement_work_body
+        == f'implementing {display_name} "Scaffold implement issue execution planning module"'
+    )
+    assert (
+        ready_slice.review_work_body
+        == f'reviewing {display_name} "Scaffold implement issue execution planning module"'
+    )
+
+
+def test_plan_ready_issue_slice_ignores_unrelated_labels():
+    ready_slice = plan_ready_issue_slice(
+        {**_issue(), "labels": ["bug", "ready-for-agent", "behavior-slice"]},
+        Config(),
+    )
+
+    assert ready_slice.display_name == "behavior"
+    assert ready_slice.implement_prompt_template == PromptTemplate.IMPLEMENT_BEHAVIOR
+
+
+def test_plan_ready_issue_slice_uses_carried_selected_mode_over_labels():
+    readiness = IssueReadiness(
+        slice_status=WellFormed(SliceMode.REFACTOR, label="refactor-slice"),
+        body_floor_status=WellFormedBody(stripped_length=100),
+        is_ready=True,
+        selected_mode=SliceMode.REFACTOR,
+        kind=IssueReadinessKind.READY_AFK,
+    )
+    issue = {
+        **_issue(),
+        "labels": ["docs-slice"],
+        "readiness": readiness,
+    }
+
+    ready_slice = plan_ready_issue_slice(issue, Config())
+
+    assert ready_slice.display_name == "refactor"
+    assert ready_slice.implement_prompt_template == PromptTemplate.IMPLEMENT_REFACTOR
+
+
+@pytest.mark.parametrize("labels", [[], ["behavior-slice", "docs-slice"]])
+def test_plan_ready_issue_slice_raises_for_issue_without_exactly_one_ready_slice_mode(
+    labels: list[str],
+):
+    issue = {**_issue(), "labels": labels}
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"Issue #1909 is not implement-ready: missing a ready "
+            r"slice-mode selection\."
+        ),
+    ):
+        plan_ready_issue_slice(issue, Config())
 
 
 def test_plan_issue_execution_skips_both_steps_when_review_stage_done_signal_exists(
