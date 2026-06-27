@@ -1764,6 +1764,68 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
 # ── coordination/diverge.md contract ────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize(
+    ("template", "expected_fragment"),
+    [
+        (PromptTemplate.IMPROVE_SCAN, "Emit `<promise>COMPLETE</promise>`"),
+        (
+            PromptTemplate.IMPROVE_PRD,
+            'Output the filed issue as `<issue>{"number": N, "labels": []}</issue>`',
+        ),
+        (
+            PromptTemplate.IMPROVE_ISSUES,
+            "Output each filed issue number as `<issue>N</issue>`.",
+        ),
+        (
+            PromptTemplate.IMPROVE_NO_CANDIDATE,
+            "Output each filed PRD issue number as `<issue>N</issue>`.",
+        ),
+    ],
+)
+def test_rendered_improve_prompt_includes_its_expected_output_shape(
+    template: PromptTemplate, expected_fragment: str
+):
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    scope_args = _scope_args_for(template)
+    result = _run(renderer.render(template, scope_args, _noop_exec))
+    expected_output_shape = renderer.render_expected_output_shape(template, scope_args)
+
+    assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
+    assert expected_output_shape in result
+    assert expected_fragment in expected_output_shape
+
+
+def test_render_expected_output_shape_keeps_improve_no_candidate_distinct_from_issues():
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    issues_scope_args = _scope_args_for(PromptTemplate.IMPROVE_ISSUES)
+    no_candidate_scope_args = _scope_args_for(PromptTemplate.IMPROVE_NO_CANDIDATE)
+
+    issues_shape = renderer.render_expected_output_shape(
+        PromptTemplate.IMPROVE_ISSUES,
+        issues_scope_args,
+    )
+    no_candidate_shape = renderer.render_expected_output_shape(
+        PromptTemplate.IMPROVE_NO_CANDIDATE,
+        no_candidate_scope_args,
+    )
+
+    assert issues_shape.strip() == "\n".join(
+        [
+            "Output each filed issue number as `<issue>N</issue>`.",
+            "",
+            "Then emit `<promise>COMPLETE</promise>`.",
+        ]
+    )
+    assert no_candidate_shape.strip() == "\n".join(
+        [
+            "Output each filed PRD issue number as `<issue>N</issue>`.",
+            "",
+            "Then emit `<promise>COMPLETE</promise>`.",
+        ]
+    )
+    assert no_candidate_shape != issues_shape
+
+
 def test_rendered_merge_prompt_includes_expected_output_shape():
     renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
     scope_args = _scope_args_for(PromptTemplate.MERGE)
