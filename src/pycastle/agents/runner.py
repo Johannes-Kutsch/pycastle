@@ -11,6 +11,7 @@ from agent_runtime import ProviderAuth
 from agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
 from agent_runtime.errors import (
     AgentCredentialFailureError as RuntimeAgentCredentialFailureError,
+    ContinuationUnrecoverableError as RuntimeContinuationUnrecoverableError,
 )
 from agent_runtime.errors import HardAgentError as RuntimeHardAgentError
 from agent_runtime.errors import ProviderUnavailableReason
@@ -59,6 +60,7 @@ from ..prompts.dispatch import (
     PromptInvocation,
     render_prompt_invocation,
 )
+from ..prompts.scope_args import build_interrupted_work_clause
 from ..prompts.pipeline import PromptRenderer
 from ..runtime_session import ProviderSessionStateRequest
 from ..session import RoleSession, RunKind
@@ -724,6 +726,16 @@ class AgentRunner:
         retries_left = self._cfg.timeout_retries
 
         for attempt in range(3):
+            _saved_service = (
+                role_session.exact_transcript_service_name()
+                if current_run_kind is RunKind.RESUME and role_session.is_resumable()
+                else None
+            )
+            if _saved_service is not None and _saved_service != request.service:
+                request, current_prompt = await self._recover_stale_continuation(
+                    role_session=role_session, request=request, runner=runner
+                )
+                current_run_kind = RunKind.FRESH
             try:
                 outcome = await self._run_runtime_once(
                     request=request,
@@ -775,6 +787,12 @@ class AgentRunner:
                 )
                 mapped_hard.caller = request.name
                 raise mapped_hard from err
+            except RuntimeContinuationUnrecoverableError:
+                request, current_prompt = await self._recover_stale_continuation(
+                    role_session=role_session, request=request, runner=runner
+                )
+                current_run_kind = RunKind.FRESH
+                continue
 
             if not hasattr(outcome, "kind") and hasattr(outcome, "output"):
                 outcome = agent_runtime.RuntimeOutcome(
@@ -872,6 +890,34 @@ class AgentRunner:
             raise RuntimeError("Unexpected runtime outcome kind")
 
         raise RuntimeError("Runtime reprompt loop exhausted unexpectedly")
+
+    async def _recover_stale_continuation(
+        self,
+        *,
+        role_session: RoleSession,
+        request: RunRequest,
+        runner: ContainerRunner,
+    ) -> tuple[RunRequest, str]:
+        role_session.start_fresh()
+        is_dirty = not self._git_service.is_working_tree_clean(request.mount_path)
+        if is_dirty:
+            request = dataclasses.replace(
+                request,
+                prompt=PromptInvocation(
+                    template=request.prompt.template,
+                    scope_args={
+                        **request.prompt.scope_args,
+                        "INTERRUPTED_WORK": build_interrupted_work_clause(
+                            RunKind.FRESH, is_dirty=True
+                        ),
+                    },
+                    send_role_prompt_on_resume=request.prompt.send_role_prompt_on_resume,
+                ),
+            )
+        new_prompt = await self._render_runtime_prompt(
+            request=request, runner=runner, run_kind=RunKind.FRESH
+        )
+        return request, new_prompt
 
     async def _render_runtime_prompt(
         self,

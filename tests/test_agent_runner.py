@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -1095,3 +1096,392 @@ def test_agent_runner_retries_malformed_planner_output_with_planner_specific_pro
         "Use this Planner output shape exactly:\n"
         "<plan>{...}</plan>",
     ]
+
+
+_VALID_STALE_CONTINUATION = json.dumps(
+    {
+        "service_name": "codex",
+        "model": "gpt-5.5",
+        "effort": "medium",
+        "tool_access": {
+            "kind": "none",
+            "workspace": None,
+            "tool_policy": {"kind": "tool_policy", "value": "none"},
+        },
+        "provider_resume_state": {"session_id": "expired-codex-session"},
+    }
+)
+
+
+class _StaleResumeRuntimeClient:
+    """Raises ContinuationUnrecoverableError on resume; succeeds on new."""
+
+    def __init__(self) -> None:
+        self.run_new_session_calls = 0
+        self.run_resumed_session_calls = 0
+
+    async def run_resumed_session(self, request):
+        del request
+        from agent_runtime.errors import ContinuationUnrecoverableError
+
+        self.run_resumed_session_calls += 1
+        raise ContinuationUnrecoverableError(
+            "stale codex session", service_name="codex"
+        )
+
+    async def run_new_session(self, request):
+        del request
+        self.run_new_session_calls += 1
+        return RuntimeOutcome(
+            kind=Completed(),
+            result=RunResult(
+                output="<commit_message>done</commit_message>",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+def _make_stale_continuation_runner(tmp_path, *, issue: int):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / f"issue-{issue}"
+    mount_path.mkdir(parents=True)
+    session_dir = mount_path / ".pycastle-session" / "implementer"
+    session_dir.mkdir(parents=True)
+    (session_dir / "_continuation").write_text(
+        _VALID_STALE_CONTINUATION, encoding="utf-8"
+    )
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    git_service.is_working_tree_clean.return_value = True
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+    return runner, mount_path, session_dir, git_service
+
+
+def _base_scope_args(issue: int) -> dict:
+    return {
+        "ISSUE_NUMBER": str(issue),
+        "ISSUE_TITLE": "Fix stale continuation",
+        "ISSUE_BODY": "",
+        "ISSUE_COMMENTS": "",
+        "BRANCH": f"issue-{issue}",
+        "INTERRUPTED_WORK": "",
+    }
+
+
+def test_stale_continuation_fresh_retry_succeeds_on_unrecoverable_error(
+    tmp_path, monkeypatch
+):
+    runner, mount_path, session_dir, _git = _make_stale_continuation_runner(
+        tmp_path, issue=1939
+    )
+    runtime_client = _StaleResumeRuntimeClient()
+    status_display = RecordingStatusDisplay()
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #1939",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args=_base_scope_args(1939),
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert not (session_dir / "_continuation").is_file()
+    assert runtime_client.run_resumed_session_calls == 1
+    assert runtime_client.run_new_session_calls == 1
+
+
+def test_stale_continuation_fresh_retry_sets_interrupted_work_on_dirty_tree(
+    tmp_path, monkeypatch
+):
+    runner, mount_path, session_dir, git_service = _make_stale_continuation_runner(
+        tmp_path, issue=1939
+    )
+    git_service.is_working_tree_clean.return_value = False
+    runtime_client = _StaleResumeRuntimeClient()
+    status_display = RecordingStatusDisplay()
+    render_calls: list[dict] = []
+
+    async def recording_render(*, request, runner, run_kind):
+        render_calls.append(
+            {
+                "run_kind": run_kind,
+                "interrupted_work": request.prompt.scope_args.get(
+                    "INTERRUPTED_WORK", ""
+                ),
+            }
+        )
+        return "prompt"
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(runner, "_render_runtime_prompt", recording_render)
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #1939",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args=_base_scope_args(1939),
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert len(render_calls) == 2
+    assert render_calls[0]["interrupted_work"] == ""
+    assert render_calls[1]["interrupted_work"] != ""
+    assert render_calls[1]["run_kind"].value == "fresh"
+
+
+def test_stale_continuation_proactive_service_mismatch_skips_resumed_session(
+    tmp_path, monkeypatch
+):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1940"
+    mount_path.mkdir(parents=True)
+    session_dir = mount_path / ".pycastle-session" / "implementer"
+    session_dir.mkdir(parents=True)
+    (session_dir / "_continuation").write_text(
+        _VALID_STALE_CONTINUATION, encoding="utf-8"
+    )
+    session_dir.joinpath("_service_session_metadata.json").write_text(
+        json.dumps({"codex": {"service": "codex", "provider_session_id": "codex-123"}}),
+        encoding="utf-8",
+    )
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    git_service.is_working_tree_clean.return_value = True
+
+    opencode_service = _RecordingService("opencode")
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"opencode": opencode_service},
+    )
+    status_display = RecordingStatusDisplay()
+
+    resumed_session_calls = []
+
+    class _ServiceMismatchRuntimeClient:
+        async def run_resumed_session(self, request):
+            resumed_session_calls.append(request)
+            raise AssertionError("run_resumed_session must not be called on service mismatch")
+
+        async def run_new_session(self, request):
+            del request
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output="<commit_message>done</commit_message>",
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="opencode",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: _ServiceMismatchRuntimeClient(),
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #1940",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "1940",
+                        "ISSUE_TITLE": "Service switched to opencode",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-1940",
+                        "INTERRUPTED_WORK": "",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="opencode",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert resumed_session_calls == []
+    assert not (session_dir / "_continuation").is_file()
+
+
+def test_stale_continuation_proactive_service_mismatch_sets_interrupted_work_on_dirty_tree(
+    tmp_path, monkeypatch
+):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1940"
+    mount_path.mkdir(parents=True)
+    session_dir = mount_path / ".pycastle-session" / "implementer"
+    session_dir.mkdir(parents=True)
+    (session_dir / "_continuation").write_text(
+        _VALID_STALE_CONTINUATION, encoding="utf-8"
+    )
+    session_dir.joinpath("_service_session_metadata.json").write_text(
+        json.dumps({"codex": {"service": "codex", "provider_session_id": "codex-123"}}),
+        encoding="utf-8",
+    )
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    git_service.is_working_tree_clean.return_value = False
+
+    opencode_service = _RecordingService("opencode")
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"opencode": opencode_service},
+    )
+    status_display = RecordingStatusDisplay()
+    render_calls: list[dict] = []
+
+    async def recording_render(*, request, runner, run_kind):
+        render_calls.append(
+            {
+                "run_kind": run_kind,
+                "interrupted_work": request.prompt.scope_args.get(
+                    "INTERRUPTED_WORK", ""
+                ),
+            }
+        )
+        return "prompt"
+
+    class _NewSessionOnlyRuntimeClient:
+        async def run_new_session(self, request):
+            del request
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output="<commit_message>done</commit_message>",
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="opencode",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(runner, "_render_runtime_prompt", recording_render)
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: _NewSessionOnlyRuntimeClient(),
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #1940",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "1940",
+                        "ISSUE_TITLE": "Service switched to opencode",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-1940",
+                        "INTERRUPTED_WORK": "",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="opencode",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert len(render_calls) == 2
+    assert render_calls[0]["interrupted_work"] == ""
+    assert render_calls[1]["interrupted_work"] != ""
+    assert render_calls[1]["run_kind"].value == "fresh"
