@@ -1321,7 +1321,9 @@ def test_stale_continuation_proactive_service_mismatch_skips_resumed_session(
     class _ServiceMismatchRuntimeClient:
         async def run_resumed_session(self, request):
             resumed_session_calls.append(request)
-            raise AssertionError("run_resumed_session must not be called on service mismatch")
+            raise AssertionError(
+                "run_resumed_session must not be called on service mismatch"
+            )
 
         async def run_new_session(self, request):
             del request
