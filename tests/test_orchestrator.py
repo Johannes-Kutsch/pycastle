@@ -138,6 +138,9 @@ def _make_github_svc(numbers: list[int] | None = None):
         ]
     mock.get_open_issues.return_value = issues
     mock.get_all_open_issues_lightweight.return_value = []
+    mock.repo = "test/repo"
+    mock.search_open_issues_by_title.return_value = []
+    mock.create_issue_in.return_value = 999
     return mock
 
 
@@ -3849,16 +3852,8 @@ def test_log_maintenance_deletes_old_log_files_after_run(tmp_path):
 # ── Issue 1940: merge close failure orchestrator handling ─────────────────────
 
 
-def test_merge_close_failure_prints_issue_numbers_and_stops_run(tmp_path, monkeypatch):
+def test_merge_close_failure_prints_issue_numbers_and_stops_run(tmp_path):
     """When merge phase files close-failure issues, the orchestrator prints them and stops without another iteration."""
-    from pycastle.iteration import merge as merge_module
-
-    monkeypatch.setattr(
-        merge_module,
-        "file_merge_close_failure_issue",
-        lambda *, issue_number, exc, github_svc: 999,
-    )
-
     issues = [
         {
             "number": 1,
@@ -3908,18 +3903,9 @@ def test_merge_close_failure_prints_issue_numbers_and_stops_run(tmp_path, monkey
     assert any("#999" in str(c[2]) for c in close_failure_prints)
 
 
-def test_run_iteration_returns_merge_close_failure_on_close_error(
-    tmp_path, monkeypatch
-):
+def test_run_iteration_returns_merge_close_failure_on_close_error(tmp_path):
     """run_iteration must return MergeCloseFailure when merge phase collects close-failure issue numbers."""
-    from pycastle.iteration import merge as merge_module
     from pycastle.iteration import MergeCloseFailure, run_iteration
-
-    monkeypatch.setattr(
-        merge_module,
-        "file_merge_close_failure_issue",
-        lambda *, issue_number, exc, github_svc: 999,
-    )
 
     mock_github = _make_github_svc(numbers=[1])
 

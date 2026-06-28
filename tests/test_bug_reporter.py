@@ -419,12 +419,28 @@ def test_merge_close_failure_dedups_by_existing_open_issue():
     github_svc.create_issue_in.assert_not_called()
 
 
-def test_merge_close_failure_issue_never_raises():
+def test_merge_close_failure_issue_never_raises_on_search_error():
     from pycastle import bug_reporter
     from pycastle.services import GithubAPIError
 
     github_svc = _make_github_svc()
     github_svc.search_open_issues_by_title.side_effect = RuntimeError("search exploded")
+    exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
+    number = bug_reporter.file_merge_close_failure_issue(
+        issue_number=42,
+        exc=exc,
+        github_svc=github_svc,
+    )
+
+    assert number is None
+
+
+def test_merge_close_failure_issue_never_raises_on_create_error():
+    from pycastle import bug_reporter
+    from pycastle.services import GithubAPIError
+
+    github_svc = _make_github_svc()
+    github_svc.create_issue_in.side_effect = RuntimeError("create exploded")
     exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
     number = bug_reporter.file_merge_close_failure_issue(
         issue_number=42,
