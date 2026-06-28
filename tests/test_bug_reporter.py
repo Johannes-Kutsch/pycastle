@@ -358,3 +358,78 @@ def test_url_uses_cfg_bug_report_repo(monkeypatch):
     result = CliRunner().invoke(cli, ["build"])
 
     assert "https://github.com/other-owner/other-repo/issues/new" in result.stdout
+
+
+# ── Issue 1940: merge close failure filing ────────────────────────────────────
+
+
+def _make_github_svc():
+    from unittest.mock import MagicMock
+    from pycastle.services import GithubService
+
+    svc = MagicMock(spec=GithubService)
+    svc.repo = "consumer/owner"
+    svc.search_open_issues_by_title.return_value = []
+    svc.create_issue_in.return_value = 123
+    return svc
+
+
+def test_merge_close_failure_files_on_consuming_project():
+    from pycastle import bug_reporter
+    from pycastle.services import GithubAPIError
+
+    github_svc = _make_github_svc()
+    exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
+    number = bug_reporter.file_merge_close_failure_issue(
+        issue_number=42,
+        exc=exc,
+        github_svc=github_svc,
+    )
+
+    assert number == 123
+    github_svc.search_open_issues_by_title.assert_called_once_with(
+        "[pycastle] issue close failed"
+    )
+    github_svc.create_issue_in.assert_called_once()
+    call_args = github_svc.create_issue_in.call_args
+    assert call_args.args[0] == "consumer/owner"
+    assert call_args.args[3] == ["bug", "needs-triage"]
+    title = call_args.args[1]
+    body = call_args.args[2]
+    assert title.startswith("[pycastle] issue close failed")
+    assert "#42" in body or "42" in title
+    assert "pycastle:" in body
+    assert "boom" in body
+
+
+def test_merge_close_failure_dedups_by_existing_open_issue():
+    from pycastle import bug_reporter
+    from pycastle.services import GithubAPIError
+
+    github_svc = _make_github_svc()
+    github_svc.search_open_issues_by_title.return_value = [99]
+    exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
+    number = bug_reporter.file_merge_close_failure_issue(
+        issue_number=42,
+        exc=exc,
+        github_svc=github_svc,
+    )
+
+    assert number == 99
+    github_svc.create_issue_in.assert_not_called()
+
+
+def test_merge_close_failure_issue_never_raises():
+    from pycastle import bug_reporter
+    from pycastle.services import GithubAPIError
+
+    github_svc = _make_github_svc()
+    github_svc.search_open_issues_by_title.side_effect = RuntimeError("search exploded")
+    exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
+    number = bug_reporter.file_merge_close_failure_issue(
+        issue_number=42,
+        exc=exc,
+        github_svc=github_svc,
+    )
+
+    assert number is None

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..agents.runner import AgentRunnerProtocol
+from ..bug_reporter import file_merge_close_failure_issue
 from ..config import Config
 from ..services import GitCommandError, GitService, GithubService
 from ..display.status_display import StatusDisplay
@@ -39,6 +40,7 @@ class MergeResult:
     completed_conflicts: list[dict] = dataclasses.field(default_factory=list)
     pending_conflicts: list[dict] = dataclasses.field(default_factory=list)
     preflight_blocker: PreflightHITL | PreflightAFK | None = None
+    close_failure_issue_numbers: list[int] = dataclasses.field(default_factory=list)
 
 
 def _classify_merge_candidates(
@@ -60,11 +62,13 @@ def _build_merge_result(
     conflict_issues: list[dict],
     recovery_result: dict[str, list[dict]] | None = None,
     preflight_blocker: PreflightHITL | PreflightAFK | None = None,
+    close_failure_issue_numbers: list[int] | None = None,
 ) -> MergeResult:
     return MergeResult(
         clean=clean_issues,
         conflicts=conflict_issues,
         preflight_blocker=preflight_blocker,
+        close_failure_issue_numbers=close_failure_issue_numbers or [],
         **(recovery_result or {}),
     )
 
@@ -188,12 +192,16 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         )
         progress.render()
 
+        close_failure_issue_numbers: list[int] = []
+
         def _on_close_error(issue_number: int, exc: BaseException) -> None:
-            deps.status_display.print(
-                "Merge",
-                f"Warning: could not close issue #{issue_number}: {exc}",
-                "warning",
+            filed_number = file_merge_close_failure_issue(
+                issue_number=issue_number,
+                exc=exc,
+                github_svc=deps.github_svc,
             )
+            if filed_number is not None:
+                close_failure_issue_numbers.append(filed_number)
 
         def _close_merge_row(summary: str) -> None:
             row.close("finished")
@@ -251,6 +259,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                     conflict_issues=conflict_issues,
                     recovery_result={"pending_conflicts": conflict_issues},
                     preflight_blocker=verdict,
+                    close_failure_issue_numbers=close_failure_issue_numbers,
                 )
 
             recovery = await recover_conflicts(
@@ -271,6 +280,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             else {"pending_conflicts": []}
         )
         pending_conflicts = recovery_result["pending_conflicts"]
+        recovery_close_failures = (
+            recovery.close_failure_issue_numbers if conflict_issues else []
+        )
+        all_close_failure_issue_numbers = (
+            close_failure_issue_numbers + recovery_close_failures
+        )
         if _should_auto_push(
             auto_push=deps.cfg.auto_push,
             clean_issues=clean_issues,
@@ -285,4 +300,5 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             clean_issues=clean_issues,
             conflict_issues=conflict_issues,
             recovery_result=recovery_result,
+            close_failure_issue_numbers=all_close_failure_issue_numbers,
         )

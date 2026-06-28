@@ -2020,39 +2020,55 @@ def test_all_branches_processed_in_parallel_teardown(recording_deps, git_svc):
 # ── Parallel close_issue helper ───────────────────────────────────────────────
 
 
-def test_close_issue_failure_does_not_abort_merge_phase(recording_deps, github_svc):
+def _patch_merge_close_failure(monkeypatch, number):
+    from pycastle import bug_reporter
+    from pycastle.iteration import merge as merge_module
+    from pycastle.iteration import _merge_conflict_recovery as recovery_module
+
+    def _fake(*, issue_number, exc, github_svc):
+        return number(issue_number) if callable(number) else number
+
+    monkeypatch.setattr(bug_reporter, "file_merge_close_failure_issue", _fake)
+    monkeypatch.setattr(merge_module, "file_merge_close_failure_issue", _fake)
+    monkeypatch.setattr(recovery_module, "file_merge_close_failure_issue", _fake)
+
+
+def test_close_issue_failure_does_not_abort_merge_phase(
+    recording_deps, github_svc, monkeypatch
+):
     deps, recording = recording_deps
     github_svc.close_issue_with_parents.side_effect = RuntimeError("API error")
+    _patch_merge_close_failure(monkeypatch, 999)
     issues = [{"number": 1, "title": "Fix A"}]
     result = _run(issues, deps)
     assert result.clean == issues
-    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("API error" in str(m) for m in print_msgs)
+    assert result.close_failure_issue_numbers == [999]
 
 
 def test_close_issue_failure_in_conflict_path_does_not_abort(
-    recording_deps, git_svc, github_svc
+    recording_deps, git_svc, github_svc, monkeypatch
 ):
     deps, recording = recording_deps
     git_svc.try_merge.return_value = False
     github_svc.close_issue_with_parents.side_effect = RuntimeError(
         "conflict close failed"
     )
+    _patch_merge_close_failure(monkeypatch, 999)
     issues = [{"number": 1, "title": "Conflict"}]
     result = _run(issues, deps)
     assert result.conflicts == issues
-    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("conflict close failed" in str(m) for m in print_msgs)
+    assert result.close_failure_issue_numbers == [999]
 
 
 def test_conflict_close_failure_does_not_advance_closing_progress(
-    recording_deps, git_svc, github_svc
+    recording_deps, git_svc, github_svc, monkeypatch
 ):
     deps, recording = recording_deps
     git_svc.try_merge.return_value = False
     github_svc.close_issue_with_parents.side_effect = RuntimeError(
         "conflict close failed"
     )
+    _patch_merge_close_failure(monkeypatch, 999)
 
     _run([{"number": 1, "title": "Conflict"}], deps)
 
@@ -2062,9 +2078,7 @@ def test_conflict_close_failure_does_not_advance_closing_progress(
     assert "merging 1/1 branches, closing 1/1 issues" not in update_calls
 
 
-def test_close_issue_all_failures_reported_via_status_display(
-    recording_deps, github_svc
-):
+def test_close_issue_all_failures_reported(recording_deps, github_svc, monkeypatch):
     deps, recording = recording_deps
     errors = {1: RuntimeError("first"), 2: RuntimeError("second")}
 
@@ -2072,11 +2086,10 @@ def test_close_issue_all_failures_reported_via_status_display(
         raise errors[number]
 
     github_svc.close_issue_with_parents.side_effect = _side_effect
+    _patch_merge_close_failure(monkeypatch, lambda n: 900 + n)
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
-    _run(issues, deps)
-    print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("first" in str(m) for m in print_msgs)
-    assert any("second" in str(m) for m in print_msgs)
+    result = _run(issues, deps)
+    assert sorted(result.close_failure_issue_numbers) == [901, 902]
 
 
 def test_merge_phase_shows_closing_progress_during_clean_merge(recording_deps):
@@ -2434,3 +2447,36 @@ def test_merge_phase_shows_only_remaining_merge_work_while_merger_is_active(
 
     assert seen_phase_updates == ["merging 4/5 branches, closing 4/5 issues"]
     assert merge_row_open == [True]
+
+
+# ── Issue 1940: merge close failure reporting ─────────────────────────────────
+
+
+def test_close_failure_still_closes_remaining_issues_and_deletes_branches(
+    deps, github_svc, git_svc, monkeypatch
+):
+    """A failure closing one issue must not stop other issues from closing or branches from deleting."""
+    from pycastle.iteration import merge as merge_module
+
+    def _fake_close(issue_number):
+        if issue_number == 1:
+            raise RuntimeError("close failed")
+
+    github_svc.close_issue_with_parents.side_effect = _fake_close
+    monkeypatch.setattr(
+        merge_module,
+        "file_merge_close_failure_issue",
+        lambda *, issue_number, exc, github_svc: 999 + issue_number,
+    )
+
+    issues = [{"number": 1, "title": "Fail"}, {"number": 2, "title": "Ok"}]
+    result = _run(issues, deps)
+
+    closed = [
+        call.args[0] for call in github_svc.close_issue_with_parents.call_args_list
+    ]
+    assert sorted(closed) == [1, 2]
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" in deleted
+    assert "pycastle/issue-2" in deleted
+    assert result.close_failure_issue_numbers == [1000]

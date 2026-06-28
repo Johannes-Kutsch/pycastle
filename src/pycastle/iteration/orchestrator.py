@@ -18,6 +18,7 @@ from . import (
     AbortedUsageLimit,
     Continue,
     Done,
+    MergeCloseFailure,
     NoCandidate,
     run_iteration,
 )
@@ -346,6 +347,13 @@ async def run(
                         github_svc=github_service,
                     )
                     sys.exit(1)
+                case MergeCloseFailure(filed_issue_numbers=issue_numbers):
+                    numbers_str = ", ".join(f"#{n}" for n in issue_numbers)
+                    status_display.print(  # type: ignore[union-attr]
+                        "",
+                        f"Merge close failure: issue close failed. Filed {numbers_str} for triage.",
+                    )
+                    break
                 case AbortedSetup(
                     phase=phase,
                     message=message,

@@ -35,7 +35,7 @@ from pycastle.services import (
     ServiceRegistry,
 )
 from pycastle.services.runtime_services import AgentService
-from tests.support import FakeAgentRunner, RecordingStatusDisplay
+from tests.support import FakeAgentRunner, RecordingStatusDisplay, _make_deps
 from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
@@ -3844,3 +3844,133 @@ def test_log_maintenance_deletes_old_log_files_after_run(tmp_path):
     _run(tmp_path, _fake_run_agent, github_service=mock_github, logs_dir=logs_dir)
 
     assert not old_log.exists(), "Old log files must be deleted after run"
+
+
+# ── Issue 1940: merge close failure orchestrator handling ─────────────────────
+
+
+def test_merge_close_failure_prints_issue_numbers_and_stops_run(tmp_path, monkeypatch):
+    """When merge phase files close-failure issues, the orchestrator prints them and stops without another iteration."""
+    from pycastle.iteration import merge as merge_module
+
+    monkeypatch.setattr(
+        merge_module,
+        "file_merge_close_failure_issue",
+        lambda *, issue_number, exc, github_svc: 999,
+    )
+
+    issues = [
+        {
+            "number": 1,
+            "title": "Fail close",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+
+    async def _fake_run_agent(request: RunRequest):
+        if "Implement Agent" in request.name:
+            return CompletionOutput()
+        return _plan_output(issues)
+
+    mock_github = _make_github_svc(numbers=[1])
+
+    def _raise_on_close(number):
+        if number == 1:
+            raise RuntimeError("close failed")
+
+    mock_github.close_issue_with_parents.side_effect = _raise_on_close
+    recording = RecordingStatusDisplay()
+
+    git_svc = _make_git_svc()
+    git_svc.try_merge.return_value = True
+
+    _run(
+        tmp_path,
+        _fake_run_agent,
+        git_service=git_svc,
+        github_service=mock_github,
+        status_display=recording,
+        max_iterations=2,
+    )
+
+    iteration_headers = [
+        c for c in recording.calls if c[0] == "print" and "=== Iteration" in str(c[2])
+    ]
+    assert len(iteration_headers) == 1, "Run must stop after the first iteration"
+    close_failure_prints = [
+        c
+        for c in recording.calls
+        if c[0] == "print" and "issue close failed" in str(c[2]).lower()
+    ]
+    assert close_failure_prints, "Orchestrator must print a merge close failure message"
+    assert any("#999" in str(c[2]) for c in close_failure_prints)
+
+
+def test_run_iteration_returns_merge_close_failure_on_close_error(
+    tmp_path, monkeypatch
+):
+    """run_iteration must return MergeCloseFailure when merge phase collects close-failure issue numbers."""
+    from pycastle.iteration import merge as merge_module
+    from pycastle.iteration import MergeCloseFailure, run_iteration
+
+    monkeypatch.setattr(
+        merge_module,
+        "file_merge_close_failure_issue",
+        lambda *, issue_number, exc, github_svc: 999,
+    )
+
+    mock_github = _make_github_svc(numbers=[1])
+
+    def _raise_on_close(number):
+        if number == 1:
+            raise RuntimeError("close failed")
+
+    mock_github.close_issue_with_parents.side_effect = _raise_on_close
+
+    async def _fake_run_agent(request: RunRequest):
+        if "Implement Agent" in request.name:
+            return CompletionOutput()
+        return _plan_output(
+            [{"number": 1, "title": "Fail close", "body": "x" * 100, "comments": []}]
+        )
+
+    git_svc = _make_git_svc()
+    git_svc.try_merge.return_value = True
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_run_agent,
+        git_svc=git_svc,
+        github_svc=mock_github,
+    )
+    outcome = asyncio.run(run_iteration(deps))
+
+    assert isinstance(outcome, MergeCloseFailure)
+    assert outcome.filed_issue_numbers == [999]
+
+
+def test_run_iteration_returns_continue_when_all_issues_close(tmp_path):
+    """run_iteration must return Continue when merge phase closes all issues successfully."""
+    from pycastle.iteration import Continue, run_iteration
+
+    async def _fake_run_agent(request: RunRequest):
+        if "Implement Agent" in request.name:
+            return CompletionOutput()
+        return _plan_output(
+            [{"number": 1, "title": "Ok", "body": "x" * 100, "comments": []}]
+        )
+
+    git_svc = _make_git_svc()
+    git_svc.try_merge.return_value = True
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_run_agent,
+        git_svc=git_svc,
+        github_svc=_make_github_svc(numbers=[1]),
+    )
+    outcome = asyncio.run(run_iteration(deps))
+
+    assert isinstance(outcome, Continue)

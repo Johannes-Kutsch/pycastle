@@ -169,6 +169,46 @@ def auto_file_issue(
 _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX = "[pycastle] git remote unreachable"
 _GIT_REMOTE_UNREACHABLE_LABELS = ["bug", "needs-triage"]
 
+_MERGE_CLOSE_FAILURE_TITLE_PREFIX = "[pycastle] issue close failed"
+_MERGE_CLOSE_FAILURE_LABELS = ["bug", "needs-triage"]
+
+
+def file_merge_close_failure_issue(
+    *,
+    issue_number: int,
+    exc: BaseException,
+    github_svc: "GithubService",
+) -> int | None:
+    """File one deduped issue on the consuming project's tracker when a child
+    issue fails to close after merge. Never files on bug_report_repo. Never raises."""
+    try:
+        existing = github_svc.search_open_issues_by_title(
+            _MERGE_CLOSE_FAILURE_TITLE_PREFIX
+        )
+        if existing:
+            return existing[0]
+        title = f"{_MERGE_CLOSE_FAILURE_TITLE_PREFIX}: #{issue_number}"
+        body = _build_merge_close_failure_body(issue_number=issue_number, exc=exc)
+        number = github_svc.create_issue_in(
+            github_svc.repo,
+            title,
+            body,
+            _MERGE_CLOSE_FAILURE_LABELS,
+        )
+        print(f"Filed issue #{number} on {github_svc.repo}: {title}")
+        return number
+    except Exception:
+        return None
+
+
+def _build_merge_close_failure_body(*, issue_number: int, exc: BaseException) -> str:
+    env = _env_block()
+    return (
+        f"## Merge close failure: issue #{issue_number} could not be closed after merge\n\n"
+        f"### Error\n\n```\n{exc}\n```\n\n"
+        f"{env}"
+    )
+
 
 def file_operator_actionable_git_issue(
     *,

@@ -4,6 +4,7 @@ from typing import Protocol
 
 from ..agents.output_protocol import AgentRole, CommitMessageOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
+from ..bug_reporter import file_merge_close_failure_issue
 from ..config import Config
 from ..display.status_display import StatusDisplay
 from ..errors import (
@@ -51,6 +52,7 @@ class ConflictRecoveryOutcome:
     completed_conflicts: list[dict]
     pending_conflicts: list[dict]
     deleted_conflict_branches: list[str]
+    close_failure_issue_numbers: list[int] = dataclasses.field(default_factory=list)
 
     @property
     def has_completed_conflicts(self) -> bool:
@@ -120,17 +122,16 @@ async def _delete_conflict_branch(
     return branch
 
 
-def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> bool:
+def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> int | None:
     try:
         deps.github_svc.close_issue_with_parents(issue["number"])
     except Exception as exc:
-        deps.status_display.print(
-            "Merge",
-            f"Warning: could not close issue #{issue['number']}: {exc}",
-            "warning",
+        return file_merge_close_failure_issue(
+            issue_number=issue["number"],
+            exc=exc,
+            github_svc=deps.github_svc,
         )
-        return False
-    return True
+    return None
 
 
 async def _recover_active_conflict(
@@ -228,6 +229,7 @@ async def recover_conflicts(
 ) -> ConflictRecoveryOutcome:
     completed_conflicts: list[dict] = []
     deleted_conflict_branches: list[str] = []
+    close_failure_issue_numbers: list[int] = []
 
     for idx, active_issue in enumerate(conflict_issues):
         error = await _recover_active_conflict(
@@ -245,6 +247,7 @@ async def recover_conflicts(
                 completed_conflicts=completed_conflicts,
                 pending_conflicts=conflict_issues[idx:],
                 deleted_conflict_branches=deleted_conflict_branches,
+                close_failure_issue_numbers=close_failure_issue_numbers,
             )
 
         progress.update_merge_done(progress.merge_done + 1)
@@ -253,12 +256,16 @@ async def recover_conflicts(
         )
         if deleted_branch is not None:
             deleted_conflict_branches.append(deleted_branch)
-        if _close_conflict_issue(active_issue, deps):
+        filed_number = _close_conflict_issue(active_issue, deps)
+        if filed_number is None:
             progress.update_close_done(progress.close_done + 1)
+        else:
+            close_failure_issue_numbers.append(filed_number)
         completed_conflicts.append(active_issue)
 
     return ConflictRecoveryOutcome(
         completed_conflicts=completed_conflicts,
         pending_conflicts=[],
         deleted_conflict_branches=deleted_conflict_branches,
+        close_failure_issue_numbers=close_failure_issue_numbers,
     )
