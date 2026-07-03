@@ -1,0 +1,25 @@
+# Model-restriction-scoped fallback for ModelNotAvailable
+
+Ar's new `RuntimeOutcome.ModelNotAvailable` (agent_runtime#429) signals that one specific model is rejected for the active credential (e.g. a free-tier Codex account rejecting a paid-tier model), while the rest of the service is healthy. This is narrower than `UsageLimited`/`ProviderUnavailable`, which the runner already treats as whole-credential exhaustion via `_handle_provider_account_exhaustion` -> `AgentService.mark_exhausted()`. Reusing that path for `ModelNotAvailable` would incorrectly disable every other model on the credential.
+
+## Decision
+
+**Track restrictions at `(credential slot, model)` granularity, not service granularity.** `CredentialPool`'s per-slot state (`_CredentialSlot`, currently just `exhausted_until`) gains a per-slot restricted-model set. A restriction is scoped to the slot that hit it: it stops applying once that slot is exhausted or the pool rotates away from it, and re-applies if the pool later rotates back to that same slot.
+
+**Thread model identity through `ServiceRegistry` availability checks.** Before this change, chain-node availability was checked and deduped purely by `node.service` name (`_availability_by_service`, `service_registry.py:41-51`) — a chain with two nodes on the same service but different models would have the second node's availability silently inherit the first's. `resolve()`, `has_available_for()`, and `next_wake_time_for()` are extended to check `(service, model)` pairs so same-service/different-model chain nodes are evaluated independently.
+
+**Reuse the existing abort-iteration/no-sleep pattern, not a new in-place retry mechanism.** A new `AbortedModelNotAvailable` `IterationOutcome` mirrors `AbortedTimeout`'s shape (abort the current iteration, no `time.sleep`, immediate continue) rather than `AbortedUsageLimit`'s. The runner does not have access to the stage's `StageOverride` fallback chain at the point `ModelNotAvailable` is raised — only the iteration/stage-dispatch layer does — so immediate in-place fallback within the same attempt loop would require new plumbing. Aborting and letting the next iteration's `resolve()` pick the next chain candidate (now that the restriction is recorded) reuses proven machinery at the cost of discarding the rest of that iteration's work, the same cost `UsageLimited` already pays today.
+
+**Distinguish "no finite wake time" from "permanently exhausted" in the whole-chain-unavailable case.** When every chain candidate is unavailable, `decide_usage_limit_continuation` today either sleeps until the min wake time across exhausted candidates, or — for `PermanentlyExhausted` — stops immediately without checking whether other candidates have a finite wake time. A model restriction is permanent for that slot but must not trigger an immediate `Stop` if some other chain candidate is merely temporarily exhausted (has a usage-limit reset time): the run should sleep and wait for that candidate to wake. `Stop` only fires when *no* candidate anywhere in the chain has a finite wake time.
+
+## Considered options
+
+- **Treat `ModelNotAvailable` as whole-service exhaustion (reuse `mark_exhausted`).** Simplest to implement, but disables every other model on a healthy credential — directly contradicts the outcome's own semantics ("the model, not the service," per agent_runtime#429). Rejected.
+- **In-place fallback within the same attempt/iteration.** Less wasted work than aborting, but requires giving the runner access to the stage's fallback chain, which it doesn't have today — new architectural surface for a case with the same abort-and-retry cost `UsageLimited` already accepts. Rejected for now; revisit if abort cost becomes a real problem.
+- **Model restriction as `PermanentlyExhausted`.** Reuses the existing Stop-when-none-available path directly, but that path stops as soon as `has_available` is false without checking other candidates' finite wake times — would incorrectly `Stop` a chain that has a merely-temporarily-exhausted candidate elsewhere. Rejected; needed its own no-finite-wake-time check instead.
+
+## Consequences
+
+- `AgentService`/`CredentialPool` implementations need a second per-slot dimension (restricted models) alongside `exhausted_until`; consumers of `is_available()` that don't pass a model argument keep today's service-wide meaning.
+- `ServiceRegistry`'s same-service dedup optimization is removed in favor of per-`(service, model)` checks — chain configs with same-service/different-model fallback nodes now behave correctly, at a small cost of redundant same-service checks when models don't vary.
+- Applies uniformly to all services in the registry, even though ar currently only emits `ModelNotAvailable` for Codex.
