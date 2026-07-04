@@ -1487,3 +1487,102 @@ def test_stale_continuation_proactive_service_mismatch_sets_interrupted_work_on_
     assert render_calls[0]["interrupted_work"] == ""
     assert render_calls[1]["interrupted_work"] != ""
     assert render_calls[1]["run_kind"].value == "fresh"
+
+
+class _SessionStoreCapturingRuntimeClient:
+    def __init__(self) -> None:
+        self.session_store: Path | None = None
+
+    async def run_new_session(self, request):
+        self.session_store = request.session_store
+        return RuntimeOutcome(
+            kind=Completed(),
+            result=RunResult(
+                output="<commit_message>done</commit_message>",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+class _ProviderStateDirService(_FakeService):
+    def state_dir_relpath(self, role, namespace: str = "") -> str | None:
+        del role, namespace
+        return ".pycastle-session/implementer/codex/"
+
+
+def test_agent_runner_uses_provider_state_dir_as_runtime_session_store(
+    tmp_path,
+    monkeypatch,
+):
+    # Regression for #1954: ar 2.4 probes `session_store` directly for the
+    # provider transcript, so pycastle must pass the per-provider state dir
+    # (where CLAUDE_CONFIG_DIR/CODEX_HOME point) rather than the bare role
+    # session path. Otherwise ar probes an always-empty dir, downgrades
+    # RESUME->FRESH, and reuses the session id -> "Session ID ... is already in use".
+    repo_root = tmp_path / "repo"
+    mount_path = repo_root / "pycastle" / ".worktrees" / "issue-1954"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": _ProviderStateDirService()},
+    )
+    runtime_client = _SessionStoreCapturingRuntimeClient()
+    status_display = RecordingStatusDisplay()
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #1954",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "1954",
+                        "ISSUE_TITLE": "Align ar session store with provider state dir",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-1954",
+                        "INTERRUPTED_WORK": "",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert runtime_client.session_store == (
+        mount_path / ".pycastle-session" / "implementer" / "codex"
+    )
