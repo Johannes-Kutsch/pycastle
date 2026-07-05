@@ -21,7 +21,12 @@ from pycastle.runtime_session import (
     ProviderSessionStateRequest,
 )
 from pycastle.config import StageOverride
-from pycastle.errors import AgentTimeoutError, SetupPhaseError, UsageLimitError
+from pycastle.errors import (
+    AgentTimeoutError,
+    ModelNotAvailableError,
+    SetupPhaseError,
+    UsageLimitError,
+)
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
@@ -3960,3 +3965,126 @@ def test_run_iteration_returns_continue_when_all_issues_close(tmp_path):
     outcome = asyncio.run(run_iteration(deps))
 
     assert isinstance(outcome, Continue)
+
+
+# ── AbortedModelNotAvailable: orchestrator routing ────────────────────────────
+
+
+def test_model_not_available_with_available_candidate_does_not_sleep(tmp_path):
+    """When AbortedModelNotAvailable is received and the service registry still has an
+    available candidate, the orchestrator must continue immediately with no sleep."""
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [],
+    ]
+
+    svc = _FakeService(available=True)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        raise ModelNotAvailableError(service="claude", model="claude-opus-4-5")
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            service_registry=ServiceRegistry({"claude": svc}),
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_not_called()
+
+
+def test_model_not_available_with_temporarily_exhausted_chain_sleeps(tmp_path):
+    """When AbortedModelNotAvailable is received and all chain candidates are temporarily
+    exhausted (finite wake time), the orchestrator must sleep until that wake time."""
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [],
+    ]
+
+    wake_time = datetime(2026, 7, 6, 15, 0, tzinfo=timezone.utc)
+    svc = _FakeService(available=False, wake_time=wake_time)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        raise ModelNotAvailableError(service="claude", model="claude-opus-4-5")
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            service_registry=ServiceRegistry({"claude": svc}),
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_called_once()
+    assert mock_sleep.call_args[0][0] > 0
+
+
+def test_model_not_available_with_no_finite_wake_time_stops(tmp_path):
+    """When AbortedModelNotAvailable is received and every chain candidate has no finite
+    wake time (all permanently restricted or exhausted), the orchestrator must stop with
+    a clear message and not sleep."""
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Default Issue",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+
+    svc = _FakeService(available=False, wake_time=None)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        raise ModelNotAvailableError(service="claude", model="claude-opus-4-5")
+
+    recording = RecordingStatusDisplay()
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            service_registry=ServiceRegistry({"claude": svc}),
+            max_iterations=1,
+            status_display=recording,
+        )
+
+    mock_sleep.assert_not_called()
+    msgs = [str(c[2]) for c in recording.calls if c[0] == "print"]
+    assert any("not available" in m.lower() or "model" in m.lower() for m in msgs), (
+        f"Expected a message mentioning model unavailability; got: {msgs}"
+    )

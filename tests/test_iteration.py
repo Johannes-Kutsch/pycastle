@@ -27,6 +27,7 @@ from pycastle.iteration import (
     AbortedAgentCredentialFailure,
     AbortedHardApiError,
     AbortedHITL,
+    AbortedModelNotAvailable,
     AbortedSetup,
     AbortedTimeout,
     AbortedUsageLimit,
@@ -5138,3 +5139,31 @@ def test_merge_phase_only_shows_removing_counter_during_active_deletion(
         merge_updates
     )
     assert "merging 2/2 branches, closing 2/2 issues" in merge_updates
+
+
+# ── AbortedModelNotAvailable: model not available ────────────────────────────
+
+
+def test_run_iteration_returns_aborted_model_not_available_when_model_not_available(
+    tmp_path, git_svc, github_svc, logger
+):
+    """run_iteration returns AbortedModelNotAvailable when the agent raises
+    ModelNotAvailableError, so the orchestrator can route through the continuation
+    decision instead of crashing."""
+    from pycastle.errors import ModelNotAvailableError
+
+    async def _fake_agent(request: RunRequest):
+        raise ModelNotAvailableError(service="claude", model="claude-opus-4-5")
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedModelNotAvailable)
+    assert result.service == "claude"
+    assert result.model == "claude-opus-4-5"

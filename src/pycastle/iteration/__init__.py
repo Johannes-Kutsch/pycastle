@@ -22,6 +22,7 @@ from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
     HardAgentError,
+    ModelNotAvailableError,
     SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
@@ -159,6 +160,13 @@ class AbortedUsageLimit:
 
 
 @dataclasses.dataclass(frozen=True)
+class AbortedModelNotAvailable:
+    service: str | None = None
+    model: str | None = None
+    stage_key: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
 class NoCandidate:
     pass
 
@@ -215,6 +223,7 @@ IterationOutcome: TypeAlias = (
     | Done
     | AbortedHITL
     | AbortedUsageLimit
+    | AbortedModelNotAvailable
     | NoCandidate
     | AbortedAgentFailure
     | AbortedTimeout
@@ -446,6 +455,12 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
             account_label=err.account_label,
             is_permanent=err.is_permanent,
             stage_key=err.stage_key,
+        )
+    except ModelNotAvailableError as err:
+        return AbortedModelNotAvailable(
+            service=err.service,
+            model=err.model,
+            stage_key=getattr(err, "stage_key", None),
         )
     except AgentTimeoutError as err:
         return AbortedTimeout(

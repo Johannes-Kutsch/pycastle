@@ -12,6 +12,7 @@ from . import (
     AbortedAgentCredentialFailure,
     AbortedHardApiError,
     AbortedHITL,
+    AbortedModelNotAvailable,
     AbortedOperatorActionable,
     AbortedSetup,
     AbortedTimeout,
@@ -47,6 +48,7 @@ from .usage_limit_decision import (
     ContinueNow,
     SleepUntil,
     Stop,
+    decide_model_not_available_continuation,
     decide_usage_limit_continuation,
 )
 
@@ -300,6 +302,31 @@ async def run(
                 case AbortedUsageLimit():
                     now = _time_module.now_local()
                     decision = decide_usage_limit_continuation(
+                        outcome,
+                        cfg,
+                        service_registry,
+                        now,
+                    )
+                    if isinstance(decision, ContinueNow):
+                        if decision.message is not None:
+                            status_display.print("", decision.message)  # type: ignore[union-attr]
+                        continue
+                    if isinstance(decision, Stop):
+                        if decision.message is not None:
+                            status_display.print("", decision.message)  # type: ignore[union-attr]
+                        break
+                    assert isinstance(decision, SleepUntil)
+                    wake_time = decision.wake_time
+                    status_display.print(  # type: ignore[union-attr]
+                        "",
+                        decision.message,
+                    )
+                    time.sleep((wake_time - now).total_seconds())
+                    slept_once = True
+                    continue
+                case AbortedModelNotAvailable():
+                    now = _time_module.now_local()
+                    decision = decide_model_not_available_continuation(
                         outcome,
                         cfg,
                         service_registry,

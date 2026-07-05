@@ -14,6 +14,7 @@ from ..errors import (
     AgentFailedError,
     BranchCollisionError,
     HardAgentError,
+    ModelNotAvailableError,
     SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
@@ -326,6 +327,9 @@ async def implement_phase(
             raise result
     for result in results:
         if isinstance(result, TransientAgentError):
+            raise result
+    for result in results:
+        if isinstance(result, ModelNotAvailableError):
             raise result
     usage_limit_errors = [r for r in results if isinstance(r, UsageLimitError)]
     usage_limit_hit = bool(usage_limit_errors)
