@@ -62,7 +62,9 @@ def test_stage_override_chain_retains_compact_fallback_for_available_configured_
         configured_service_names=("codex", "claude"),
     )
 
-    result = chain.configured_candidate_availability({"codex": True, "claude": False})
+    result = chain.configured_candidate_availability(
+        {("codex", "gpt-5.4"): True, ("claude", "opus"): False}
+    )
 
     assert result.available_candidates == (override,)
     assert result.exhausted_candidates == (
@@ -100,7 +102,9 @@ def test_stage_override_chain_reports_exhausted_configured_candidates() -> None:
         configured_service_names=("codex", "claude"),
     )
 
-    result = chain.configured_candidate_availability({"codex": False, "claude": False})
+    result = chain.configured_candidate_availability(
+        {("codex", "gpt-5.4-mini"): False, ("claude", "haiku"): False}
+    )
 
     assert result.has_available_candidate is False
     assert result.exhausted_candidates == chain.configured_candidates.candidates

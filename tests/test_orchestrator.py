@@ -179,7 +179,7 @@ class _FakeService:
         self._wake_time = wake_time
         self._names = names or []
 
-    def is_available(self, now=None) -> bool:
+    def is_available(self, now=None, *, model=None) -> bool:
         return self._available
 
     def next_wake_time(self):
@@ -247,7 +247,7 @@ class _SequencedAvailabilityService(_FakeService):
         )
         self._availability = list(availability)
 
-    def is_available(self, now=None) -> bool:
+    def is_available(self, now=None, *, model=None) -> bool:
         if self._availability:
             self._available = self._availability.pop(0)
         return self._available
