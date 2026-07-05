@@ -9,6 +9,7 @@ import pytest
 from agent_runtime.runtime import (
     Completed,
     Continuation,
+    ModelNotAvailable,
     RunResult,
     RuntimeOutcome,
     TimedOut,
@@ -23,7 +24,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
-from pycastle.errors import AgentTimeoutError, UsageLimitError
+from pycastle.errors import AgentTimeoutError, ModelNotAvailableError, UsageLimitError
 from pycastle.prompts.dispatch import PromptInvocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.runtime_session import ProviderSessionState
@@ -52,6 +53,9 @@ class _FakeService:
 
     def mark_exhausted(self, reset_time, *, _now=None) -> None:
         del reset_time, _now
+
+    def mark_model_restricted(self, model: str) -> None:
+        del model
 
     def state_dir_relpath(self, role, namespace: str = "") -> str | None:
         del role, namespace
@@ -86,10 +90,14 @@ class _RecordingService(_FakeService):
     def __init__(self, name: str) -> None:
         self.name = name
         self.mark_exhausted_calls: list[object] = []
+        self.mark_model_restricted_calls: list[str] = []
 
     def mark_exhausted(self, reset_time, *, _now=None) -> None:
         del _now
         self.mark_exhausted_calls.append(reset_time)
+
+    def mark_model_restricted(self, model: str) -> None:
+        self.mark_model_restricted_calls.append(model)
 
 
 class _FakeDockerSession:
@@ -1586,3 +1594,89 @@ def test_agent_runner_uses_provider_state_dir_as_runtime_session_store(
     assert runtime_client.session_store == (
         mount_path / ".pycastle-session" / "implementer" / "codex"
     )
+
+
+def test_agent_runner_model_not_available_records_restriction_and_raises(
+    tmp_path,
+    monkeypatch,
+):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1952"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    service = _RecordingService("codex")
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": service},
+    )
+    status_display = RecordingStatusDisplay()
+
+    class _ModelNotAvailableRuntimeClient:
+        async def run_new_session(self, request):
+            return RuntimeOutcome(
+                kind=ModelNotAvailable(),
+                result=RunResult(
+                    output="",
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="codex",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+    runtime_client = _ModelNotAvailableRuntimeClient()
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner,
+        "_render_runtime_prompt",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    with pytest.raises(ModelNotAvailableError) as excinfo:
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Implement Agent #1952",
+                    prompt=PromptInvocation(
+                        template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                        scope_args={
+                            "ISSUE_NUMBER": "1952",
+                            "ISSUE_TITLE": "Handle ModelNotAvailable without crashing",
+                            "ISSUE_BODY": "",
+                            "ISSUE_COMMENTS": "",
+                            "BRANCH": "issue-1952",
+                            "INTERRUPTED_WORK": "",
+                        },
+                    ),
+                    mount_path=mount_path,
+                    role=AgentRole.IMPLEMENTER,
+                    model="gpt-5.5",
+                    effort="medium",
+                    service="codex",
+                    status_display=status_display,
+                )
+            )
+        )
+
+    assert excinfo.value.service == "codex"
+    assert excinfo.value.model == "gpt-5.5"
+    assert service.mark_model_restricted_calls == ["gpt-5.5"]
+    assert service.mark_exhausted_calls == []

@@ -52,6 +52,17 @@ class UsageLimitError(PycastleError):
         )
 
 
+class ModelNotAvailableError(PycastleError):
+    def __init__(
+        self,
+        service: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        self.service = service
+        self.model = model
+        super().__init__(f"Model not available (service={service!r}, model={model!r})")
+
+
 class TransientAgentError(PycastleError):
     def __init__(self, message: str = "", status_code: int | None = None) -> None:
         self.status_code = status_code
@@ -222,6 +233,7 @@ __all__ = [
     "DockerTimeoutError",
     "HardAgentError",
     "ManagedWorktreeMountPreconditionError",
+    "ModelNotAvailableError",
     "PycastleError",
     "RuntimeConfigurationError",
     "SetupPhaseError",

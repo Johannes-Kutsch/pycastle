@@ -18,6 +18,7 @@ from agent_runtime.errors import ProviderUnavailableReason
 from agent_runtime.runtime import (
     Cancelled,
     Completed,
+    ModelNotAvailable,
     NewSessionRunRequest,
     ProviderUnavailable,
     ResumedSessionRunRequest,
@@ -51,6 +52,7 @@ from ..errors import (
     AgentTimeoutError,
     DockerError,
     HardAgentError,
+    ModelNotAvailableError,
     SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
@@ -890,6 +892,15 @@ class AgentRunner:
                     run_kind=current_run_kind,
                 )
                 continue
+            if isinstance(outcome.kind, ModelNotAvailable):
+                model = outcome.result.selected.model
+                service.mark_model_restricted(model)
+                if request.token is not None:
+                    request.token.cancel()
+                raise ModelNotAvailableError(
+                    service=outcome.result.selected.service,
+                    model=model,
+                )
             raise RuntimeError("Unexpected runtime outcome kind")
 
         raise RuntimeError("Runtime reprompt loop exhausted unexpectedly")
