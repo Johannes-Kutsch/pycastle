@@ -71,10 +71,13 @@ class CredentialPool:
 
     def earliest_wake_time(self) -> datetime:
         wakes = [
-            a.exhausted_until for a in self._accounts if a.exhausted_until is not None
+            a.exhausted_until
+            for a in self._accounts
+            if a.exhausted_until is not None
+            and a.exhausted_until < PERMANENT_EXHAUSTION_WAKE
         ]
         if not wakes:
-            raise RuntimeError("No exhausted accounts")
+            raise RuntimeError("No exhausted accounts with finite wake time")
         return min(wakes)
 
     def names(self) -> list[str]:
