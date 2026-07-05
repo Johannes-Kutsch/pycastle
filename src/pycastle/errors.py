@@ -57,9 +57,12 @@ class ModelNotAvailableError(PycastleError):
         self,
         service: str | None = None,
         model: str | None = None,
+        *,
+        stage_key: str | None = None,
     ) -> None:
         self.service = service
         self.model = model
+        self.stage_key = stage_key
         super().__init__(f"Model not available (service={service!r}, model={model!r})")
 
 

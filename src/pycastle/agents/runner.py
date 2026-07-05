@@ -900,6 +900,7 @@ class AgentRunner:
                 raise ModelNotAvailableError(
                     service=outcome.result.selected.service,
                     model=model,
+                    stage_key=_stage_key_for_role(request.role),
                 )
             raise RuntimeError("Unexpected runtime outcome kind")
 

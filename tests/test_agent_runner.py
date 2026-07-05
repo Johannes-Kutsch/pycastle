@@ -1678,6 +1678,7 @@ def test_agent_runner_model_not_available_records_restriction_and_raises(
 
     assert excinfo.value.service == "codex"
     assert excinfo.value.model == "gpt-5.5"
+    assert excinfo.value.stage_key == "implement"
     assert not isinstance(excinfo.value, UsageLimitError)
     assert service.mark_model_restricted_calls == ["gpt-5.5"]
     assert service.mark_exhausted_calls == []

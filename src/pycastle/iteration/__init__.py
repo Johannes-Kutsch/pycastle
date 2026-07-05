@@ -460,7 +460,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         return AbortedModelNotAvailable(
             service=err.service,
             model=err.model,
-            stage_key=getattr(err, "stage_key", None),
+            stage_key=err.stage_key,
         )
     except AgentTimeoutError as err:
         return AbortedTimeout(

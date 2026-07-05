@@ -4088,3 +4088,127 @@ def test_model_not_available_with_no_finite_wake_time_stops(tmp_path):
     assert any("not available" in m.lower() or "model" in m.lower() for m in msgs), (
         f"Expected a message mentioning model unavailability; got: {msgs}"
     )
+
+
+def test_model_not_available_stage_scoped_routing_uses_chain_not_global_availability(
+    tmp_path,
+):
+    """When a stage's model is restricted but the service is globally available (other
+    models work), the orchestrator must stop rather than continue.
+
+    Without stage_key on ModelNotAvailableError, the orchestrator calls
+    has_available(now) — which ignores model restrictions — and incorrectly continues
+    to the next iteration. With stage_key set, it calls has_available_for(stage_override,
+    now), which sees that the implement chain's specific model is restricted and stops."""
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Default Issue",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        }
+    ]
+
+    class _ModelRestrictedService(_FakeService):
+        """Globally available service whose 'sonnet' model is permanently restricted."""
+
+        def __init__(self, restricted_model: str) -> None:
+            super().__init__(available=True)
+            self._restricted_model = restricted_model
+
+        def is_available(self, now=None, *, model=None) -> bool:
+            if model is not None and model == self._restricted_model:
+                return False
+            return True
+
+        def next_wake_time(self):
+            return None
+
+    implement_calls = [0]
+
+    async def _fake_run_agent(request: RunRequest):
+        if "Implement Agent" in request.name:
+            implement_calls[0] += 1
+            # Raise with stage_key as the runner would, so stage-scoped routing fires.
+            raise ModelNotAvailableError(
+                service="claude", model="sonnet", stage_key="implement"
+            )
+        return _plan_output(
+            [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+        )
+
+    recording = RecordingStatusDisplay()
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            service_registry=ServiceRegistry(
+                {"claude": _ModelRestrictedService("sonnet")}
+            ),
+            max_iterations=3,
+            status_display=recording,
+        )
+
+    # Stage-scoped routing: has_available_for(implement_override, now) sees sonnet is
+    # restricted → Stop after the first implement attempt, not Continue (which would
+    # loop max_iterations=3 times via global has_available=True).
+    mock_sleep.assert_not_called()
+    assert implement_calls[0] == 1, (
+        f"Expected 1 implement attempt (stop on restricted model), got {implement_calls[0]}"
+    )
+    msgs = [str(c[2]) for c in recording.calls if c[0] == "print"]
+    assert any("not available" in m.lower() for m in msgs), (
+        f"Expected a stop message mentioning unavailability; got: {msgs}"
+    )
+
+
+def test_model_not_available_sleep_message_does_not_say_usage_limit(tmp_path):
+    """When the run sleeps after AbortedModelNotAvailable, the status message must not
+    say 'usage limit reached' — that phrase belongs to credential exhaustion, not model
+    restriction."""
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Default Issue",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [],
+    ]
+
+    wake_time = datetime(2026, 7, 6, 15, 0, tzinfo=timezone.utc)
+    svc = _FakeService(available=False, wake_time=wake_time)
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
+            )
+        raise ModelNotAvailableError(
+            service="claude", model="sonnet", stage_key="implement"
+        )
+
+    recording = RecordingStatusDisplay()
+    with patch("time.sleep"):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            service_registry=ServiceRegistry({"claude": svc}),
+            max_iterations=2,
+            status_display=recording,
+        )
+
+    msgs = [str(c[2]) for c in recording.calls if c[0] == "print"]
+    sleep_msgs = [m for m in msgs if "sleeping until" in m.lower()]
+    assert sleep_msgs, f"Expected at least one sleep message; got: {msgs}"
+    assert all("usage limit" not in m.lower() for m in sleep_msgs), (
+        f"Sleep message incorrectly says 'usage limit reached': {sleep_msgs}"
+    )

@@ -7,7 +7,7 @@ from pycastle.usage_limit_decision import (
     Stop as _Stop,
     TemporaryUsageLimit,
     UsageLimitContinuationDecision,
-    _sleep_message,
+    _fmt_wake,
     decide_usage_limit_continuation as _decide_usage_limit_continuation,
 )
 from pycastle.services.service_registry import ServiceRegistry
@@ -123,14 +123,18 @@ def decide_model_not_available_continuation(
     else:
         next_wake = service_registry.next_wake_time(now)
 
+    service_label = outcome.service or "unknown"
+    model_label = outcome.model or "unknown"
     if next_wake is not None:
         return SleepUntil(
             wake_time=next_wake,
-            message=_sleep_message(next_wake, now, is_estimated=False),
+            message=(
+                f"Model {model_label!r} is not available on {service_label}."
+                f" Sleeping until {_fmt_wake(next_wake, now)}."
+                " Press Ctrl+C to abort."
+            ),
         )
 
-    service_label = outcome.service or "unknown"
-    model_label = outcome.model or "unknown"
     return Stop(
         message=(
             f"Model {model_label!r} is not available on {service_label} and no other "
