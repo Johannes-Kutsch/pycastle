@@ -142,3 +142,19 @@ def test_opencode_service_is_available_for_model_true_for_unrestricted_model():
     svc.build_env()
     svc.mark_model_restricted("kimi-k2.6")
     assert svc.is_available(model="deepseek-v4-flash", now=_NOW) is True
+
+
+def test_opencode_service_is_available_without_model_unaffected_by_model_restriction():
+    svc = OpenCodeService(api_key="tok-1")
+    svc.build_env()
+    svc.mark_model_restricted("kimi-k2.6")
+    assert svc.is_available(now=_NOW) is True
+
+
+def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and_wake():
+    past_reset = datetime(2025, 6, 1, tzinfo=timezone.utc).astimezone()
+    svc = CodexService()
+    svc.mark_model_restricted("gpt-5.5")
+    svc.mark_exhausted(past_reset)  # wake time ~2025-06-01T00:02 UTC, before _NOW
+    assert svc.is_available(model="gpt-5.5", now=_NOW) is False
+    assert svc.is_available(model="gpt-5.4", now=_NOW) is True
