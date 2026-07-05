@@ -312,13 +312,18 @@ class GithubService:
         payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{number}")
         if not isinstance(payload, dict):
             return None
-        parent = payload.get("parent")
-        if not isinstance(parent, dict):
+        # The GitHub REST issue payload exposes the sub-issue parent as a
+        # ``parent_issue_url`` string (e.g. ``.../issues/444``); there is no
+        # ``parent`` object on the resource. Derive the parent number from the
+        # trailing path segment of that URL.
+        parent_url = payload.get("parent_issue_url")
+        if not isinstance(parent_url, str) or not parent_url:
             return None
-        parent_number = parent.get("number")
-        if parent_number is None:
+        tail = parent_url.rstrip("/").rsplit("/", 1)[-1]
+        try:
+            return int(tail)
+        except ValueError:
             return None
-        return int(parent_number)
 
     def _get_all_sub_issues(self, number: int) -> list[dict[str, Any]]:
         results = self._paginate(f"/repos/{self.repo}/issues/{number}/sub_issues")

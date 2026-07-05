@@ -1383,7 +1383,7 @@ def test_get_parent_returns_parent_number():
     transport = _ScriptedGithubTransport(
         [
             _script_step(
-                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 100}}
+                "GET", "/repos/owner/repo/issues/5", payload={"parent_issue_url": "https://api.github.com/repos/owner/repo/issues/100"}
             )
         ]
     )
@@ -1400,6 +1400,29 @@ def test_get_parent_returns_none_when_no_parent():
     svc = _make_service(transport=transport)
 
     assert svc.get_parent(5) is None
+    transport.assert_exhausted()
+
+
+def test_get_parent_reads_real_parent_issue_url_field():
+    # The real GitHub REST issue payload exposes the parent as a
+    # ``parent_issue_url`` string, not a ``parent`` object.
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/5",
+                payload={
+                    "number": 5,
+                    "parent_issue_url": (
+                        "https://api.github.com/repos/owner/repo/issues/100"
+                    ),
+                },
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    assert svc.get_parent(5) == 100
     transport.assert_exhausted()
 
 
@@ -1577,7 +1600,7 @@ def test_close_issue_with_parents_closes_parent_when_no_open_siblings():
                 data={"state": "closed"},
             ),
             _script_step(
-                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+                "GET", "/repos/owner/repo/issues/5", payload={"parent_issue_url": "https://api.github.com/repos/owner/repo/issues/50"}
             ),
             _script_step(
                 "GET",
@@ -1591,7 +1614,7 @@ def test_close_issue_with_parents_closes_parent_when_no_open_siblings():
                 data={"state": "closed"},
             ),
             _script_step(
-                "GET", "/repos/owner/repo/issues/50", payload={"parent": None}
+                "GET", "/repos/owner/repo/issues/50", payload={"number": 50}
             ),
         ]
     )
@@ -1621,7 +1644,7 @@ def test_close_issue_with_parents_stops_when_open_siblings_remain():
                 data={"state": "closed"},
             ),
             _script_step(
-                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+                "GET", "/repos/owner/repo/issues/5", payload={"parent_issue_url": "https://api.github.com/repos/owner/repo/issues/50"}
             ),
             _script_step(
                 "GET",
@@ -1656,7 +1679,7 @@ def test_close_issue_with_parents_ignores_just_closed_child_when_checking_siblin
                 data={"state": "closed"},
             ),
             _script_step(
-                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+                "GET", "/repos/owner/repo/issues/5", payload={"parent_issue_url": "https://api.github.com/repos/owner/repo/issues/50"}
             ),
             _script_step(
                 "GET",
@@ -1670,7 +1693,7 @@ def test_close_issue_with_parents_ignores_just_closed_child_when_checking_siblin
                 data={"state": "closed"},
             ),
             _script_step(
-                "GET", "/repos/owner/repo/issues/50", payload={"parent": None}
+                "GET", "/repos/owner/repo/issues/50", payload={"number": 50}
             ),
         ]
     )
@@ -1734,7 +1757,7 @@ def test_close_issue_with_parents_warns_and_returns_when_sub_issue_query_fails()
                 data={"state": "closed"},
             ),
             _script_step(
-                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+                "GET", "/repos/owner/repo/issues/5", payload={"parent_issue_url": "https://api.github.com/repos/owner/repo/issues/50"}
             ),
             _script_step(
                 "GET",
@@ -1771,7 +1794,7 @@ def test_close_issue_with_parents_warns_and_stops_recursive_parent_chain_when_pa
                 data={"state": "closed"},
             ),
             _script_step(
-                "GET", "/repos/owner/repo/issues/5", payload={"parent": {"number": 50}}
+                "GET", "/repos/owner/repo/issues/5", payload={"parent_issue_url": "https://api.github.com/repos/owner/repo/issues/50"}
             ),
             _script_step(
                 "GET",

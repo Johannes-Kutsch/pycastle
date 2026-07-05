@@ -24,3 +24,9 @@
 - `MergeCloseFailure` joins the `IterationOutcome` sum type. The orchestrator match arm prints the filed issue numbers and `break`s — no `sys.exit`, no new iteration.
 - The `_on_close_error` callback in `merge_phase` is upgraded from a `status_display.print` warning to a call to `file_merge_close_failure_issue`, collecting the returned issue number.
 - The pattern "*failure caused by operator's environment → consuming project's tracker, `bug + needs-triage`, title-prefix dedup, never raises*" is now applied to both git remote failures (ADR 0026) and GitHub API close failures (this ADR).
+
+## Amendment — parent resolution reads `parent_issue_url`, not a `parent` object
+
+The initial `get_parent()` implementation read a `parent` object (`payload["parent"]["number"]`) from the GitHub issue payload. That field does not exist: the REST issue resource exposes the sub-issue parent only as a `parent_issue_url` string (e.g. `.../issues/444`). `get_parent()` therefore returned `None` for every real issue, the cascade stopped at the first hop, and **no parent was ever closed** — every parent PRD/tracking issue was silently left open despite all its children being done. The service-level tests passed because they mocked the fictional `{"parent": {"number": N}}` shape, so a green suite gave false confidence about the live API contract.
+
+`get_parent()` now parses the trailing issue number from `parent_issue_url`. The regression seam that would have caught this is a fixture matching the *real* GitHub sub-issue payload; the cascade tests now use `parent_issue_url`. Lesson for future GitHub-payload code: anchor mocks to a captured real response, not an invented shape — the `_ScriptedGithubTransport` seam will accept any fiction.
