@@ -49,10 +49,17 @@ def test_usage_limit_module_exports_distinct_outcome_types():
     assert not hasattr(usage_limit_module, "UsageLimitOutcome")
 
 
-def _make_service(*, available: bool, wake_time: datetime | None = None) -> MagicMock:
+def _make_service(
+    *,
+    available: bool,
+    wake_time: datetime | None = None,
+    permanently_exhausted: bool = False,
+) -> MagicMock:
     service = MagicMock(spec=AgentService)
     service.is_available.return_value = available
-    if wake_time is not None:
+    if permanently_exhausted:
+        service.next_wake_time.side_effect = RuntimeError("no finite wake time")
+    elif wake_time is not None:
         service.next_wake_time.return_value = wake_time
     return service
 
@@ -358,7 +365,7 @@ def test_decide_usage_limit_continuation_uses_global_next_wake_when_stage_priori
 
 def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion():
     registry = runtime.ServiceRegistry(
-        {"claude": _make_service(available=False, wake_time=_now())}
+        {"claude": _make_service(available=False, permanently_exhausted=True)}
     )
 
     decision = _decide(
@@ -412,7 +419,7 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_without_c
     denial = "disabled Claude subscription access for Claude Code"
     registry = runtime.ServiceRegistry(
         {
-            "claude": _make_service(available=False, wake_time=_now()),
+            "claude": _make_service(available=False, permanently_exhausted=True),
             "codex": _make_service(available=True),
         }
     )
@@ -440,7 +447,7 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_without_c
 
 def test_decide_usage_limit_continuation_uses_observed_provider_label_for_non_claude_permanent_message():
     registry = runtime.ServiceRegistry(
-        {"opencode": _make_service(available=False, wake_time=_now())}
+        {"opencode": _make_service(available=False, permanently_exhausted=True)}
     )
 
     decision = _decide(
@@ -627,3 +634,41 @@ def test_iteration_usage_limit_continuation_keeps_parsed_reset_time_authoritativ
         decision.message
         == "Usage limit reached. Sleeping until 15:32. Press Ctrl+C to abort."
     )
+
+
+def test_decide_usage_limit_continuation_sleeps_when_permanently_exhausted_but_other_candidate_has_finite_wake_time():
+    fallback_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    registry = runtime.ServiceRegistry(
+        {
+            "claude": _make_service(available=False, permanently_exhausted=True),
+            "codex": _make_service(available=False, wake_time=fallback_wake),
+        }
+    )
+
+    decision = _decide(
+        runtime.PermanentlyExhausted(reason="credential_failure", provider="claude"),
+        stage_override=_stage_override("claude", "codex"),
+        service_registry=registry,
+        now=_now(),
+    )
+
+    assert isinstance(decision, runtime.SleepUntil)
+    assert decision.wake_time == fallback_wake
+
+
+def test_decide_usage_limit_continuation_stops_when_all_chain_candidates_permanently_exhausted():
+    registry = runtime.ServiceRegistry(
+        {
+            "claude": _make_service(available=False, permanently_exhausted=True),
+            "codex": _make_service(available=False, permanently_exhausted=True),
+        }
+    )
+
+    decision = _decide(
+        runtime.PermanentlyExhausted(reason="credential_failure", provider="claude"),
+        stage_override=_stage_override("claude", "codex"),
+        service_registry=registry,
+        now=_now(),
+    )
+
+    assert isinstance(decision, runtime.Stop)

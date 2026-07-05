@@ -383,6 +383,29 @@ def test_next_wake_time_for_returns_none_when_priority_chain_has_no_configured_c
     assert registry.next_wake_time_for(override, _now()) is None
 
 
+def test_next_wake_time_returns_none_when_service_is_permanently_exhausted() -> None:
+    opencode = OpenCodeService(api_key="go-key")
+    opencode.mark_permanently_exhausted()
+    registry = runtime.ServiceRegistry(services={"opencode": opencode})
+
+    assert registry.next_wake_time(_now()) is None
+
+
+def test_next_wake_time_for_returns_none_when_all_chain_candidates_permanently_exhausted() -> (
+    None
+):
+    opencode = OpenCodeService(api_key="go-key")
+    opencode.mark_permanently_exhausted()
+    registry = runtime.ServiceRegistry(services={"opencode": opencode})
+    override = runtime.StageOverride(
+        service="opencode",
+        model="kimi-k2.6",
+        effort="medium",
+    )
+
+    assert registry.next_wake_time_for(override, _now()) is None
+
+
 # --- summary_lines ---
 
 

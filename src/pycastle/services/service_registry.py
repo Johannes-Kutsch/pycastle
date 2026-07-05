@@ -13,6 +13,13 @@ from ..stage_priority_chain import (
 ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
 
 
+def _try_next_wake_time(service: AgentService) -> "datetime | None":
+    try:
+        return service.next_wake_time()
+    except RuntimeError:
+        return None
+
+
 class ServiceRegistry:
     def __init__(self, services: Mapping[str, AgentService]) -> None:
         self._services = dict(services)
@@ -66,12 +73,13 @@ class ServiceRegistry:
         ).has_available_candidate
 
     def next_wake_time(self, now: datetime) -> datetime | None:
-        exhausted = [
-            svc for svc in self._services.values() if not svc.is_available(now=now)
+        wake_times = [
+            wt
+            for svc in self._services.values()
+            if not svc.is_available(now=now)
+            if (wt := _try_next_wake_time(svc)) is not None
         ]
-        if not exhausted:
-            return None
-        return min(svc.next_wake_time() for svc in exhausted)
+        return min(wake_times) if wake_times else None
 
     def next_wake_time_for(
         self, override: StageOverride, now: datetime
@@ -82,9 +90,10 @@ class ServiceRegistry:
                 override, now
             ).exhausted_candidates
         ]
-        if not exhausted:
-            return None
-        return min(service.next_wake_time() for service in exhausted)
+        wake_times = [
+            wt for svc in exhausted if (wt := _try_next_wake_time(svc)) is not None
+        ]
+        return min(wake_times) if wake_times else None
 
     def __getitem__(self, key: str) -> AgentService | None:
         return self._services.get(key)

@@ -56,6 +56,25 @@ def test_credential_pool_uses_generic_default_errors():
         pool.pick()
 
 
+def test_credential_pool_earliest_wake_time_raises_when_all_permanently_exhausted():
+    pool = _pool(("account 1", "tok-1"), ("account 2", "tok-2"))
+    pool.mark_permanently_exhausted("tok-1")
+    pool.mark_permanently_exhausted("tok-2")
+
+    with pytest.raises(RuntimeError):
+        pool.earliest_wake_time()
+
+
+def test_credential_pool_earliest_wake_time_skips_permanently_exhausted_accounts():
+    now = datetime(2026, 1, 1, 14, 0, tzinfo=timezone.utc).astimezone()
+    reset_time = datetime(2099, 1, 1, 14, 30, tzinfo=timezone.utc).astimezone()
+    pool = _pool(("account 1", "tok-1"), ("account 2", "tok-2"))
+    pool.mark_permanently_exhausted("tok-1")
+    pool.mark_exhausted("tok-2", reset_time, now=now)
+
+    assert pool.earliest_wake_time() == reset_time + timedelta(minutes=2)
+
+
 # --- Model restriction tests ---
 
 
