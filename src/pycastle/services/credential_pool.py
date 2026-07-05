@@ -15,6 +15,7 @@ class _CredentialSlot:
     name: str
     token: str
     exhausted_until: datetime | None = None
+    restricted_models: set[str] = dataclasses.field(default_factory=set)
 
 
 class CredentialPool:
@@ -76,6 +77,28 @@ class CredentialPool:
         if not wakes:
             raise RuntimeError("No exhausted accounts")
         return min(wakes)
+
+    def mark_model_restricted(self, token: str, model: str) -> None:
+        for acc in self._accounts:
+            if acc.token == token:
+                acc.restricted_models.add(model)
+                return
+
+    def has_available_for_model(self, model: str, now: datetime | None = None) -> bool:
+        now = now or _time_module.now_local()
+        return any(
+            not self._is_exhausted(a, now) and model not in a.restricted_models
+            for a in self._accounts
+        )
+
+    def pick_for_model(
+        self, model: str, now: datetime | None = None
+    ) -> tuple[str, str]:
+        now = now or _time_module.now_local()
+        for acc in self._accounts:
+            if not self._is_exhausted(acc, now) and model not in acc.restricted_models:
+                return acc.name, acc.token
+        raise RuntimeError(self._unavailable_error_message)
 
     def names(self) -> list[str]:
         return [a.name for a in self._accounts]

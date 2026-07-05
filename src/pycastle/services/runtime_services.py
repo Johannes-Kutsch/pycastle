@@ -47,7 +47,9 @@ class AgentService(Protocol):
         token: str | None = None,
     ) -> dict[str, str]: ...
 
-    def is_available(self, now: datetime | None = None) -> bool: ...
+    def is_available(
+        self, now: datetime | None = None, *, model: str | None = None
+    ) -> bool: ...
 
     def next_wake_time(self) -> datetime: ...
 
@@ -159,9 +161,13 @@ class ClaudeService:
     def name(self) -> str:
         return "claude"
 
-    def is_available(self, now: datetime | None = None) -> bool:
+    def is_available(
+        self, now: datetime | None = None, *, model: str | None = None
+    ) -> bool:
         if self._pool is None:
             return True
+        if model is not None:
+            return self._pool.has_available_for_model(model, now=now)
         return self._pool.has_available(now=now)
 
     def next_wake_time(self) -> datetime:
@@ -186,6 +192,10 @@ class ClaudeService:
         if self._pool is None or self._current_token is None:
             return None
         return self._pool.mark_permanently_exhausted(self._current_token)
+
+    def mark_model_restricted(self, model: str) -> None:
+        if self._pool is not None and self._current_token is not None:
+            self._pool.mark_model_restricted(self._current_token, model)
 
     def state_dir_relpath(self, role, namespace: str = "") -> str | None:
         return provider_state_relpath(
@@ -245,16 +255,25 @@ class ClaudeService:
 class CodexService:
     api_key: str | None = None
     _exhausted_until: datetime | None = dataclasses.field(default=None, init=False)
+    _restricted_models: set[str] = dataclasses.field(default_factory=set, init=False)
 
     @property
     def name(self) -> str:
         return "codex"
 
-    def is_available(self, now: datetime | None = None) -> bool:
-        if self._exhausted_until is None:
-            return True
-        now = now or _time_module.now_local()
-        return now >= self._exhausted_until
+    def is_available(
+        self, now: datetime | None = None, *, model: str | None = None
+    ) -> bool:
+        if self._exhausted_until is not None:
+            now = now or _time_module.now_local()
+            if now < self._exhausted_until:
+                return False
+        if model is not None:
+            return model not in self._restricted_models
+        return True
+
+    def mark_model_restricted(self, model: str) -> None:
+        self._restricted_models.add(model)
 
     def next_wake_time(self) -> datetime:
         if self._exhausted_until is None:
@@ -561,9 +580,13 @@ class OpenCodeService:
             use_service_state_dir_for_container=True,
         )
 
-    def is_available(self, now: datetime | None = None) -> bool:
+    def is_available(
+        self, now: datetime | None = None, *, model: str | None = None
+    ) -> bool:
         if self._pool is None:
             return True
+        if model is not None:
+            return self._pool.has_available_for_model(model, now=now)
         return self._pool.has_available(now=now)
 
     def next_wake_time(self) -> datetime:
@@ -588,6 +611,10 @@ class OpenCodeService:
         if self._pool is None or self._current_token is None:
             return None
         return self._pool.mark_permanently_exhausted(self._current_token)
+
+    def mark_model_restricted(self, model: str) -> None:
+        if self._pool is not None and self._current_token is not None:
+            self._pool.mark_model_restricted(self._current_token, model)
 
     def account_names(self) -> list[str]:
         if self._pool is None:

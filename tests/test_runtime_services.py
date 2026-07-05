@@ -1,9 +1,18 @@
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import ProviderSessionStateRequest
-from pycastle.services.runtime_services import CodexService
+from pycastle.services.runtime_services import (
+    ClaudeService,
+    CodexService,
+    OpenCodeService,
+)
+
+
+_FAR = datetime(2099, 1, 1, tzinfo=timezone.utc).astimezone()
+_NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc).astimezone()
 
 
 def _role_session_mock() -> MagicMock:
@@ -59,3 +68,77 @@ def test_codex_provider_session_state_skips_auth_seed_when_auth_json_present(
     )
 
     assert state.auth_seed_action is None
+
+
+# --- Model-aware availability checks on AgentService implementations ---
+
+
+def test_claude_service_is_available_for_model_false_when_model_restricted():
+    svc = ClaudeService(accounts=[("account 1", "tok-1")])
+    svc.build_env()  # picks tok-1 as active slot
+    svc.mark_model_restricted("sonnet")
+    assert svc.is_available(model="sonnet", now=_NOW) is False
+
+
+def test_claude_service_is_available_for_model_true_for_unrestricted_model():
+    svc = ClaudeService(accounts=[("account 1", "tok-1")])
+    svc.build_env()
+    svc.mark_model_restricted("sonnet")
+    assert svc.is_available(model="haiku", now=_NOW) is True
+
+
+def test_claude_service_model_restriction_does_not_affect_other_slots():
+    svc = ClaudeService(accounts=[("account 1", "tok-1"), ("account 2", "tok-2")])
+    svc.build_env()  # picks tok-1
+    svc.mark_model_restricted("sonnet")
+    assert svc.is_available(model="sonnet", now=_NOW) is True
+
+
+def test_claude_service_model_restriction_persists_after_slot_rotation():
+    svc = ClaudeService(accounts=[("account 1", "tok-1"), ("account 2", "tok-2")])
+    svc.build_env()  # picks tok-1
+    svc.mark_model_restricted("sonnet")
+    svc.mark_permanently_exhausted()  # exhausts tok-1; pool rotates to tok-2
+    svc.build_env()  # picks tok-2
+    svc.mark_permanently_exhausted()  # exhausts tok-2
+    # both slots exhausted — tok-1 also has sonnet restricted
+    assert svc.is_available(model="sonnet", now=_NOW) is False
+
+
+def test_claude_service_is_available_without_model_unaffected_by_model_restriction():
+    svc = ClaudeService(accounts=[("account 1", "tok-1")])
+    svc.build_env()
+    svc.mark_model_restricted("sonnet")
+    assert svc.is_available(now=_NOW) is True
+
+
+def test_codex_service_is_available_for_model_false_when_model_restricted():
+    svc = CodexService()
+    svc.mark_model_restricted("gpt-5.5")
+    assert svc.is_available(model="gpt-5.5", now=_NOW) is False
+
+
+def test_codex_service_is_available_for_model_true_for_unrestricted_model():
+    svc = CodexService()
+    svc.mark_model_restricted("gpt-5.5")
+    assert svc.is_available(model="gpt-5.4", now=_NOW) is True
+
+
+def test_codex_service_is_available_without_model_unaffected_by_model_restriction():
+    svc = CodexService()
+    svc.mark_model_restricted("gpt-5.5")
+    assert svc.is_available(now=_NOW) is True
+
+
+def test_opencode_service_is_available_for_model_false_when_model_restricted():
+    svc = OpenCodeService(api_key="tok-1")
+    svc.build_env()
+    svc.mark_model_restricted("kimi-k2.6")
+    assert svc.is_available(model="kimi-k2.6", now=_NOW) is False
+
+
+def test_opencode_service_is_available_for_model_true_for_unrestricted_model():
+    svc = OpenCodeService(api_key="tok-1")
+    svc.build_env()
+    svc.mark_model_restricted("kimi-k2.6")
+    assert svc.is_available(model="deepseek-v4-flash", now=_NOW) is True

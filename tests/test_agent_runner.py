@@ -43,8 +43,8 @@ class _FakeService:
         del state_dir_container_path, token
         return {}
 
-    def is_available(self, now=None) -> bool:
-        del now
+    def is_available(self, now=None, *, model=None) -> bool:
+        del now, model
         return True
 
     def next_wake_time(self):
