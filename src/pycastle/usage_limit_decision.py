@@ -136,9 +136,6 @@ def decide_usage_limit_continuation(
             exhausted_wake_time=exhausted_wake_time,
         )
 
-    if isinstance(outcome, PermanentlyExhausted):
-        return Stop(message=_permanent_exhaustion_message(outcome))
-
     if service_registry is None:
         next_wake = None
     elif use_stage_scope:
@@ -152,6 +149,9 @@ def decide_usage_limit_continuation(
             wake_time=next_wake,
             message=_sleep_message(next_wake, now, is_estimated=False),
         )
+
+    if isinstance(outcome, PermanentlyExhausted):
+        return Stop(message=_permanent_exhaustion_message(outcome))
 
     wake_time, is_estimated = compute_wake_time(outcome.reset_time, now)
     return SleepUntil(
