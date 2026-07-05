@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 from pycastle.config.types import StageOverride
 from pycastle.services.service_registry import ServiceRegistry
 from pycastle.services.runtime_services import AgentService
+from pycastle.services.runtime_services import CodexService
 from pycastle.services.runtime_services import OpenCodeService
 
 runtime = SimpleNamespace(ServiceRegistry=ServiceRegistry, StageOverride=StageOverride)
@@ -484,3 +485,82 @@ def test_lookup_unknown_key_returns_none() -> None:
     registry = runtime.ServiceRegistry(services={})
 
     assert registry["codex"] is None
+
+
+# --- model-aware fallback chain resolution ---
+
+
+def _codex_with_model_a_restricted() -> CodexService:
+    svc = CodexService()
+    svc.mark_model_restricted("model-A")
+    return svc
+
+
+def test_resolve_selects_second_same_service_node_when_first_model_restricted() -> None:
+    codex = _codex_with_model_a_restricted()
+    claude = _make_svc(available=True)
+    registry = ServiceRegistry(services={"codex": codex, "claude": claude})
+    override = StageOverride(
+        service="codex",
+        model="model-A",
+        effort="high",
+        fallback=StageOverride(
+            service="codex",
+            model="model-B",
+            effort="high",
+            fallback=StageOverride(service="claude", model="sonnet", effort="medium"),
+        ),
+    )
+
+    result = registry.resolve(override, _now())
+
+    assert result.service == "codex"
+    assert result.model == "model-B"
+
+
+def test_has_available_for_returns_true_when_only_second_same_service_model_available() -> (
+    None
+):
+    codex = _codex_with_model_a_restricted()
+    registry = ServiceRegistry(services={"codex": codex})
+    override = StageOverride(
+        service="codex",
+        model="model-A",
+        effort="high",
+        fallback=StageOverride(service="codex", model="model-B", effort="high"),
+    )
+
+    assert registry.has_available_for(override, _now()) is True
+
+
+def test_has_available_for_returns_false_when_all_same_service_models_restricted() -> (
+    None
+):
+    codex = CodexService()
+    codex.mark_model_restricted("model-A")
+    codex.mark_model_restricted("model-B")
+    registry = ServiceRegistry(services={"codex": codex})
+    override = StageOverride(
+        service="codex",
+        model="model-A",
+        effort="high",
+        fallback=StageOverride(service="codex", model="model-B", effort="high"),
+    )
+
+    assert registry.has_available_for(override, _now()) is False
+
+
+def test_next_wake_time_for_excludes_available_same_service_model_from_exhausted() -> (
+    None
+):
+    codex = _codex_with_model_a_restricted()
+    registry = ServiceRegistry(services={"codex": codex})
+    override = StageOverride(
+        service="codex",
+        model="model-A",
+        effort="high",
+        fallback=StageOverride(service="codex", model="model-B", effort="high"),
+    )
+
+    # model-B is available, so the chain has an available candidate → no finite wake time
+    assert registry.next_wake_time_for(override, _now()) is None

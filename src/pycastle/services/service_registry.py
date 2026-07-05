@@ -40,20 +40,21 @@ class ServiceRegistry:
         self, override: StageOverride, now: datetime
     ) -> ConfiguredCandidateAvailability:
         chain = self._configured_candidates_chain(override)
-        availability = self._availability_by_service(
+        availability = self._availability_by_service_model(
             chain.configured_candidates.candidates, now
         )
         return chain.configured_candidate_availability(availability)
 
-    def _availability_by_service(
+    def _availability_by_service_model(
         self, overrides: tuple[StageOverride, ...], now: datetime
-    ) -> dict[str, bool]:
-        availability: dict[str, bool] = {}
+    ) -> dict[tuple[str, str], bool]:
+        availability: dict[tuple[str, str], bool] = {}
         for node in overrides:
-            if node.service in availability:
+            key = (node.service, node.model)
+            if key in availability:
                 continue
-            availability[node.service] = self._services[node.service].is_available(
-                now=now
+            availability[key] = self._services[node.service].is_available(
+                now=now, model=node.model or None
             )
         return availability
 
