@@ -100,6 +100,7 @@ def test_run_cmd_dispatches_via_pycastle_owned_orchestration_adapter(
     from pycastle import orchestration
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("GH_TOKEN", "gh")
@@ -130,6 +131,7 @@ def test_run_cmd_fails_clearly_when_stage_chain_has_no_locally_configured_servic
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("GH_TOKEN", "gh")
@@ -176,6 +178,7 @@ def test_run_cmd_preserves_full_stage_priority_chain_label_for_unconfigured_serv
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("GH_TOKEN", "gh")
@@ -231,6 +234,7 @@ def test_run_cmd_rejects_empty_stage_override_service_before_credentials(
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
@@ -260,6 +264,7 @@ def test_run_cmd_rejects_empty_stage_override_effort_before_credentials(
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
@@ -302,6 +307,7 @@ def test_build_cmd_exits_one_on_invalid_config(tmp_path, monkeypatch):
 def test_build_cmd_shows_config_error_message(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     with patch(
         "pycastle.main.load_config", side_effect=ConfigValidationError("bad model")
@@ -324,6 +330,7 @@ def test_labels_cmd_exits_one_on_invalid_config(tmp_path, monkeypatch):
 def test_labels_cmd_shows_config_error_message(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     with patch(
         "pycastle.main.load_config", side_effect=ConfigValidationError("bad effort")
@@ -346,6 +353,7 @@ def test_run_cmd_exits_one_on_invalid_config(tmp_path, monkeypatch):
 def test_run_cmd_shows_config_error_message(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     with patch(
         "pycastle.main.load_config", side_effect=ConfigValidationError("bad model")
@@ -357,6 +365,7 @@ def test_run_cmd_shows_config_error_message(tmp_path, monkeypatch):
 def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     cfg = Config(docker_image_name="custom-img")
     fake_svc = MagicMock()
@@ -376,6 +385,7 @@ def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
 def test_build_cmd_exits_zero_on_success(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     cfg = Config(docker_image_name="img")
     fake_svc = MagicMock()
@@ -392,6 +402,7 @@ def test_build_cmd_exits_zero_on_success(tmp_path, monkeypatch):
 def test_build_cmd_exits_one_on_docker_service_error(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     cfg = Config(docker_image_name="img")
     fake_svc = MagicMock()
@@ -408,6 +419,7 @@ def test_build_cmd_exits_one_on_docker_service_error(tmp_path, monkeypatch):
 def test_build_cmd_exits_one_on_docker_build_error(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     cfg = Config(docker_image_name="img")
     fake_svc = MagicMock()
@@ -424,6 +436,7 @@ def test_build_cmd_exits_one_on_docker_build_error(tmp_path, monkeypatch):
 def test_build_cmd_exits_one_when_docker_image_name_is_empty(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     cfg = Config(docker_image_name="")
 
@@ -456,6 +469,7 @@ def test_version_flag_output_contains_pycastle_and_version():
 def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     cfg = Config(issue_label="custom-ready")
     posted: list = []
@@ -499,6 +513,7 @@ def test_run_cmd_shows_install_instruction_when_claude_cli_missing(
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     with patch(
         "pycastle.main.load_config",
@@ -511,6 +526,7 @@ def test_run_cmd_shows_install_instruction_when_claude_cli_missing(
 def test_run_cmd_exits_cleanly_when_claude_cli_missing(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     with patch(
         "pycastle.main.load_config",
@@ -537,6 +553,7 @@ def test_build_cmd_shows_install_instruction_when_claude_cli_missing(
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     with patch(
         "pycastle.main.load_config",
@@ -563,6 +580,7 @@ def test_labels_cmd_shows_install_instruction_when_claude_cli_missing(
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     with patch(
         "pycastle.main.load_config",
@@ -578,6 +596,7 @@ def test_labels_cmd_shows_install_instruction_when_claude_cli_missing(
 def test_labels_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("GH_TOKEN", "test-token")
@@ -600,6 +619,7 @@ def test_labels_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
 def test_build_cmd_prints_layer_summary_at_startup(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
 
@@ -648,6 +668,7 @@ def _run_cmd_capturing_improve_mode(
 
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir(exist_ok=True)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -727,6 +748,7 @@ def test_run_cmd_no_improve_overrides_config(tmp_path, monkeypatch):
 def test_run_cmd_improve_and_no_improve_are_mutually_exclusive(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -756,6 +778,7 @@ def _run_cmd_with_build_outcome(tmp_path, monkeypatch, outcome):
 
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir(exist_ok=True)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -780,6 +803,7 @@ def _run_cmd_with_build_outcome(tmp_path, monkeypatch, outcome):
 def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -811,6 +835,7 @@ def test_run_cmd_triggers_docker_build_before_orchestrator(tmp_path, monkeypatch
 def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -841,6 +866,7 @@ def test_run_cmd_exits_one_when_build_fails(tmp_path, monkeypatch):
 def test_run_cmd_exits_one_when_docker_image_name_is_empty(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -860,6 +886,7 @@ def test_run_cmd_exits_one_when_docker_image_name_is_empty(tmp_path, monkeypatch
 def test_run_cmd_does_not_invoke_docker_when_image_name_empty(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -911,6 +938,7 @@ def test_run_cmd_exits_nonzero_on_unknown_service_before_docker_build(
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -941,6 +969,7 @@ def test_run_cmd_exits_nonzero_on_invalid_effort_for_codex_stage(tmp_path, monke
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -975,6 +1004,7 @@ def test_run_cmd_exits_nonzero_on_unsupported_codex_effort_for_stage(
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1013,6 +1043,7 @@ def test_run_cmd_exits_nonzero_on_unsupported_codex_effort_for_stage_fallback(
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1054,6 +1085,7 @@ def test_run_cmd_exits_nonzero_on_invalid_effort_for_claude_stage(
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1086,6 +1118,7 @@ def test_run_cmd_exits_nonzero_on_invalid_claude_model_with_suggestion(
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1119,6 +1152,7 @@ def test_run_cmd_exits_nonzero_on_cross_service_model_with_valid_claude_list(
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1152,6 +1186,7 @@ def test_run_cmd_rejects_provider_prefixed_model_for_opencode_stage(
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("GH_TOKEN", "gh")
@@ -1189,6 +1224,7 @@ def test_run_cmd_rejects_non_neutral_effort_for_opencode_stage(tmp_path, monkeyp
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("GH_TOKEN", "gh")
@@ -1225,6 +1261,7 @@ def test_run_cmd_rejects_non_neutral_effort_for_opencode_stage(tmp_path, monkeyp
 def test_run_cmd_rejects_fallback_empty_service(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1257,6 +1294,7 @@ def test_run_cmd_rejects_fallback_empty_service(tmp_path, monkeypatch):
 def test_run_cmd_rejects_fallback_invalid_model(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1294,6 +1332,7 @@ def test_run_cmd_reuses_fallback_stage_label_for_each_invalid_fallback_node(
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1337,6 +1376,7 @@ def test_run_cmd_reports_all_violations_in_single_message(tmp_path, monkeypatch)
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1370,6 +1410,7 @@ def test_run_cmd_reports_missing_fields_and_invalid_models_together(
     from pycastle.config.types import StageOverride
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1405,6 +1446,8 @@ def test_run_cmd_exits_nonzero_on_provider_model_mismatch_before_docker_build(
     tmp_path, monkeypatch
 ):
     from pycastle.main import main as cli
+
+    (tmp_path / "pycastle").mkdir()
 
     class _AcceptingAdapter:
         def __init__(self, models: frozenset[str]) -> None:
@@ -1494,6 +1537,7 @@ def test_run_cmd_exits_nonzero_on_provider_model_mismatch_before_docker_build(
 def test_run_cmd_valid_config_passes_validation_silently(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -1516,3 +1560,72 @@ def test_run_cmd_valid_config_passes_validation_silently(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "Config validation" not in result.output
+
+
+# ── Issue 1955: abort with init instruction when pycastle/ dir is absent ──────
+
+
+def test_run_cmd_aborts_with_init_instruction_when_pycastle_dir_absent(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+
+    result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 1
+    assert "pycastle init" in result.output
+
+
+def test_run_cmd_aborts_mentions_missing_pycastle_dir_when_pycastle_dir_absent(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+
+    result = CliRunner().invoke(cli, ["run"])
+
+    assert "pycastle/" in result.output
+
+
+def test_config_loading_commands_succeed_when_pycastle_dir_exists(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    (tmp_path / "pycastle").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+
+    cfg = Config(docker_image_name="img")
+    fake_svc = MagicMock()
+    fake_svc.build.return_value = None
+
+    async def _fake_run(*args, **kwargs):
+        pass
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.main.agent_runtime.run", _fake_run),
+    ):
+        result = CliRunner().invoke(cli, ["run"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_init_cmd_succeeds_without_pycastle_dir(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+
+    with patch("pycastle.commands.init.main") as fake_init:
+        result = CliRunner().invoke(cli, ["init", "--local"])
+
+    assert result.exit_code == 0, result.output
+    assert fake_init.called

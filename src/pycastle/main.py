@@ -60,7 +60,21 @@ def _print_layer_summary() -> None:
     PlainStatusDisplay().print("", summary)
 
 
+def _check_pycastle_dir_or_exit() -> None:
+    layout = resolve_layout()
+    if not layout.pycastle_dir.is_dir():
+        click.echo(
+            f"Error: no pycastle/ directory found in {layout.repo_root} — "
+            "this project isn't initialized.\n"
+            "Run `pycastle init` from your repo root, "
+            "or cd to the repo root before running pycastle.",
+            err=True,
+        )
+        sys.exit(1)
+
+
 def _load_config_or_exit() -> Config:
+    _check_pycastle_dir_or_exit()
     try:
         return load_config()
     except ClaudeCliNotFoundError:
@@ -280,6 +294,7 @@ def cron_cmd(no_improve: bool) -> None:
     from .commands.init import refresh as _refresh
     from .log_maintenance import maintain_logs
 
+    _check_pycastle_dir_or_exit()
     layout = resolve_layout()
     layout.cron_lock_path.parent.mkdir(parents=True, exist_ok=True)
 

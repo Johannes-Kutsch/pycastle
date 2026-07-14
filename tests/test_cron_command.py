@@ -42,6 +42,7 @@ def _make_docker_svc():
 def test_cron_cmd_creates_lock_file_at_pycastle_home(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     home = tmp_path / "pycastle_home"
     monkeypatch.setenv("PYCASTLE_HOME", str(home))
@@ -65,6 +66,7 @@ def test_cron_cmd_second_invocation_blocks_until_lock_released(tmp_path, monkeyp
 
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     home = tmp_path / "pycastle_home"
     home.mkdir(parents=True)
@@ -108,6 +110,7 @@ def test_cron_cmd_second_invocation_blocks_until_lock_released(tmp_path, monkeyp
 def test_cron_cmd_calls_refresh_before_runtime_entrypoint(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -141,6 +144,7 @@ def test_cron_cmd_skips_runtime_entrypoint_when_refresh_fails(tmp_path, monkeypa
 
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -177,6 +181,7 @@ def test_cron_cmd_no_improve_passes_none_improve_mode_to_runtime_entrypoint(
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -208,6 +213,7 @@ def test_cron_cmd_no_improve_passes_none_improve_mode_to_runtime_entrypoint(
 def test_cron_cmd_without_flags_uses_config_improve_mode(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -317,6 +323,7 @@ def test_cron_cmd_without_flags_uses_none_when_config_improve_mode_not_set(
 ):
     from pycastle.main import main as cli
 
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
@@ -340,3 +347,22 @@ def test_cron_cmd_without_flags_uses_none_when_config_improve_mode_not_set(
 
     assert result.exit_code == 0, result.output
     assert captured["improve_mode"] is None
+
+
+# ── Issue 1955: abort before lock when pycastle/ dir is absent ────────────────
+
+
+def test_cron_cmd_aborts_before_creating_lock_when_pycastle_dir_absent(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    home = tmp_path / "pycastle_home"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(home))
+
+    result = CliRunner().invoke(cli, ["cron"])
+
+    assert result.exit_code == 1
+    assert not (home / ".cron.lock").exists()
+    assert "pycastle init" in result.output

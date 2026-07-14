@@ -23,6 +23,7 @@ def test_check_keeps_adr_0036_terminal_ordering_contract(tmp_path, monkeypatch):
     monkeypatch.setattr(
         check_mod, "run_host_check_command", fake_run_host_check_command
     )
+    (tmp_path / "pycastle").mkdir()
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(cli, ["check"])
 
