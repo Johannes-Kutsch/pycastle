@@ -15,7 +15,7 @@ Trigger: under context pressure the agent skips TDD structure. Three causes: (a)
 ## Consequences
 
 - **Three labels mandatory per code-or-docs issue.** Exactly one of `refactor-slice`, `behavior-slice`, `docs-slice`. Canonical label set grows to nine.
-- **Three prompts:** `work/behavior.md` (TDD with gate), `work/refactor.md` (no new tests), `work/docs.md` (markdown only). Prompt paths updated by ADR 0037.
+- **Three prompts:** `work/behavior.md` (TDD with gate), `work/refactor.md` (no new tests), `work/docs.md` (markdown only). Prompt paths updated by ADR 0031.
 - **Behavior gate:** explore → name behavior → write failing test → emit `<behavior>` tag → implement to green. No `Edit`/`Write` on non-test files before tag emits.
 - **Refactor gate:** no new tests; uncovered behavior filed as follow-up `behavior-slice`.
 - **Docs gate:** no code, no tests.

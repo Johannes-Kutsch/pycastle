@@ -1,10 +1,6 @@
-# Restore OpenCode timeout-derived exhaustion routing under ar
+# OpenCode timeout-derived exhaustion routing
 
-> **Restores:** ADR 0043 (OpenCode timeout exhaustion uses unknown-reset usage-limit path), which was incorrectly dropped by ADR 0049.
-
-ADR 0049 replaced pycastle's provider layer with `ruhken-agent-runtime` and noted that OpenCode idle-timeout retries were superseded by `TimedOut` outcome + Continuation resume. That statement was wrong: the OpenCode-specific transform from idle-timeout to usage-limit exhaustion was a distinct routing decision that should have survived the ar migration. When OpenCode hits its quota it goes silent; ar fires the idle timeout and returns `TimedOut`. Resuming the session immediately hits the same wall, so retrying is counter-productive. The account should be retired and the credential pool or fallback chain should take over — exactly as it does for structured usage-limit events.
-
-This ADR restores the intent of ADR 0043 under the ar execution model.
+OpenCode Go usage exhaustion surfaces as silence, not a structured provider usage-limit event: when OpenCode hits its quota it stops emitting, ar fires the idle timeout and returns `TimedOut`. Resuming the session immediately hits the same wall, so retrying is counter-productive. The OpenCode-specific transform from idle-timeout to unknown-reset usage-limit exhaustion routes this into the same account-retire / credential-pool / fallback-chain machinery that structured usage-limit events use. (This routing predates the ar migration; ADR 0039 wrongly claimed to supersede it — only the *retry mechanism* changed, not the routing decision restated here.)
 
 ## Decision
 
@@ -21,6 +17,5 @@ Claude and Codex are unaffected. Their `TimedOut` outcomes continue to trigger t
 
 ## Consequences
 
-- ADR 0043's superseded status note is revised: the `TimedOut` + Continuation resume statement in ADR 0049 did not replace the OpenCode timeout-to-usage-limit transform — it only replaced the *retry mechanism*. The routing decision restated here stands independently.
 - The `opencode_minimum_unknown_reset_duration_hours` config default is now `1.0`; existing configs that explicitly set `0.0` retain the prior next-hour heuristic behaviour unchanged.
 - Status rows paint `"interrupted"` on OpenCode quota-timeout (inherited from the usage-limit path) rather than `"failed"` (which would have appeared via `AbortedTimeout`).

@@ -1,6 +1,6 @@
 # ruhken-agent-runtime replaces pycastle provider layer
 
-> **Supersedes:** ADR 0006 (session resume via derived UUID), ADR 0015 (pluggable AgentService), ADR 0023 (three-bucket Claude API error handling), ADR 0024 (per-agent CLI flag profiles), ADR 0029 (CLI version pins and Codex sandbox), ADR 0038 (service-aware Failure-Report session dir), ADR 0039 (shared credential failure routing), ADR 0043 (OpenCode timeout exhaustion path).
+> **Supersedes** (these ADRs are retired; their decisions are subsumed here): session resume via derived UUID, the pluggable `AgentService` streaming-execution seam, three-bucket Claude API error handling, per-agent CLI flag profiles, CLI version pins + Codex sandbox policy, service-aware Failure-Report session dir, and shared credential-failure routing. The one exception is the OpenCode idle-timeout-to-usage-limit routing, which this ADR wrongly claimed to supersede — it is restored under ar by ADR 0042.
 
 Pycastle's own provider execution layer — `AgentService`, `ClaudeService`, `CodexService`, `OpenCodeService`, `flag_profiles.py`, `parsed_event_reducer.py`, `session/resume.py`, `session/provider_session_state.py`, `session/provider_run_state.py`, `session/service_resume_identity.py`, `infrastructure/_logged_line_stream.py`, and the `work.py` abstraction layer (`invoke_work` and associated protocols) — is replaced by `ruhken-agent-runtime` (`ar`, package `agent_runtime`).
 
@@ -30,7 +30,7 @@ Ar's `RuntimeClient` provides three execution patterns (`run_ephemeral`, `run_ne
 
 ## Consequences
 
-**Auth seeding.** `prepare_local_provider_run_state()` (which called `auth_seed_action.apply()`) is deleted alongside the old provider layer, but the seeding step itself must survive. In the ar path, `_run_with_runtime_client` in `AgentRunner` calls `service.provider_session_state()` with the service-specific `provider_state_dir` (derived from `service.state_dir_relpath()`, not from `role_session.path`) and applies `auth_seed_action` before handing control to ar. This preserves the invariant from ADR 0020: `CODEX_HOME/auth.json` is seeded from `~/.codex/auth.json` before the container starts.
+**Auth seeding.** `prepare_local_provider_run_state()` (which called `auth_seed_action.apply()`) is deleted alongside the old provider layer, but the seeding step itself must survive. In the ar path, `_run_with_runtime_client` in `AgentRunner` calls `service.provider_session_state()` with the service-specific `provider_state_dir` (derived from `service.state_dir_relpath()`, not from `role_session.path`) and applies `auth_seed_action` before handing control to ar. This preserves the invariant from ADR 0017: `CODEX_HOME/auth.json` is seeded from `~/.codex/auth.json` before the container starts.
 
 - `services/claude_service.py`, `codex_service.py`, `opencode_service.py`, `agent_service.py`, `flag_profiles.py`, `session/provider_run_state.py`, `provider_session_state.py`, `service_resume_identity.py`, `resume.py`, `parsed_event_reducer.py`, `infrastructure/_logged_line_stream.py`, `provider_errors.py`, and the `work.py` abstraction layer are deleted.
 - `RoleSession` retains lifecycle methods (`path`, `start_fresh`, `clear_provider_state_and_signal_completion`, `discard`, `is_resumable`, `is_done`) and adds `_continuation` file read/write; all provider-specific methods are deleted.
@@ -38,13 +38,13 @@ Ar's `RuntimeClient` provides three execution patterns (`run_ephemeral`, `run_ne
 - `decide_usage_limit_continuation()` signature changes from `outcome: UsageLimitOutcome` to `TemporaryUsageLimit | PermanentlyExhausted`.
 - All resumable ar runs require a `session_store` path; pycastle passes the per-provider state dir (see the amendment at the end of this ADR — originally `RoleSession.path`).
 - Protocol reprompt on `AgentOutputProtocolError` is implemented as a `run_resumed_session` call with the reprompt text and the `Continuation` from the previous `Completed` run.
-- `ContainerRunner` drops all provider-CLI invocation logic; see ADR 0050.
+- `ContainerRunner` drops all provider-CLI invocation logic; see ADR 0040.
 
 ## Amendment (#1954): `session_store` is the per-provider state dir
 
 The original decision passed `RoleSession.path` (`.pycastle-session/<role>[/<namespace>]/`) as `session_store`. That worked with the ar version current at the time, which nested provider state further under `session_store` before probing it. Ar ≥ 2.4 changed the contract: with a caller-owned `session_store` it probes that directory **directly** for the provider transcript, adding no owner/provider segment of its own.
 
-Because pycastle sets the provider's own config dir (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`) to the per-provider path `.pycastle-session/<role>[/<namespace>]/<provider>/` (from `service.state_dir_relpath()`, per ADR 0050 argv routing), passing the bare `RoleSession.path` left ar probing a directory the provider never writes to. On resume ar found no transcript, downgraded `RunKind.RESUME → FRESH`, reused the continuation's session id, and Claude aborted with *"Session ID … is already in use."*
+Because pycastle sets the provider's own config dir (`CLAUDE_CONFIG_DIR`/`CODEX_HOME`) to the per-provider path `.pycastle-session/<role>[/<namespace>]/<provider>/` (from `service.state_dir_relpath()`, per ADR 0040 argv routing), passing the bare `RoleSession.path` left ar probing a directory the provider never writes to. On resume ar found no transcript, downgraded `RunKind.RESUME → FRESH`, reused the continuation's session id, and Claude aborted with *"Session ID … is already in use."*
 
 **Correction:** `AgentRunner._run_runtime_once` now passes `session_store = provider_state_dir` (the already-computed `request.mount_path / service.state_dir_relpath(...)`, falling back to `RoleSession.path` when a service has no per-provider state dir) to both `run_new_session` and `run_resumed_session`. Ar now probes exactly where the provider reads/writes.
 

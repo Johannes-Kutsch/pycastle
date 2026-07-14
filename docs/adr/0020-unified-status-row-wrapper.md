@@ -6,7 +6,7 @@ Collapse both wrappers into a single `status_row` async context manager paramete
 
 ## Behaviour changes
 
-- **Agent rows now paint `"interrupted"` on `UsageLimitError` / `AgentTimeoutError`**, where they previously painted `"failed"`. The phase row above still paints `"interrupted"` at the centralised iteration boundary (ADR 0008) — both painters are now truthful, and an agent that crashed because of a usage limit is not classified as malfunctioning.
+- **Agent rows now paint `"interrupted"` on `UsageLimitError` / `AgentTimeoutError`**, where they previously painted `"failed"`. The phase row above still paints `"interrupted"` at the centralised iteration boundary (ADR 0006) — both painters are now truthful, and an agent that crashed because of a usage limit is not classified as malfunctioning.
 - **Palette index for agent colour is taken from the `color_key` kwarg, not parsed from the caller name string.** `Implement Agent #N` and `Review Agent #N` continue to share colour because both call sites pass `color_key=N`. The cyan-bold rendering of the literal `#N` substring inside the `[Caller]` prefix is a separate cosmetic rule on the caller string and is retained — it never drove row identity.
 
 ## Considered options

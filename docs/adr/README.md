@@ -4,52 +4,44 @@
 - [0002 — CLI-native model shorthand resolution](0002-cli-native-model-shorthand-resolution.md): Pass shorthands directly to service CLI; `load_config` stays pure.
 - [0003 — Global user-scope config and env](0003-global-user-scope-config-and-env.md): Layer `defaults → global → local` for `config.py` and `.env`.
 - [0004 — GitHub PAT as sole credential](0004-github-pat-as-sole-credential.md): Single `GH_TOKEN` PAT for all GitHub access.
-- [0005 — Dual Claude account failover](0005-dual-claude-account-failover.md): In-memory OAuth token pool with secondary-account failover. *Two-account cap, N-token rejection, and secondary-first ordering superseded by ADR 0047.*
-- [0006 — Session resume across container teardown](0006-session-resume-across-container-teardown.md): Resume interrupted agents via derived UUID so in-progress reasoning survives. *Superseded by ADR 0049 (ar Continuation token replaces derived-UUID session resume).*
-- [0007 — Stage completion via role-session-dir state](0007-stage-completion-via-role-dir-not-commit-prefix.md): Empty `.pycastle-session/<role>/` dir signals done, not commit-prefix scan.
-- [0008 — Centralized UsageLimitError catch](0008-centralized-usagelimit-catch-at-iteration-boundary.md): Single `try/except` at `run_iteration` top level.
-- [0009 — PromptRenderer with scoped placeholder tiers](0009-prompt-renderer-with-scoped-placeholder-tiers.md): Startup validation of prompt templates against global + per-scope placeholders.
-- [0010 — Per-phase session namespacing for improve](0010-per-phase-session-namespacing-for-improve-mode.md): Improve phase 03 on its own session namespace (`issues`). *Phase-03-split superseded by ADR 0046; namespace mechanism + strict phase-1→2 gate + PRD-as-durable-handoff still stand.*
-- [0011 — Recently-closed filter](0011-recently-closed-filter-for-github-list-endpoint.md): Self-healing `_recently_closed` set in `GithubService`.
-- [0012 — Prompt rendering in AgentRunner](0012-prompt-rendering-in-agent-runner-not-container-runner.md): Prompt-shape resolution in `AgentRunner`, not `ContainerRunner`.
-- [0013 — Content-addressed PreflightCache](0013-remove-skip-preflight-route-merger-through-cache.md): Single-slot cross-iteration cache; Merger routes through `get_safe_sha()`.
-- [0014 — Pin implement-phase SHA from planner](0014-pin-implement-sha-from-planner.md): `run_issue` consumes planner's SHA directly.
-- [0015 — Pluggable agent services](0015-pluggable-agent-services-per-stage-fallback.md): `AgentService` at the streaming-execution seam with per-stage fallback. *Superseded by ADR 0049 (ar replaces AgentService).*
-- [0016 — Three-mode implement slice](0016-three-mode-implement-slice-with-explicit-gate.md): `refactor-slice`, `behavior-slice`, `docs-slice` with explicit gates.
-- [0017 — Semantic XML tags](0017-semantic-xml-tags-for-agent-prompts.md): Fixed four-tag vocabulary for prompt structure.
-- [0018 — Persist agent drafts in role session dir](0018-persist-agent-drafts-in-role-session-dir.md): Drafts survive container teardown via preservation rule.
-- [0019 — Implicit Docker image verify](0019-implicit-image-verify-on-pycastle-run.md): `pycastle run` builds before starting containers.
-- [0020 — Codex auth via per-role `auth.json`](0020-codex-auth-via-per-role-bind-mount.md): Per-role workspace-local OAuth `auth.json` with independent refresh lineages.
-- [0021 — Shared `gh` issue-tracker fragment](0021-shared-gh-issue-tracker-fragment-in-default-prompts.md): `{{ISSUE_TRACKER}}` global placeholder from `shared/_issue-tracker.md`.
-- [0022 — Destination-scoped auto-issue gate](0022-destination-scoped-auto-issue-gate.md): `auto_file_bugs` gates upstream pycastle repo issues; default `False`.
-- [0023 — Three-bucket Claude API error handling](0023-three-bucket-claude-api-error-handling.md): 429/5xx/4xx classification at parsing layer. *Superseded by ADR 0049 (ar classifies API errors internally; pycastle routes ar outcomes).*
-- [0024 — Per-agent CLI flag profiles](0024-per-agent-cli-flag-profiles.md): Hardcoded per-role flag profiles for token reduction. *Superseded by ADR 0049 (flag_profiles.py deleted; ar.ToolPolicy replaces per-service flag matrices).*
-- [0025 — Unified status-row wrapper](0025-unified-status-row-wrapper.md): Single `status_row` CM with `kind`, `must_close`, `color_key`.
-- [0026 — Operator-actionable git failures](0026-operator-actionable-git-failures.md): Retry-then-escalate to consuming project tracker.
-- [0027 — `max_parallel` as concurrency cap](0027-max-parallel-as-concurrency-cap.md): Caps concurrent agents, not per-iteration batch size.
-- [0028 — Preserve transient worktree for Failure-Report](0028-preserve-transient-worktree-for-failure-analysis.md): Keep worktree on `AgentFailedError` for diagnostic agent.
-- [0029 — Pin agent CLI versions and codex sandbox](0029-pin-agent-cli-versions-and-fix-codex-resume-sandbox.md): Version pins and `--sandbox` only on fresh Codex runs. *Superseded by ADR 0049 (ar owns CLI version management and --sandbox; see ADR 0050).*
-- [0030 — Live Codex status tokens](0030-live-codex-status-tokens-require-exact-prompt-side-telemetry.md): Exact prompt-side token count, not total spend.
-- [0031 — Universal agent image and stage priority chains](0031-universal-agent-image-and-stage-priority-chains.md): One image, ordered priority-list fallback chains.
-- [0032 — Host-owned conflict merge commits](0032-host-owned-conflict-merge-commits.md): Pycastle owns `git merge`/commit/ancestry validation.
-- [0033 — Host check loop](0033-host-check-loop-for-current-os-diagnostics.md): `pycastle check` runs `HOST_CHECKS` on current OS.
-- [0034 — Setup phase failures route upstream](0034-setup-phase-failures-route-upstream.md): Handled aborts routed through `auto_file_issue`.
-- [0035 — Fixed project-local layout](0035-fixed-project-local-layout.md): Fixed `pycastle/` paths; `logs_dir` stays configurable.
-- [0036 — Per-file prompt overrides](0036-per-file-prompt-overrides-without-init-scaffolding.md): Local files override bundled at same relative path.
-- [0037 — Prompt family layout](0037-prompt-family-layout.md): `coordination/`, `diagnostics/`, `improve/`, `shared/`, `work/`.
-- [0038 — Service-aware Failure-Report session dir](0038-service-aware-failure-report-session-dir.md): Failed service name through `AgentFailedError`. *Superseded by ADR 0049 (session_dir computed property replaced by direct Path field set to session_store).*
-- [0039 — Shared operator-actionable credential failures](0039-shared-operator-actionable-agent-credential-failures.md): Cross-provider credential failure routing to consuming project. *Superseded by ADR 0049 (AgentCredentialFailureError → PermanentlyExhausted; UsageLimitOutcome split into TemporaryUsageLimit / PermanentlyExhausted).*
-- [0041 — Managed session and diagnostic workspaces](0041-agent-session-state-only-in-managed-worktrees.md): Session state only in managed worktrees.
-- [0042 — Template-specific protocol reprompts](0042-template-specific-protocol-reprompts.md): Expected output shape shared between first prompt and reprompt.
-- [0043 — OpenCode timeout exhaustion uses unknown-reset usage-limit path](0043-opencode-timeout-exhaustion-uses-unknown-reset-usage-limit-path.md): Treat OpenCode timeout exhaustion as an unknown-reset usage limit. *The routing decision was incorrectly dropped in ADR 0049 and is restored by ADR 0052.*
-- [0044 — Host-initiated privileged worktree cleanup](0044-host-initiated-privileged-worktree-cleanup.md): Remove root-owned orphan worktrees via a host-spawned root container; never an agent capability.
-- [0045 — Failure-Report evidence from captured agent log](0045-failure-report-evidence-from-captured-agent-log.md): Copy the failed run's agent-invocation log into the worktree; never depend on provider session export.
-- [0046 — Improve slice phase resumes the PRD session](0046-improve-slice-phase-resumes-prd-session.md): Phase 03 resumes the `main` transcript instead of starting fresh in `issues`; `issues` namespace retired (supersedes the phase-03 split in ADR 0010).
-- [0047 — Numbered credential pool per `.env`-credentialed service](0047-numbered-credential-pool-per-env-service.md): N numbered credentials (`_2`, `_3`, …) per Claude/OpenCode, bare key = slot 1, uniform retire-and-rotate (supersedes ADR 0005's two-account cap and secondary-first ordering).
-- [0048 — CI auto-fixes ruff and re-triggers publish](0048-ci-autofix-lint-and-retrigger-publish.md): Publish workflow runs `ruff format`/`--fix`, commits the fix with a privileged token, aborts, and re-triggers; tag builds force-move `vX.Y.Z` onto the fix for same-version PyPI.
-- [0049 — ruhken-agent-runtime replaces pycastle provider layer](0049-ruhken-agent-runtime-replaces-pycastle-provider-layer.md): Ar's RuntimeClient replaces AgentService, session resume, error classification, and flag profiles; Continuation + _continuation file replace derived-UUID session state. Supersedes 0006, 0015, 0023, 0024, 0029, 0038, 0039. *Note: incorrectly listed 0043 as superseded; the OpenCode timeout-to-usage-limit routing decision is restored by ADR 0052.*
-- [0050 — argv_transform for container-routed ar invocations](0050-argv-transform-for-container-routed-ar-invocations.md): Ar's argv_transform hook routes provider CLI invocations into Docker exec without ar gaining a Docker dependency; ContainerRunner becomes a thin lifecycle wrapper.
-- [0051 — Positive stage-done sentinel](0051-positive-stage-done-sentinel.md): `clear_provider_state_and_signal_completion()` writes a `_done` file; `is_done()` checks for it. Replaces the false-positive negative-inference predicate introduced by ar's session setup creating the session dir before the provider runs. Amends ADR 0007.
-- [0052 — Restore OpenCode timeout-derived exhaustion routing under ar](0052-restore-opencode-timeout-derived-exhaustion-routing.md): Restores ADR 0043's OpenCode `TimedOut` → usage-limit routing, incorrectly dropped in ADR 0049; raises `opencode_minimum_unknown_reset_duration_hours` default to `1.0`.
-- [0053 — Per-issue parent cascade and merge close failure reporting](0053-per-issue-parent-cascade-and-merge-close-failure-reporting.md): Per-issue parent cascade replaces global open-issue scan; child close failures file operator-actionable reports on the consuming project's tracker. *Amended: parent resolution reads `parent_issue_url`, not a non-existent `parent` object — the original mechanism closed no parents at all.*
-- [0054 — Stale continuation recovery with in-runner Fresh retry](0054-stale-continuation-recovery-with-in-runner-fresh-retry.md): Catch `ContinuationUnrecoverableError` and detect service mismatch proactively in `_invoke_runtime_attempts`; clear stale continuation, check dirty tree, re-render Fresh prompt, and retry in-loop.
+- [0005 — Stage completion via role-session-dir state](0005-stage-completion-via-role-dir-not-commit-prefix.md): Role-session-dir state signals done, not commit-prefix scan (amended by 0039, 0041).
+- [0006 — Centralized UsageLimitError catch](0006-centralized-usagelimit-catch-at-iteration-boundary.md): Single `try/except` at `run_iteration` top level.
+- [0007 — PromptRenderer with scoped placeholder tiers](0007-prompt-renderer-with-scoped-placeholder-tiers.md): Startup validation of prompt templates against global + per-scope placeholders.
+- [0008 — Per-phase session namespacing for improve](0008-per-phase-session-namespacing-for-improve-mode.md): Session-namespace mechanism + strict phase-1→2 gate (the phase-03 split is later reverted by 0036).
+- [0009 — Recently-closed filter](0009-recently-closed-filter-for-github-list-endpoint.md): Self-healing `_recently_closed` set in `GithubService`.
+- [0010 — Prompt rendering in AgentRunner](0010-prompt-rendering-in-agent-runner-not-container-runner.md): Prompt-shape resolution lives upstream of the container substrate.
+- [0011 — Content-addressed PreflightCache](0011-remove-skip-preflight-route-merger-through-cache.md): Single-slot cross-iteration cache; Merger routes through `get_safe_sha()`.
+- [0012 — Pin implement-phase SHA from planner](0012-pin-implement-sha-from-planner.md): `run_issue` consumes planner's SHA directly.
+- [0013 — Three-mode implement slice](0013-three-mode-implement-slice-with-explicit-gate.md): `refactor-slice`, `behavior-slice`, `docs-slice` with explicit gates.
+- [0014 — Semantic XML tags](0014-semantic-xml-tags-for-agent-prompts.md): Fixed four-tag vocabulary for prompt structure.
+- [0015 — Persist agent drafts in role session dir](0015-persist-agent-drafts-in-role-session-dir.md): Drafts survive container teardown via the preservation rule.
+- [0016 — Implicit Docker image verify](0016-implicit-image-verify-on-pycastle-run.md): `pycastle run` builds before starting containers.
+- [0017 — Codex auth via per-role `auth.json`](0017-codex-auth-via-per-role-bind-mount.md): Per-role workspace-local OAuth `auth.json` with independent refresh lineages.
+- [0018 — Shared `gh` issue-tracker fragment](0018-shared-gh-issue-tracker-fragment-in-default-prompts.md): `{{ISSUE_TRACKER}}` global placeholder from `shared/_issue-tracker.md`.
+- [0019 — Destination-scoped auto-issue gate](0019-destination-scoped-auto-issue-gate.md): `auto_file_bugs` gates upstream pycastle repo issues; default `False`.
+- [0020 — Unified status-row wrapper](0020-unified-status-row-wrapper.md): Single `status_row` CM with `kind`, `must_close`, `color_key`.
+- [0021 — Operator-actionable git failures](0021-operator-actionable-git-failures.md): Retry-then-escalate to the consuming project's tracker.
+- [0022 — `max_parallel` as concurrency cap](0022-max-parallel-as-concurrency-cap.md): Caps concurrent agents, not per-iteration batch size.
+- [0023 — Preserve transient worktree for Failure-Report](0023-preserve-transient-worktree-for-failure-analysis.md): Keep worktree on `AgentFailedError` for the diagnostic agent.
+- [0024 — Live Codex status tokens](0024-live-codex-status-tokens-require-exact-prompt-side-telemetry.md): Exact prompt-side token count, not total spend.
+- [0025 — Universal agent image and stage priority chains](0025-universal-agent-image-and-stage-priority-chains.md): One image, ordered priority-list fallback chains.
+- [0026 — Host-owned conflict merge commits](0026-host-owned-conflict-merge-commits.md): Pycastle owns `git merge`/commit/ancestry validation.
+- [0027 — Host check loop](0027-host-check-loop-for-current-os-diagnostics.md): `pycastle check` runs `HOST_CHECKS` on the current OS.
+- [0028 — Setup phase failures route upstream](0028-setup-phase-failures-route-upstream.md): Handled aborts routed through `auto_file_issue`.
+- [0029 — Fixed project-local layout](0029-fixed-project-local-layout.md): Fixed `pycastle/` paths; `logs_dir` stays configurable.
+- [0030 — Per-file prompt overrides](0030-per-file-prompt-overrides-without-init-scaffolding.md): Local files override bundled prompts at the same relative path.
+- [0031 — Prompt family layout](0031-prompt-family-layout.md): `coordination/`, `diagnostics/`, `improve/`, `shared/`, `work/`.
+- [0032 — Managed session and diagnostic workspaces](0032-agent-session-state-only-in-managed-worktrees.md): Session state only in managed worktrees.
+- [0033 — Template-specific protocol reprompts](0033-template-specific-protocol-reprompts.md): Expected output shape shared between first prompt and reprompt.
+- [0034 — Host-initiated privileged worktree cleanup](0034-host-initiated-privileged-worktree-cleanup.md): Remove root-owned orphan worktrees via a host-spawned root container; never an agent capability.
+- [0035 — Failure-Report evidence from captured agent log](0035-failure-report-evidence-from-captured-agent-log.md): Copy the failed run's agent-invocation log into the worktree; never depend on provider session export.
+- [0036 — Improve slice phase resumes the PRD session](0036-improve-slice-phase-resumes-prd-session.md): Phase 03 resumes the `main` transcript instead of starting fresh; `issues` namespace retired (supersedes the phase-03 split in ADR 0008).
+- [0037 — Numbered credential pool per `.env`-credentialed service](0037-numbered-credential-pool-per-env-service.md): N numbered credentials (`_2`, `_3`, …) per Claude/OpenCode, bare key = slot 1, uniform retire-and-rotate; consolidates the former dual-account failover ADR.
+- [0038 — CI auto-fixes ruff and re-triggers publish](0038-ci-autofix-lint-and-retrigger-publish.md): Publish workflow runs `ruff format`/`--fix`, commits with a privileged token, aborts, and re-triggers; tag builds force-move `vX.Y.Z` onto the fix for same-version PyPI.
+- [0039 — ruhken-agent-runtime replaces pycastle provider layer](0039-ruhken-agent-runtime-replaces-pycastle-provider-layer.md): Ar's RuntimeClient replaces AgentService, session resume, error classification, and flag profiles; Continuation + `_continuation` file replace derived-UUID session state. Retires the legacy provider-layer ADRs; the OpenCode timeout routing it wrongly claimed is restored by ADR 0042.
+- [0040 — argv_transform for container-routed ar invocations](0040-argv-transform-for-container-routed-ar-invocations.md): Ar's `argv_transform` hook routes provider CLI invocations into `docker exec` without ar gaining a Docker dependency; ContainerRunner becomes a thin lifecycle wrapper.
+- [0041 — Positive stage-done sentinel](0041-positive-stage-done-sentinel.md): `clear_provider_state_and_signal_completion()` writes a `_done` file; `is_done()` checks for it. Amends ADR 0005.
+- [0042 — OpenCode timeout-derived exhaustion routing](0042-opencode-timeout-derived-exhaustion-routing.md): OpenCode `TimedOut` → usage-limit routing; raises `opencode_minimum_unknown_reset_duration_hours` default to `1.0`.
+- [0043 — Per-issue parent cascade and merge close failure reporting](0043-per-issue-parent-cascade-and-merge-close-failure-reporting.md): Per-issue parent cascade replaces global open-issue scan; child close failures file operator-actionable reports on the consuming project's tracker (reads `parent_issue_url`).
+- [0044 — Stale continuation recovery with in-runner Fresh retry](0044-stale-continuation-recovery-with-in-runner-fresh-retry.md): Catch `ContinuationUnrecoverableError` and detect service mismatch proactively; clear stale continuation, check dirty tree, re-render Fresh prompt, and retry in-loop.
+- [0045 — Model-restriction-scoped fallback](0045-model-restriction-scoped-fallback.md): Track `ModelNotAvailable` at `(credential slot, model)` granularity; route through `AbortedModelNotAvailable` and the centralized continuation decision.

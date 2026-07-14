@@ -2,7 +2,7 @@
 
 The **Failure-Report agent** is promised one canonical piece of diagnostic evidence — **Failure-Report evidence**, a copy of the failed run's **agent-invocation log** (header plus raw provider stream, all attempts) placed inside the mounted worktree for it to read with its own tools. pycastle no longer points diagnosis at the provider's native session, and `SESSION_DIR` keeps its single meaning as the provider-state / resume-cleanup pointer.
 
-This is a boundary decision: a provider transcript belongs to the service that produced it (`provider transcript ownership`) and cannot be replayed across an agent/environment boundary. The trigger was an OpenCode Planner `protocol_error` whose provider-state dir held only a `session_id` file; the Failure-Report agent ran `opencode export <id>` from a different environment, got `Session not found`, and filed a content-free report. ADR 0038 had already foreshadowed this in its rejected alternatives ("Pass the whole agent log file path instead of `SESSION_DIR` … useful as a future improvement"); this ADR realizes that improvement while preserving the `SESSION_DIR` service-state path 0038 established.
+This is a boundary decision: a provider transcript belongs to the service that produced it (`provider transcript ownership`) and cannot be replayed across an agent/environment boundary. The trigger was an OpenCode Planner `protocol_error` whose provider-state dir held only a `session_id` file; the Failure-Report agent ran `opencode export <id>` from a different environment, got `Session not found`, and filed a content-free report. The service-aware Failure-Report `SESSION_DIR` decision had already foreshadowed this in its rejected alternatives ("Pass the whole agent log file path instead of `SESSION_DIR` … useful as a future improvement"); this ADR realizes that improvement while preserving that `SESSION_DIR` service-state path.
 
 ## Considered Options
 
@@ -14,7 +14,7 @@ This is a boundary decision: a provider transcript belongs to the service that p
 ## Consequences
 
 - The contract is generic across every service; no OpenCode special-case and no `opencode export` dependency, so `Session not found` can no longer occur in diagnosis.
-- The failed run's captured-log path is carried to the failure boundary alongside the failed service name (mirrors ADR 0038's `service_name` threading through `AgentFailedError` / `translate_run_outcome`).
+- The failed run's captured-log path is carried to the failure boundary alongside the failed service name (mirrors the `service_name` threading through `AgentFailedError` / `translate_run_outcome`).
 - The copy lands in the worktree's session area already excluded from git, so it never shows as a project change.
 - The promise is bounded to what pycastle captured: a usable log is copied (a near-empty one still evidences that the agent produced nothing); when none exists, the existing **Failure-Report fallback issue** path is unchanged.
 - `SESSION_DIR` is untouched — still the provider-state directory and the `non_typed_crash` `rm -rf <SESSION_DIR>` recovery target.

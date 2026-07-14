@@ -18,9 +18,9 @@ Fix: factor the recipe into a single shared include `shared/_issue-tracker.md` r
 - `shared/_issue-tracker.md` canonical recipe set: create-issue, view-with-comments, list-by-search, add-label/remove-label, comment, close, link-as-sub-issue (`gh api repos/OWNER/REPO/issues/N/sub_issues --method POST --field sub_issue_id=M` — the one recipe escaping to `gh api` because sub-issues has no native `gh` verb). All auth via `$GH_TOKEN`; `OWNER/REPO` autodetected.
 - `PromptRenderer`'s shared-file registry in `src/pycastle/prompts/pipeline.py` carries `shared/_issue-tracker.md → ISSUE_TRACKER`. Construction-time validation aborts loud if missing.
 - Five prompts updated; each replaces `gh`-specific paragraph with `{{ISSUE_TRACKER}}`. `diagnostics/failure-report.md` gains the include.
-- Both Dockerfiles install `gh` via apt — ADR 0015's pluggable services contract requires every container to honor the same prompt-level commands.
+- Both Dockerfiles install `gh` via apt — the pluggable-services contract requires every container to honor the same prompt-level commands.
 - Pycastle's own `docs/agents/issue-tracker.md` rewritten to match. Consumer copies need a one-time mirror; not automatic, not enforced.
-- ADR 0018's `gh issue create --body-file` reference is once again accurate.
-- ADR 0010's manual `gh issue close` for orphan PRD is a *user* step on the host — unchanged.
+- ADR 0015's `gh issue create --body-file` reference is once again accurate.
+- ADR 0008's manual `gh issue close` for orphan PRD is a *user* step on the host — unchanged.
 - ADR 0004's PAT-as-sole-credential stands; its "no `gh` install" sub-claim does not survive — agent prompts need `gh`, host code uses `urllib`.
 - Hallucinated `<issue>N</issue>` emissions remain structurally possible until orchestrator-side verification lands. 2026-05-18 incident mitigated, not closed.

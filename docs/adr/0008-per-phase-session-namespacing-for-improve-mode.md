@@ -33,4 +33,6 @@ Phase 03 receives the PRD's number, title, body, comments inlined via `{{ISSUE_N
 - `_ImproveDeps` gains `gh_svc: GithubService`. `GithubService` gains `get_issue(number) -> dict`. `improve_phase` calls `get_issue` + `get_issue_comments` once per phase 03 entry.
 - Phase 02 prompt drops `## Dedup check` section (no remaining caller after orphan-reset semantics). Phase 03 prompt gains `# CONTEXT` block mirroring `implement-prompt.md`.
 - **Orphan-reset:** if `last_id == "02-prd"` AND `in_flight_id != "03-issues"`, in-memory PRD number is lost; unlink `_phase_progress` and restart from phase 01; orphan PRD requires manual `gh issue close`.
-- ADR 0006's closing line about improve mode is superseded by this ADR; resume primitive is unchanged, namespace is additive.
+- The session-resume primitive is unchanged; the session namespace is additive on top of it.
+
+> **Note (ADR 0036).** Phase 03 later moved back into the `main` namespace and now resumes the Scan/PRD transcript; the `issues` namespace is retired. ADR 0036 supersedes the phase-03-split above, but this ADR's namespace mechanism, strict phase-1→2 gate, and PRD-as-durable-handoff still stand.

@@ -2,7 +2,7 @@
 
 Pycastle previously had two parallel GitHub auth paths: `gh auth login` (browser OAuth via `gh` CLI) and `GH_TOKEN` (direct `urllib` + agent containers). Either could 401 invisibly to the other. All GitHub access now routes through `GithubService` as an HTTP client authenticated via `GH_TOKEN`. One credential, used identically host-side and in containers, validated by a `GET /user` startup preflight.
 
-Note: ADR 0021 partly reverses the "no `gh` install" sub-claim — agent containers do install `gh` for prompt-driven issue ops, but host code still uses PAT + `urllib`.
+Note: ADR 0018 partly reverses the "no `gh` install" sub-claim — agent containers do install `gh` for prompt-driven issue ops, but host code still uses PAT + `urllib`.
 
 ## Considered Options
 

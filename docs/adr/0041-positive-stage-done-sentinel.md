@@ -1,10 +1,10 @@
 # Positive stage-done sentinel replaces negative-inference done predicate
 
-> **Amends:** ADR 0007 (stage completion via role-session-dir state) and its ADR 0049 amendment.
+> **Amends:** ADR 0005 (stage completion via role-session-dir state) and its ADR 0039 amendment.
 
-After the ar migration (ADR 0049), `is_done()` relied on `path.is_dir() AND NOT is_resumable()` — inferring completion from the *absence* of a `_continuation` file. This introduced a false-positive: ar's `_codex_prepare_runtime_state` calls `provider_state_dir.mkdir(parents=True, exist_ok=True)` as part of session setup, and auth seeding (`LocalAuthSeedAction.apply()`) also creates the session directory before the provider runs. A startup credential failure (`AgentCredentialFailureError`) therefore leaves the session directory behind with no `_continuation` file, causing `is_done()` to return True for a session that never completed any work. On the next run the implement stage was skipped and the reviewer ran on an empty branch.
+After the ar migration (ADR 0039), `is_done()` relied on `path.is_dir() AND NOT is_resumable()` — inferring completion from the *absence* of a `_continuation` file. This introduced a false-positive: ar's `_codex_prepare_runtime_state` calls `provider_state_dir.mkdir(parents=True, exist_ok=True)` as part of session setup, and auth seeding (`LocalAuthSeedAction.apply()`) also creates the session directory before the provider runs. A startup credential failure (`AgentCredentialFailureError`) therefore leaves the session directory behind with no `_continuation` file, causing `is_done()` to return True for a session that never completed any work. On the next run the implement stage was skipped and the reviewer ran on an empty branch.
 
-The invariant broken by ADR 0049 was: "dir appears only when agent first starts." After ar, the dir appears as a filesystem side-effect before the agent runs.
+The invariant broken by ADR 0039 was: "dir appears only when agent first starts." After ar, the dir appears as a filesystem side-effect before the agent runs.
 
 ## Decision
 
@@ -15,7 +15,7 @@ The invariant broken by ADR 0049 was: "dir appears only when agent first starts.
 ## Considered options
 
 - **`_done` sentinel file — chosen.** Single authoritative signal; immune to side-effects from auth seeding, AR session setup, or any future provider preparation step. Clean separation from `is_resumable()`, which stays `_continuation`-based.
-- **Branch-commit scan.** Rejected: IMPLEMENTER and REVIEWER share the same branch; distinguishing which stage a commit belongs to requires fragile commit-counting. Reintroduces the coupling between "describe the work" and "mark stage done" that ADR 0007 explicitly rejected.
+- **Branch-commit scan.** Rejected: IMPLEMENTER and REVIEWER share the same branch; distinguishing which stage a commit belongs to requires fragile commit-counting. Reintroduces the coupling between "describe the work" and "mark stage done" that ADR 0005 explicitly rejected.
 - **Restore old file-scan `is_resumable()`.** Rejected: the old scan found `auth.json` in the session tree and returned True, accidentally preventing the false-positive. This was coincidental protection, not an invariant. It would be broken again if auth seeding moves outside the session tree.
 - **Clean up session dir on non-preservable failure.** Rejected: requires classifying every failure type at the runner boundary; misses the window where AR creates the dir before an exception can propagate to a cleanup handler.
 

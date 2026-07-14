@@ -1,14 +1,12 @@
 # Stage completion signaled by role-session-dir state, not commit-message prefix
 
-> **Amended (ADR 0049).** Session state content shifts from per-service provider transcript files (`<role>/<service>/`) to a single `_continuation` file (`<role>/_continuation`). The stage-done predicate — `is_dir() AND not is_resumable()` — is unchanged; `clear_provider_state_and_signal_completion()` clears `_continuation` and any ar session files. `is_resumable()` checks for `_continuation` file presence instead of scanning for non-metadata service files.
+> **Amended (ADR 0039).** Session state content shifts from per-service provider transcript files (`<role>/<service>/`) to a single `_continuation` file (`<role>/_continuation`); `is_resumable()` checks for `_continuation` presence instead of scanning provider files.
 
-> **Amended (ADR 0051).** The stage-done predicate changes from negative inference (`is_dir() AND NOT is_resumable()`) to a positive sentinel: `clear_provider_state_and_signal_completion()` writes a `_done` file after purging provider state; `is_done()` checks for `_done` presence only. This closes a false-positive introduced by ar's session setup and auth seeding creating the session directory before the provider runs, making a startup failure indistinguishable from a clean completion under the old predicate.
+> **Amended (ADR 0041).** The stage-done predicate changes from negative inference (`is_dir() AND NOT is_resumable()`) to a positive sentinel: `clear_provider_state_and_signal_completion()` writes a `_done` file after purging provider state; `is_done()` checks for `_done` presence only. This closes a false-positive introduced by ar's session setup and auth seeding creating the session directory before the provider runs, making a startup failure indistinguishable from a clean completion under the old predicate.
 
 The orchestrator decides whether Implementer/Reviewer is done by inspecting `.pycastle-session/<role>/` rather than scanning commit subjects for `RALPH: Implement -` / `RALPH: Review -`. `<commit_message>` becomes optional input to the host-side commit body — absence triggers synthetic fallback (`Implement #<n> - <title>`), not a failed run.
 
 The trigger was issue #514: the Implementer self-committed without the prefix and emitted no `<commit_message>`, putting the orchestrator into a 14-iteration retry loop. Conflating "describe the work" (commit prefix) with "mark stage done" (resume idempotency token) had no recovery path once either side broke.
-
-> **Amended 2026-05-15 (#692) per ADR 0015.** Role dir contents shifted from "claude session files in `<role>/`" to "one or more `<service>/` subdirs (e.g. `<role>/claude/`)". The stage-done predicate (`is_dir() AND not any(files)`) is semantically unchanged: `clear_provider_state_and_signal_completion()` clears all children.
 
 ## Considered Options
 

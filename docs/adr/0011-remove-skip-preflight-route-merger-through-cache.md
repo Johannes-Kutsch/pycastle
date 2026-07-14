@@ -19,7 +19,7 @@ Trigger was #639: iteration 2 re-ran preflight over the same improve-sandbox at 
 
 ## Consequences
 
-> ADR 0014 amends: `implement_phase` consumes `PlanReady.sha` from the planner instead of calling `get_safe_sha` itself; remaining cache callers are `improve_phase`, `planning_phase`, `merge_phase`.
+> ADR 0012 amends: `implement_phase` consumes `PlanReady.sha` from the planner instead of calling `get_safe_sha` itself; remaining cache callers are `improve_phase`, `planning_phase`, `merge_phase`.
 
 - New `PreflightCache` class in `iteration/preflight.py`: private `_verdict: PreflightResult | None`, `asyncio.Lock`, `async def get_safe_sha(self, deps) -> PreflightResult`. `orchestrator.run()` constructs once and threads into every `IterationDeps`.
 - `Deps.preflight_verdict` removed; `Deps.preflight_cache: PreflightCache` added.

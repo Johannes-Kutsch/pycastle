@@ -28,5 +28,5 @@ This contract applies to production iteration preflight, check-mode host preflig
 
 ## Related
 
-- Host check loop for current-OS diagnostics: ADR 0033
-- Runtime ownership migration and compatibility policy: ADR 0040
+- Host check loop for current-OS diagnostics: ADR 0027
+- Runtime ownership migration and compatibility policy: ADR 0039

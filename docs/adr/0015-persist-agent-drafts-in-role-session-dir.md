@@ -1,6 +1,6 @@
 # Persist agent draft files inside the role session dir
 
-Improve-mode prompts (`02-prd.md`, `03-issues.md`, `04-no-candidate-report.md`) write each issue body to a file then call `gh issue create --body-file <path>`. Until now agents chose `/tmp/sliceN.md` — container-scoped: on `UsageLimitError` the container is torn down (ADR 0008 unwinds; ADR 0005 requires fresh container; ADR 0006 designs around ephemeral containers) and the draft is destroyed. On `claude --resume`, history shows `Write(/tmp/sliceN.md, …)` succeeded, so the agent may re-issue against a path that no longer exists, or re-derive the body — non-deterministic, drafted-but-unfiled slices silently lost.
+Improve-mode prompts (`02-prd.md`, `03-issues.md`, `04-no-candidate-report.md`) write each issue body to a file then call `gh issue create --body-file <path>`. Until now agents chose `/tmp/sliceN.md` — container-scoped: on `UsageLimitError` the container is torn down (the ADR 0006 centralized catch unwinds to the iteration boundary; credential failover and session resume both assume a fresh, ephemeral container) and the draft is destroyed. On `claude --resume`, history shows `Write(/tmp/sliceN.md, …)` succeeded, so the agent may re-issue against a path that no longer exists, or re-derive the body — non-deterministic, drafted-but-unfiled slices silently lost.
 
 Prompt convention now writes drafts to `<worktree>/.pycastle-session/improve/drafts/`, sibling of `_phase_progress` / `_phase_in_flight` inside the **role session dir**. Preserved across container teardown by the existing broadened preservation rule, removed by **role session cleanup** on terminal success. Prompt-only fix — no orchestrator code changes.
 
@@ -8,7 +8,7 @@ Prompt convention now writes drafts to `<worktree>/.pycastle-session/improve/dra
 
 - **Heredoc inline `gh issue create --body "$(cat <<'EOF' …EOF)"`.** Rejected: large PRD bodies break shell quoting; loses the cross-turn re-read affordance and debugging artefact.
 - **Per-slice promise markers + orchestrator parser.** Rejected: contract change extending the orchestrator's coupling to phase 03 mid-stream output; doesn't solve the lost-draft case (no marker for an unfiled slice).
-- **Keep `/tmp`; skip container teardown on `UsageLimitError`.** Rejected: fights ADR 0005 (failover needs fresh container), ADR 0006 (resume around ephemeral containers), ADR 0008 (centralised catch unwinds to iteration boundary). Reset windows are hours.
+- **Keep `/tmp`; skip container teardown on `UsageLimitError`.** Rejected: fights credential failover (needs a fresh container), session resume (designed around ephemeral containers), and the ADR 0006 centralised catch (unwinds to the iteration boundary). Reset windows are hours.
 
 ## Consequences
 
