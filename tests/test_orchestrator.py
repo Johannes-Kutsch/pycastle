@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 from urllib.parse import parse_qs, urlparse
@@ -4025,7 +4025,7 @@ def test_model_not_available_with_temporarily_exhausted_chain_sleeps(tmp_path):
         [],
     ]
 
-    wake_time = datetime(2026, 7, 6, 15, 0, tzinfo=timezone.utc)
+    wake_time = datetime.now(timezone.utc) + timedelta(hours=1)
     svc = _FakeService(available=False, wake_time=wake_time)
 
     async def _fake_run_agent(request: RunRequest):
@@ -4183,7 +4183,7 @@ def test_model_not_available_sleep_message_does_not_say_usage_limit(tmp_path):
         [],
     ]
 
-    wake_time = datetime(2026, 7, 6, 15, 0, tzinfo=timezone.utc)
+    wake_time = datetime.now(timezone.utc) + timedelta(hours=1)
     svc = _FakeService(available=False, wake_time=wake_time)
 
     async def _fake_run_agent(request: RunRequest):
