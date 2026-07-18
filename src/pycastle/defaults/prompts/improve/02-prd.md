@@ -30,7 +30,7 @@ Use this novelty context to avoid filing a duplicate or near-duplicate PRD:
 
 1. Reuse the codebase exploration and design-tree grilling from phase 1 — don't re-scan. Use `CONTEXT.md` vocabulary throughout. Consult `docs/adr/README.md` if present, then check any ADRs in the area you're touching.
 
-2. Sketch the major modules to build or modify. Look for opportunities to extract deep modules testable in isolation.
+2. Sketch out the seams at which the change will be tested. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better — the ideal number is one.
 
 3. Write the PRD using the template below, then publish it.
 
@@ -74,6 +74,7 @@ A list of implementation decisions that were made. This can include:
 
 - The modules that will be built/modified
 - The interfaces of those modules that will be modified
+- Technical clarifications from the phase-1 grilling
 - Architectural decisions
 - Schema changes
 - API contracts

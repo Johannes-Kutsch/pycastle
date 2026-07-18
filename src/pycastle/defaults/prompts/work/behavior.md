@@ -12,6 +12,8 @@ Explore only the files mentioned in the issue and the test files that directly t
 
 From the issue's acceptance criteria, derive an ordered list of behaviors to implement. Most critical paths first, edge cases last.
 
+The seams under test were agreed at PRD time: test only at the observable surfaces the issue's acceptance criteria name. Do not invent new seams in-session.
+
 ---
 
 ## Per-behavior loop
@@ -58,14 +60,9 @@ Then move to the next behavior.
 
 ---
 
-## Refactor
+## Stop at green
 
-After all behaviors are green, look for refactor candidates:
-
-- [ ] Apply SOLID principles where natural
-- [ ] Run `{{FEEDBACK_COMMANDS}}` after each refactor step
-
-**Never refactor while RED.** Get to GREEN first.
+Refactoring is not part of this session — it belongs to the review stage. When the last behavior is green, you are done.
 
 {{IMPLEMENTATION_STANDARDS}}
 

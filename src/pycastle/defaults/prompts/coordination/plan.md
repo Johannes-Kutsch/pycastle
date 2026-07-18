@@ -31,8 +31,9 @@ When blocker analysis requires architectural context, use `Read` to selectively 
 An issue B is **blocked by** issue A if:
 
 - B requires code or infrastructure that A introduces
-- B and A modify overlapping files or modules, making concurrent work likely to produce merge conflicts
 - B's requirements depend on a decision or API shape that A will establish
+
+Blocking comes only from a **genuine dependency** — B needing A's output. File overlap alone does not create a blocking edge; it is a scheduling concern, handled under conflict avoidance below.
 
 ## Blocker rules
 
@@ -49,7 +50,7 @@ Issues absent from both lists have already been completed. Do not treat absent i
 
 ## Conflict avoidance
 
-If multiple unblocked issues work on the same part of the codebase, only include the highest-priority one to prevent merge conflicts. When priority is unclear, choose the lowest issue number.
+If multiple unblocked issues work on the same part of the codebase — use each issue's "Files touched (tentative)" section where present, otherwise judge from the issue bodies — only include the highest-priority one to prevent merge conflicts. When priority is unclear, choose the lowest issue number.
 
 </workflow>
 

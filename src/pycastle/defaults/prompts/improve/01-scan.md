@@ -62,7 +62,8 @@ Walk the codebase and note friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow** — interface nearly as complex as the implementation?
-- Where have pure functions been extracted just for testability, hiding the real bugs in how they're called (no **locality**)?
+- Where have pure functions been extracted just for testability, but the real bugs hide in how they're called (no **locality**)?
+- Where do tightly-coupled modules leak across their seams?
 - Where do files over 500 lines or crowded same-level directories make the code hard to navigate?
 - Which parts are untested, or hard to test through their current interface?
 
