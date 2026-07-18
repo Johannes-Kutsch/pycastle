@@ -12,7 +12,7 @@ Run `{{FEEDBACK_COMMANDS}}` to confirm the current state passes before making an
 
 ## 2. Read the diff
 
-Run `git diff main... --stat` to get the file-level summary, then `git diff main...` (and narrower variants scoped to specific paths) to inspect what changed. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it. Try to break it. If you can, fix it.
+Run `git diff main... --stat` to get the file-level summary, then `git diff main...` (and narrower variants scoped to specific paths) to inspect what changed.
 
 Emit `<reviewed_diff>` immediately after reading so downstream steps are gated on having actually read the diff:
 
@@ -30,6 +30,8 @@ Compare the diff against the issue's **What to build** and acceptance criteria:
 - **Missing or partial** — a requirement the issue asked for that the diff doesn't deliver → implement it.
 - **Scope creep** — behavior in the diff the issue never asked for → remove it.
 - **Implemented but wrong** — a requirement that looks done but whose behavior is incorrect → fix it. For bug issues, attempt to reproduce the original bug with new test cases; if you can reproduce it, the implementation is incomplete — fix it.
+
+The step is done when every acceptance criterion is accounted for: delivered as specified, its gap implemented, or its wrong behavior fixed — and any creep removed.
 
 ## 4. Enforce test standards
 
@@ -50,7 +52,9 @@ Run `{{FEEDBACK_COMMANDS}}` after any changes.
 
 ## 5. Stress-test edge cases
 
-For every changed code path, probe: empty/zero/null inputs, missing optional fields, off-by-one errors, rapid repeated calls, and adjacent-feature regressions. Write tests for uncovered cases.
+For every changed code path, probe: empty/zero/null inputs, missing optional fields, off-by-one errors, rapid repeated calls, and adjacent-feature regressions. For anything that looks suspicious — fragile logic, unchecked assumptions, tricky conditions, implicit type coercions, missing guards — write a test that exercises it and try to break it. If you can break it, fix it. Write tests for uncovered cases.
+
+Run `{{FEEDBACK_COMMANDS}}` after any changes.
 
 ## 6. Code smells
 
@@ -69,7 +73,7 @@ Match the diff against the smell baseline below. Each smell is a judgement call,
 - **Middle Man** — a class or function that mostly just delegates onward. → cut it, call the real target direct.
 - **Refused Bequest** — a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
 
-Also deepen or combine shallow modules the diff introduces, and fix existing code the new code reveals as problematic.
+Also deepen or combine shallow modules the diff introduces.
 
 Run `{{FEEDBACK_COMMANDS}}` after any changes.
 

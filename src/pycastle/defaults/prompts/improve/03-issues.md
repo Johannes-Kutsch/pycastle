@@ -50,25 +50,19 @@ If yes, file a single dedicated CONTEXT.md issue **first** before any vertical s
 
 ## 3. Draft vertical slices
 
-Each slice cuts through ALL integration layers end-to-end, not a horizontal slice of one layer.
+Break the PRD into **tracer bullet** slices: each a thin vertical slice cutting a narrow but COMPLETE path through every layer (schema, API, UI, tests) — vertical, not a horizontal slice of one layer. A completed slice is verifiable on its own. Prefer many thin slices over few thick ones.
 
 In improve mode every slice must be AFK by construction — the AFK-safety filter was applied in phase 1.
 
-Rules:
-
-- Each slice delivers a narrow but COMPLETE path through every layer (schema, API, UI, tests)
-- A completed slice is verifiable on its own
-- Prefer many thin slices over few thick ones
-
 **Blocking edges.** Give each issue its blocking edges — the other issues that must complete before it can start. An issue with no blockers can start immediately. Blocking comes only from a **genuine dependency** (an issue needing another's output), decided independently of file overlap.
 
-**Files touched.** Record each slice's tentative set of files (see the template's *Files touched* field) — a planning/scoping signal so the planner can see where slices overlap. Overlap alone does **not necessarily** create a blocking edge, and slices sharing files may still run in parallel.
+**Files touched.** Record each slice's tentative set of files (see the template's *Files touched* field) — a planning/scoping signal so the planner can see where slices overlap. Overlap alone does **not** create a blocking edge, and slices sharing files may still run in parallel.
 
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own issue blocked by the expand, keeping the suite green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in an issue blocked by every migrate batch. When even the batches can't stay green alone, the wide refactor is too big to slice — narrow the batches until each lands green.
 
 ### Granularity check
 
-Each issue must fit in one usage window of an AFK agent; over-scoping is wasteful. Apply the "Smells that demand a split" checklist in step 3a/b below to every candidate slice before approving it.
+Each issue must fit in one usage window of an AFK agent; over-scoping is wasteful. Apply the "Smells that demand a split" checklist in step 3a below to every candidate slice before approving it.
 
 ## 3a. Classify each slice by mode
 
@@ -188,7 +182,7 @@ Or "None - can start immediately" if no blockers.
 
 ## Files touched (tentative)
 
-The files this slice is expected to create or modify. A tentative planning/scoping signal so the planner can see where slices overlap — **not** a spec. Overlap alone does **not necessarily** create a blocking edge; blocking is decided on genuine dependency, which may or may not coincide with shared files.
+The files this slice is expected to create or modify. A tentative planning/scoping signal so the planner can see where slices overlap — **not** a spec. Overlap alone does **not** create a blocking edge; blocking is decided on genuine dependency, which may or may not coincide with shared files.
 
 ## AFK-Safety Confirmation
 

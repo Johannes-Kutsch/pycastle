@@ -14,8 +14,6 @@ You must NOT modify any files in the worktree. Your only output for this phase i
 
 ## Glossary
 
-Use the architectural vocabulary below in every observation and recommendation. Consistent language is the point — don't drift into "component," "service," "API," or "boundary."
-
 {{DESIGN_STANDARDS}}
 
 {{IMPLEMENTATION_STANDARDS}}

@@ -30,7 +30,7 @@ Use this novelty context to avoid filing a duplicate or near-duplicate PRD:
 
 1. Reuse the codebase exploration and design-tree grilling from phase 1 — don't re-scan. Use `CONTEXT.md` vocabulary throughout. Consult `docs/adr/README.md` if present, then check any ADRs in the area you're touching.
 
-2. Sketch out the seams at which the change will be tested. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better — the ideal number is one.
+2. Sketch out the seams at which the change will be tested. Prefer existing seams; if a new one is needed, place it at the highest point you can. The fewer seams this change tests at, the better — ideally one.
 
 3. Write the PRD using the template below, then publish it.
 
