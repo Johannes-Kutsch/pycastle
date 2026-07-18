@@ -3,6 +3,23 @@ import pathlib
 import subprocess
 
 import pytest
+import time_machine
+
+
+@pytest.fixture(autouse=True)
+def _frozen_clock():
+    """Pin the wall clock so no test verdict depends on the real date.
+
+    The instant is fixed in the past: file mtimes come from the real
+    filesystem clock, so anything written during a test reads as *future*
+    (conservatively fresh) instead of stale enough to trip retention sweeps.
+    Tests that care about age set mtimes explicitly relative to the frozen
+    clock. tick=True lets time advance within a test, so timeout/deadline
+    loops still make progress. Tests needing a specific instant travel to it
+    or inject ``now=`` explicitly.
+    """
+    with time_machine.travel("2020-01-02 03:04:05 +0000", tick=True):
+        yield
 
 
 def pytest_configure():

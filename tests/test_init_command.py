@@ -1,3 +1,4 @@
+import ast
 from pathlib import Path
 from unittest.mock import patch
 
@@ -362,6 +363,7 @@ def test_init_writes_local_config_example_with_all_supported_settings(
 
 def test_init_writes_separate_host_checks_into_config_example(tmp_path, monkeypatch):
     from pycastle.commands.init import main
+    from pycastle.config import Config
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -374,13 +376,17 @@ def test_init_writes_separate_host_checks_into_config_example(tmp_path, monkeypa
 
     assert "--- Host checks ---" in content
     assert 'host_checks = (\n    ("pytest", "pytest"),\n)' in content
-    assert (
-        "preflight_checks = (\n"
-        '    ("ruff", "ruff check ."),\n'
-        '    ("mypy", "mypy ."),\n'
-        '    ("pytest", "pytest"),\n'
-        ")"
-    ) in content
+    # The rendered example's preflight_checks must evaluate to the live
+    # Config default, including the multi-line frozen-clock entry.
+    rendered_preflight = None
+    for node in ast.parse(content).body:
+        if (
+            isinstance(node, ast.Assign)
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "preflight_checks"
+        ):
+            rendered_preflight = ast.literal_eval(node.value)
+    assert rendered_preflight == Config().preflight_checks
 
 
 def test_init_config_example_shows_behavioral_and_logging_config_only(

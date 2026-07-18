@@ -40,9 +40,20 @@ from pycastle import StageOverride
 
 # --- Preflight checks ---
 # Run by pycastle before agent work; format: (name, command).
+# The frozen-clock check fails when tests/conftest.py exists but lacks an
+# autouse time_machine fixture; it passes trivially when there is no
+# tests/conftest.py. Non-Python projects should override preflight_checks.
 # preflight_checks = (
 #     ("ruff", "ruff check ."),
 #     ("mypy", "mypy ."),
+#     (
+#         "frozen-clock",
+#         'python -c "import pathlib, sys; '
+#         "p = pathlib.Path('tests/conftest.py'); "
+#         "s = p.read_text() if p.exists() else ''; "
+#         "sys.exit(1 if p.exists() and ('time_machine' not in s "
+#         "or 'autouse' not in s) else 0)\"",
+#     ),
 #     ("pytest", "pytest"),
 # )
 

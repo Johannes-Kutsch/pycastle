@@ -257,6 +257,8 @@ def test_cron_cmd_sweeps_old_logs_after_run(tmp_path, monkeypatch):
     os.utime(old_log, (old_mtime, old_mtime))
     recent_log = logs_dir / "recent.log"
     recent_log.write_text("fresh\n")
+    recent_mtime = time.time()
+    os.utime(recent_log, (recent_mtime, recent_mtime))
 
     cfg = Config(docker_image_name="img", logs_dir=Path("pycastle/logs"))
     fake_svc = _make_docker_svc()

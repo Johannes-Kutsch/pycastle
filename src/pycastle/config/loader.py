@@ -99,6 +99,14 @@ class Config:
         default_factory=lambda: (
             ("ruff", "ruff check ."),
             ("mypy", "mypy ."),
+            (
+                "frozen-clock",
+                'python -c "import pathlib, sys; '
+                "p = pathlib.Path('tests/conftest.py'); "
+                "s = p.read_text() if p.exists() else ''; "
+                "sys.exit(1 if p.exists() and ('time_machine' not in s "
+                "or 'autouse' not in s) else 0)\"",
+            ),
             ("pytest", "pytest"),
         )
     )

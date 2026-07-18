@@ -55,6 +55,16 @@ def test_create_user_makes_user_retrievable():
     assert retrieved.name == "Alice"
 ```
 
+## Deterministic & Portable Tests
+
+A test's verdict must be a pure function of the code under test — never of the wall clock, timezone, host OS, filesystem contents, environment variables, execution order, or network. Green-at-author-time but red-later-or-elsewhere is a defect.
+
+- **Time**: the suite runs under an autouse frozen-clock fixture in `tests/conftest.py`; keep it intact. Never assert against a hardcoded absolute datetime that the code under test compares to a real clock read (tz-awareness does not save it) — derive instants relative to `datetime.now()` under the frozen clock, or inject `now=` into the code under test.
+- **Filesystem**: touch only `tmp_path`; never depend on pre-existing files or their absence unless the test created that state. Build paths with `pathlib`, never hardcoded separators.
+- **OS**: no platform assumptions in assertions (separators, line endings, signals, permission bits, tz database on Windows). If behavior differs per platform, test the seam, not the platform.
+- **Order & concurrency**: every test passes alone and in any order; never synchronize on `sleep()` — block on events, joins, or futures.
+- **Environment**: hermetic — no real network, no ambient credentials or env vars; verdicts must not depend on the machine's setup.
+
 ## pytest preference
 
 Use `pytest.fixture` for shared setup. Prefer fixtures over `setUp`/`tearDown`.

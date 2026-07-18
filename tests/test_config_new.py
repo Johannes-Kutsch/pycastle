@@ -32,6 +32,14 @@ def test_load_config_exposes_separate_default_host_checks(tmp_path):
     assert cfg.preflight_checks == (
         ("ruff", "ruff check ."),
         ("mypy", "mypy ."),
+        (
+            "frozen-clock",
+            'python -c "import pathlib, sys; '
+            "p = pathlib.Path('tests/conftest.py'); "
+            "s = p.read_text() if p.exists() else ''; "
+            "sys.exit(1 if p.exists() and ('time_machine' not in s "
+            "or 'autouse' not in s) else 0)\"",
+        ),
         ("pytest", "pytest"),
     )
 
@@ -58,6 +66,14 @@ def test_load_config_overrides_host_checks_without_changing_preflight_checks(tmp
     assert cfg.preflight_checks == (
         ("ruff", "ruff check ."),
         ("mypy", "mypy ."),
+        (
+            "frozen-clock",
+            'python -c "import pathlib, sys; '
+            "p = pathlib.Path('tests/conftest.py'); "
+            "s = p.read_text() if p.exists() else ''; "
+            "sys.exit(1 if p.exists() and ('time_machine' not in s "
+            "or 'autouse' not in s) else 0)\"",
+        ),
         ("pytest", "pytest"),
     )
 

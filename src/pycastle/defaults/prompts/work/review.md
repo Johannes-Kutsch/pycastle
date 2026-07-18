@@ -35,6 +35,8 @@ Identify all test files modified in the diff. For each, scan for red flags using
 
 Check that test names use the domain glossary from `CONTEXT.md`.
 
+Additionally scan every new or changed test for verdicts that depend on anything other than the code under test: hardcoded absolute datetimes compared against a real clock read (time bombs), pre-existing filesystem state, OS-specific behavior (path separators, line endings, tz database), execution order, `sleep()`-based synchronization, or ambient environment. Treat each as a red flag.
+
 For each red-flag test:
 
 1. **Refactor first** — rewrite it to exercise the same behavior through the public interface
