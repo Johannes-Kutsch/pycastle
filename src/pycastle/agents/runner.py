@@ -12,6 +12,7 @@ from agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
 from agent_runtime.errors import (
     AgentCredentialFailureError as RuntimeAgentCredentialFailureError,
     ContinuationUnrecoverableError as RuntimeContinuationUnrecoverableError,
+    TransientAgentError as RuntimeTransientAgentError,
 )
 from agent_runtime.errors import HardAgentError as RuntimeHardAgentError
 from agent_runtime.errors import ProviderUnavailableReason
@@ -798,6 +799,17 @@ class AgentRunner:
                 )
                 current_run_kind = RunKind.FRESH
                 continue
+            except RuntimeTransientAgentError as err:
+                if request.token is not None:
+                    request.token.cancel()
+                translated = TransientAgentError(
+                    message=str(err), status_code=err.status_code
+                )
+                status_display.print(
+                    request.name,
+                    format_transient_status_message(translated),
+                )
+                raise translated from err
 
             if not hasattr(outcome, "kind") and hasattr(outcome, "output"):
                 outcome = agent_runtime.RuntimeOutcome(
