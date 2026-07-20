@@ -7,24 +7,7 @@ from typing import cast
 
 from ..agents.runner import AgentRunner, AgentRunnerProtocol
 from ..config import load_config, replace_config_runtime_fields, resolve_logs_dir
-from . import (
-    AbortedAgentFailure,
-    AbortedAgentCredentialFailure,
-    AbortedHardApiError,
-    AbortedHITL,
-    AbortedModelNotAvailable,
-    AbortedOperatorActionable,
-    AbortedSetup,
-    AbortedTimeout,
-    AbortedUsageLimit,
-    Continue,
-    Done,
-    MergeCloseFailure,
-    NoCandidate,
-    run_iteration,
-)
-from ..bug_reporter import BUG_REPORT_LABEL_LIST, auto_file_issue
-from ..bug_reporter import file_operator_actionable_git_issue
+from . import run_iteration
 from ._deps import Deps as IterationDeps, ImproveMode
 from .preflight import PreflightCache
 from ..display.rich_status_display import RichStatusDisplay
@@ -44,12 +27,13 @@ from ..infrastructure.worktree import prune_orphan_worktrees
 from ..log_maintenance import maintain_logs
 from .. import _time as _time_module
 from ._service_summary import render_service_summary_line
-from .usage_limit_decision import (
-    ContinueNow,
-    SleepUntil,
-    Stop,
-    decide_model_not_available_continuation,
-    decide_usage_limit_continuation,
+from .outcome_routing import (
+    BreakLoop,
+    ContinueLoop,
+    ExitFailure,
+    RouterDeps,
+    SleepThenContinue,
+    route_outcome,
 )
 
 
@@ -271,147 +255,30 @@ async def run(
                 sys.exit(1)
             improve_dispatched_count = deps.improve_dispatched_count
 
-            match outcome:
-                case Done(improve_cap_reached=True):
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        f"improve_max ({cfg.improve_max}) dispatches reached. Stopping.",
-                    )
-                    break
-                case Done():
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        (
-                            f"No unblocked issues with label '{cfg.issue_label}' "
-                            "found. Skipping."
-                        ),
-                    )
-                    break
-                case NoCandidate():
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        "Improve agent reported no improvement candidate.",
-                    )
-                    break
-                case AbortedHITL():
-                    sys.exit(1)
-                case AbortedAgentCredentialFailure():
-                    sys.exit(1)
-                case AbortedHardApiError():
-                    sys.exit(1)
-                case AbortedUsageLimit():
-                    now = _time_module.now_local()
-                    decision = decide_usage_limit_continuation(
-                        outcome,
-                        cfg,
-                        service_registry,
-                        now,
-                    )
-                    if isinstance(decision, ContinueNow):
-                        if decision.message is not None:
-                            status_display.print("", decision.message)  # type: ignore[union-attr]
-                        continue
-                    if isinstance(decision, Stop):
-                        if decision.message is not None:
-                            status_display.print("", decision.message)  # type: ignore[union-attr]
-                        break
-                    assert isinstance(decision, SleepUntil)
-                    wake_time = decision.wake_time
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        decision.message,
-                    )
-                    time.sleep((wake_time - now).total_seconds())
-                    slept_once = True
+            router_deps = RouterDeps(
+                cfg=cfg,
+                service_registry=service_registry,
+                now=_now,
+                status_display=status_display,  # type: ignore[arg-type]
+                github_svc=github_service,
+            )
+            directive = route_outcome(outcome, router_deps)
+            match directive:
+                case ContinueLoop():
                     continue
-                case AbortedModelNotAvailable():
-                    now = _time_module.now_local()
-                    decision = decide_model_not_available_continuation(
-                        outcome,
-                        cfg,
-                        service_registry,
-                        now,
-                    )
-                    if isinstance(decision, ContinueNow):
-                        if decision.message is not None:
-                            status_display.print("", decision.message)  # type: ignore[union-attr]
-                        continue
-                    if isinstance(decision, Stop):
-                        if decision.message is not None:
-                            status_display.print("", decision.message)  # type: ignore[union-attr]
-                        break
-                    assert isinstance(decision, SleepUntil)
-                    wake_time = decision.wake_time
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        decision.message,
-                    )
-                    time.sleep((wake_time - now).total_seconds())
-                    slept_once = True
-                    continue
-                case AbortedAgentFailure(failed_role=role, issue_number=issue_num):
-                    msg = f"Agent '{role}' failed irrecoverably."
-                    if issue_num is not None:
-                        msg += f" Filed issue #{issue_num} for triage."
-                    status_display.print("", msg)  # type: ignore[union-attr]
-                    sys.exit(1)
-                case AbortedTimeout(failed_role=role):
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        f"Agent '{role}' timed out. Resuming next iteration.",
-                    )
-                    continue
-                case AbortedOperatorActionable(op=op, stderr=stderr, attempt_count=cnt):
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        f"git {op} failed after {cnt} attempt(s) — remote unreachable. "
-                        "Check SSH/network and retry.",
-                    )
-                    file_operator_actionable_git_issue(
-                        op=op,
-                        stderr=stderr,
-                        attempt_count=cnt,
-                        github_svc=github_service,
-                    )
-                    sys.exit(1)
-                case MergeCloseFailure(filed_issue_numbers=issue_numbers):
-                    numbers_str = ", ".join(f"#{n}" for n in issue_numbers)
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        f"Merge close failure: issue close failed. Filed {numbers_str} for triage.",
-                    )
-                    break
-                case AbortedSetup(
-                    phase=phase,
-                    message=message,
-                    command=command,
-                    output=output,
+                case SleepThenContinue(
+                    wake_time=wake_time,
+                    message=sleep_msg,
+                    slept_once_after=slept_after,
                 ):
-                    first_line = next(iter(message.splitlines()), "")
-                    title = f"[pycastle] {phase} setup failure: {first_line}"
-                    body_parts = [
-                        "## Setup phase failure\n",
-                        f"Phase: {phase}\n",
-                        f"```\n{message}\n```\n",
-                    ]
-                    if command:
-                        body_parts.append(f"Command: `{command}`\n")
-                    if output:
-                        body_parts.append(f"Output:\n\n```\n{output}\n```\n")
-                    body = "\n".join(body_parts)
-                    url = auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=cfg)
-                    local_parts = [f"{phase} setup failed: {message}"]
-                    if command:
-                        local_parts.append(f"Command: {command}")
-                    if output:
-                        local_parts.append(f"Output: {output}")
-                    status_display.print(  # type: ignore[union-attr]
-                        "",
-                        "\n".join(local_parts) + (f"\nReport: {url}" if url else ""),
-                    )
-                    sys.exit(1)
-                case Continue():
-                    pass
+                    status_display.print("", sleep_msg)  # type: ignore[union-attr]
+                    time.sleep((wake_time - _now).total_seconds())
+                    slept_once = slept_after
+                    continue
+                case BreakLoop():
+                    break
+                case ExitFailure(code=exit_code):
+                    sys.exit(exit_code)
 
         status_display.print("", "All done.")  # type: ignore[union-attr]
     finally:
