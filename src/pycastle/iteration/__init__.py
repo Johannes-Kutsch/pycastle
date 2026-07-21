@@ -482,7 +482,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         if routed_result is not None:
             return routed_result
 
-        effective_status_code = _extract_hard_error_status_code(raw, err.status_code)
+        effective_status_code = _extract_hard_error_status_code(
+            raw, getattr(err, "status_code", None)
+        )
         error_text = _extract_legacy_hard_error_text(raw)
         first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
         service_label = {

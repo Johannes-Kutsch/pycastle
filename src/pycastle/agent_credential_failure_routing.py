@@ -258,7 +258,6 @@ def _select_remediation(
 def _interpret_agent_credential_failure(
     *,
     service_name: str,
-    status_code: int | None,
     classification: str | None,
     raw: str,
     observations: tuple,
@@ -290,20 +289,6 @@ def _interpret_agent_credential_failure(
             ),
             rendered_observations=rendered_observations,
         )
-
-    if service_name == "claude" and status_code == 403:
-        if any(_is_claude_subscription_access_denial(text) for text in haystacks):
-            return _CredentialFailureInterpretation(
-                remediation=_select_remediation(
-                    service_name=service_name,
-                    raw=raw,
-                    rendered_observations=rendered_observations,
-                ),
-                rendered_observations=rendered_observations,
-            )
-        return None
-    if service_name != "codex" or status_code != 401:
-        return None
 
     if any(_is_codex_refresh_token_reused_signature(text) for text in haystacks):
         return _CredentialFailureInterpretation(
@@ -346,7 +331,6 @@ def route_agent_credential_failure(
             raw_observations = (("stderr", raw),)
     interpretation = _interpret_agent_credential_failure(
         service_name=service_name,
-        status_code=provider_failure.status_code,
         classification=getattr(provider_failure, "classification", None),
         raw=raw,
         observations=raw_observations,
@@ -361,21 +345,18 @@ def route_agent_credential_failure(
             rendered_observations=_render_observations(raw, raw_observations),
         )
 
+    _status_code = getattr(provider_failure, "status_code", None)
     issue_result = _file_or_reuse_agent_credential_failure_issue(
         service_name=service_name,
         role_name=provider_failure.caller,
-        status_code=provider_failure.status_code,
+        status_code=_status_code,
         raw_result_envelope=raw,
         remediation=interpretation.remediation,
         observations=interpretation.rendered_observations,
         github_svc=github_svc,
     )
     issue_url = issue_result.issue_url
-    status_code_str = (
-        str(provider_failure.status_code)
-        if provider_failure.status_code is not None
-        else "no status"
-    )
+    status_code_str = str(_status_code) if _status_code is not None else "no status"
     status_message = (
         f"operator-actionable agent credential failure: status {status_code_str}"
     )
@@ -391,7 +372,7 @@ def route_agent_credential_failure(
             interpretation=interpretation,
         )
     return AgentCredentialFailureRouteResult(
-        status_code=provider_failure.status_code,
+        status_code=_status_code,
         status_message=status_message,
         issue_url=issue_url,
     )

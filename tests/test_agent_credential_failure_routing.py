@@ -25,7 +25,6 @@ def test_route_agent_credential_failure_returns_terminal_route_result_for_shared
 
     err = AgentCredentialFailureError(
         message="OpenCode request failed: 401 invalid API key for provider opencode-go",
-        status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -37,8 +36,8 @@ def test_route_agent_credential_failure_returns_terminal_route_result_for_shared
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
-        status_message="operator-actionable agent credential failure: status 401",
+        status_code=None,
+        status_message="operator-actionable agent credential failure: status no status",
         issue_url="https://github.com/owner/consuming-project/issues/42",
     )
 
@@ -55,7 +54,6 @@ def test_route_agent_credential_failure_interprets_codex_auth_lineage_exhaustion
             '"code":"refresh_token_reused","message":"This refresh token has already '
             'been used."}'
         ),
-        status_code=401,
         service_name="codex",
         classification="codex_auth_lineage_exhausted",
     )
@@ -75,8 +73,8 @@ def test_route_agent_credential_failure_interprets_codex_auth_lineage_exhaustion
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
-        status_message="operator-actionable agent credential failure: status 401",
+        status_code=None,
+        status_message="operator-actionable agent credential failure: status no status",
         issue_url="https://github.com/owner/consuming-project/issues/42",
     )
     _, _, body, _ = github_svc.create_issue_in.call_args[0]
@@ -95,7 +93,6 @@ def test_route_agent_credential_failure_builds_redacted_issue_body_in_routing_mo
     )
     err = AgentCredentialFailureError(
         message=raw_result,
-        status_code=401,
         service_name="codex",
         classification="codex_auth_lineage_exhausted",
     )
@@ -108,15 +105,15 @@ def test_route_agent_credential_failure_builds_redacted_issue_body_in_routing_mo
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
-        status_message="operator-actionable agent credential failure: status 401",
+        status_code=None,
+        status_message="operator-actionable agent credential failure: status no status",
         issue_url="https://github.com/owner/consuming-project/issues/42",
     )
     _, _, body, labels = github_svc.create_issue_in.call_args[0]
     assert labels == ["bug", "needs-triage"]
     assert "Service: codex" in body
     assert "Agent: Implementer" in body
-    assert "Status: 401" in body
+    assert "Status: None" in body
     assert "## Environment" in body
     assert "### json_event.error" in body
     assert "### Raw result envelope" in body
@@ -137,7 +134,6 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
     )
     err = AgentCredentialFailureError(
         message=raw_result,
-        status_code=401,
         service_name="codex",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -150,8 +146,8 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
-        status_message="operator-actionable agent credential failure: status 401",
+        status_code=None,
+        status_message="operator-actionable agent credential failure: status no status",
         issue_url="https://github.com/owner/consuming-project/issues/42",
     )
     github_svc.create_issue_in.assert_called_once()
@@ -167,7 +163,7 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
     assert "Run `codex login` on the host to reseed credentials." in body
     assert "Agent: Implementer" in body
     assert "Service: codex" in body
-    assert "Status: 401" in body
+    assert "Status: None" in body
     assert "### json_event.error" in body
     assert "### Raw result envelope" in body
     assert "## Environment" in body
@@ -186,7 +182,6 @@ def test_route_agent_credential_failure_renders_dataclass_style_source_observati
 
     err = AgentCredentialFailureError(
         message="Codex authentication missing: run `codex login` on the host.",
-        status_code=401,
         service_name="codex",
     )
     err.source_observations = (
@@ -215,7 +210,6 @@ def test_route_agent_credential_failure_selects_codex_reseed_remediation_from_ad
 
     err = AgentCredentialFailureError(
         message="Codex request failed with credential failure.",
-        status_code=401,
         service_name="codex",
         classification="codex_auth_lineage_exhausted",
     )
@@ -239,10 +233,10 @@ def test_route_agent_credential_failure_interprets_claude_subscription_access_de
         "Your organization has disabled Claude subscription access for Claude Code. "
         "Please ask your admin to enable Claude subscription access for Claude Code."
     )
-    err = HardAgentError(
+    err = AgentCredentialFailureError(
         message=message,
-        status_code=403,
         service_name="claude",
+        classification="operator_actionable_agent_credential_failure",
     )
     err.caller = "Planner"
 
@@ -252,8 +246,8 @@ def test_route_agent_credential_failure_interprets_claude_subscription_access_de
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=403,
-        status_message="operator-actionable agent credential failure: status 403",
+        status_code=None,
+        status_message="operator-actionable agent credential failure: status no status",
         issue_url="https://github.com/owner/consuming-project/issues/42",
     )
     _, _, body, _ = github_svc.create_issue_in.call_args[0]
@@ -273,10 +267,10 @@ def test_route_agent_credential_failure_uses_shared_claude_subscription_remediat
         "Your organization has disabled Claude subscription access for Claude Code. "
         "Please ask your admin to enable Claude subscription access for Claude Code."
     )
-    err = HardAgentError(
+    err = AgentCredentialFailureError(
         message=message,
-        status_code=403,
         service_name="claude",
+        classification="operator_actionable_agent_credential_failure",
     )
     err.caller = "Planner"
 
@@ -300,7 +294,6 @@ def test_route_agent_credential_failure_selects_claude_access_remediation_from_a
 
     err = AgentCredentialFailureError(
         message="Claude request failed with credential failure.",
-        status_code=403,
         service_name="claude",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -325,7 +318,6 @@ def test_route_agent_credential_failure_reuses_existing_family_issue_in_routing_
 
     err = AgentCredentialFailureError(
         message="OpenCode request failed: 401 invalid API key for provider opencode-go",
-        status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -337,7 +329,7 @@ def test_route_agent_credential_failure_reuses_existing_family_issue_in_routing_
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
+        status_code=None,
         status_message=(
             "operator-actionable agent credential failure: "
             "reusing existing issue #77 "
@@ -358,7 +350,6 @@ def test_route_agent_credential_failure_reports_reused_issue_in_terminal_status_
 
     err = AgentCredentialFailureError(
         message="OpenCode request failed: 401 invalid API key for provider opencode-go",
-        status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -370,7 +361,7 @@ def test_route_agent_credential_failure_reports_reused_issue_in_terminal_status_
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
+        status_code=None,
         status_message=(
             "operator-actionable agent credential failure: "
             "reusing existing issue #77 "
@@ -390,7 +381,6 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_fil
 
     err = AgentCredentialFailureError(
         message="Codex authentication missing: run `codex login` on the host.",
-        status_code=401,
         service_name="codex",
     )
     err.caller = "Failure Report Agent"
@@ -401,7 +391,7 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_fil
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
+        status_code=None,
         status_message=(
             "operator-actionable agent credential failure: "
             "Run `codex login` on the host to seed Codex credentials before "
@@ -421,7 +411,6 @@ def test_route_agent_credential_failure_redacts_local_fallback_evidence_when_iss
             "Codex authentication missing: accessToken=at-secret-123456; "
             "run `codex login` on the host."
         ),
-        status_code=401,
         service_name="codex",
     )
     err.caller = "Failure Report Agent"
@@ -432,7 +421,7 @@ def test_route_agent_credential_failure_redacts_local_fallback_evidence_when_iss
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
+        status_code=None,
         status_message=(
             "operator-actionable agent credential failure: "
             "Run `codex login` on the host to seed Codex credentials before "
@@ -451,7 +440,6 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_cre
 
     err = AgentCredentialFailureError(
         message="Codex authentication missing: run `codex login` on the host.",
-        status_code=401,
         service_name="codex",
     )
     err.caller = "Failure Report Agent"
@@ -462,7 +450,7 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_cre
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
+        status_code=None,
         status_message=(
             "operator-actionable agent credential failure: "
             "Run `codex login` on the host to seed Codex credentials before "
@@ -479,7 +467,6 @@ def test_route_agent_credential_failure_uses_raw_error_as_local_evidence_without
     message = "OpenCode request failed: 401 invalid API key for provider opencode-go"
     err = AgentCredentialFailureError(
         message=message,
-        status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -491,7 +478,7 @@ def test_route_agent_credential_failure_uses_raw_error_as_local_evidence_without
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
+        status_code=None,
         status_message=(
             "operator-actionable agent credential failure: "
             "Update the configured OpenCode API key and rerun pycastle. "
@@ -510,7 +497,6 @@ def test_route_agent_credential_failure_selects_opencode_api_key_remediation_fro
 
     err = AgentCredentialFailureError(
         message="OpenCode request failed with credential failure.",
-        status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -529,7 +515,6 @@ def test_route_agent_credential_failure_returns_none_for_unrelated_hard_error():
     github_svc = MagicMock(spec=GithubService)
     err = HardAgentError(
         message='{"type":"result","is_error":true,"result":"Unauthorized: invalid token"}',
-        status_code=401,
         service_name="codex",
     )
     err.caller = "Implementer"
@@ -578,7 +563,6 @@ def test_route_agent_credential_failure_does_not_route_generic_codex_auth_lookin
     github_svc = MagicMock(spec=GithubService)
     err = AgentCredentialFailureError(
         message=message,
-        status_code=401,
         service_name="codex",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -598,7 +582,6 @@ def test_route_agent_credential_failure_does_not_route_generic_codex_auth_lookin
     github_svc = MagicMock(spec=GithubService)
     err = AgentCredentialFailureError(
         message="Unauthorized: invalid token",
-        status_code=401,
         service_name="codex",
     )
     err.caller = "Implementer"
@@ -621,7 +604,6 @@ def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issu
 
     err = AgentCredentialFailureError(
         message="OpenCode request failed: 401 invalid API key for provider opencode-go",
-        status_code=401,
         service_name="opencode",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -633,8 +615,8 @@ def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issu
     )
 
     assert result == AgentCredentialFailureRouteResult(
-        status_code=401,
-        status_message="operator-actionable agent credential failure: status 401",
+        status_code=None,
+        status_message="operator-actionable agent credential failure: status no status",
         issue_url="https://github.com/owner/consuming-project/issues/88",
     )
     github_svc.search_open_issues_by_title.assert_called_once_with(

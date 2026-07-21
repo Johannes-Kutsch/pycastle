@@ -3,6 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
+from agent_runtime.errors import (
+    AgentCredentialFailureError as AgentCredentialFailureError,
+    HardAgentError as HardAgentError,
+    TransientAgentError as TransientAgentError,
+)
+
 
 class PycastleError(RuntimeError):
     pass
@@ -64,45 +70,6 @@ class ModelNotAvailableError(PycastleError):
         self.model = model
         self.stage_key = stage_key
         super().__init__(f"Model not available (service={service!r}, model={model!r})")
-
-
-class TransientAgentError(PycastleError):
-    def __init__(self, message: str = "", status_code: int | None = None) -> None:
-        self.status_code = status_code
-        super().__init__(message)
-
-
-class HardAgentError(PycastleError):
-    def __init__(
-        self,
-        message: str = "",
-        status_code: int | None = None,
-        service_name: str = "",
-        classification: str | None = None,
-    ) -> None:
-        self.status_code = status_code
-        self.caller = ""
-        self.service_name = service_name
-        self.classification = classification
-        super().__init__(message)
-
-
-class AgentCredentialFailureError(HardAgentError):
-    def __init__(
-        self,
-        message: str = "",
-        *,
-        status_code: int | None = None,
-        service_name: str,
-        classification: str | None = None,
-    ) -> None:
-        self.is_operator_actionable = True
-        super().__init__(
-            message=message,
-            status_code=status_code,
-            service_name=service_name,
-            classification=classification,
-        )
 
 
 class AgentFailedError(PycastleError):

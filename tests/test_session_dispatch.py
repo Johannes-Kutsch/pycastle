@@ -472,12 +472,11 @@ def test_prepare_provider_session_state_fresh_codex_without_role_auth_is_hard_er
         tmp_path / ".pycastle-session" / "implementer" / "codex" / "auth.json"
     )
 
-    with pytest.raises(HardAgentError) as exc_info:
+    with pytest.raises(HardAgentError):
         prepare_provider_session_state(
             _provider_request(tmp_path, service=CodexService())
         )
 
-    assert exc_info.value.status_code == 401
     assert provider_auth.exists() is False
 
 
@@ -658,10 +657,9 @@ def test_prepare_agent_session_fresh_codex_missing_host_auth_is_dispatcher_hard_
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)
 
-    with pytest.raises(HardAgentError) as exc_info:
+    with pytest.raises(HardAgentError):
         prepare_agent_session(_request(tmp_path, service=CodexService()))
 
-    assert exc_info.value.status_code == 401
     assert not (tmp_path / ".pycastle-session" / "implementer").exists()
 
 

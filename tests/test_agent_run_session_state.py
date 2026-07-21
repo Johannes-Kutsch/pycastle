@@ -175,7 +175,6 @@ def test_prepare_agent_run_session_state_missing_codex_host_auth_raises_operator
         )
 
     assert exc_info.value.service_name == "codex"
-    assert exc_info.value.status_code == 401
 
 
 def test_prepare_agent_run_session_state_resume_opencode_uses_persisted_session_id(

@@ -1594,7 +1594,6 @@ def test_local_auth_seed_action_require_source_raises_agent_credential_failure_w
     with pytest.raises(AgentCredentialFailureError) as exc_info:
         action.require_source()
 
-    assert exc_info.value.status_code == 401
     assert exc_info.value.service_name == "codex"
 
 

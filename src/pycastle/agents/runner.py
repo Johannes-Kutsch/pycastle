@@ -10,11 +10,8 @@ import agent_runtime
 from agent_runtime import ProviderAuth
 from agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
 from agent_runtime.errors import (
-    AgentCredentialFailureError as RuntimeAgentCredentialFailureError,
     ContinuationUnrecoverableError as RuntimeContinuationUnrecoverableError,
-    TransientAgentError as RuntimeTransientAgentError,
 )
-from agent_runtime.errors import HardAgentError as RuntimeHardAgentError
 from agent_runtime.errors import ProviderUnavailableReason
 from agent_runtime.runtime import (
     Cancelled,
@@ -754,19 +751,14 @@ class AgentRunner:
                     resolved_model=resolved_model,
                     resolved_effort=resolved_effort,
                 )
-            except RuntimeAgentCredentialFailureError as err:
+            except AgentCredentialFailureError as err:
                 if request.token is not None:
                     request.token.cancel()
-                mapped = AgentCredentialFailureError(
-                    str(err),
-                    service_name=err.service_name or service.name,
-                    classification=err.classification,
-                )
-                mapped.caller = request.name
-                if mapped.service_name == "opencode":
+                err.caller = request.name
+                if (err.service_name or service.name) == "opencode":
                     transformed = UsageLimitError(
                         reset_time=None,
-                        raw_message=str(mapped),
+                        raw_message=str(err),
                         provider=service.name,
                         is_permanent=True,
                     )
@@ -782,34 +774,26 @@ class AgentRunner:
                             run_kind=current_run_kind,
                         )
                         continue
-                raise mapped from err
-            except RuntimeHardAgentError as err:
+                raise
+            except HardAgentError as err:
                 if request.token is not None:
                     request.token.cancel()
-                mapped_hard = HardAgentError(
-                    str(err),
-                    service_name=err.service_name or service.name,
-                    classification=err.classification,
-                )
-                mapped_hard.caller = request.name
-                raise mapped_hard from err
+                err.caller = request.name
+                raise
             except RuntimeContinuationUnrecoverableError:
                 request, current_prompt = await self._recover_stale_continuation(
                     role_session=role_session, request=request, runner=runner
                 )
                 current_run_kind = RunKind.FRESH
                 continue
-            except RuntimeTransientAgentError as err:
+            except TransientAgentError as err:
                 if request.token is not None:
                     request.token.cancel()
-                translated = TransientAgentError(
-                    message=str(err), status_code=err.status_code
-                )
                 status_display.print(
                     request.name,
-                    format_transient_status_message(translated),
+                    format_transient_status_message(err),
                 )
-                raise translated from err
+                raise
 
             if not hasattr(outcome, "kind") and hasattr(outcome, "output"):
                 outcome = agent_runtime.RuntimeOutcome(
