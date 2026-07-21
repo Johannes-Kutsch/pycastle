@@ -1944,14 +1944,62 @@ def test_prune_orphan_worktrees_removes_orphan_via_host_container_cleanup(
             "--entrypoint",
             "rm",
             "pycastle:test",
-            "--",
             "-rf",
+            "--",
             "/pycastle-worktrees/stuck-orphan",
         ]
     ]
     assert caught == []
     assert not stuck_orphan.exists()
     assert not worktrees_dir.exists()
+
+
+def test_prune_orphan_worktrees_host_container_rm_flags_precede_separator(
+    tmp_path, monkeypatch
+):
+    """Regression: rm -rf must come before -- so rm treats it as flags, not filenames.
+
+    The original command was `rm -- -rf <path>` which caused rm to reject -rf
+    as a filename, leaving root-owned orphan worktrees stuck on disk.
+    The correct form is `rm -rf -- <path>`.
+    """
+    from pycastle.infrastructure import worktree as worktree_module
+
+    worktrees_dir = tmp_path / "pycastle" / ".worktrees"
+    worktrees_dir.mkdir(parents=True)
+    stuck_orphan = worktrees_dir / "stuck-orphan"
+    stuck_orphan.mkdir()
+
+    original_rmtree = worktree_module.shutil.rmtree
+    commands: list[list[str]] = []
+
+    def _raise_on_stuck(path, *args, **kwargs):
+        if Path(path).resolve() == stuck_orphan.resolve():
+            raise PermissionError("cannot remove")
+        return original_rmtree(path, *args, **kwargs)
+
+    def _capture_command(command: list[str], **kwargs):
+        commands.append(list(command))
+        original_rmtree(stuck_orphan)
+        return MagicMock(returncode=0)
+
+    monkeypatch.setattr(worktree_module.shutil, "rmtree", _raise_on_stuck)
+    monkeypatch.setattr(worktree_module.subprocess, "run", _capture_command)
+
+    worktree_module.prune_orphan_worktrees(
+        tmp_path,
+        cfg=Config(docker_image_name="pycastle:test"),
+        git_service=_make_prune_git_svc([]),
+    )
+
+    assert len(commands) == 1
+    rm_cmd = commands[0]
+    image_idx = rm_cmd.index("pycastle:test")
+    args_after_image = rm_cmd[image_idx + 1 :]
+    # -rf must be the first arg so rm receives it as a flag, not a filename
+    assert args_after_image[0] == "-rf", (
+        f"-rf must precede -- in the rm command; got {args_after_image}"
+    )
 
 
 def test_prune_orphan_worktrees_host_container_cleanup_keeps_sibling_orphan(

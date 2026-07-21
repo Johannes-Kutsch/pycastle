@@ -214,8 +214,8 @@ def _try_remove_orphan_via_host_container(cfg: Config | None, child: Path) -> bo
         "--entrypoint",
         "rm",
         cfg.docker_image_name,
-        "--",
         "-rf",
+        "--",
         f"/pycastle-worktrees/{child.name}",
     ]
     try:
