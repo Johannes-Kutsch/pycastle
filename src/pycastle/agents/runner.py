@@ -47,7 +47,6 @@ from ..infrastructure.docker_session import DockerSession, build_volume_spec
 from agent_runtime.errors import (
     AgentCredentialFailureError,
     HardAgentError,
-    TransientAgentError,
 )
 from ..errors import (
     AgentFailedError,
@@ -55,6 +54,7 @@ from ..errors import (
     DockerError,
     ModelNotAvailableError,
     SetupPhaseError,
+    TransientAgentError,
     UsageLimitError,
 )
 from ..managed_worktree_mount_policy import enforce_managed_worktree_mount
@@ -91,10 +91,8 @@ _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
 
 def format_transient_status_message(err: TransientAgentError) -> str:
-    return (
-        "transient API error: status "
-        f"{err.status_code if err.status_code is not None else 'no status'}"
-    )
+    detail = str(err)
+    return f"transient API error: {detail}" if detail else "transient API error"
 
 
 def _stage_key_for_role(role: AgentRole) -> str | None:
@@ -788,14 +786,6 @@ class AgentRunner:
                 )
                 current_run_kind = RunKind.FRESH
                 continue
-            except TransientAgentError as err:
-                if request.token is not None:
-                    request.token.cancel()
-                status_display.print(
-                    request.name,
-                    format_transient_status_message(err),
-                )
-                raise
 
             if not hasattr(outcome, "kind") and hasattr(outcome, "output"):
                 outcome = agent_runtime.RuntimeOutcome(

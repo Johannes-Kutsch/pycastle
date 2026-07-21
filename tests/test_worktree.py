@@ -14,9 +14,9 @@ from pycastle.config import Config
 from agent_runtime.errors import (
     AgentCredentialFailureError,
     HardAgentError,
-    TransientAgentError,
 )
 from pycastle.errors import (
+    TransientAgentError,
     AgentFailedError,
     UsageLimitError,
     WorktreeError,
@@ -1651,7 +1651,7 @@ def test_managed_worktree_cleans_up_on_transient_agent_error(branch_deps):
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
-                raise TransientAgentError(status_code=529)
+                raise TransientAgentError()
 
     asyncio.run(_run())
 

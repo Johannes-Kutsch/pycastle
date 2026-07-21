@@ -10,12 +10,13 @@ from ..agents.output_protocol import AgentRole, CommitMessageOutput
 from ..agents.result import CancellationToken
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from agent_runtime.errors import HardAgentError, TransientAgentError
+from agent_runtime.errors import HardAgentError
 from ..errors import (
     AgentFailedError,
     BranchCollisionError,
     ModelNotAvailableError,
     SetupPhaseError,
+    TransientAgentError,
     UsageLimitError,
 )
 from ..prompts.dispatch import build_prompt_invocation

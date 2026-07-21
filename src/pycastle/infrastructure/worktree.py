@@ -14,10 +14,10 @@ from ..config import Config, load_config
 from agent_runtime.errors import (
     AgentCredentialFailureError,
     HardAgentError,
-    TransientAgentError,
 )
 from ..errors import (
     AgentFailedError,
+    TransientAgentError,
     UsageLimitError,
     WorktreeError,
     WorktreeTimeoutError,

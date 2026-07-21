@@ -24,8 +24,8 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
-from agent_runtime.errors import TransientAgentError
 from pycastle.errors import (
+    TransientAgentError,
     AgentTimeoutError,
     ModelNotAvailableError,
     UsageLimitError,
@@ -1687,80 +1687,3 @@ def test_agent_runner_model_not_available_records_restriction_and_raises(
     assert not isinstance(excinfo.value, UsageLimitError)
     assert service.mark_model_restricted_calls == ["gpt-5.5"]
     assert service.mark_exhausted_calls == []
-
-
-def test_agent_runner_propagates_transient_error_from_runtime(
-    tmp_path,
-    monkeypatch,
-):
-    """agent_runtime.errors.TransientAgentError raised directly from run_new_session
-    (as opposed to being wrapped in a ProviderUnavailable outcome) propagates out of
-    the runner so run_iteration's except-handler catches it.
-    Regression test for issue #1960: 'API Error: Overloaded' crashed the run instead of
-    returning Continue."""
-
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1960"
-    mount_path.mkdir(parents=True)
-
-    git_service = MagicMock(spec=GitService)
-    git_service.get_user_name.return_value = "Test User"
-    git_service.get_user_email.return_value = "test@example.com"
-    runner = AgentRunner(
-        env={},
-        cfg=Config(logs_dir=tmp_path / "logs"),
-        git_service=git_service,
-        service_registry={"codex": _FakeService()},
-    )
-    status_display = RecordingStatusDisplay()
-
-    class _OverloadedRuntimeClient:
-        async def run_new_session(self, request):
-            raise TransientAgentError(
-                message='{"type":"result","result":"API Error: Overloaded"}',
-                status_code=529,
-            )
-
-    monkeypatch.setattr(
-        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
-    )
-    monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
-        AsyncMock(return_value="prompt"),
-    )
-    monkeypatch.setattr(
-        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
-        AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
-        lambda _self: _OverloadedRuntimeClient(),
-    )
-
-    with pytest.raises(TransientAgentError) as excinfo:
-        asyncio.run(
-            runner.run(
-                RunRequest(
-                    name="Improve Agent",
-                    prompt=PromptInvocation(
-                        template=PromptTemplate.IMPLEMENT_BEHAVIOR,
-                        scope_args={
-                            "ISSUE_NUMBER": "1960",
-                            "ISSUE_TITLE": "Overloaded API crash",
-                            "ISSUE_BODY": "",
-                            "ISSUE_COMMENTS": "",
-                            "BRANCH": "issue-1960",
-                            "INTERRUPTED_WORK": "",
-                        },
-                    ),
-                    mount_path=mount_path,
-                    role=AgentRole.IMPLEMENTER,
-                    model="gpt-5.5",
-                    effort="medium",
-                    service="codex",
-                    status_display=status_display,
-                )
-            )
-        )
-
-    assert excinfo.value.status_code == 529

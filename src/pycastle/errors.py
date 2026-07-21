@@ -173,6 +173,11 @@ class ClaudeCommandError(ClaudeServiceError):
     pass
 
 
+class TransientAgentError(PycastleError):
+    def __init__(self, message: str = "") -> None:
+        super().__init__(message)
+
+
 class DockerServiceError(PycastleError):
     pass
 
@@ -199,6 +204,7 @@ __all__ = [
     "PycastleError",
     "RuntimeConfigurationError",
     "SetupPhaseError",
+    "TransientAgentError",
     "UsageLimitError",
     "WorktreeError",
     "WorktreeTimeoutError",

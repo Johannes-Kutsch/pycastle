@@ -7,10 +7,11 @@ from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..bug_reporter import file_merge_close_failure_issue
 from ..config import Config
 from ..display.status_display import StatusDisplay
-from agent_runtime.errors import HardAgentError, TransientAgentError
+from agent_runtime.errors import HardAgentError
 from ..errors import (
     AgentTimeoutError,
     SetupPhaseError,
+    TransientAgentError,
     UsageLimitError,
     WorktreeError,
     WorktreeTimeoutError,

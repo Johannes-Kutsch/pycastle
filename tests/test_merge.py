@@ -13,8 +13,9 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
-from agent_runtime.errors import HardAgentError, TransientAgentError
+from agent_runtime.errors import HardAgentError
 from pycastle.errors import (
+    TransientAgentError,
     AgentTimeoutError,
     UsageLimitError,
     WorktreeError,
@@ -1791,7 +1792,7 @@ def test_merge_phase_preserves_sandbox_and_session_on_usage_limit_error(
     [
         (UsageLimitError(), UsageLimitError),
         (AgentTimeoutError("timeout"), AgentTimeoutError),
-        (TransientAgentError(status_code=529), TransientAgentError),
+        (TransientAgentError(), TransientAgentError),
         (
             HardAgentError(message="hard failure"),
             HardAgentError,

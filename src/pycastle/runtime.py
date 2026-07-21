@@ -636,10 +636,10 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
                     from agent_runtime.errors import (
                         AgentCredentialFailureError,
                         HardAgentError,
-                        TransientAgentError,
                     )
                     from .errors import (
                         AgentTimeoutError,
+                        TransientAgentError,
                         UsageLimitError,
                     )
 

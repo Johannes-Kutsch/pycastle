@@ -31,10 +31,10 @@ from ..display.status_display import PlainStatusDisplay, WORK_PHASE
 from .agent_invocation_log import AgentInvocationLog
 from ..services.runtime_services import AgentService, ToolPolicy as ServiceToolPolicy
 from .docker_session import DockerSession
-from agent_runtime.errors import TransientAgentError
 from ..errors import (
     AgentTimeoutError,
     DockerError,
+    TransientAgentError,
     UsageLimitError,
 )
 from .preflight_failure_interpreter import PreflightCommandFailure

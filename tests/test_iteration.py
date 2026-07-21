@@ -10,9 +10,9 @@ import pytest
 from agent_runtime.errors import (
     AgentCredentialFailureError,
     HardAgentError,
-    TransientAgentError,
 )
 from pycastle.errors import (
+    TransientAgentError,
     AgentFailedError,
     AgentTimeoutError,
     SetupPhaseError,
@@ -4178,7 +4178,7 @@ def test_run_iteration_returns_continue_on_transient_agent_error_from_implement_
             return _plan_output(
                 [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
             )
-        raise TransientAgentError(status_code=529)
+        raise TransientAgentError()
 
     deps = _make_deps(
         tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -4214,7 +4214,7 @@ def test_run_iteration_returns_continue_on_transient_agent_error_from_plan_agent
 
     async def agent_fn(req: RunRequest):
         if req.name == "Plan Agent":
-            raise TransientAgentError(status_code=503)
+            raise TransientAgentError()
         return CompletionOutput()
 
     deps = _make_deps(
