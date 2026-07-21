@@ -24,10 +24,10 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
+from agent_runtime.errors import TransientAgentError
 from pycastle.errors import (
     AgentTimeoutError,
     ModelNotAvailableError,
-    TransientAgentError,
     UsageLimitError,
 )
 from pycastle.prompts.dispatch import PromptInvocation
@@ -1689,16 +1689,15 @@ def test_agent_runner_model_not_available_records_restriction_and_raises(
     assert service.mark_exhausted_calls == []
 
 
-def test_agent_runner_translates_runtime_transient_error_to_pycastle_transient(
+def test_agent_runner_propagates_transient_error_from_runtime(
     tmp_path,
     monkeypatch,
 ):
     """agent_runtime.errors.TransientAgentError raised directly from run_new_session
-    (as opposed to being wrapped in a ProviderUnavailable outcome) must be translated
-    to pycastle.errors.TransientAgentError so run_iteration's except-handler catches it.
+    (as opposed to being wrapped in a ProviderUnavailable outcome) propagates out of
+    the runner so run_iteration's except-handler catches it.
     Regression test for issue #1960: 'API Error: Overloaded' crashed the run instead of
     returning Continue."""
-    from agent_runtime.errors import TransientAgentError as RuntimeTransientAgentError
 
     mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-1960"
     mount_path.mkdir(parents=True)
@@ -1716,7 +1715,7 @@ def test_agent_runner_translates_runtime_transient_error_to_pycastle_transient(
 
     class _OverloadedRuntimeClient:
         async def run_new_session(self, request):
-            raise RuntimeTransientAgentError(
+            raise TransientAgentError(
                 message='{"type":"result","result":"API Error: Overloaded"}',
                 status_code=529,
             )

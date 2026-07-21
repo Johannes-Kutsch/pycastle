@@ -46,7 +46,7 @@ from pycastle.runtime_session import (
     is_exact_resumable_service_session,
     select_resumable_provider_session_id,
 )
-from pycastle.errors import HardAgentError
+from agent_runtime.errors import HardAgentError
 from pycastle.provider_session_adapter import provider_session_adapter_for_service_name
 from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.services import ClaudeService, CodexService

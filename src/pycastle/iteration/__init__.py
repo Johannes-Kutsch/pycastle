@@ -17,14 +17,16 @@ from ..bug_reporter import (
     BUG_REPORT_LABEL_LIST,
     auto_file_issue,
 )
-from ..errors import (
+from agent_runtime.errors import (
     AgentCredentialFailureError,
+    HardAgentError,
+    TransientAgentError,
+)
+from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
-    HardAgentError,
     ModelNotAvailableError,
     SetupPhaseError,
-    TransientAgentError,
     UsageLimitError,
 )
 from ..diagnostic_mount_fallback import (

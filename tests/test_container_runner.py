@@ -22,10 +22,10 @@ from agent_runtime.types import ProviderSelection, ResolvedProvider
 
 from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config, load_config
+from agent_runtime.errors import TransientAgentError
 from pycastle.errors import (
     AgentTimeoutError,
     DockerError,
-    TransientAgentError,
     UsageLimitError,
 )
 from pycastle.infrastructure.container_runner import ContainerRunner

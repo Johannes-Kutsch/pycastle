@@ -60,7 +60,7 @@ class LocalAuthSeedAction:
                 or self.missing_source_service_name is None
             ):
                 raise FileNotFoundError(self.source)
-            from .errors import AgentCredentialFailureError
+            from agent_runtime.errors import AgentCredentialFailureError
 
             raise AgentCredentialFailureError(
                 self.missing_source_message,

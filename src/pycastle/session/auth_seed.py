@@ -4,7 +4,7 @@ from pycastle.session_planning import (
     RecoveredSessionIdPersistence,
 )
 
-from ..errors import AgentCredentialFailureError
+from agent_runtime.errors import AgentCredentialFailureError
 
 
 class LocalAuthSeedAction(RuntimeLocalAuthSeedAction):

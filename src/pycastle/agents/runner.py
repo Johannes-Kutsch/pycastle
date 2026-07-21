@@ -44,15 +44,17 @@ from .result import CancellationToken
 from ..config import Config, StageOverride, image_name_for
 from ..infrastructure.container_runner import ContainerRunner
 from ..infrastructure.docker_session import DockerSession, build_volume_spec
-from ..errors import (
+from agent_runtime.errors import (
     AgentCredentialFailureError,
+    HardAgentError,
+    TransientAgentError,
+)
+from ..errors import (
     AgentFailedError,
     AgentTimeoutError,
     DockerError,
-    HardAgentError,
     ModelNotAvailableError,
     SetupPhaseError,
-    TransientAgentError,
     UsageLimitError,
 )
 from ..managed_worktree_mount_policy import enforce_managed_worktree_mount

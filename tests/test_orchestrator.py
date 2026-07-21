@@ -3296,7 +3296,7 @@ def test_stage_with_no_fallback_behaves_as_before(tmp_path):
 
 def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
     """When run_iteration returns AbortedHardApiError the orchestrator must exit non-zero."""
-    from pycastle.errors import HardAgentError
+    from agent_runtime.errors import HardAgentError
 
     raw_line = '{"type": "result", "is_error": true, "api_error_status": 400, "result": "Bad request"}'
 

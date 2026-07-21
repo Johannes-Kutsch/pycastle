@@ -633,11 +633,13 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
                         invocation_log_path=getattr(runner, "log_path", None),
                     )
                 except Exception as err:
-                    from .errors import (
+                    from agent_runtime.errors import (
                         AgentCredentialFailureError,
-                        AgentTimeoutError,
                         HardAgentError,
                         TransientAgentError,
+                    )
+                    from .errors import (
+                        AgentTimeoutError,
                         UsageLimitError,
                     )
 

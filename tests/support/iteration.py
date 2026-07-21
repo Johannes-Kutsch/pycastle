@@ -13,7 +13,7 @@ from pycastle.agents.runner import (
 )
 from pycastle.config import Config
 from pycastle.display.status_display import ModelDisplayMetadata, StatusDisplay
-from pycastle.errors import HardAgentError
+from agent_runtime.errors import HardAgentError
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )

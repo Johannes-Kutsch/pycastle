@@ -16,7 +16,7 @@ from pycastle.runtime_session import (
 )
 from pycastle.session.service_session_store import load_service_session_id
 from pycastle.session.service_session_store import save_service_session_metadata
-from pycastle.errors import AgentCredentialFailureError
+from agent_runtime.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService
 from pycastle.services.runtime_services import CodexService
 from pycastle.services.runtime_services import OpenCodeService

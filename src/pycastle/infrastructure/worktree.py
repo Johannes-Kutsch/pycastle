@@ -11,11 +11,13 @@ from typing import Protocol
 import warnings
 
 from ..config import Config, load_config
-from ..errors import (
+from agent_runtime.errors import (
     AgentCredentialFailureError,
-    AgentFailedError,
     HardAgentError,
     TransientAgentError,
+)
+from ..errors import (
+    AgentFailedError,
     UsageLimitError,
     WorktreeError,
     WorktreeTimeoutError,

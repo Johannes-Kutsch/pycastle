@@ -5,13 +5,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from agent_runtime.errors import HardAgentError
 from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
     BranchCollisionError,
     DockerError,
     DockerTimeoutError,
-    HardAgentError,
     PycastleError,
     WorktreeError,
     WorktreeTimeoutError,

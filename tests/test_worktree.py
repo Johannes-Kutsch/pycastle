@@ -11,11 +11,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pycastle.config import Config
-from pycastle.errors import (
+from agent_runtime.errors import (
     AgentCredentialFailureError,
-    AgentFailedError,
     HardAgentError,
     TransientAgentError,
+)
+from pycastle.errors import (
+    AgentFailedError,
     UsageLimitError,
     WorktreeError,
     WorktreeTimeoutError,

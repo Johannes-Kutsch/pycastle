@@ -3,12 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
-from agent_runtime.errors import (
-    AgentCredentialFailureError as AgentCredentialFailureError,
-    HardAgentError as HardAgentError,
-    TransientAgentError as TransientAgentError,
-)
-
 
 class PycastleError(RuntimeError):
     pass
@@ -188,7 +182,6 @@ class DockerBuildError(DockerServiceError):
 
 
 __all__ = [
-    "AgentCredentialFailureError",
     "AgentFailedError",
     "AgentTimeoutError",
     "BranchCollisionError",
@@ -201,13 +194,11 @@ __all__ = [
     "DockerError",
     "DockerServiceError",
     "DockerTimeoutError",
-    "HardAgentError",
     "ManagedWorktreeMountPreconditionError",
     "ModelNotAvailableError",
     "PycastleError",
     "RuntimeConfigurationError",
     "SetupPhaseError",
-    "TransientAgentError",
     "UsageLimitError",
     "WorktreeError",
     "WorktreeTimeoutError",

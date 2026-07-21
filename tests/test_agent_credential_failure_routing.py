@@ -7,7 +7,7 @@ from pycastle.agent_credential_failure_routing import (
     AgentCredentialFailureRouteResult,
     route_agent_credential_failure,
 )
-from pycastle.errors import AgentCredentialFailureError, HardAgentError
+from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 from pycastle.services import GithubService
 
 

@@ -7,13 +7,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pycastle.errors import (
+from agent_runtime.errors import (
     AgentCredentialFailureError,
+    HardAgentError,
+    TransientAgentError,
+)
+from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
-    HardAgentError,
     SetupPhaseError,
-    TransientAgentError,
     UsageLimitError,
 )
 from pycastle.config import Config, StageOverride

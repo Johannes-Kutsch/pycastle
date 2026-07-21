@@ -7,7 +7,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
-from .errors import AgentCredentialFailureError, HardAgentError
+from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
 if TYPE_CHECKING:
     from .services import GithubService

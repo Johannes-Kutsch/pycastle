@@ -13,10 +13,9 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
+from agent_runtime.errors import HardAgentError, TransientAgentError
 from pycastle.errors import (
     AgentTimeoutError,
-    HardAgentError,
-    TransientAgentError,
     UsageLimitError,
     WorktreeError,
     WorktreeTimeoutError,

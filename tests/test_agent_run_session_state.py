@@ -10,7 +10,7 @@ from pycastle.agents.session_state import (
     prepare_agent_run_session_state,
     record_observed_provider_session_id,
 )
-from pycastle.errors import AgentCredentialFailureError
+from agent_runtime.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService, CodexService, OpenCodeService
 from pycastle.session.agent import RunSessionPlan
 from pycastle.session import RoleSession, RunKind
