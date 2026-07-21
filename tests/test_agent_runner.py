@@ -25,7 +25,6 @@ from pycastle.agents.output_protocol import (
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
-    TransientAgentError,
     AgentTimeoutError,
     ModelNotAvailableError,
     UsageLimitError,
