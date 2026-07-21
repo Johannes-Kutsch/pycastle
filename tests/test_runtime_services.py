@@ -2,7 +2,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.errors import UsageLimitError
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services.runtime_services import (
     ClaudeService,
@@ -162,8 +165,6 @@ def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and
 
 # --- build_env raises UsageLimitError when the credential pool is exhausted ---
 
-from pycastle.errors import UsageLimitError
-
 
 def test_claude_service_build_env_raises_usage_limit_error_when_pool_temporarily_exhausted():
     # Regression: pool exhaustion previously propagated as RuntimeError, causing the
@@ -173,7 +174,6 @@ def test_claude_service_build_env_raises_usage_limit_error_when_pool_temporarily
     svc.build_env()  # picks tok-1
     svc.mark_exhausted(future_reset)  # tok-1 exhausted with a finite wake time
 
-    import pytest
     with pytest.raises(UsageLimitError) as exc_info:
         svc.build_env()
 
@@ -187,7 +187,6 @@ def test_claude_service_build_env_raises_permanent_usage_limit_error_when_pool_p
     svc.build_env()  # picks tok-1
     svc.mark_permanently_exhausted()  # tok-1 permanently exhausted
 
-    import pytest
     with pytest.raises(UsageLimitError) as exc_info:
         svc.build_env()
 
