@@ -15,3 +15,11 @@ The decision is to eliminate the translation layer entirely. `pycastle.errors.Tr
 - The translation except-blocks in `AgentRunner._invoke_runtime_attempts` (`except RuntimeHardAgentError`, `except RuntimeAgentCredentialFailureError`, `except RuntimeTransientAgentError`) are deleted; `_invoke_runtime_attempts` catches ar types directly.
 - `agent_credential_failure_routing.py`, `worktree.py`, `implement.py`, `_merge_conflict_recovery.py`, `iteration/__init__.py`, and `runtime.py` update their imports and annotations from `pycastle.errors` to `agent_runtime.errors` for the three deleted types.
 - The dead `if service_name == "claude" and status_code == 403:` and `if service_name != "codex" or status_code != 401:` branches in `_interpret_agent_credential_failure` are removed.
+
+## Amendment — ar 0.2.7 (2026-07-21)
+
+`agent_runtime` 0.2.7 removed `TransientAgentError` from its public API entirely. Ar now raises `ProviderUnavailableError(reason=TRANSIENT_API_ERROR)` for retryable transient errors, which the runtime lifecycle converts to a `ProviderUnavailable` outcome. Pycastle re-introduces `TransientAgentError` in `pycastle.errors` (no `status_code` field) and owns the type going forward.
+
+This is not a re-introduction of the anti-pattern this ADR eliminated: the problem ADR 0048 fixed was pycastle copying a type that ar still raised, creating a gap where ar's exception escaped pycastle's handlers. Ar shed this type; pycastle owning it now creates no translation gap.
+
+Import rule update: `HardAgentError` and `AgentCredentialFailureError` continue to import from `agent_runtime.errors`. `TransientAgentError` now imports from `pycastle.errors`.
