@@ -356,11 +356,7 @@ def route_agent_credential_failure(
         github_svc=github_svc,
     )
     issue_url = issue_result.issue_url
-    status_code_str = (
-        str(_status_code)
-        if _status_code is not None
-        else "no status"
-    )
+    status_code_str = str(_status_code) if _status_code is not None else "no status"
     status_message = (
         f"operator-actionable agent credential failure: status {status_code_str}"
     )

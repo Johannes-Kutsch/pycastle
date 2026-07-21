@@ -4516,36 +4516,6 @@ def test_run_iteration_extracts_codex_status_from_raw_error_envelope_when_missin
     assert result.status_code == 400
 
 
-def test_run_iteration_prefers_explicit_hard_error_status_over_raw_codex_envelope_status(
-    tmp_path, git_svc, github_svc, logger
-):
-    raw_line = (
-        '{"type": "error", "error": {"type": "invalid_request_error", '
-        '"message": "Bad request: invalid model"}, "status": 400}'
-    )
-
-    async def agent_fn(req: RunRequest):
-        if req.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
-            )
-        raise HardAgentError(message=raw_line, service_name="codex")
-
-    with patch("pycastle.iteration.auto_file_issue") as mock_file:
-        mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
-        deps = _make_deps(
-            tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
-        )
-        result = asyncio.run(run_iteration(deps))
-
-    assert isinstance(result, AbortedHardApiError)
-    mock_file.assert_called_once()
-    title, body, _labels = mock_file.call_args[0]
-    assert title == "[pycastle] Codex API 400: Bad request: invalid model"
-    assert "Status: 400" in body
-    assert result.status_code == 400
-
-
 def test_run_iteration_keeps_none_status_for_invalid_raw_codex_hard_error_envelope(
     tmp_path, git_svc, github_svc, logger
 ):
