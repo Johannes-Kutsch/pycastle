@@ -3305,7 +3305,7 @@ def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
             return _plan_output(
                 [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
             )
-        raise HardAgentError(message=raw_line, status_code=400)
+        raise HardAgentError(message=raw_line)
 
     with patch(
         "pycastle.iteration.auto_file_issue", return_value="https://example.com/1"

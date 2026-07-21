@@ -1673,7 +1673,7 @@ def test_managed_worktree_preserves_worktree_on_hard_agent_error(branch_deps):
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
-                raise HardAgentError(status_code=403)
+                raise HardAgentError()
 
     asyncio.run(_run())
 
@@ -1696,7 +1696,6 @@ def test_managed_worktree_cleans_up_on_agent_credential_failure(branch_deps):
             ):
                 raise AgentCredentialFailureError(
                     message="Codex authentication missing: run `codex login` on the host.",
-                    status_code=401,
                     service_name="codex",
                 )
 
@@ -1734,7 +1733,6 @@ def test_managed_worktree_preserves_independent_worktree_state_on_agent_credenti
                     (session_dir / "session.json").write_text("{}")
                 raise AgentCredentialFailureError(
                     message="Codex authentication missing: run `codex login` on the host.",
-                    status_code=401,
                     service_name="codex",
                 )
 

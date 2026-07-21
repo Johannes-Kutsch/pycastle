@@ -64,7 +64,6 @@ class LocalAuthSeedAction:
 
             raise AgentCredentialFailureError(
                 self.missing_source_message,
-                status_code=self.missing_source_status_code,
                 service_name=self.missing_source_service_name,
                 classification=self.missing_source_classification,
             )

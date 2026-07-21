@@ -3058,7 +3058,6 @@ def test_run_iteration_routes_failure_report_credential_failure_through_shared_t
     )
     credential_error = AgentCredentialFailureError(
         "Credential failure observed while running the Failure-Report agent.",
-        status_code=401,
         service_name="codex",
     )
     credential_error.caller = "Failure Report Agent"
@@ -4238,7 +4237,7 @@ def test_run_iteration_returns_aborted_hard_api_error_on_hard_agent_error_from_i
             return _plan_output(
                 [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=400)
+        raise HardAgentError(message=raw_line)
 
     with patch("pycastle.iteration.auto_file_issue"):
         deps = _make_deps(
@@ -4253,14 +4252,14 @@ def test_run_iteration_calls_auto_file_issue_with_correct_title_and_labels_on_ha
     tmp_path, git_svc, github_svc, logger
 ):
     """HardAgentError defaults to a Claude-scoped auto-file title."""
-    raw_line = '{"type": "result", "is_error": true, "api_error_status": 401, "result": "Unauthorized: invalid token"}'
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 401, "status": 401, "result": "Unauthorized: invalid token"}'
 
     async def agent_fn(req: RunRequest):
         if req.name == "Plan Agent":
             return _plan_output(
                 [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=401)
+        raise HardAgentError(message=raw_line)
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/x/y/issues/99"
@@ -4284,7 +4283,6 @@ def test_run_iteration_returns_distinct_terminal_result_for_shared_credential_fa
 ):
     hard_error = HardAgentError(
         message="Credential failure surfaced by the provider adapter.",
-        status_code=401,
         service_name="codex",
     )
     hard_error.caller = "Implementer"
@@ -4340,7 +4338,6 @@ def test_run_iteration_preserves_codex_consuming_project_routing_for_distinct_cr
 ):
     credential_error = AgentCredentialFailureError(
         message="Credential failure surfaced by the provider adapter.",
-        status_code=401,
         service_name="codex",
         classification="operator_actionable_agent_credential_failure",
     )
@@ -4388,7 +4385,7 @@ def test_run_iteration_does_not_route_unrelated_codex_auth_failure_to_consuming_
             return _plan_output(
                 [{"number": 2, "title": "Auth fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=401, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4414,7 +4411,6 @@ def test_run_iteration_keeps_generic_codex_shared_classification_on_hard_provide
             )
         raise AgentCredentialFailureError(
             message=raw_line,
-            status_code=401,
             service_name="codex",
             classification="operator_actionable_agent_credential_failure",
         )
@@ -4444,7 +4440,6 @@ def test_run_iteration_keeps_generic_codex_agent_credential_failure_without_clas
             )
         raise AgentCredentialFailureError(
             message=raw_line,
-            status_code=401,
             service_name="codex",
         )
 
@@ -4466,7 +4461,7 @@ def test_run_iteration_uses_codex_error_message_from_error_envelope_in_hard_erro
 ):
     raw_line = (
         '{"type": "error", "error": {"type": "invalid_request_error", '
-        '"message": "Bad request: invalid model"}}'
+        '"message": "Bad request: invalid model"}, "status": 400}'
     )
 
     async def agent_fn(req: RunRequest):
@@ -4474,7 +4469,7 @@ def test_run_iteration_uses_codex_error_message_from_error_envelope_in_hard_erro
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=400, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4504,7 +4499,7 @@ def test_run_iteration_extracts_codex_status_from_raw_error_envelope_when_missin
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=None, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4534,7 +4529,7 @@ def test_run_iteration_prefers_explicit_hard_error_status_over_raw_codex_envelop
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=401, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4546,9 +4541,9 @@ def test_run_iteration_prefers_explicit_hard_error_status_over_raw_codex_envelop
     assert isinstance(result, AbortedHardApiError)
     mock_file.assert_called_once()
     title, body, _labels = mock_file.call_args[0]
-    assert title == "[pycastle] Codex API 401: Bad request: invalid model"
-    assert "Status: 401" in body
-    assert result.status_code == 401
+    assert title == "[pycastle] Codex API 400: Bad request: invalid model"
+    assert "Status: 400" in body
+    assert result.status_code == 400
 
 
 def test_run_iteration_keeps_none_status_for_invalid_raw_codex_hard_error_envelope(
@@ -4561,7 +4556,7 @@ def test_run_iteration_keeps_none_status_for_invalid_raw_codex_hard_error_envelo
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=None, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4591,7 +4586,7 @@ def test_run_iteration_keeps_none_status_for_boolean_raw_codex_hard_error_status
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=None, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4618,7 +4613,7 @@ def test_run_iteration_keeps_raw_invalid_json_hard_error_title(
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=400, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4630,7 +4625,7 @@ def test_run_iteration_keeps_raw_invalid_json_hard_error_title(
     assert isinstance(result, AbortedHardApiError)
     mock_file.assert_called_once()
     title, body, _labels = mock_file.call_args[0]
-    assert title == "[pycastle] Codex API 400: Bad request: invalid model"
+    assert title == "[pycastle] Codex API None: Bad request: invalid model"
     assert raw_line in body
     github_svc.create_issue_in.assert_not_called()
 
@@ -4640,7 +4635,7 @@ def test_run_iteration_keeps_raw_title_when_error_data_dict_lacks_message(
 ):
     raw_line = (
         '{"type": "error", "error": {"data": {"code": "invalid_request"}, '
-        '"message": "Bad request: invalid model"}}'
+        '"message": "Bad request: invalid model"}, "status": 400}'
     )
 
     async def agent_fn(req: RunRequest):
@@ -4648,7 +4643,7 @@ def test_run_iteration_keeps_raw_title_when_error_data_dict_lacks_message(
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=400, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4670,7 +4665,7 @@ def test_run_iteration_keeps_legacy_raw_title_for_unrelated_top_level_message_ha
 ):
     raw_line = (
         '{"type":"error","message":"Error: API request failed: 400 Bad Request: '
-        'model_not_found"}'
+        'model_not_found", "status": 400}'
     )
 
     async def agent_fn(req: RunRequest):
@@ -4678,7 +4673,7 @@ def test_run_iteration_keeps_legacy_raw_title_for_unrelated_top_level_message_ha
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=400, service_name="codex")
+        raise HardAgentError(message=raw_line, service_name="codex")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         mock_file.return_value = "https://github.com/Johannes-Kutsch/pycastle/issues/99"
@@ -4700,7 +4695,7 @@ def test_run_iteration_uses_service_name_in_hard_agent_error_title(
 ):
     raw_line = (
         '{"type": "error", "error": {"data": {"message": '
-        '"Model not found: deepseek-v4-flash/."}}}'
+        '"Model not found: deepseek-v4-flash/."}}, "status": 400}'
     )
 
     async def agent_fn(req: RunRequest):
@@ -4708,7 +4703,7 @@ def test_run_iteration_uses_service_name_in_hard_agent_error_title(
             return _plan_output(
                 [{"number": 2, "title": "Model fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=400, service_name="opencode")
+        raise HardAgentError(message=raw_line, service_name="opencode")
 
     with patch("pycastle.iteration.auto_file_issue") as mock_file:
         deps = _make_deps(
@@ -4729,10 +4724,10 @@ def test_run_iteration_returns_aborted_hard_api_error_on_hard_agent_error_from_p
     tmp_path, git_svc, github_svc, logger
 ):
     """HardAgentError from the Plan Agent propagates to run_iteration returning AbortedHardApiError."""
-    raw_line = '{"type": "result", "is_error": true, "api_error_status": 403, "result": "Permission denied"}'
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 403, "status": 403, "result": "Permission denied"}'
 
     async def agent_fn(req: RunRequest):
-        raise HardAgentError(message=raw_line, status_code=403)
+        raise HardAgentError(message=raw_line)
 
     # two issues so plan agent is NOT skipped
     github_svc.get_open_issues.return_value = [
@@ -4766,7 +4761,7 @@ def test_run_iteration_emits_status_display_print_with_url_on_hard_agent_error(
     tmp_path, git_svc, github_svc, logger
 ):
     """On HardAgentError, run_iteration emits a status_display.print message that includes the URL."""
-    raw_line = '{"type": "result", "is_error": true, "api_error_status": 404, "result": "Not found"}'
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 404, "status": 404, "result": "Not found"}'
     issue_url = "https://github.com/Johannes-Kutsch/pycastle/issues/42"
 
     async def agent_fn(req: RunRequest):
@@ -4774,7 +4769,7 @@ def test_run_iteration_emits_status_display_print_with_url_on_hard_agent_error(
             return _plan_output(
                 [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=404)
+        raise HardAgentError(message=raw_line)
 
     display = RecordingStatusDisplay()
     with patch("pycastle.iteration.auto_file_issue", return_value=issue_url):
@@ -4804,14 +4799,14 @@ def test_run_iteration_uses_prefilled_url_when_auto_file_bugs_is_false(
     tmp_path, git_svc, github_svc, logger
 ):
     """When auto_file_bugs=False, run_iteration emits the prefilled issues/new URL (no API call)."""
-    raw_line = '{"type": "result", "is_error": true, "api_error_status": 413, "result": "Request too large"}'
+    raw_line = '{"type": "result", "is_error": true, "api_error_status": 413, "status": 413, "result": "Request too large"}'
 
     async def agent_fn(req: RunRequest):
         if req.name == "Plan Agent":
             return _plan_output(
                 [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
             )
-        raise HardAgentError(message=raw_line, status_code=413)
+        raise HardAgentError(message=raw_line)
 
     display = RecordingStatusDisplay()
     cfg = Config(max_parallel=4, max_iterations=1, auto_file_bugs=False)

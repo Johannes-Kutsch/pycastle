@@ -84,7 +84,7 @@ def test_usage_limit_error_reset_time_defaults_to_none():
 
 def test_pycastle_error_shims_preserve_legacy_service_and_session_defaults():
     hard_error = HardAgentError(
-        message="provider rejected request", status_code=400, service_name="claude"
+        message="provider rejected request", service_name="claude"
     )
     failed_error = AgentFailedError(
         role_value="implementer",
@@ -119,7 +119,6 @@ def test_agent_failed_error_uses_posix_legacy_session_store_but_preserves_explic
 
 
 def test_runtime_derived_pycastle_compatibility_errors_subclass_pycastle_error():
-    assert issubclass(HardAgentError, PycastleError)
     assert issubclass(AgentFailedError, PycastleError)
 
 

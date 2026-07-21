@@ -1794,7 +1794,7 @@ def test_merge_phase_preserves_sandbox_and_session_on_usage_limit_error(
         (AgentTimeoutError("timeout"), AgentTimeoutError),
         (TransientAgentError(status_code=529), TransientAgentError),
         (
-            HardAgentError(message="hard failure", status_code=400),
+            HardAgentError(message="hard failure"),
             HardAgentError,
         ),
     ],
