@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 
 from pycastle.config import Config
 from pycastle.iteration import (
@@ -28,7 +27,6 @@ from pycastle.iteration.outcome_routing import (
     BreakLoop,
     ContinueLoop,
     ExitFailure,
-    LoopDirective,
     RouterDeps,
     SleepThenContinue,
     route_outcome,
@@ -67,7 +65,9 @@ def _make_deps(
 
 
 def _printed_messages(display: RecordingStatusDisplay) -> list[str]:
-    return [str(msg) for op, *rest in display.calls if op == "print" for msg in [rest[1]]]
+    return [
+        str(msg) for op, *rest in display.calls if op == "print" for msg in [rest[1]]
+    ]
 
 
 # ── LoopDirective types ───────────────────────────────────────────────────────
@@ -75,9 +75,10 @@ def _printed_messages(display: RecordingStatusDisplay) -> list[str]:
 
 def test_loop_directive_types_exist():
     assert ContinueLoop() is not None
-    assert SleepThenContinue(
-        wake_time=_now(), message="sleeping", slept_once_after=True
-    ) is not None
+    assert (
+        SleepThenContinue(wake_time=_now(), message="sleeping", slept_once_after=True)
+        is not None
+    )
     assert BreakLoop() is not None
     assert ExitFailure(code=1) is not None
 
@@ -103,7 +104,9 @@ def test_route_outcome_continue_returns_continue_loop():
 def test_route_outcome_done_cap_reached_returns_break_loop_with_message():
     display = RecordingStatusDisplay()
     cfg = Config(improve_max=5)
-    result = route_outcome(Done(improve_cap_reached=True), _make_deps(cfg=cfg, status_display=display))
+    result = route_outcome(
+        Done(improve_cap_reached=True), _make_deps(cfg=cfg, status_display=display)
+    )
     assert result == BreakLoop()
     msgs = _printed_messages(display)
     assert any("improve_max" in m and "5" in m for m in msgs)
@@ -203,7 +206,9 @@ def test_route_outcome_aborted_operator_actionable_returns_exit_failure_and_file
     github_svc.create_issue_in.return_value = 99
 
     result = route_outcome(
-        AbortedOperatorActionable(op="push", stderr="connection refused", attempt_count=3),
+        AbortedOperatorActionable(
+            op="push", stderr="connection refused", attempt_count=3
+        ),
         _make_deps(status_display=display, github_svc=github_svc),
     )
     assert result == ExitFailure(code=1)

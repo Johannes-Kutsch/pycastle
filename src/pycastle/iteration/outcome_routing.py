@@ -31,6 +31,7 @@ from . import (
 from .usage_limit_decision import (
     ContinueNow,
     SleepUntil,
+    Stop,
     decide_model_not_available_continuation,
     decide_usage_limit_continuation,
 )
@@ -70,6 +71,24 @@ class RouterDeps:
     github_svc: GithubService
 
 
+def _continuation_to_directive(
+    decision: ContinueNow | SleepUntil | Stop, deps: RouterDeps
+) -> LoopDirective:
+    if isinstance(decision, ContinueNow):
+        if decision.message is not None:
+            deps.status_display.print("", decision.message)
+        return ContinueLoop()
+    if isinstance(decision, SleepUntil):
+        return SleepThenContinue(
+            wake_time=decision.wake_time,
+            message=decision.message,
+            slept_once_after=True,
+        )
+    if decision.message is not None:
+        deps.status_display.print("", decision.message)
+    return BreakLoop()
+
+
 def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
     match outcome:
         case Done(improve_cap_reached=True):
@@ -100,45 +119,25 @@ def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
         case AbortedHardApiError():
             return ExitFailure(code=1)
         case AbortedUsageLimit():
-            decision = decide_usage_limit_continuation(
-                outcome,
-                deps.cfg,
-                deps.service_registry,
-                deps.now,
+            return _continuation_to_directive(
+                decide_usage_limit_continuation(
+                    outcome,
+                    deps.cfg,
+                    deps.service_registry,
+                    deps.now,
+                ),
+                deps,
             )
-            if isinstance(decision, ContinueNow):
-                if decision.message is not None:
-                    deps.status_display.print("", decision.message)
-                return ContinueLoop()
-            if isinstance(decision, SleepUntil):
-                return SleepThenContinue(
-                    wake_time=decision.wake_time,
-                    message=decision.message,
-                    slept_once_after=True,
-                )
-            if decision.message is not None:
-                deps.status_display.print("", decision.message)
-            return BreakLoop()
         case AbortedModelNotAvailable():
-            decision = decide_model_not_available_continuation(
-                outcome,
-                deps.cfg,
-                deps.service_registry,
-                deps.now,
+            return _continuation_to_directive(
+                decide_model_not_available_continuation(
+                    outcome,
+                    deps.cfg,
+                    deps.service_registry,
+                    deps.now,
+                ),
+                deps,
             )
-            if isinstance(decision, ContinueNow):
-                if decision.message is not None:
-                    deps.status_display.print("", decision.message)
-                return ContinueLoop()
-            if isinstance(decision, SleepUntil):
-                return SleepThenContinue(
-                    wake_time=decision.wake_time,
-                    message=decision.message,
-                    slept_once_after=True,
-                )
-            if decision.message is not None:
-                deps.status_display.print("", decision.message)
-            return BreakLoop()
         case AbortedAgentFailure(failed_role=role, issue_number=issue_num):
             msg = f"Agent '{role}' failed irrecoverably."
             if issue_num is not None:
