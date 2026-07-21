@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from pycastle.errors import UsageLimitError
 from pycastle.services.runtime_services import ClaudeService
 
 # Use a far-future base so exhausted_until stays > now_local() during test runs.
@@ -104,13 +105,17 @@ def test_next_wake_time_returns_min_over_exhausted_entries():
     assert svc.next_wake_time() == early_reset + timedelta(minutes=2)
 
 
-def test_build_env_raises_when_all_accounts_exhausted():
+def test_build_env_raises_usage_limit_error_when_all_accounts_exhausted():
     svc = _svc(("primary", "tok-p"))
     svc.build_env()
     svc.mark_exhausted(_FAR)
 
-    with pytest.raises(RuntimeError, match="No available Claude accounts"):
-        svc.build_env()  # no available account; _pool.pick raises
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.build_env()  # no available account; raises UsageLimitError not RuntimeError
+
+    assert exc_info.value.is_permanent is False
+    assert exc_info.value.reset_time is not None
+    assert exc_info.value.provider == "claude"
 
 
 def test_empty_accounts_raises():

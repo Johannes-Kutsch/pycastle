@@ -21,6 +21,7 @@ from ..runtime_session import (
     select_resumable_provider_session_id,
     load_provider_state_session_id,
 )
+from ..errors import UsageLimitError
 from ._wake_time import compute_wake_time
 from .credential_pool import CredentialPool
 
@@ -241,7 +242,14 @@ class ClaudeService:
         token: str | None = None,
     ) -> dict[str, str]:
         if token is None and self._pool is not None:
-            _, self._current_token = self._pool.pick()
+            try:
+                _, self._current_token = self._pool.pick()
+            except RuntimeError:
+                try:
+                    wake_time = self._pool.earliest_wake_time()
+                except RuntimeError:
+                    raise UsageLimitError(is_permanent=True, provider="claude")
+                raise UsageLimitError(reset_time=wake_time, provider="claude")
             token = self._current_token
         elif token is not None:
             self._current_token = token

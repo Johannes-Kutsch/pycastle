@@ -158,3 +158,38 @@ def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and
     svc.mark_exhausted(past_reset)  # wake time ~2025-06-01T00:02 UTC, before _NOW
     assert svc.is_available(model="gpt-5.5", now=_NOW) is False
     assert svc.is_available(model="gpt-5.4", now=_NOW) is True
+
+
+# --- build_env raises UsageLimitError when the credential pool is exhausted ---
+
+from pycastle.errors import UsageLimitError
+
+
+def test_claude_service_build_env_raises_usage_limit_error_when_pool_temporarily_exhausted():
+    # Regression: pool exhaustion previously propagated as RuntimeError, causing the
+    # orchestrator to loop endlessly instead of sleeping until accounts wake up.
+    future_reset = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    svc = ClaudeService(accounts=[("account 1", "tok-1")])
+    svc.build_env()  # picks tok-1
+    svc.mark_exhausted(future_reset)  # tok-1 exhausted with a finite wake time
+
+    import pytest
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.build_env()
+
+    assert exc_info.value.is_permanent is False
+    assert exc_info.value.reset_time is not None
+    assert exc_info.value.provider == "claude"
+
+
+def test_claude_service_build_env_raises_permanent_usage_limit_error_when_pool_permanently_exhausted():
+    svc = ClaudeService(accounts=[("account 1", "tok-1")])
+    svc.build_env()  # picks tok-1
+    svc.mark_permanently_exhausted()  # tok-1 permanently exhausted
+
+    import pytest
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.build_env()
+
+    assert exc_info.value.is_permanent is True
+    assert exc_info.value.provider == "claude"
