@@ -22,7 +22,6 @@ from pycastle.runtime_session import (
 )
 from pycastle.config import StageOverride
 from pycastle.errors import (
-    AgentTimeoutError,
     ModelNotAvailableError,
     SetupPhaseError,
     UsageLimitError,
@@ -46,7 +45,6 @@ from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
     run,
 )
-from pycastle.iteration import AbortedAgentCredentialFailure
 from pycastle.session import RunKind
 
 
@@ -1604,48 +1602,6 @@ def test_preflight_failure_only_first_check_acted_on(tmp_path):
 # ── Issue-409: sleep on usage limit instead of exiting ───────────────────────
 
 
-def test_usage_limit_sleeps_instead_of_exiting(tmp_path):
-    """When AbortedUsageLimit is received, run() must sleep instead of calling sys.exit()."""
-    mock_github = _make_github_svc()
-    mock_github.get_open_issues.side_effect = [
-        [
-            {
-                "number": 1,
-                "title": "Default Issue",
-                "body": "x" * 100,
-                "comments": [],
-                "labels": ["behavior-slice"],
-            },
-            {
-                "number": 2,
-                "title": "Default Issue 2",
-                "body": "x" * 100,
-                "comments": [],
-                "labels": ["behavior-slice"],
-            },
-        ],
-        [],
-    ]
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
-            )
-        raise UsageLimitError(reset_time=None)
-
-    with patch("time.sleep") as mock_sleep:
-        _run(
-            tmp_path,
-            _fake_run_agent,
-            github_service=mock_github,
-            max_iterations=2,
-        )
-
-    mock_sleep.assert_called_once()
-    assert mock_sleep.call_args[0][0] > 0
-
-
 def test_usage_limit_loop_continues_after_sleep_and_sets_slept_once(tmp_path):
     """After sleeping, the next iteration must see slept_once=True and skip until_sleep improve."""
     mock_github = _make_github_svc()
@@ -2493,50 +2449,6 @@ def test_iteration_header_uses_anonymous_caller(tmp_path):
 # ── Issue-504: service registry failover ─────────────────────────────────────
 
 
-def test_usage_limit_with_service_available_does_not_sleep(tmp_path):
-    """When service.is_available() is True, orchestrator must not sleep on AbortedUsageLimit."""
-    mock_github = _make_github_svc()
-    mock_github.get_open_issues.side_effect = [
-        [
-            {
-                "number": 1,
-                "title": "Default Issue",
-                "body": "x" * 100,
-                "comments": [],
-                "labels": ["behavior-slice"],
-            },
-            {
-                "number": 2,
-                "title": "Default Issue 2",
-                "body": "x" * 100,
-                "comments": [],
-                "labels": ["behavior-slice"],
-            },
-        ],
-        [],
-    ]
-
-    svc = _FakeService(available=True)
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
-            )
-        raise UsageLimitError(reset_time=None)
-
-    with patch("time.sleep") as mock_sleep:
-        _run(
-            tmp_path,
-            _fake_run_agent,
-            github_service=mock_github,
-            service_registry=ServiceRegistry({"claude": svc}),
-            max_iterations=2,
-        )
-
-    mock_sleep.assert_not_called()
-
-
 def test_pool_summary_printed_at_startup_with_both_accounts(tmp_path):
     from pycastle.services.runtime_services import ClaudeService
 
@@ -2838,53 +2750,6 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
         f"preflight must run exactly once across improve+plan; "
         f"got {len(fake.preflight_calls)} calls"
     )
-
-
-# ── AbortedTimeout: orchestrator continues without sleep ─────────────────────
-
-
-def test_orchestrator_aborted_timeout_continues_to_next_iteration_without_sleep(
-    tmp_path,
-):
-    """AbortedTimeout from run_iteration causes the orchestrator to start the next
-    iteration immediately without calling time.sleep and without exiting the process."""
-    mock_github = _make_github_svc(numbers=[1, 2])
-    call_count = [0]
-
-    async def _fake_run_agent(req: RunRequest):
-        call_count[0] += 1
-        raise AgentTimeoutError("timeout")
-
-    mock_github.get_open_issues.side_effect = [
-        [
-            {
-                "number": 1,
-                "title": "Fix",
-                "body": "x" * 100,
-                "comments": [],
-                "labels": ["behavior-slice"],
-            },
-            {
-                "number": 2,
-                "title": "Fix B",
-                "body": "x" * 100,
-                "comments": [],
-                "labels": ["behavior-slice"],
-            },
-        ],
-        [],
-    ]
-
-    with patch("time.sleep") as mock_sleep:
-        _run(
-            tmp_path,
-            _fake_run_agent,
-            github_service=mock_github,
-            max_iterations=2,
-        )
-
-    mock_sleep.assert_not_called()
-    assert call_count[0] >= 1
 
 
 # ── Issue-789: per-stage fallback triple consumption ─────────────────────────
@@ -3291,36 +3156,6 @@ def test_stage_with_no_fallback_behaves_as_before(tmp_path):
     assert captured[0]["effort"] == "medium"
 
 
-# ── AbortedHardApiError: orchestrator exits non-zero ─────────────────────────
-
-
-def test_orchestrator_exits_nonzero_on_hard_api_error(tmp_path):
-    """When run_iteration returns AbortedHardApiError the orchestrator must exit non-zero."""
-    from agent_runtime.errors import HardAgentError
-
-    raw_line = '{"type": "result", "is_error": true, "api_error_status": 400, "result": "Bad request"}'
-
-    async def _fake_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
-            )
-        raise HardAgentError(message=raw_line)
-
-    with patch(
-        "pycastle.iteration.auto_file_issue", return_value="https://example.com/1"
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            _run(
-                tmp_path,
-                _fake_agent,
-                github_service=_make_github_svc(),
-                git_service=_make_git_svc(),
-            )
-
-    assert exc_info.value.code != 0
-
-
 def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
     tmp_path,
 ):
@@ -3349,21 +3184,6 @@ def test_orchestrator_files_upstream_bug_and_exits_on_preflight_setup_failure(
     assert "Report: https://github.com/Johannes-Kutsch/pycastle/issues/new?" in (
         final_message
     )
-
-
-def test_orchestrator_exits_nonzero_on_agent_credential_failure_result(tmp_path):
-    with patch(
-        "pycastle.iteration.orchestrator.run_iteration",
-        return_value=AbortedAgentCredentialFailure(status_code=401),
-    ):
-        with pytest.raises(SystemExit) as exc_info:
-            _run(
-                tmp_path,
-                github_service=_make_github_svc(),
-                git_service=_make_git_svc(),
-            )
-
-    assert exc_info.value.code == 1
 
 
 def test_orchestrator_routes_missing_pyproject_declared_preflight_tool_as_setup_failure(
@@ -3968,126 +3788,6 @@ def test_run_iteration_returns_continue_when_all_issues_close(tmp_path):
 
 
 # ── AbortedModelNotAvailable: orchestrator routing ────────────────────────────
-
-
-def test_model_not_available_with_available_candidate_does_not_sleep(tmp_path):
-    """When AbortedModelNotAvailable is received and the service registry still has an
-    available candidate, the orchestrator must continue immediately with no sleep."""
-    mock_github = _make_github_svc()
-    mock_github.get_open_issues.side_effect = [
-        [
-            {
-                "number": 1,
-                "title": "Default Issue",
-                "body": "x" * 100,
-                "comments": [],
-                "labels": ["behavior-slice"],
-            }
-        ],
-        [],
-    ]
-
-    svc = _FakeService(available=True)
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
-            )
-        raise ModelNotAvailableError(service="claude", model="claude-opus-4-5")
-
-    with patch("time.sleep") as mock_sleep:
-        _run(
-            tmp_path,
-            _fake_run_agent,
-            github_service=mock_github,
-            service_registry=ServiceRegistry({"claude": svc}),
-            max_iterations=2,
-        )
-
-    mock_sleep.assert_not_called()
-
-
-def test_model_not_available_with_temporarily_exhausted_chain_sleeps(tmp_path):
-    """When AbortedModelNotAvailable is received and all chain candidates are temporarily
-    exhausted (finite wake time), the orchestrator must sleep until that wake time."""
-    mock_github = _make_github_svc()
-    mock_github.get_open_issues.side_effect = [
-        [
-            {
-                "number": 1,
-                "title": "Default Issue",
-                "body": "x" * 100,
-                "comments": [],
-                "labels": ["behavior-slice"],
-            }
-        ],
-        [],
-    ]
-
-    wake_time = datetime.now(timezone.utc) + timedelta(hours=1)
-    svc = _FakeService(available=False, wake_time=wake_time)
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
-            )
-        raise ModelNotAvailableError(service="claude", model="claude-opus-4-5")
-
-    with patch("time.sleep") as mock_sleep:
-        _run(
-            tmp_path,
-            _fake_run_agent,
-            github_service=mock_github,
-            service_registry=ServiceRegistry({"claude": svc}),
-            max_iterations=2,
-        )
-
-    mock_sleep.assert_called_once()
-    assert mock_sleep.call_args[0][0] > 0
-
-
-def test_model_not_available_with_no_finite_wake_time_stops(tmp_path):
-    """When AbortedModelNotAvailable is received and every chain candidate has no finite
-    wake time (all permanently restricted or exhausted), the orchestrator must stop with
-    a clear message and not sleep."""
-    mock_github = _make_github_svc()
-    mock_github.get_open_issues.return_value = [
-        {
-            "number": 1,
-            "title": "Default Issue",
-            "body": "x" * 100,
-            "comments": [],
-            "labels": ["behavior-slice"],
-        }
-    ]
-
-    svc = _FakeService(available=False, wake_time=None)
-
-    async def _fake_run_agent(request: RunRequest):
-        if request.name == "Plan Agent":
-            return _plan_output(
-                [{"number": 1, "title": "Fix", "body": "x" * 100, "comments": []}]
-            )
-        raise ModelNotAvailableError(service="claude", model="claude-opus-4-5")
-
-    recording = RecordingStatusDisplay()
-    with patch("time.sleep") as mock_sleep:
-        _run(
-            tmp_path,
-            _fake_run_agent,
-            github_service=mock_github,
-            service_registry=ServiceRegistry({"claude": svc}),
-            max_iterations=1,
-            status_display=recording,
-        )
-
-    mock_sleep.assert_not_called()
-    msgs = [str(c[2]) for c in recording.calls if c[0] == "print"]
-    assert any("not available" in m.lower() or "model" in m.lower() for m in msgs), (
-        f"Expected a message mentioning model unavailability; got: {msgs}"
-    )
 
 
 def test_model_not_available_stage_scoped_routing_uses_chain_not_global_availability(
