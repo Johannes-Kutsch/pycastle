@@ -338,6 +338,7 @@ async def improve_phase(
                         status_display=deps.status_display,
                         work_body=prepared_step.work_body,
                         session_namespace=prepared_step.session_namespace,
+                        preserve_session_on_completion=True,
                     )
                 )
                 driver.record_outcome(step, output)

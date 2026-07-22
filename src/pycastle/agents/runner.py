@@ -201,6 +201,7 @@ class RunRequest:
     work_body: str = ""
     session_namespace: str = ""
     run_session_plan: RunSessionPlan | None = None
+    preserve_session_on_completion: bool = False
 
 
 async def translate_run_outcome(
@@ -822,7 +823,8 @@ class AgentRunner:
                     )
                     current_run_kind = RunKind.RESUME
                     continue
-                role_session.clear_provider_state_and_signal_completion()
+                if not request.preserve_session_on_completion:
+                    role_session.clear_provider_state_and_signal_completion()
                 return parsed
             if isinstance(outcome.kind, UsageLimited):
                 error = UsageLimitError(

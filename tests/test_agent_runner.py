@@ -1686,3 +1686,131 @@ def test_agent_runner_model_not_available_records_restriction_and_raises(
     assert not isinstance(excinfo.value, UsageLimitError)
     assert service.mark_model_restricted_calls == ["gpt-5.5"]
     assert service.mark_exhausted_calls == []
+
+
+def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
+    """PRD Agent must resume the Scan Agent's conversation in a same-run sequence.
+
+    When phase 1 (Scan Agent) and phase 2 (PRD Agent) run sequentially inside the
+    same pycastle invocation, the runner must preserve the _continuation so phase 2
+    calls run_resumed_session — giving the PRD Agent access to the Scan Agent's
+    codebase exploration without re-scanning.
+
+    Reproduces: PRD Agent saying "the prior phase-1 output isn't persisted anywhere I
+    can find" because clear_provider_state_and_signal_completion() deletes _continuation
+    after phase 1, forcing phase 2 into a fresh session with no prior context.
+    """
+    mount_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+
+    class _Phase1ThenResumeClient:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def run_new_session(self, request):
+            del request
+            self.calls.append("new_session")
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output="<promise>COMPLETE</promise>",
+                    usage=None,
+                    continuation=Continuation(serialized=_VALID_STALE_CONTINUATION),
+                    selected=ResolvedProvider(
+                        service="codex",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+        async def run_resumed_session(self, request):
+            del request
+            self.calls.append("resumed_session")
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output="<promise>COMPLETE</promise>",
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="codex",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+    runtime_client = _Phase1ThenResumeClient()
+    status_display = RecordingStatusDisplay()
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Scan Agent",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPROVE_SCAN,
+                    scope_args={"RECENT_IMPROVE_PRD_TITLES": ""},
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPROVE,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                session_namespace="main",
+                status_display=status_display,
+                preserve_session_on_completion=True,
+            )
+        )
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="PRD Agent",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPROVE_PRD,
+                    scope_args={"IMPROVE_SHORT_SID": "abc123", "RECENT_IMPROVE_PRDS": ""},
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPROVE,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                session_namespace="main",
+                status_display=status_display,
+                preserve_session_on_completion=True,
+            )
+        )
+    )
+
+    assert runtime_client.calls == ["new_session", "resumed_session"], (
+        f"Expected phase 2 to resume phase 1's session but got: {runtime_client.calls}. "
+        "PRD Agent must call run_resumed_session to continue Scan Agent's conversation."
+    )
