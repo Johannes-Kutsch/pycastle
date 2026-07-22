@@ -2454,14 +2454,14 @@ def test_run_iteration_returns_aborted_usage_limit_when_improve_agent_hits_limit
     assert result.reset_time == reset_time
 
 
-def test_improve_dispatched_count_increments_even_when_usage_limit_raised(
+def test_usage_limit_in_improve_leaves_dispatched_count_unchanged(
     tmp_path, git_svc, logger
 ):
-    """improve_dispatched_count must increment when improve_phase raises UsageLimitError.
+    """improve_dispatched_count must NOT increment when improve_phase raises UsageLimitError.
 
-    Before the fix, UsageLimitError propagated past the increment line, leaving
-    deps.improve_dispatched_count at 0. The next iteration then re-dispatched
-    improve (0 >= improve_max=1 is False), causing an endless loop.
+    Only ImproveContinue (PRD + sub-issues filed) counts as a dispatched cycle.
+    A usage-limit abort preserves the worktree on disk; iteration 2 resumes the
+    Scan Agent where it left off, so the slot must not be consumed.
     """
     from datetime import datetime
 
@@ -2487,9 +2487,9 @@ def test_improve_dispatched_count_increments_even_when_usage_limit_raised(
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, AbortedUsageLimit)
-    assert deps.improve_dispatched_count == 1, (
-        "improve_dispatched_count must be 1 after a usage-limit failure so the cap "
-        "is enforced on the next iteration and the loop terminates"
+    assert deps.improve_dispatched_count == 0, (
+        "improve_dispatched_count must remain 0 after a usage-limit abort — "
+        "only ImproveContinue (filed improvements) consumes a slot"
     )
 
 
@@ -4082,12 +4082,14 @@ def test_run_iteration_merge_time_preflight_issue_agent_failure_aborts_normally(
 # ── improve_max slot consumption on abort ────────────────────────────────────
 
 
-def test_timeout_abort_increments_improve_dispatched_count(tmp_path, git_svc, logger):
-    """When improve_phase raises AgentTimeoutError, improve_dispatched_count must be
-    incremented — every dispatch attempt counts, not just completed ones.
+def test_timeout_abort_leaves_improve_dispatched_count_unchanged(
+    tmp_path, git_svc, logger
+):
+    """When improve_phase raises AgentTimeoutError, improve_dispatched_count must NOT
+    increment — only ImproveContinue (PRD + sub-issues filed) consumes a slot.
 
-    Without the increment, a repeated timeout would bypass the improve_max cap and
-    loop endlessly (the same class of bug as #1968 for UsageLimitError).
+    A timeout preserves the worktree on disk; iteration 2 resumes the Scan Agent
+    where it left off, so the slot must not be consumed prematurely.
     """
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = []
@@ -4110,15 +4112,17 @@ def test_timeout_abort_increments_improve_dispatched_count(tmp_path, git_svc, lo
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, AbortedTimeout)
-    assert deps.improve_dispatched_count == 1, (
-        "AgentTimeoutError abort must increment improve_dispatched_count "
-        "so the improve_max cap is enforced on the next iteration"
+    assert deps.improve_dispatched_count == 0, (
+        "AgentTimeoutError must not consume an improve slot — "
+        "only ImproveContinue (filed improvements) increments the counter"
     )
 
 
-def test_no_candidate_outcome_consumes_improve_slot(tmp_path, git_svc, logger):
-    """When improve_phase returns ImproveNoCandidate, improve_dispatched_count is
-    incremented by 1 — NO-CANDIDATE is a returned outcome, not a raised abort."""
+def test_no_candidate_outcome_leaves_improve_dispatched_count_unchanged(
+    tmp_path, git_svc, logger
+):
+    """When improve_phase returns ImproveNoCandidate, improve_dispatched_count must NOT
+    increment — only ImproveContinue (PRD + sub-issues filed) consumes a slot."""
     deps = _make_improve_deps(
         tmp_path,
         git_svc,
@@ -4130,24 +4134,141 @@ def test_no_candidate_outcome_consumes_improve_slot(tmp_path, git_svc, logger):
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, NoCandidate)
-    assert deps.improve_dispatched_count == 1, (
-        "ImproveNoCandidate must consume one improve_max slot"
+    assert deps.improve_dispatched_count == 0, (
+        "ImproveNoCandidate must not consume an improve slot — "
+        "only ImproveContinue (filed improvements) increments the counter"
     )
 
 
-def test_improve_max_cap_fires_after_usage_limit_abort(tmp_path, git_svc, logger):
-    """improve_max=1: a UsageLimitError on the first attempt counts as the 1 slot,
-    so the second iteration respects the cap and returns Done(improve_cap_reached=True)
-    instead of dispatching improve again.
+def test_improve_continue_increments_dispatched_count_by_one(tmp_path, git_svc, logger):
+    """When improve_phase returns ImproveContinue (PRD + sub-issues filed),
+    improve_dispatched_count increments by exactly 1."""
+    filed_issue = {
+        "number": 5,
+        "title": "Improve: refactor X",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.side_effect = [[], [filed_issue]]
+    github_svc.get_all_open_issues_lightweight.return_value = []
 
-    This is the regression guard for #1968: before the fix, improve_dispatched_count
-    stayed at 0 after a UsageLimitError, so improve was dispatched on every iteration
-    and the loop ran until max_iterations.
-    """
+    async def _fake_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output([filed_issue])
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+            preflight_responses=[[]],
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert deps.improve_dispatched_count == 1, (
+        "ImproveContinue must increment improve_dispatched_count by exactly 1"
+    )
+
+
+def test_preflight_hitl_in_improve_leaves_dispatched_count_unchanged(
+    tmp_path, git_svc, logger
+):
+    """When improve_phase returns PreflightHITL (preflight gate blocked with human-intervention
+    label), improve_dispatched_count must NOT increment."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = []
 
     async def _fake_agent(request: RunRequest):
+        return IssueOutput(number=42, labels=["ready-for-human"])
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(improve_max=1),
+            preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, AbortedHITL)
+    assert deps.improve_dispatched_count == 0, (
+        "PreflightHITL must not consume an improve slot — "
+        "only ImproveContinue (filed improvements) increments the counter"
+    )
+
+
+def test_preflight_afk_in_improve_leaves_dispatched_count_unchanged(
+    tmp_path, git_svc, logger
+):
+    """When improve_phase returns PreflightAFK (preflight gate blocked with AFK label),
+    improve_dispatched_count must NOT increment."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    github_svc.get_issue.return_value = {
+        "number": 55,
+        "title": "Preflight fix",
+        "body": "x" * 100,
+        "labels": ["behavior-slice"],
+    }
+
+    async def _fake_agent(request: RunRequest):
+        if "Pre-Flight Reporter" in request.name:
+            return IssueOutput(number=55, labels=["ready-for-agent", "behavior-slice"])
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(improve_max=1),
+            preflight_responses=[[_preflight_failure("ruff", "ruff check .", "E501")]],
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert deps.improve_dispatched_count == 0, (
+        "PreflightAFK must not consume an improve slot — "
+        "only ImproveContinue (filed improvements) increments the counter"
+    )
+
+
+def test_improve_max_cap_not_consumed_by_usage_limit_abort(tmp_path, git_svc, logger):
+    """improve_max=1: a UsageLimitError on the first attempt does NOT consume the slot,
+    so the second iteration dispatches improve_phase again (not Done).
+
+    This is the correct cycle-based invariant: only ImproveContinue (filed improvements)
+    consumes a slot. A usage-limit abort preserves the worktree on disk; iteration 2
+    resumes the Scan Agent where it left off.
+    """
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    call_count = 0
+
+    async def _fake_agent(request: RunRequest):
+        nonlocal call_count
+        call_count += 1
         raise UsageLimitError(reset_time=None)
 
     deps = dataclasses.replace(
@@ -4163,15 +4284,17 @@ def test_improve_max_cap_fires_after_usage_limit_abort(tmp_path, git_svc, logger
         improve_mode="endless",
         improve_dispatched_count=0,
     )
-    # First iteration: UsageLimitError → AbortedUsageLimit, count incremented to 1
+    # First iteration: UsageLimitError → AbortedUsageLimit, count stays 0
     result1 = asyncio.run(run_iteration(deps))
     assert isinstance(result1, AbortedUsageLimit)
-    assert deps.improve_dispatched_count == 1
+    assert deps.improve_dispatched_count == 0
 
-    # Second iteration: cap reached (1 >= improve_max=1) → Done, improve not dispatched
+    # Second iteration: cap not reached (0 < improve_max=1) → improve dispatched again
     result2 = asyncio.run(run_iteration(deps))
-    assert isinstance(result2, Done)
-    assert result2.improve_cap_reached is True
+    assert isinstance(result2, AbortedUsageLimit), (
+        "improve_phase must be dispatched again on iteration 2 since the slot was not consumed"
+    )
+    assert deps.improve_dispatched_count == 0
 
 
 # ── TransientAgentError: iteration boundary continues without sleeping ────────

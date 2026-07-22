@@ -330,9 +330,8 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     and deps.improve_dispatched_count >= deps.cfg.improve_max
                 )
             ):
-                try:
-                    improve_result = await improve_phase(deps)
-                finally:
+                improve_result = await improve_phase(deps)
+                if isinstance(improve_result, ImproveContinue):
                     deps.improve_dispatched_count += 1
                 if isinstance(improve_result, ImproveNoCandidate):
                     return NoCandidate()
