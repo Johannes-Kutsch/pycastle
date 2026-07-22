@@ -1796,7 +1796,10 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
                 name="PRD Agent",
                 prompt=PromptInvocation(
                     template=PromptTemplate.IMPROVE_PRD,
-                    scope_args={"IMPROVE_SHORT_SID": "abc123", "RECENT_IMPROVE_PRDS": ""},
+                    scope_args={
+                        "IMPROVE_SHORT_SID": "abc123",
+                        "RECENT_IMPROVE_PRDS": "",
+                    },
                 ),
                 mount_path=mount_path,
                 role=AgentRole.IMPROVE,
