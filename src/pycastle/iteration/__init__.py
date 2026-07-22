@@ -330,8 +330,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                     and deps.improve_dispatched_count >= deps.cfg.improve_max
                 )
             ):
-                improve_result = await improve_phase(deps)
-                deps.improve_dispatched_count += 1
+                try:
+                    improve_result = await improve_phase(deps)
+                finally:
+                    deps.improve_dispatched_count += 1
                 if isinstance(improve_result, ImproveNoCandidate):
                     return NoCandidate()
                 if isinstance(improve_result, (PreflightHITL, PreflightAFK)):
