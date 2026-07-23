@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -87,40 +86,6 @@ def _copy_invocation_log_to_evidence_area(
         return destination
     except OSError:
         return None
-
-
-def _extract_legacy_hard_error_text(raw: str) -> str:
-    error_text = raw
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict) and parsed.get("result"):
-            error_text = str(parsed["result"])
-        elif isinstance(parsed, dict):
-            error = parsed.get("error")
-            if isinstance(error, dict):
-                data = error.get("data")
-                if isinstance(data, dict) and data.get("message"):
-                    error_text = str(data["message"])
-                elif not isinstance(data, dict) and error.get("message"):
-                    error_text = str(error["message"])
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return error_text
-
-
-def _extract_hard_error_status_code(raw: str, fallback: int | None) -> int | None:
-    if fallback is not None:
-        return fallback
-    try:
-        parsed = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return fallback
-    if not isinstance(parsed, dict):
-        return fallback
-    status = parsed.get("status")
-    return (
-        status if isinstance(status, int) and not isinstance(status, bool) else fallback
-    )
 
 
 def _route_and_abort_agent_credential_failure(
@@ -479,40 +444,14 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
     except TransientAgentError:
         return Continue()
     except HardAgentError as err:
-        raw = err.args[0] if err.args else ""
-        service_name = getattr(err, "service_name", "claude") or "claude"
         routed_result = _route_and_abort_agent_credential_failure(err, deps)
         if routed_result is not None:
             return routed_result
+        from .hard_agent_error_report import translate_hard_agent_error_to_abort  # noqa: PLC0415
 
-        effective_status_code = _extract_hard_error_status_code(
-            raw, getattr(err, "status_code", None)
+        return translate_hard_agent_error_to_abort(
+            err, deps.cfg, deps.status_display, auto_file_issue
         )
-        error_text = _extract_legacy_hard_error_text(raw)
-        first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
-        service_label = {
-            "claude": "Claude",
-            "codex": "Codex",
-            "opencode": "OpenCode",
-        }.get(service_name, service_name)
-        title = f"[pycastle] {service_label} API {effective_status_code}: {first_line}"
-        body = (
-            f"## Raw result envelope\n\n```json\n{raw}\n```\n\n"
-            f"Status: {effective_status_code}\n"
-            f"Agent: {err.caller or '<unknown>'}\n"
-            f"Service: {service_name}\n"
-        )
-        url = auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
-        status_code_str = (
-            str(effective_status_code)
-            if effective_status_code is not None
-            else "no status"
-        )
-        deps.status_display.print(
-            err.caller,
-            f"hard API error: status {status_code_str}" + (f" — {url}" if url else ""),
-        )
-        return AbortedHardApiError(status_code=effective_status_code)
     except SetupPhaseError as err:
         return AbortedSetup(
             phase=err.phase,
