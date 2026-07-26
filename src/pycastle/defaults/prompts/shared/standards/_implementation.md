@@ -48,6 +48,7 @@ def test_create_user_saves_to_database(db):
     row = db.execute("SELECT * FROM users WHERE name = ?", ("Alice",)).fetchone()
     assert row is not None
 
+
 # GOOD: Verifies through interface
 def test_create_user_makes_user_retrievable():
     user = create_user(name="Alice")
@@ -63,6 +64,7 @@ def test_calculate_total_sums_line_items():
     items = [{"price": 10}, {"price": 5}]
     expected = sum(i["price"] for i in items)
     assert calculate_total(items) == expected
+
 
 # GOOD: Expected value is an independent, known literal
 def test_calculate_total_sums_line_items():
@@ -91,6 +93,7 @@ Use `pytest.fixture` for shared setup. Prefer fixtures over `setUp`/`tearDown`.
 @pytest.fixture
 def cart():
     return create_cart()
+
 
 def test_checkout_with_valid_cart(cart):
     result = checkout(cart, payment_method)
@@ -126,6 +129,7 @@ Pass external dependencies in rather than creating them internally:
 def process_payment(order, payment_client):
     return payment_client.charge(order.total)
 
+
 # Hard to mock
 def process_payment(order):
     client = StripeClient(os.environ["STRIPE_KEY"])
@@ -142,6 +146,7 @@ class GitService:
     def get_head_sha(self, repo: Path) -> str: ...
     def create_worktree(self, repo: Path, branch: str) -> None: ...
     def try_merge(self, repo: Path, branch: str) -> bool: ...
+
 
 # BAD: Mocking requires conditional logic inside the mock
 class GitService:

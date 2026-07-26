@@ -68,6 +68,7 @@ Good interfaces make testing natural:
    # Testable
    def process_order(order, payment_gateway): ...
 
+
    # Hard to test
    def process_order(order):
        gateway = StripeGateway()
@@ -78,6 +79,7 @@ Good interfaces make testing natural:
    ```python
    # Testable
    def calculate_discount(cart) -> Discount: ...
+
 
    # Hard to test
    def apply_discount(cart) -> None:
