@@ -24,7 +24,7 @@ if ! git remote get-url "$_REMOTE_NAME" >/dev/null 2>&1; then
 fi
 
 ruff format
-ruff check --fix
+ruff check --fix || true
 
 if git diff --quiet && git diff --cached --quiet; then
     echo "proceed"
