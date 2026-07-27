@@ -1,6 +1,7 @@
 """Tests for PreflightCache.get_safe_sha: observable behaviour via the public interface."""
 
 import asyncio
+import hashlib
 import shutil
 from unittest.mock import AsyncMock, patch
 
@@ -27,11 +28,43 @@ from pycastle.iteration.preflight import (
     PreflightHITL,
     PreflightReady,
 )
-from pycastle.infrastructure.worktree import worktree_identity
+from pycastle.infrastructure.worktree import (
+    SandboxWorktreeIntent,
+    reusable_sandbox_worktree_identity,
+    worktree_identity,
+)
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
 from pycastle.session import RoleSession
+
+
+def _diverge_fingerprint(safe_sha: str, branch: str) -> str:
+    return hashlib.sha256(f"{safe_sha}\n{branch}".encode()).hexdigest()
+
+
+class _FixedSandboxWorktree:
+    """Async context manager that yields a fixed path without touching git."""
+
+    def __init__(self, path):
+        self._path = path
+
+    async def __aenter__(self):
+        return self._path
+
+    async def __aexit__(self, *args):
+        pass
+
+
+def _conflict_git_svc(sha: str, branch: str) -> MagicMock:
+    svc = MagicMock(spec=GitService)
+    svc.is_working_tree_clean.return_value = True
+    svc.get_head_sha.return_value = sha
+    svc.get_current_branch.return_value = branch
+    svc.pull_with_merge_fallback.side_effect = GitCommandError(
+        "git merge origin/main failed due to conflicts"
+    )
+    return svc
 
 
 @pytest.fixture
@@ -1029,3 +1062,164 @@ def test_get_safe_sha_does_not_spawn_divergence_resolver_on_unrelated_histories(
         asyncio.run(cache.get_safe_sha(deps))
 
     assert len(fake.calls) == 0
+
+
+# ── Divergence-Resolver fingerprint gate ──────────────────────────────────────
+
+
+def test_divergence_resolver_discards_session_when_safe_sha_changes(
+    tmp_path, github_svc
+):
+    """When the safe SHA changes, prepare_fingerprint_gate discards the prior
+    Divergence-Resolver session so the agent starts without stale state."""
+    old_sha = "sha-v1"
+    new_sha = "sha-v2"
+    branch = "main"
+
+    sandbox_path = reusable_sandbox_worktree_identity(
+        SandboxWorktreeIntent.DIVERGENCE, tmp_path
+    ).path
+    sandbox_path.mkdir(parents=True, exist_ok=True)
+
+    role_session = RoleSession(sandbox_path, AgentRole.DIVERGENCE_RESOLVER)
+    role_session.write_fingerprint(_diverge_fingerprint(old_sha, branch))
+    role_session.write_continuation("prior-state")
+
+    resumable_during_run: list[bool] = []
+
+    async def _side_effect(request):
+        resumable_during_run.append(
+            RoleSession(
+                request.mount_path, AgentRole.DIVERGENCE_RESOLVER
+            ).is_resumable()
+        )
+        return CompletionOutput()
+
+    git_svc = _conflict_git_svc(new_sha, branch)
+    fake = FakeAgentRunner(side_effect=_side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    with patch(
+        "pycastle.iteration.preflight.reusable_sandbox_worktree",
+        return_value=_FixedSandboxWorktree(sandbox_path),
+    ):
+        asyncio.run(PreflightCache().get_safe_sha(deps))
+
+    assert resumable_during_run == [False]
+
+
+def test_divergence_resolver_discards_session_when_diverging_branch_changes(
+    tmp_path, github_svc
+):
+    """When the diverging branch changes (SHA unchanged), prepare_fingerprint_gate
+    discards the prior Divergence-Resolver session."""
+    sha = "abc123"
+    old_branch = "pycastle/issue-old"
+    new_branch = "main"
+
+    sandbox_path = reusable_sandbox_worktree_identity(
+        SandboxWorktreeIntent.DIVERGENCE, tmp_path
+    ).path
+    sandbox_path.mkdir(parents=True, exist_ok=True)
+
+    role_session = RoleSession(sandbox_path, AgentRole.DIVERGENCE_RESOLVER)
+    role_session.write_fingerprint(_diverge_fingerprint(sha, old_branch))
+    role_session.write_continuation("prior-state")
+
+    resumable_during_run: list[bool] = []
+
+    async def _side_effect(request):
+        resumable_during_run.append(
+            RoleSession(
+                request.mount_path, AgentRole.DIVERGENCE_RESOLVER
+            ).is_resumable()
+        )
+        return CompletionOutput()
+
+    git_svc = _conflict_git_svc(sha, new_branch)
+    fake = FakeAgentRunner(side_effect=_side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    with patch(
+        "pycastle.iteration.preflight.reusable_sandbox_worktree",
+        return_value=_FixedSandboxWorktree(sandbox_path),
+    ):
+        asyncio.run(PreflightCache().get_safe_sha(deps))
+
+    assert resumable_during_run == [False]
+
+
+def test_divergence_resolver_preserves_session_when_sha_and_branch_unchanged(
+    tmp_path, github_svc
+):
+    """When safe SHA and diverging branch are both unchanged, the prior session
+    (continuation file) is preserved when the agent runs."""
+    sha = "abc123"
+    branch = "main"
+
+    sandbox_path = reusable_sandbox_worktree_identity(
+        SandboxWorktreeIntent.DIVERGENCE, tmp_path
+    ).path
+    sandbox_path.mkdir(parents=True, exist_ok=True)
+
+    role_session = RoleSession(sandbox_path, AgentRole.DIVERGENCE_RESOLVER)
+    role_session.write_fingerprint(_diverge_fingerprint(sha, branch))
+    role_session.write_continuation("prior-state")
+
+    resumable_during_run: list[bool] = []
+
+    async def _side_effect(request):
+        resumable_during_run.append(
+            RoleSession(
+                request.mount_path, AgentRole.DIVERGENCE_RESOLVER
+            ).is_resumable()
+        )
+        return CompletionOutput()
+
+    git_svc = _conflict_git_svc(sha, branch)
+    fake = FakeAgentRunner(side_effect=_side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    with patch(
+        "pycastle.iteration.preflight.reusable_sandbox_worktree",
+        return_value=_FixedSandboxWorktree(sandbox_path),
+    ):
+        asyncio.run(PreflightCache().get_safe_sha(deps))
+
+    assert resumable_during_run == [True]
+
+
+def test_divergence_resolver_writes_fingerprint_inside_context_before_agent_runs(
+    tmp_path, github_svc
+):
+    """write_fingerprint is called inside the worktree context before the agent runs,
+    recording the new safe SHA + diverging branch combination."""
+    sha = "abc123"
+    branch = "main"
+
+    sandbox_path = reusable_sandbox_worktree_identity(
+        SandboxWorktreeIntent.DIVERGENCE, tmp_path
+    ).path
+    sandbox_path.mkdir(parents=True, exist_ok=True)
+
+    fingerprint_during_run: list[str | None] = []
+
+    async def _side_effect(request):
+        fingerprint_during_run.append(
+            RoleSession(
+                request.mount_path, AgentRole.DIVERGENCE_RESOLVER
+            ).read_fingerprint()
+        )
+        return CompletionOutput()
+
+    git_svc = _conflict_git_svc(sha, branch)
+    fake = FakeAgentRunner(side_effect=_side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    with patch(
+        "pycastle.iteration.preflight.reusable_sandbox_worktree",
+        return_value=_FixedSandboxWorktree(sandbox_path),
+    ):
+        asyncio.run(PreflightCache().get_safe_sha(deps))
+
+    assert fingerprint_during_run == [_diverge_fingerprint(sha, branch)]

@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import hashlib
 from pathlib import Path
 from typing import Protocol, TypeAlias, cast
 
@@ -46,6 +47,7 @@ from ..infrastructure.worktree import (
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
+from ._fingerprint import prepare_fingerprint_gate
 from ._utils import _wait_for_clean_working_tree
 from ..infrastructure.preflight_failure_interpreter import (
     MissingDeclaredPythonToolDecision,
@@ -54,6 +56,10 @@ from ..infrastructure.preflight_failure_interpreter import (
     interpret_preflight_command_failures,
 )
 from .. import _time as _time_module
+
+
+def _diverge_sandbox_fingerprint(safe_sha: str, branch: str) -> str:
+    return hashlib.sha256(f"{safe_sha}\n{branch}".encode()).hexdigest()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -148,6 +154,11 @@ class BranchRefreshBoundary:
                 self._DIVERGE_SANDBOX_INTENT,
                 deps.repo_root,
             )
+            fingerprint = _diverge_sandbox_fingerprint(current_sha, branch)
+            role_session = RoleSession(
+                sandbox_identity.path, AgentRole.DIVERGENCE_RESOLVER
+            )
+            prepare_fingerprint_gate(role_session, fingerprint)
             try:
                 async with reusable_sandbox_worktree(
                     self._DIVERGE_SANDBOX_INTENT,
@@ -167,6 +178,7 @@ class BranchRefreshBoundary:
                             AgentRole.DIVERGENCE_RESOLVER.value,
                             describe_managed_worktree_mount_rejection(mount_decision),
                         )
+                    role_session.write_fingerprint(fingerprint)
                     await deps.agent_runner.run(
                         RunRequest(
                             name="Divergence Resolver",
