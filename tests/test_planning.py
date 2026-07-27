@@ -39,6 +39,14 @@ def git_svc():
     svc = MagicMock(spec=GitService)
     svc.get_head_sha.return_value = "abc123"
     svc.is_working_tree_clean.return_value = True
+    svc.verify_ref_exists.return_value = False
+    svc.list_worktrees.return_value = []
+
+    def _fake_create_worktree(repo, wt, branch, sha=None):
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    svc.create_worktree.side_effect = _fake_create_worktree
     return svc
 
 
@@ -485,7 +493,8 @@ def test_planning_phase_uses_plan_override_service(tmp_path, git_svc):
 # ── planning_phase: worktree lifecycle ──────────────────────────────────────
 
 
-def test_planning_phase_removes_worktree_after_success(tmp_path, git_svc):
+def test_planning_phase_persists_worktree_after_success(tmp_path, git_svc):
+    """plan-sandbox worktree persists after success so fingerprint survives for future resume."""
     issues = [
         {
             "number": 1,
@@ -508,10 +517,14 @@ def test_planning_phase_removes_worktree_after_success(tmp_path, git_svc):
     asyncio.run(planning_phase(deps, issues, []))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
-    git_svc.remove_worktree.assert_any_call(tmp_path, expected_worktree)
+    assert expected_worktree.exists()
+    git_svc.remove_worktree.assert_not_called()
 
 
-def test_planning_phase_removes_worktree_when_exception_raised(tmp_path, git_svc):
+def test_planning_phase_exception_propagates_and_worktree_is_preserved(
+    tmp_path, git_svc
+):
+    """RuntimeError propagates; the plan-sandbox worktree is preserved as a failure worktree."""
     issues = [
         {
             "number": 1,
@@ -535,7 +548,8 @@ def test_planning_phase_removes_worktree_when_exception_raised(tmp_path, git_svc
         asyncio.run(planning_phase(deps, issues, []))
 
     expected_worktree = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
-    git_svc.remove_worktree.assert_any_call(tmp_path, expected_worktree)
+    assert expected_worktree.exists()
+    git_svc.remove_worktree.assert_not_called()
 
 
 # ── planning_phase: error paths ─────────────────────────────────────────────

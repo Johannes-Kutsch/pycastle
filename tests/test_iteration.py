@@ -62,8 +62,12 @@ from tests.support import (
     FakeAgentRunner,
     RecordingLogger,
     RecordingStatusDisplay,
+    StubPreflightCache,
     _make_deps as _make_test_deps,
 )
+from pycastle.iteration.planning import planning_phase
+from pycastle.iteration.preflight import PreflightReady
+from pycastle.session import RoleSession
 
 
 def _preflight_failure(
@@ -4770,3 +4774,92 @@ def test_run_iteration_returns_aborted_model_not_available_when_model_not_availa
     assert isinstance(result, AbortedModelNotAvailable)
     assert result.service == "claude"
     assert result.model == "claude-opus-4-5"
+
+
+# ── Planner fingerprint gate ──────────────────────────────────────────────────
+
+
+def _two_planning_issues() -> list[dict]:
+    return [
+        {
+            "number": 1,
+            "title": "Fix A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+        {
+            "number": 2,
+            "title": "Fix B",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+        },
+    ]
+
+
+def _plan_output_for(issues: list[dict]) -> PlannerOutput:
+    return PlannerOutput(
+        issues=[{"number": i["number"], "title": i["title"]} for i in issues]
+    )
+
+
+def test_planning_phase_fingerprint_gate_discards_session_on_sha_change(tmp_path):
+    """When the safe SHA changes, the fingerprint gate discards the prior Planner session
+    and the new fingerprint is written to the refreshed session."""
+    issues = _two_planning_issues()
+    plan_wt = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+    session = RoleSession(plan_wt, AgentRole.PLANNER)
+    session.write_fingerprint("stale-fingerprint-wont-match")
+    session.write_continuation("saved-context")
+
+    fake = FakeAgentRunner([_plan_output_for(issues[:1])])
+    deps = _make_test_deps(
+        tmp_path,
+        fake,
+        preflight_cache=StubPreflightCache(PreflightReady(sha="sha-v2")),
+    )
+    asyncio.run(planning_phase(deps, issues, issues))
+
+    assert not session.is_resumable()
+    assert session.read_fingerprint() is not None
+
+
+def test_planning_phase_fingerprint_gate_preserves_session_on_match(tmp_path):
+    """When the safe SHA and open issue set are unchanged, the prior Planner
+    session is preserved so an interrupted run can resume."""
+    issues = _two_planning_issues()
+
+    # git_svc where remove_worktree is a no-op so session files survive worktree
+    # lifecycle calls (models the real git behavior where the branch persists).
+    git_svc = MagicMock(spec=GitService)
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.verify_ref_exists.return_value = False
+    git_svc.list_worktrees.return_value = []
+    plan_wt = tmp_path / "pycastle" / ".worktrees" / "plan-sandbox"
+
+    def _fake_create_wt(repo, wt, branch, sha=None):
+        wt.mkdir(parents=True, exist_ok=True)
+        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+
+    git_svc.create_worktree.side_effect = _fake_create_wt
+
+    preflight_cache = StubPreflightCache(PreflightReady(sha="sha-v1"))
+
+    fake1 = FakeAgentRunner([_plan_output_for(issues[:1])])
+    deps1 = _make_test_deps(
+        tmp_path, fake1, git_svc=git_svc, preflight_cache=preflight_cache
+    )
+    asyncio.run(planning_phase(deps1, issues, issues))
+
+    session = RoleSession(plan_wt, AgentRole.PLANNER)
+    session.write_continuation("interrupted-context")
+
+    fake2 = FakeAgentRunner([_plan_output_for(issues[:1])])
+    deps2 = _make_test_deps(
+        tmp_path, fake2, git_svc=git_svc, preflight_cache=preflight_cache
+    )
+    asyncio.run(planning_phase(deps2, issues, issues))
+
+    assert session.is_resumable()
+    assert session.read_fingerprint() is not None
