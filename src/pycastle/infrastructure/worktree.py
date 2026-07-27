@@ -48,20 +48,16 @@ class DurableIssueWorktreeIntent(str, Enum):
     REVIEWER = "reviewer"
 
 
-class ReusableSandboxWorktreeIntent(str, Enum):
+class SandboxWorktreeIntent(str, Enum):
     IMPROVE = "improve-sandbox"
     DIVERGENCE = "diverge-sandbox"
+    PLAN = "plan-sandbox"
 
 
 class BranchWorktreeLifecycle(str, Enum):
     DURABLE_ISSUE = "durable-issue"
     REUSABLE_SANDBOX = "reusable-sandbox"
     REPLACEABLE_MERGE_SANDBOX = "replaceable-merge-sandbox"
-
-
-class DetachedTransientWorktreeIntent(str, Enum):
-    PLAN = "plan-sandbox"
-    PREFLIGHT = "preflight-sandbox"
 
 
 def _worktree_name_for_branch(branch: str) -> str:
@@ -96,20 +92,12 @@ def issue_branch(issue_number: int) -> str:
     return f"pycastle/issue-{issue_number}"
 
 
-def _reusable_sandbox_intent_name(intent: ReusableSandboxWorktreeIntent | str) -> str:
-    return intent.value if isinstance(intent, ReusableSandboxWorktreeIntent) else intent
-
-
-def _detached_transient_intent_name(
-    intent: DetachedTransientWorktreeIntent | str,
-) -> str:
-    return (
-        intent.value if isinstance(intent, DetachedTransientWorktreeIntent) else intent
-    )
+def _reusable_sandbox_intent_name(intent: SandboxWorktreeIntent | str) -> str:
+    return intent.value if isinstance(intent, SandboxWorktreeIntent) else intent
 
 
 def reusable_sandbox_worktree_identity(
-    intent: ReusableSandboxWorktreeIntent | str, repo_root: Path
+    intent: SandboxWorktreeIntent | str, repo_root: Path
 ) -> WorktreeIdentity:
     intent_name = _reusable_sandbox_intent_name(intent)
     return worktree_identity(f"pycastle/{intent_name}", repo_root, name=intent_name)
@@ -125,10 +113,10 @@ def merge_sandbox_worktree_identity(
 
 
 def detached_transient_worktree_path(
-    intent: DetachedTransientWorktreeIntent | str,
+    intent: str,
     repo_root: Path,
 ) -> Path:
-    return worktree_path(_detached_transient_intent_name(intent), repo_root)
+    return worktree_path(intent, repo_root)
 
 
 def worktree_name_for_branch(branch: str) -> str:
@@ -461,7 +449,7 @@ async def durable_issue_worktree(
 
 @asynccontextmanager
 async def reusable_sandbox_worktree(
-    intent: ReusableSandboxWorktreeIntent | str,
+    intent: SandboxWorktreeIntent | str,
     *,
     sha: str | None,
     deps: _WorktreeDeps,
@@ -523,7 +511,7 @@ async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps)
 
 @asynccontextmanager
 async def detached_transient_worktree(
-    intent: DetachedTransientWorktreeIntent | str,
+    intent: str,
     *,
     sha: str | None,
     deps: _WorktreeDeps,
