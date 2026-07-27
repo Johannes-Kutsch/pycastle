@@ -196,7 +196,7 @@ class BranchRefreshBoundary:
                     deps.git_svc.fast_forward_branch(
                         deps.repo_root, branch, sandbox_identity.branch
                     )
-                    RoleSession(sandbox_path, AgentRole.DIVERGENCE_RESOLVER).discard()
+                    role_session.discard()
             except Exception:
                 raise pull_exc from None
 
