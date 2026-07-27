@@ -979,3 +979,30 @@ def test_discard_after_completion_clears_done_signal(rs):
 
     assert rs.is_done() is False
     assert rs.is_resumable() is False
+
+
+# ── RoleSession fingerprint ───────────────────────────────────────────────────
+
+
+def test_read_fingerprint_returns_none_when_absent(rs):
+    assert rs.read_fingerprint() is None
+
+
+def test_write_then_read_fingerprint_round_trips(rs):
+    rs.write_fingerprint("abc123hash")
+
+    assert rs.read_fingerprint() == "abc123hash"
+
+
+def test_read_fingerprint_returns_none_after_discard(rs):
+    rs.write_fingerprint("abc123hash")
+    rs.discard()
+
+    assert rs.read_fingerprint() is None
+
+
+def test_read_fingerprint_returns_none_after_start_fresh(rs):
+    rs.write_fingerprint("abc123hash")
+    rs.start_fresh()
+
+    assert rs.read_fingerprint() is None

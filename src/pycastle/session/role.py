@@ -14,6 +14,7 @@ from pycastle.runtime_session import (
 SESSION_DIR_NAME = ".pycastle-session"
 _CONTINUATION_FILENAME = "_continuation"
 _DONE_FILENAME = "_done"
+_FINGERPRINT_FILENAME = "_fingerprint"
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
@@ -96,6 +97,9 @@ class RoleSession:
     def _done_path(self) -> Path:
         return self.path / _DONE_FILENAME
 
+    def _fingerprint_path(self) -> Path:
+        return self.path / _FINGERPRINT_FILENAME
+
     @staticmethod
     def provider_state_relpath_for(
         role: AgentRole,
@@ -175,6 +179,17 @@ class RoleSession:
             registry,
             service_name,
         )
+
+    def read_fingerprint(self) -> str | None:
+        p = self._fingerprint_path()
+        if not p.is_file():
+            return None
+        return p.read_text(encoding="utf-8")
+
+    def write_fingerprint(self, hash: str) -> None:
+        p = self._fingerprint_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(hash, encoding="utf-8")
 
     def write_continuation(self, serialized: str) -> None:
         path = self._continuation_path()
