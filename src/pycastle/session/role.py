@@ -186,10 +186,10 @@ class RoleSession:
             return None
         return p.read_text(encoding="utf-8")
 
-    def write_fingerprint(self, hash: str) -> None:
+    def write_fingerprint(self, fingerprint: str) -> None:
         p = self._fingerprint_path()
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(hash, encoding="utf-8")
+        p.write_text(fingerprint, encoding="utf-8")
 
     def write_continuation(self, serialized: str) -> None:
         path = self._continuation_path()
