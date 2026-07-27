@@ -7,17 +7,13 @@ from pathlib import Path
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.session import RoleSession
 
 
 @pytest.fixture
-def worktree(tmp_path: Path) -> Path:
-    return tmp_path
-
-
-@pytest.fixture
-def rs(worktree: Path) -> RoleSession:
-    return RoleSession(worktree, AgentRole.IMPLEMENTER)
+def rs(tmp_path: Path) -> RoleSession:
+    return RoleSession(tmp_path, AgentRole.IMPLEMENTER)
 
 
 # ── Behavior 1: no fingerprint stored → discard() is called ──────────────────
@@ -26,8 +22,6 @@ def rs(worktree: Path) -> RoleSession:
 def test_prepare_fingerprint_gate_discards_when_no_fingerprint_stored(
     rs: RoleSession,
 ) -> None:
-    from pycastle.iteration._fingerprint import prepare_fingerprint_gate
-
     rs.start_fresh()
     (rs.path / "_continuation").write_text("opaque-token", encoding="utf-8")
     assert rs.path.is_dir()
@@ -43,8 +37,6 @@ def test_prepare_fingerprint_gate_discards_when_no_fingerprint_stored(
 def test_prepare_fingerprint_gate_leaves_session_intact_when_fingerprint_matches(
     rs: RoleSession,
 ) -> None:
-    from pycastle.iteration._fingerprint import prepare_fingerprint_gate
-
     rs.write_fingerprint("sha-abc123")
     (rs.path / "_continuation").write_text("opaque-token", encoding="utf-8")
 
@@ -60,8 +52,6 @@ def test_prepare_fingerprint_gate_leaves_session_intact_when_fingerprint_matches
 def test_prepare_fingerprint_gate_discards_when_fingerprint_differs(
     rs: RoleSession,
 ) -> None:
-    from pycastle.iteration._fingerprint import prepare_fingerprint_gate
-
     rs.write_fingerprint("sha-old")
     (rs.path / "_continuation").write_text("opaque-token", encoding="utf-8")
 
