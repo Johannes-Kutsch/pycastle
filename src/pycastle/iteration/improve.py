@@ -19,7 +19,7 @@ from ..runtime_session import session_uuid
 from ..display.status_display import StatusDisplay
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import (
-    ReusableSandboxWorktreeIntent,
+    SandboxWorktreeIntent,
     reusable_sandbox_worktree,
 )
 from ..managed_worktree_mount_policy import (
@@ -35,7 +35,7 @@ from .improve_preparation import (
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 
-IMPROVE_SANDBOX_INTENT = ReusableSandboxWorktreeIntent.IMPROVE
+IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
 
 

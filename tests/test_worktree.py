@@ -25,9 +25,8 @@ from pycastle.errors import (
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.infrastructure.worktree import (
     BranchWorktreeLifecycle,
-    DetachedTransientWorktreeIntent,
     DurableIssueWorktreeIntent,
-    ReusableSandboxWorktreeIntent,
+    SandboxWorktreeIntent,
     cleanup_durable_issue_worktree_after_success,
     prune_orphan_worktrees,
     detached_transient_worktree,
@@ -1093,8 +1092,8 @@ def test_transient_worktree_yields_correct_path(detached_deps):
 @pytest.mark.parametrize(
     ("intent", "expected_name"),
     [
-        (DetachedTransientWorktreeIntent.PLAN, "plan-sandbox"),
-        (DetachedTransientWorktreeIntent.PREFLIGHT, "preflight-sandbox"),
+        ("plan-sandbox", "plan-sandbox"),
+        ("preflight-sandbox", "preflight-sandbox"),
     ],
 )
 def test_detached_transient_named_intent_opens_detached_checkout_at_sha(
@@ -1124,8 +1123,8 @@ def test_detached_transient_named_intent_opens_detached_checkout_at_sha(
 @pytest.mark.parametrize(
     ("intent", "expected_name"),
     [
-        (DetachedTransientWorktreeIntent.PLAN, "plan-sandbox"),
-        (DetachedTransientWorktreeIntent.PREFLIGHT, "preflight-sandbox"),
+        ("plan-sandbox", "plan-sandbox"),
+        ("preflight-sandbox", "preflight-sandbox"),
     ],
 )
 def test_detached_transient_named_intent_removes_worktree_on_usage_limit_error(
@@ -1152,8 +1151,8 @@ def test_detached_transient_named_intent_removes_worktree_on_usage_limit_error(
 @pytest.mark.parametrize(
     ("intent", "expected_name"),
     [
-        (DetachedTransientWorktreeIntent.PLAN, "plan-sandbox"),
-        (DetachedTransientWorktreeIntent.PREFLIGHT, "preflight-sandbox"),
+        ("plan-sandbox", "plan-sandbox"),
+        ("preflight-sandbox", "preflight-sandbox"),
     ],
 )
 def test_detached_transient_named_intent_preserves_worktree_on_agent_failed_error(
@@ -2735,7 +2734,7 @@ def test_reusable_sandbox_named_intent_keeps_same_lifecycle(repo):
 
     async def _run():
         async with reusable_sandbox_worktree(
-            ReusableSandboxWorktreeIntent.IMPROVE,
+            SandboxWorktreeIntent.IMPROVE,
             sha=sha_main,
             deps=deps,
         ) as path:

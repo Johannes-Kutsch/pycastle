@@ -15,10 +15,7 @@ from ..prompts.scope_args import build_plan_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import (
-    DetachedTransientWorktreeIntent,
-    detached_transient_worktree,
-)
+from ..infrastructure.worktree import detached_transient_worktree
 from ..managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
@@ -140,7 +137,7 @@ async def planning_phase(
             )
 
         async with detached_transient_worktree(
-            DetachedTransientWorktreeIntent.PLAN,
+            "plan-sandbox",
             sha=sha,
             deps=deps,
         ) as wt:

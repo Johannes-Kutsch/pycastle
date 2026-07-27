@@ -42,7 +42,7 @@ from ..managed_worktree_mount_policy import (
 )
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import (
-    ReusableSandboxWorktreeIntent,
+    SandboxWorktreeIntent,
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
@@ -88,7 +88,7 @@ class _PreflightDeps(Protocol):
 class BranchRefreshBoundary:
     """Refresh the current branch, preserving preflight's existing recovery flow."""
 
-    _DIVERGE_SANDBOX_INTENT = ReusableSandboxWorktreeIntent.DIVERGENCE
+    _DIVERGE_SANDBOX_INTENT = SandboxWorktreeIntent.DIVERGENCE
 
     @staticmethod
     def _try_recover_unrelated_histories(deps: _PreflightDeps) -> bool:
@@ -292,10 +292,7 @@ class PreflightCache:
         await self._branch_refresh.pull_with_resolution(deps)
 
     async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
-        from ..infrastructure.worktree import (
-            DetachedTransientWorktreeIntent,
-            detached_transient_worktree,
-        )
+        from ..infrastructure.worktree import detached_transient_worktree
 
         async with self._lock:
             await _wait_for_clean_working_tree(deps, "Preflight")
@@ -318,7 +315,7 @@ class PreflightCache:
                 return self._verdict
 
             async with detached_transient_worktree(
-                DetachedTransientWorktreeIntent.PREFLIGHT,
+                "preflight-sandbox",
                 sha=sha,
                 deps=deps,
             ) as mount_path:
