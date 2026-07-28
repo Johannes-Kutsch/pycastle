@@ -347,11 +347,19 @@ def test_improve_phase_propagates_no_candidate_report_preparation_lookup_failure
 # ── Cross-teardown resume ─────────────────────────────────────────────────────
 
 
-def _seed_progress(worktree_path: Path, phase_id: str) -> None:
-    """Pre-seed the phase progress file to simulate a prior partial run."""
+def _seed_progress(
+    worktree_path: Path, phase_id: str, *, fingerprint: str | None = "abc123"
+) -> None:
+    """Pre-seed the phase progress file to simulate a prior partial run.
+
+    Also writes a fingerprint matching the StubPreflightCache SHA by default,
+    so the fingerprint gate does not discard the session on entry.
+    """
     role_session_dir = worktree_path / ".pycastle-session" / "improve"
     role_session_dir.mkdir(parents=True, exist_ok=True)
     (role_session_dir / "_phase_progress").write_text(phase_id, encoding="utf-8")
+    if fingerprint is not None:
+        (role_session_dir / "_fingerprint").write_text(fingerprint, encoding="utf-8")
 
 
 def _seed_exact_phase_1_main_transcript(
@@ -613,6 +621,7 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     role_session_dir.mkdir(parents=True, exist_ok=True)
     (role_session_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
     (role_session_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
+    (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
     runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -628,6 +637,7 @@ def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc)
     role_session_dir.mkdir(parents=True, exist_ok=True)
     (role_session_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
     (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
+    (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
     github_svc = MagicMock()
     github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
     github_svc.get_issue_comments.return_value = []
@@ -679,6 +689,7 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
         "01-scan:picked", encoding="utf-8"
     )
     (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
+    (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
     runner = FakeAgentRunner(
         [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
     )
@@ -879,3 +890,45 @@ def test_improve_phase_returns_improve_no_candidate_when_report_disabled(
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
     result = _run(deps)
     assert isinstance(result, ImproveNoCandidate)
+
+
+# ── Fingerprint gate: safe-SHA gating ────────────────────────────────────────
+
+
+def test_fingerprint_gate_discards_session_when_safe_sha_changes(tmp_path, git_svc):
+    """When safe SHA changes between runs, session is discarded; ImprovePhaseDriver starts fresh at scan."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_progress").write_text(
+        "01-scan:picked", encoding="utf-8"
+    )
+    (role_session_dir / "_fingerprint").write_text("old-sha-xyz", encoding="utf-8")
+
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=[[]],
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    _run(deps)
+
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
+    assert len(runner.calls) == 3
+
+
+def test_fingerprint_gate_preserves_session_when_safe_sha_unchanged(tmp_path, git_svc):
+    """When safe SHA is unchanged, session directory and phase-progress files survive into the new run."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_progress").write_text(
+        "01-scan:no-candidate", encoding="utf-8"
+    )
+    (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
+
+    runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    _run(deps)
+
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_NO_CANDIDATE
+    assert len(runner.calls) == 1
