@@ -1,5 +1,7 @@
 import asyncio
 import dataclasses
+import hashlib
+import shutil
 import subprocess
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -25,6 +27,7 @@ from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.services import GithubAPIError, GithubService
+from pycastle.session import RoleSession
 from tests.support import (
     FakeAgentRunner,
     RecordingStatusDisplay,
@@ -2459,3 +2462,173 @@ def test_close_failure_still_closes_remaining_issues_and_deletes_branches(
     assert "pycastle/issue-1" in deleted
     assert "pycastle/issue-2" in deleted
     assert result.close_failure_issue_numbers == [999]
+
+
+# ── Issue 1983: lifecycle-choice gate ─────────────────────────────────────────
+
+
+def _merger_fingerprint(sha: str, issue_number: int) -> str:
+    branch = f"pycastle/issue-{issue_number}"
+    return hashlib.sha256((sha + branch).encode()).hexdigest()
+
+
+def _make_functional_git_svc(tmp_path) -> MagicMock:
+    """Git service mock with working create/remove/list_worktrees so directory state is real."""
+    svc = MagicMock(spec=GitService)
+    svc.is_working_tree_clean.return_value = True
+    svc.try_merge.return_value = True
+    svc.is_ancestor.return_value = True
+    svc.get_current_branch.return_value = "main"
+    svc.get_head_sha.return_value = "abc123"
+    svc.verify_ref_exists.return_value = False
+    svc.start_merge.return_value = False
+
+    registered: list = []
+
+    def _list(repo):
+        return list(registered)
+
+    def _create(repo, path, branch, sha=None):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        if path not in registered:
+            registered.append(path)
+
+    def _remove(repo, path):
+        shutil.rmtree(path, ignore_errors=True)
+        registered[:] = [p for p in registered if p != path]
+
+    svc.list_worktrees.side_effect = _list
+    svc.create_worktree.side_effect = _create
+    svc.remove_worktree.side_effect = _remove
+    return svc
+
+
+def _seed_merger_session(
+    sandbox_path,
+    sha: str,
+    issue_number: int,
+    *,
+    with_continuation: bool = False,
+) -> None:
+    rs = RoleSession(sandbox_path, AgentRole.MERGER)
+    rs.write_fingerprint(_merger_fingerprint(sha, issue_number))
+    if with_continuation:
+        rs.path.mkdir(parents=True, exist_ok=True)
+        (rs.path / "_continuation").write_text("saved-merge-state", encoding="utf-8")
+
+
+def _continuation_present_in_sandbox(tmp_path, git_svc, github_svc) -> list[bool]:
+    """Run merge phase for conflict issue #1; record is_resumable() when Merge Agent fires."""
+    seen: list[bool] = []
+
+    async def _check(request: RunRequest):
+        if request.name == "Merge Agent":
+            seen.append(
+                RoleSession(request.mount_path, AgentRole.MERGER).is_resumable()
+            )
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner(side_effect=_check),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+    _run([{"number": 1, "title": "Conflict"}], deps)
+    return seen
+
+
+def _pre_seed_sandbox(
+    tmp_path, sha: str, issue_number: int, *, with_continuation: bool
+) -> None:
+    """Create sandbox dir, register it, seed fingerprint (and optionally continuation)."""
+    sandbox_path = _merge_sandbox_path(tmp_path, Config(), issue_number)
+    sandbox_path.mkdir(parents=True, exist_ok=True)
+    (sandbox_path / "pyproject.toml").write_text("[project]\nname='t'\n")
+    _seed_merger_session(
+        sandbox_path, sha, issue_number, with_continuation=with_continuation
+    )
+
+
+def test_sha_change_starts_fresh_merger_session(tmp_path, github_svc):
+    """When the safe SHA changes, replaceable_merge_sandbox_worktree is used (fresh sandbox)."""
+    git_svc = _make_functional_git_svc(tmp_path)
+    git_svc.try_merge.return_value = False
+    _pre_seed_sandbox(tmp_path, "old-sha", 1, with_continuation=True)
+    git_svc.get_head_sha.return_value = "new-sha"
+
+    seen = _continuation_present_in_sandbox(tmp_path, git_svc, github_svc)
+
+    assert seen == [False]
+
+
+def test_branch_change_starts_fresh_merger_session(tmp_path, github_svc):
+    """When the conflict branch changes, replaceable_merge_sandbox_worktree is used."""
+    git_svc = _make_functional_git_svc(tmp_path)
+    git_svc.try_merge.return_value = False
+    # Seed fingerprint computed against issue-2's branch, but we run issue-1
+    _pre_seed_sandbox(tmp_path, "sha-abc", 2, with_continuation=True)
+    git_svc.get_head_sha.return_value = "sha-abc"
+
+    seen = _continuation_present_in_sandbox(tmp_path, git_svc, github_svc)
+
+    assert seen == [False]
+
+
+def test_fingerprint_match_without_continuation_starts_fresh_merger_session(
+    tmp_path, github_svc
+):
+    """When SHA and branch match but no _continuation exists, replaceable worktree is used."""
+    git_svc = _make_functional_git_svc(tmp_path)
+    git_svc.try_merge.return_value = False
+    _pre_seed_sandbox(tmp_path, "sha-abc", 1, with_continuation=False)
+    git_svc.get_head_sha.return_value = "sha-abc"
+
+    seen = _continuation_present_in_sandbox(tmp_path, git_svc, github_svc)
+
+    assert seen == [False]
+
+
+def test_fingerprint_match_with_continuation_resumes_merger_session(
+    tmp_path, github_svc
+):
+    """When SHA and branch match and _continuation exists, reusable worktree resumes session."""
+    git_svc = _make_functional_git_svc(tmp_path)
+    git_svc.try_merge.return_value = False
+    _pre_seed_sandbox(tmp_path, "sha-abc", 1, with_continuation=True)
+    # Mark as preserved-failure so _cleanup_stale_named_worktree skips removal for REUSABLE
+    sandbox_path = _merge_sandbox_path(tmp_path, Config(), 1)
+    (sandbox_path / ".pycastle-session" / ".preserved-failure").write_text("")
+    git_svc.get_head_sha.return_value = "sha-abc"
+    # Register sandbox so _create_worktree returns early (skips fresh create)
+    git_svc.list_worktrees.side_effect = lambda repo: [sandbox_path]
+
+    seen = _continuation_present_in_sandbox(tmp_path, git_svc, github_svc)
+
+    assert seen == [True]
+
+
+def test_fingerprint_written_to_sandbox_before_agent_runs(tmp_path, github_svc):
+    """`write_fingerprint` is called inside the worktree context before the agent runs."""
+    git_svc = _make_functional_git_svc(tmp_path)
+    git_svc.try_merge.return_value = False
+    git_svc.get_head_sha.return_value = "sha-abc"
+    fingerprint_seen: list[str | None] = []
+
+    async def _check(request: RunRequest):
+        if request.name == "Merge Agent":
+            fingerprint_seen.append(
+                RoleSession(request.mount_path, AgentRole.MERGER).read_fingerprint()
+            )
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner(side_effect=_check),
+        git_svc=git_svc,
+        github_svc=github_svc,
+    )
+    _run([{"number": 1, "title": "Conflict"}], deps)
+
+    assert fingerprint_seen == [_merger_fingerprint("sha-abc", 1)]
