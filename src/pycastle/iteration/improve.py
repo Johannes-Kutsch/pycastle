@@ -21,7 +21,9 @@ from ..errors import SetupPhaseError
 from ..infrastructure.worktree import (
     SandboxWorktreeIntent,
     reusable_sandbox_worktree,
+    reusable_sandbox_worktree_identity,
 )
+from ._fingerprint import prepare_fingerprint_gate
 from ..managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
@@ -264,6 +266,14 @@ async def improve_phase(
             row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
             return verdict
 
+        fingerprint = verdict.sha
+        pre_sandbox_path = reusable_sandbox_worktree_identity(
+            IMPROVE_SANDBOX_INTENT, deps.repo_root
+        ).path
+        prepare_fingerprint_gate(
+            RoleSession(pre_sandbox_path, AgentRole.IMPROVE), fingerprint
+        )
+
         async with reusable_sandbox_worktree(
             IMPROVE_SANDBOX_INTENT,
             sha=verdict.sha,
@@ -305,6 +315,8 @@ async def improve_phase(
                     role_session.discard()
                     row.close("restarting from phase 1")
                     return ImproveContinue()
+
+            role_session.write_fingerprint(fingerprint)
 
             while step is not None:
                 prepared_step = prepare_improve_step(
