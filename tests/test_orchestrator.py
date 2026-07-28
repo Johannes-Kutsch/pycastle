@@ -39,7 +39,12 @@ from pycastle.services import (
     ServiceRegistry,
 )
 from pycastle.services.runtime_services import AgentService
-from tests.support import FakeAgentRunner, RecordingStatusDisplay, _make_deps
+from tests.support import (
+    FakeAgentRunner,
+    RecordingStatusDisplay,
+    _make_deps,
+    functional_git_svc,
+)
 from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
@@ -75,10 +80,11 @@ def _preflight_failure(
 
 
 def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
-    mock_svc = MagicMock(spec=GitService)
+    mock_svc = functional_git_svc(
+        is_ancestor=is_ancestor,
+        start_merge=False,
+    )
     mock_svc.get_head_sha.return_value = "abc1234"
-    mock_svc.verify_ref_exists.return_value = False
-    mock_svc.list_worktrees.return_value = []
     if try_merge_side_effect is not None:
         results = list(try_merge_side_effect)
         idx = [0]
@@ -91,21 +97,6 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
         mock_svc.try_merge.side_effect = _try_merge
     else:
         mock_svc.try_merge.return_value = True
-    mock_svc.is_ancestor.return_value = is_ancestor
-    mock_svc.start_merge.return_value = False
-
-    def _fake_create_worktree(repo, wt, branch, sha=None):
-        wt.mkdir(parents=True, exist_ok=True)
-        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
-
-    def _fake_remove_worktree(repo, wt):
-        import shutil
-
-        if isinstance(wt, Path) and wt.exists():
-            shutil.rmtree(wt)
-
-    mock_svc.create_worktree.side_effect = _fake_create_worktree
-    mock_svc.remove_worktree.side_effect = _fake_remove_worktree
     return mock_svc
 
 
