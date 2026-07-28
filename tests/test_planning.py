@@ -11,12 +11,12 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.config import Config, StageOverride
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import GitService
 from tests.support import (
     FakeAgentRunner,
     RecordingStatusDisplay,
     StubPreflightCache,
     _make_deps,
+    functional_git_svc,
 )
 from pycastle.iteration.planning_issue_intake import (
     PlanReady,
@@ -36,17 +36,9 @@ def _plan_output(issues: list[dict]) -> PlannerOutput:
 
 @pytest.fixture
 def git_svc():
-    svc = MagicMock(spec=GitService)
+    svc = functional_git_svc()
     svc.get_head_sha.return_value = "abc123"
     svc.is_working_tree_clean.return_value = True
-    svc.verify_ref_exists.return_value = False
-    svc.list_worktrees.return_value = []
-
-    def _fake_create_worktree(repo, wt, branch, sha=None):
-        wt.mkdir(parents=True, exist_ok=True)
-        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
-
-    svc.create_worktree.side_effect = _fake_create_worktree
     return svc
 
 
@@ -979,7 +971,6 @@ def test_config_needs_slice_type_label_defaults_to_needs_slice_type():
 def test_planning_phase_adds_label_and_comment_for_malformed_without_flag(
     tmp_path, git_svc
 ):
-    from unittest.mock import MagicMock
     from pycastle.services.github_service import GithubService
 
     well = {
@@ -1012,7 +1003,6 @@ def test_planning_phase_adds_label_and_comment_for_malformed_without_flag(
 def test_planning_phase_applies_supplied_planning_issue_intake_label_sync_actions(
     tmp_path, git_svc
 ):
-    from unittest.mock import MagicMock
     from pycastle.services.github_service import GithubService
 
     well = {
@@ -1049,7 +1039,6 @@ def test_planning_phase_applies_supplied_planning_issue_intake_label_sync_action
 
 
 def test_planning_phase_removes_stale_flag_from_well_formed_issue(tmp_path, git_svc):
-    from unittest.mock import MagicMock
     from pycastle.services.github_service import GithubService
 
     well1 = {
@@ -1083,7 +1072,6 @@ def test_planning_phase_removes_stale_flag_from_well_formed_issue(tmp_path, git_
 def test_planning_phase_adds_needs_info_label_and_comment_for_short_body(
     tmp_path, git_svc
 ):
-    from unittest.mock import MagicMock
     from pycastle.services.github_service import GithubService
 
     well = {
@@ -1116,7 +1104,7 @@ def test_planning_phase_adds_needs_info_label_and_comment_for_short_body(
 def test_planning_phase_adds_both_marker_labels_and_comments_for_doubly_blocked_issue(
     tmp_path, git_svc
 ):
-    from unittest.mock import MagicMock, call
+    from unittest.mock import call
     from pycastle.services.github_service import GithubService
 
     well = {
