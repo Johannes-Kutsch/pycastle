@@ -1,4 +1,5 @@
 import dataclasses
+import hashlib
 from pathlib import Path
 from typing import Protocol
 
@@ -15,7 +16,13 @@ from ..prompts.scope_args import build_plan_scope_args
 from ..services import GitService
 from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import detached_transient_worktree
+from ..infrastructure.worktree import (
+    SandboxWorktreeIntent,
+    reusable_sandbox_worktree,
+    reusable_sandbox_worktree_identity,
+)
+from ..session import RoleSession
+from ._fingerprint import prepare_fingerprint_gate
 from ..managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
@@ -136,11 +143,22 @@ async def planning_phase(
                 issue_set,
             )
 
-        async with detached_transient_worktree(
-            "plan-sandbox",
+        _sorted_ids = sorted(i["number"] for i in all_open_issues)
+        fingerprint = hashlib.sha256(f"{sha}:{_sorted_ids}".encode()).hexdigest()
+        _plan_sandbox_identity = reusable_sandbox_worktree_identity(
+            SandboxWorktreeIntent.PLAN, deps.repo_root
+        )
+        _plan_sandbox_session = RoleSession(
+            _plan_sandbox_identity.path, AgentRole.PLANNER
+        )
+        prepare_fingerprint_gate(_plan_sandbox_session, fingerprint)
+
+        async with reusable_sandbox_worktree(
+            SandboxWorktreeIntent.PLAN,
             sha=sha,
             deps=deps,
         ) as wt:
+            _plan_sandbox_session.write_fingerprint(fingerprint)
             mount_decision = decide_managed_worktree_mount(
                 repo_root=deps.repo_root,
                 mount_path=wt,
