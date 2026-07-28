@@ -185,10 +185,7 @@ class StubPreflightCache:
         return self._verdict
 
 
-def _default_git_service() -> GitService:
-    git_svc = MagicMock(spec=GitService)
-    git_svc.verify_ref_exists.return_value = False
-
+def _wire_worktrees(git_svc: Any) -> None:
     registered: list[Path] = []
 
     def _fake_list_worktrees(repo: Path) -> list[Path]:
@@ -203,14 +200,42 @@ def _default_git_service() -> GitService:
 
     def _fake_remove_worktree(repo: Path, path: Path) -> None:
         shutil.rmtree(path, ignore_errors=True)
-        registered[:] = [
-            registered_path for registered_path in registered if registered_path != path
-        ]
+        registered[:] = [p for p in registered if p != path]
 
     git_svc.list_worktrees.side_effect = _fake_list_worktrees
     git_svc.create_worktree.side_effect = _fake_create_worktree
     git_svc.remove_worktree.side_effect = _fake_remove_worktree
+
+
+def functional_git_svc(
+    *,
+    head_sha: str | None = None,
+    is_clean: bool | None = None,
+    current_branch: str | None = None,
+    try_merge: Any = None,
+    start_merge: Any = None,
+    is_ancestor: bool | None = None,
+) -> GitService:
+    git_svc = MagicMock(spec=GitService)
+    git_svc.verify_ref_exists.return_value = False
+    _wire_worktrees(git_svc)
+    if head_sha is not None:
+        git_svc.head_sha.return_value = head_sha
+    if is_clean is not None:
+        git_svc.is_clean.return_value = is_clean
+    if current_branch is not None:
+        git_svc.current_branch.return_value = current_branch
+    if try_merge is not None:
+        git_svc.try_merge.return_value = try_merge
+    if start_merge is not None:
+        git_svc.start_merge.return_value = start_merge
+    if is_ancestor is not None:
+        git_svc.is_ancestor.return_value = is_ancestor
     return git_svc
+
+
+def _default_git_service() -> GitService:
+    return functional_git_svc()
 
 
 def _make_deps(
@@ -244,23 +269,7 @@ def _make_deps(
     if setup_worktrees:
         git_mock = cast(Any, resolved_git_svc)
         github_mock = cast(Any, resolved_github_svc)
-        registered: list[Path] = []
-
-        def _fake_list_worktrees(repo):
-            return list(registered)
-
-        def _fake_create_worktree(repo, path, branch, sha=None):
-            path.mkdir(parents=True, exist_ok=True)
-            (path / "pyproject.toml").write_text("[project]\nname='t'\n")
-            registered.append(path)
-
-        def _fake_remove_worktree(repo, path):
-            shutil.rmtree(path, ignore_errors=True)
-            registered[:] = [p for p in registered if p != path]
-
-        git_mock.list_worktrees.side_effect = _fake_list_worktrees
-        git_mock.create_worktree.side_effect = _fake_create_worktree
-        git_mock.remove_worktree.side_effect = _fake_remove_worktree
+        _wire_worktrees(git_mock)
         if isinstance(
             github_mock.get_all_open_issues_lightweight.return_value, MagicMock
         ):

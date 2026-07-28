@@ -4,6 +4,7 @@ from .iteration import (
     RecordingStatusDisplay,
     StubPreflightCache,
     _make_deps,
+    functional_git_svc,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "RecordingStatusDisplay",
     "StubPreflightCache",
     "_make_deps",
+    "functional_git_svc",
 ]
