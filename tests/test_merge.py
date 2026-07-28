@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import hashlib
+import shutil
 import subprocess
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
@@ -2473,8 +2474,6 @@ def _merger_fingerprint(sha: str, issue_number: int) -> str:
 
 def _make_functional_git_svc(tmp_path) -> MagicMock:
     """Git service mock with working create/remove/list_worktrees so directory state is real."""
-    import shutil
-
     svc = MagicMock(spec=GitService)
     svc.is_working_tree_clean.return_value = True
     svc.try_merge.return_value = True
