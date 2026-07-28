@@ -1,4 +1,5 @@
 import dataclasses
+import hashlib
 from pathlib import Path
 from typing import Protocol
 
@@ -18,6 +19,7 @@ from ..errors import (
 )
 from ..infrastructure.worktree import (
     replaceable_merge_sandbox_worktree,
+    reusable_sandbox_worktree,
     teardown_worktree,
     worktree_identity,
 )
@@ -32,6 +34,7 @@ from ..managed_worktree_mount_policy import (
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
+from ._fingerprint import prepare_fingerprint_gate
 from ._merge_reporting import MergeProgressReporter
 from .implement import branch_for
 
@@ -145,15 +148,27 @@ async def _recover_active_conflict(
         deps.repo_root,
     )
     target_branch = deps.git_svc.get_current_branch(deps.repo_root)
-    try:
-        async with replaceable_merge_sandbox_worktree(
-            issue_number=active_issue["number"],
-            sha=deps.git_svc.get_head_sha(deps.repo_root),
+    safe_sha = deps.git_svc.get_head_sha(deps.repo_root)
+    conflict_branch = branch_for(active_issue["number"])
+    fingerprint = hashlib.sha256((safe_sha + conflict_branch).encode()).hexdigest()
+    role_session = RoleSession(sandbox_identity.path, AgentRole.MERGER)
+    prepare_fingerprint_gate(role_session, fingerprint)
+    if role_session.is_resumable():
+        worktree_cm = reusable_sandbox_worktree(
+            f"merge-sandbox-issue-{active_issue['number']}",
+            sha=safe_sha,
             deps=deps,
-        ) as sandbox_path:
-            already_merged = deps.git_svc.start_merge(
-                sandbox_path, branch_for(active_issue["number"])
-            )
+        )
+    else:
+        worktree_cm = replaceable_merge_sandbox_worktree(
+            issue_number=active_issue["number"],
+            sha=safe_sha,
+            deps=deps,
+        )
+    try:
+        async with worktree_cm as sandbox_path:
+            RoleSession(sandbox_path, AgentRole.MERGER).write_fingerprint(fingerprint)
+            already_merged = deps.git_svc.start_merge(sandbox_path, conflict_branch)
             if already_merged:
                 _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
                 deps.git_svc.fast_forward_branch(
