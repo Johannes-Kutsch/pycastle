@@ -4,15 +4,14 @@ import re
 
 from rich.console import Console
 
-from tests.support import RecordingStatusDisplay
+from pycastle.display.rich_status_display import RichStatusDisplay
 from pycastle.display.status_display import (
+    WORK_PHASE,
     ModelDisplayMetadata,
     PlainStatusDisplay,
     StatusDisplay,
-    WORK_PHASE,
 )
-from pycastle.display.rich_status_display import RichStatusDisplay
-
+from tests.support import RecordingStatusDisplay
 
 # ── RichStatusDisplay behaviour ───────────────────────────────────────────────
 
@@ -1238,7 +1237,7 @@ def _prefix_ansi_style(caller: str, message: str) -> str:
     ansi = _truecolor_print_output(caller, message)
     # Find the opening '[' of the prefix.  For '#N' callers the literal text
     # after '[' is everything up to '#'; for plain callers it is the full name.
-    opening = f"[{caller.split('#')[0]}" if "#" in caller else f"[{caller}]"
+    opening = f"[{caller.split('#', maxsplit=1)[0]}" if "#" in caller else f"[{caller}]"
     idx = ansi.find(opening)
     assert idx >= 0, f"could not find prefix opening {opening!r} in {ansi!r}"
     m = re.search(r"(\x1b\[[\d;]*m)$", ansi[:idx])
@@ -1250,7 +1249,7 @@ def _prefix_rgb(caller: str) -> tuple[int, int, int]:
     """Parse the truecolor RGB used for the [caller] prefix from rendered output."""
     ansi = _truecolor_print_output(caller, "hello")
     # For #N callers the prefix literal '[name ' is the first styled span.
-    opening = f"[{caller.split('#')[0]}" if "#" in caller else f"[{caller}]"
+    opening = f"[{caller.split('#', maxsplit=1)[0]}" if "#" in caller else f"[{caller}]"
     idx = ansi.find(opening)
     assert idx >= 0, f"could not find prefix opening in {ansi!r}"
     m = re.search(r"38;2;(\d+);(\d+);(\d+)", ansi[:idx])

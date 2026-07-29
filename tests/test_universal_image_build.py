@@ -16,7 +16,7 @@ from pycastle._universal_image_build import (
 from pycastle.config import Config
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
-from pycastle.services._docker_build_output import BuildOutcome, FINAL_OUTCOME_EXAMPLES
+from pycastle.services._docker_build_output import FINAL_OUTCOME_EXAMPLES, BuildOutcome
 from pycastle.services.docker_service import DockerService
 
 

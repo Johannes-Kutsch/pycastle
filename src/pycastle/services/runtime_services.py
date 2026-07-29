@@ -3,25 +3,27 @@ from __future__ import annotations
 import dataclasses
 import enum
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from .. import _time as _time_module
+from ..errors import UsageLimitError
 from ..runtime_session import (
-    session_uuid as runtime_session_uuid,
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
     is_exact_resumable_service_session,
+    load_provider_state_session_id,
     load_state_dir_provider_session_id,
     provider_state_relpath,
     select_resumable_provider_session_id,
-    load_provider_state_session_id,
 )
-from ..errors import UsageLimitError
+from ..runtime_session import (
+    session_uuid as runtime_session_uuid,
+)
 from ._wake_time import compute_wake_time
 from .credential_pool import CredentialPool
 
@@ -298,7 +300,7 @@ class CodexService:
     ) -> None:
         wake, _ = compute_wake_time(reset_time, _now or _time_module.now_local())
         if wake.tzinfo is None:
-            wake = wake.replace(tzinfo=timezone.utc)
+            wake = wake.replace(tzinfo=UTC)
         self._exhausted_until = wake
 
     def state_dir_relpath(self, role, namespace: str = "") -> str | None:
@@ -743,6 +745,8 @@ def _codex_auth_seed_action(
 ) -> LocalAuthSeedAction | None:
     from ..session.agent import (
         AuthSeedingRequirement as RuntimeAuthSeedingRequirement,
+    )
+    from ..session.agent import (
         LocalAuthSeedAction as RuntimeLocalAuthSeedAction,
     )
 

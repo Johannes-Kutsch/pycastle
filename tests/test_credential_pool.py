@@ -1,12 +1,11 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from pycastle.services.credential_pool import CredentialPool
 
-
-_FAR = datetime(2099, 1, 1, tzinfo=timezone.utc).astimezone()
-_NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc).astimezone()
+_FAR = datetime(2099, 1, 1, tzinfo=UTC).astimezone()
+_NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC).astimezone()
 
 
 def _pool(*credentials: tuple[str, str]) -> CredentialPool:
@@ -31,9 +30,9 @@ def test_credential_pool_marks_permanent_exhaustion_and_returns_name():
 
 
 def test_credential_pool_reports_availability_and_earliest_wake_time():
-    now = datetime(2026, 1, 1, 14, 0, tzinfo=timezone.utc).astimezone()
-    early_reset = datetime(2099, 1, 1, 14, 30, tzinfo=timezone.utc).astimezone()
-    late_reset = datetime(2099, 1, 1, 16, 0, tzinfo=timezone.utc).astimezone()
+    now = datetime(2026, 1, 1, 14, 0, tzinfo=UTC).astimezone()
+    early_reset = datetime(2099, 1, 1, 14, 30, tzinfo=UTC).astimezone()
+    late_reset = datetime(2099, 1, 1, 16, 0, tzinfo=UTC).astimezone()
     pool = _pool(("account 1", "tok-1"), ("account 2", "tok-2"))
 
     pool.mark_exhausted("tok-1", late_reset)
@@ -66,8 +65,8 @@ def test_credential_pool_earliest_wake_time_raises_when_all_permanently_exhauste
 
 
 def test_credential_pool_earliest_wake_time_skips_permanently_exhausted_accounts():
-    now = datetime(2026, 1, 1, 14, 0, tzinfo=timezone.utc).astimezone()
-    reset_time = datetime(2099, 1, 1, 14, 30, tzinfo=timezone.utc).astimezone()
+    now = datetime(2026, 1, 1, 14, 0, tzinfo=UTC).astimezone()
+    reset_time = datetime(2099, 1, 1, 14, 30, tzinfo=UTC).astimezone()
     pool = _pool(("account 1", "tok-1"), ("account 2", "tok-2"))
     pool.mark_permanently_exhausted("tok-1")
     pool.mark_exhausted("tok-2", reset_time, now=now)
@@ -104,8 +103,8 @@ def test_model_restriction_scoped_to_slot_exhausted_slot_does_not_block_others()
 
 
 def test_model_restriction_persists_when_slot_wakes_after_exhaustion():
-    reset_time = datetime(2026, 1, 1, 13, 0, tzinfo=timezone.utc).astimezone()
-    after_reset = datetime(2026, 1, 1, 14, 0, tzinfo=timezone.utc).astimezone()
+    reset_time = datetime(2026, 1, 1, 13, 0, tzinfo=UTC).astimezone()
+    after_reset = datetime(2026, 1, 1, 14, 0, tzinfo=UTC).astimezone()
     pool = _pool(("account 1", "tok-1"), ("account 2", "tok-2"))
 
     pool.mark_model_restricted("tok-1", "sonnet")

@@ -12,8 +12,8 @@ from docker.models.containers import Container as DockerContainer
 
 from ..config import Config
 from ..errors import DockerError, DockerTimeoutError
-from .worktree_lifecycle_debug import log_worktree_lifecycle_event
 from .worktree import CONTAINER_PARENT_GIT, patch_gitdir_for_container
+from .worktree_lifecycle_debug import log_worktree_lifecycle_event
 
 _AGENT_USER_LOCAL_BIN = "/home/agent/.local/bin"
 _MISSING_TOOL_PATTERNS = (
@@ -197,7 +197,7 @@ class DockerSession:
             workdir="/home/agent/workspace",
             environment=self._container_env,
         )
-        return cast(Iterator[bytes], result.output)
+        return cast("Iterator[bytes]", result.output)
 
     def write_file(self, content: str, container_path: str) -> None:
         data = content.encode("utf-8")

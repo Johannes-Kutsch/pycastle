@@ -7,10 +7,9 @@ import docker
 import pytest
 
 from pycastle.config import Config
-from pycastle.infrastructure.docker_session import DockerSession, build_volume_spec
 from pycastle.errors import DockerError, DockerTimeoutError
+from pycastle.infrastructure.docker_session import DockerSession, build_volume_spec
 from pycastle.infrastructure.worktree import CONTAINER_PARENT_GIT
-
 
 # ── Plain repo case ───────────────────────────────────────────────────────────
 

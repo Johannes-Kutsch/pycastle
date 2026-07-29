@@ -7,12 +7,12 @@ from typing import Protocol
 from ..agents.runner import AgentRunnerProtocol
 from ..bug_reporter import file_merge_close_failure_issue
 from ..config import Config
-from ..services import GitCommandError, GitService, GithubService
 from ..display.status_display import StatusDisplay
 from ..infrastructure.worktree import (
     cleanup_durable_issue_worktree_after_success,
     worktree_identity,
 )
+from ..services import GitCommandError, GithubService, GitService
 from ._merge_conflict_recovery import (
     recover_conflicts,
 )

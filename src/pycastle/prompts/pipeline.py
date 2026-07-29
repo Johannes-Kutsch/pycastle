@@ -373,7 +373,7 @@ class PromptRenderer:
     ) -> dict[str, str]:
         return {
             **global_args,
-            **{placeholder: "" for placeholder in scope_placeholders},
+            **dict.fromkeys(scope_placeholders, ""),
         }
 
     def render_expected_output_shape(

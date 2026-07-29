@@ -1,9 +1,9 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
-from urllib.parse import parse_qs, urlparse
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -14,12 +14,6 @@ from pycastle.agents.output_protocol import (
     PromiseParseError,
 )
 from pycastle.agents.runner import RunRequest
-from pycastle.runtime_session import (
-    ProviderSessionPreferences,
-    ProviderSessionPreferencesRequest,
-    ProviderSessionState,
-    ProviderSessionStateRequest,
-)
 from pycastle.config import StageOverride
 from pycastle.errors import (
     ModelNotAvailableError,
@@ -29,29 +23,34 @@ from pycastle.errors import (
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
+from pycastle.infrastructure.worktree import prune_orphan_worktrees
+from pycastle.iteration.orchestrator import (
+    ensure_session_excludes,
+    run,
+)
+from pycastle.runtime_session import (
+    ProviderSessionPreferences,
+    ProviderSessionPreferencesRequest,
+    ProviderSessionState,
+    ProviderSessionStateRequest,
+)
 from pycastle.services import (
     GitCommandError,
     GithubAPIError,
     GithubAuthError,
-    OperatorActionableGithubError,
     GithubService,
     GitService,
+    OperatorActionableGithubError,
     ServiceRegistry,
 )
 from pycastle.services.runtime_services import AgentService
+from pycastle.session import RunKind
 from tests.support import (
     FakeAgentRunner,
     RecordingStatusDisplay,
     _make_deps,
     functional_git_svc,
 )
-from pycastle.infrastructure.worktree import prune_orphan_worktrees
-from pycastle.iteration.orchestrator import (
-    ensure_session_excludes,
-    run,
-)
-from pycastle.session import RunKind
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -201,7 +200,6 @@ class _FakeService:
 
     def state_dir_relpath(self, role, namespace=""):
         del role, namespace
-        return None
 
     def is_resumable(self, state_dir):
         del state_dir
@@ -2864,8 +2862,8 @@ def test_opencode_timeout_usage_exhaustion_sleeps_until_marked_wake_without_fall
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    wake_time = datetime(2026, 1, 1, 13, 45, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    wake_time = datetime(2026, 1, 1, 13, 45, 0, tzinfo=UTC)
     monkeypatch.setattr(
         "pycastle.iteration.orchestrator._time_module.now_local", lambda: now
     )
@@ -2918,7 +2916,7 @@ def test_opencode_timeout_usage_exhaustion_sleeps_until_marked_wake_without_fall
             github_service=mock_github,
             git_service=_make_git_svc(try_merge_side_effect=[True]),
             service_registry=ServiceRegistry(
-                cast(dict[str, AgentService], {"opencode": opencode})
+                cast("dict[str, AgentService]", {"opencode": opencode})
             ),
             implement_override=StageOverride(
                 service="opencode",
@@ -3070,7 +3068,7 @@ def test_service_registry_resolve_snapshots_availability_per_configured_service(
 ):
     registry = ServiceRegistry(
         cast(
-            dict[str, AgentService],
+            "dict[str, AgentService]",
             {
                 "codex": _SequencedAvailabilityService([False, True]),
                 "claude": _FakeService(available=True),
@@ -3093,7 +3091,7 @@ def test_service_registry_resolve_snapshots_availability_per_configured_service(
         ),
     )
 
-    result = registry.resolve(override, datetime.now(timezone.utc))
+    result = registry.resolve(override, datetime.now(UTC))
 
     assert result == StageOverride(
         service="claude",
@@ -3300,19 +3298,21 @@ def test_orchestrator_files_setup_failure_via_api_when_auto_file_bugs_is_enabled
     display = RecordingStatusDisplay()
     monkeypatch.setenv("GH_TOKEN", "test-token")
 
-    with patch(
-        "pycastle.services.github_service.GithubService.create_issue_in",
-        return_value=321,
-    ) as mock_create:
-        with pytest.raises(SystemExit):
-            _run(
-                tmp_path,
-                agent_runner=runner,
-                github_service=_make_github_svc(),
-                git_service=_make_git_svc(),
-                status_display=display,
-                auto_file_bugs=True,
-            )
+    with (
+        patch(
+            "pycastle.services.github_service.GithubService.create_issue_in",
+            return_value=321,
+        ) as mock_create,
+        pytest.raises(SystemExit),
+    ):
+        _run(
+            tmp_path,
+            agent_runner=runner,
+            github_service=_make_github_svc(),
+            git_service=_make_git_svc(),
+            status_display=display,
+            auto_file_bugs=True,
+        )
 
     mock_create.assert_called_once()
     _, title, body, labels = mock_create.call_args.args
@@ -3369,19 +3369,21 @@ def test_orchestrator_prints_setup_failure_details_locally(tmp_path):
 
 def test_orchestrator_handles_empty_preflight_setup_failure_message(tmp_path):
     """Setup-phase aborts must stay setup-specific even when the underlying error text is empty."""
-    with patch(
-        "pycastle.iteration.outcome_routing.auto_file_issue",
-        return_value="https://example.com/upstream/1",
-    ) as mock_file:
-        with pytest.raises(SystemExit) as exc_info:
-            _run(
-                tmp_path,
-                agent_runner=FakeAgentRunner(
-                    preflight_responses=[SetupPhaseError("preflight", "")]
-                ),
-                github_service=_make_github_svc(),
-                git_service=_make_git_svc(),
-            )
+    with (
+        patch(
+            "pycastle.iteration.outcome_routing.auto_file_issue",
+            return_value="https://example.com/upstream/1",
+        ) as mock_file,
+        pytest.raises(SystemExit) as exc_info,
+    ):
+        _run(
+            tmp_path,
+            agent_runner=FakeAgentRunner(
+                preflight_responses=[SetupPhaseError("preflight", "")]
+            ),
+            github_service=_make_github_svc(),
+            git_service=_make_git_svc(),
+        )
 
     assert exc_info.value.code == 1
     assert mock_file.call_args.args[0] == "[pycastle] preflight setup failure: "
@@ -3443,17 +3445,19 @@ def test_orchestrator_exits_nonzero_on_github_retry_exhaustion_without_auto_file
     recording = RecordingStatusDisplay()
     auto_file_calls: list[tuple] = []
 
-    with patch(
-        "pycastle.iteration.auto_file_issue",
-        side_effect=lambda *args, **kwargs: auto_file_calls.append(args),
+    with (
+        patch(
+            "pycastle.iteration.auto_file_issue",
+            side_effect=lambda *args, **kwargs: auto_file_calls.append(args),
+        ),
+        pytest.raises(SystemExit) as exc_info,
     ):
-        with pytest.raises(SystemExit) as exc_info:
-            _run(
-                tmp_path,
-                github_service=github_svc,
-                git_service=_make_git_svc(),
-                status_display=recording,
-            )
+        _run(
+            tmp_path,
+            github_service=github_svc,
+            git_service=_make_git_svc(),
+            status_display=recording,
+        )
 
     assert exc_info.value.code == 1
     assert auto_file_calls == []
@@ -3577,12 +3581,14 @@ def test_orchestrator_operator_actionable_never_routes_to_pycastle_upstream(tmp_
 
     auto_file_calls: list = []
 
-    with patch(
-        "pycastle.iteration.auto_file_issue",
-        side_effect=lambda *a, **kw: auto_file_calls.append(a),
+    with (
+        patch(
+            "pycastle.iteration.auto_file_issue",
+            side_effect=lambda *a, **kw: auto_file_calls.append(a),
+        ),
+        pytest.raises(SystemExit),
     ):
-        with pytest.raises(SystemExit):
-            _run(tmp_path, git_service=git_svc, github_service=github_svc)
+        _run(tmp_path, git_service=git_svc, github_service=github_svc)
 
     assert auto_file_calls == [], (
         "auto_file_issue must not be called for operator-actionable git errors"
@@ -3874,7 +3880,7 @@ def test_model_not_available_sleep_message_does_not_say_usage_limit(tmp_path):
         [],
     ]
 
-    wake_time = datetime.now(timezone.utc) + timedelta(hours=1)
+    wake_time = datetime.now(UTC) + timedelta(hours=1)
     svc = _FakeService(available=False, wake_time=wake_time)
 
     async def _fake_run_agent(request: RunRequest):

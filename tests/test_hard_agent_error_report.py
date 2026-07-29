@@ -9,15 +9,14 @@ from __future__ import annotations
 
 import json
 
-
 from agent_runtime.errors import HardAgentError
+
 from pycastle.config import Config
 from pycastle.iteration import AbortedHardApiError
 from pycastle.iteration.hard_agent_error_report import (
     translate_hard_agent_error_to_abort,
 )
 from tests.support import RecordingStatusDisplay
-
 
 # ── Test doubles ─────────────────────────────────────────────────────────────
 

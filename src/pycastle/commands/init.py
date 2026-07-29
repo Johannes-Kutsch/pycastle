@@ -9,11 +9,11 @@ from typing import Literal
 import click
 
 from ..init_wizard import (
-    build_init_plan_for_scope,
     ConfigFileAction,
     HostAuthFacts,
     InitPlan,
     ScaffoldStageChainFacts,
+    build_init_plan_for_scope,
 )
 from ..layout import resolve_layout
 from ..scaffold import InitScaffold

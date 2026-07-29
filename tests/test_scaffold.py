@@ -56,13 +56,16 @@ def init_scaffold(tmp_path: Path, bundled_defaults: Path) -> InitScaffold:
 
 
 def test_managed_scaffold_allowlist_is_explicit():
-    assert MANAGED_SCAFFOLD_ALLOWLIST == frozenset(
-        {
-            ".gitignore",
-            "setup/cron.sh",
-            "setup/cron-install.sh",
-            "setup/cron-uninstall.sh",
-        }
+    assert (
+        frozenset(
+            {
+                ".gitignore",
+                "setup/cron.sh",
+                "setup/cron-install.sh",
+                "setup/cron-uninstall.sh",
+            }
+        )
+        == MANAGED_SCAFFOLD_ALLOWLIST
     )
 
 

@@ -2,12 +2,12 @@ from dataclasses import dataclass
 from unittest.mock import MagicMock
 
 import pytest
+from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
 from pycastle.agent_credential_failure_routing import (
     AgentCredentialFailureRouteResult,
     route_agent_credential_failure,
 )
-from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 from pycastle.services import GithubService
 
 

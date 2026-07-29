@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING
 
 from pycastle.runtime_session import (
     ServiceResumeIdentityStore,
-    is_exact_resumable_service_session as runtime_is_exact_resumable_service_session,
     load_provider_state_session_id,
+)
+from pycastle.runtime_session import (
+    is_exact_resumable_service_session as runtime_is_exact_resumable_service_session,
 )
 
 from ..agents.output_protocol import AgentRole
@@ -35,7 +37,7 @@ class RoleSessionStore(ServiceResumeIdentityStore):
         return load_exact_transcript_service_name(self.path)
 
 
-def store_for_role_session(role_session: "RoleSession") -> RoleSessionStore:
+def store_for_role_session(role_session: RoleSession) -> RoleSessionStore:
     return RoleSessionStore(role_session.path)
 
 
@@ -171,7 +173,7 @@ def has_exact_provider_transcript_for_service(
     worktree: Path,
     role: AgentRole,
     namespace: str,
-    service: "AgentService",
+    service: AgentService,
 ) -> bool:
     role_session_path = _role_session_path(worktree, role, namespace)
     if load_exact_transcript_service_name(role_session_path) != service.name:
@@ -204,7 +206,7 @@ def has_exact_provider_transcript_for_selected_service(
     worktree: Path,
     role: AgentRole,
     namespace: str,
-    registry: "ServiceRegistry | None",
+    registry: ServiceRegistry | None,
     service_name: str,
 ) -> bool:
     if registry is None or not service_name:
@@ -264,7 +266,7 @@ def _service_state_dir(
     worktree: Path,
     role: AgentRole,
     namespace: str,
-    service: "AgentService",
+    service: AgentService,
 ) -> Path | None:
     state_dir_relpath = service.state_dir_relpath(role, namespace)
     if state_dir_relpath is None:

@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 from typing import Protocol, TypeAlias, cast
 
+from .. import _time as _time_module
 from ..agents.output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
@@ -11,6 +12,34 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
+from ..diagnostic_issue_report_validation import (
+    DiagnosticIssueReportValidationAFK,
+    DiagnosticIssueReportValidationHITL,
+    validate_diagnostic_issue_report,
+)
+from ..diagnostic_mount_fallback import (
+    DiagnosticMountFallbackIssue,
+    decide_diagnostic_mount_dispatch,
+)
+from ..display.status_display import StatusDisplay
+from ..errors import SetupPhaseError
+from ..infrastructure.preflight_failure_interpreter import (
+    MissingDeclaredPythonToolDecision,
+    OrdinaryPreflightFailureDecision,
+    PreflightFailureDecision,
+    interpret_preflight_command_failures,
+)
+from ..infrastructure.worktree import (
+    SandboxWorktreeIntent,
+    reusable_sandbox_worktree,
+    reusable_sandbox_worktree_identity,
+)
+from ..managed_worktree_mount_policy import (
+    ManagedWorktreeMountRejected,
+    decide_managed_worktree_mount,
+    describe_managed_worktree_mount_rejection,
+    should_reject_managed_worktree_mount,
+)
 from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import (
@@ -19,43 +48,14 @@ from ..prompts.scope_args import (
 )
 from ..services import (
     GitCommandError,
-    GitService,
     GithubService,
+    GitService,
     ServiceRegistry,
     UnrelatedHistoriesError,
 )
 from ..session import RoleSession
-from ..errors import SetupPhaseError
-from ..diagnostic_mount_fallback import (
-    DiagnosticMountFallbackIssue,
-    decide_diagnostic_mount_dispatch,
-)
-from ..diagnostic_issue_report_validation import (
-    DiagnosticIssueReportValidationAFK,
-    DiagnosticIssueReportValidationHITL,
-    validate_diagnostic_issue_report,
-)
-from ..managed_worktree_mount_policy import (
-    ManagedWorktreeMountRejected,
-    decide_managed_worktree_mount,
-    describe_managed_worktree_mount_rejection,
-    should_reject_managed_worktree_mount,
-)
-from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import (
-    SandboxWorktreeIntent,
-    reusable_sandbox_worktree,
-    reusable_sandbox_worktree_identity,
-)
 from ._fingerprint import prepare_fingerprint_gate
 from ._utils import _wait_for_clean_working_tree
-from ..infrastructure.preflight_failure_interpreter import (
-    MissingDeclaredPythonToolDecision,
-    OrdinaryPreflightFailureDecision,
-    PreflightFailureDecision,
-    interpret_preflight_command_failures,
-)
-from .. import _time as _time_module
 
 
 def _diverge_sandbox_fingerprint(safe_sha: str, branch: str) -> str:
@@ -214,7 +214,9 @@ class PreflightCache:
         self._branch_refresh = BranchRefreshBoundary()
 
     def _resolved_preflight_issue_override(self, deps: _PreflightDeps):
-        registry = cast(ServiceRegistry | None, getattr(deps, "service_registry", None))
+        registry = cast(
+            "ServiceRegistry | None", getattr(deps, "service_registry", None)
+        )
         override = deps.cfg.preflight_issue_override
         if registry is None:
             return override

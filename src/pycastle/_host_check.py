@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import platform
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
-import platform
-from typing import Awaitable, Callable, Protocol, TypeAlias
+from typing import Protocol, TypeAlias
 
 from .agents.output_protocol import IssueOutput
 from .agents.runner import RunRequest
@@ -111,7 +112,7 @@ HostCheckIssueFiler: TypeAlias = Callable[[HostCheckIssuePayload, Path], Awaitab
 def prepare_host_check_loop(
     *, git_svc: HostCheckGitAdapter, repo_root: Path | None = None
 ) -> str:
-    resolved_repo_root = repo_root or Path(".").resolve()
+    resolved_repo_root = repo_root or Path().resolve()
     git_svc.pull_with_merge_fallback(resolved_repo_root)
     if not git_svc.is_working_tree_clean(resolved_repo_root):
         raise RuntimeError("Working tree must be clean before running host checks.")
@@ -175,7 +176,7 @@ async def run_host_check_loop(
     transient_worktree_factory: HostCheckWorktreeFactory,
     file_issue_for_failure: HostCheckIssueFiler | None = None,
 ) -> HostCheckVerdict:
-    resolved_repo_root = repo_root or Path(".").resolve()
+    resolved_repo_root = repo_root or Path().resolve()
     host_os = platform.system()
     host_platform = platform.platform()
 

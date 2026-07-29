@@ -18,7 +18,7 @@ DEFAULTS_DIR = Path(__file__).parent.parent / "src" / "pycastle" / "defaults"
 SETUP_DIR = DEFAULTS_DIR / "setup"
 
 
-@pytest.fixture()
+@pytest.fixture
 def fake_crontab(tmp_path):
     """Fake crontab shim backed by a tempfile; returns (bin_dir, data_file)."""
     data_file = tmp_path / "crontab_data.txt"
@@ -45,7 +45,7 @@ def fake_crontab(tmp_path):
     return bin_dir, data_file
 
 
-@pytest.fixture()
+@pytest.fixture
 def cron_env(tmp_path, fake_crontab):
     """Fake consuming project with cron scripts and fake crontab shim on PATH."""
     bin_dir, data_file = fake_crontab
@@ -331,7 +331,7 @@ def test_cron_sh_does_not_install_consuming_project_deps():
 # ── cron.sh shared fixture ────────────────────────────────────────────────────
 
 
-@pytest.fixture()
+@pytest.fixture
 def cron_sh_env(tmp_path):
     """Fake project structure for cron.sh; provides pip and pycastle shims."""
     setup_dir = tmp_path / "pycastle" / "setup"

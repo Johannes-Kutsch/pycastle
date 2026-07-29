@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import socket
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -15,9 +14,9 @@ from pycastle.services import (
     GithubAPIError,
     GithubAuthError,
     GithubNetworkError,
-    OperatorActionableGithubError,
     GithubService,
     GithubServiceError,
+    OperatorActionableGithubError,
 )
 from pycastle.services._github_http_transport import (
     GithubHttpTransportAPIError,
@@ -413,12 +412,14 @@ def test_request_passes_worktree_timeout_to_urlopen():
 
 def test_request_raises_github_api_error_on_non_401_4xx():
     transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
+    with (
+        patch(
+            "pycastle.services._github_http_transport.urlopen",
+            side_effect=_make_http_error(404, b'{"message":"Not Found"}'),
+        ),
+        pytest.raises(GithubHttpTransportAPIError) as ei,
     ):
-        with pytest.raises(GithubHttpTransportAPIError) as ei:
-            transport.request("GET", "/missing")
+        transport.request("GET", "/missing")
     assert ei.value.status == 404
     assert ei.value.method == "GET"
     assert ei.value.path == "/missing"
@@ -427,12 +428,14 @@ def test_request_raises_github_api_error_on_non_401_4xx():
 
 def test_request_raises_github_auth_error_on_401():
     transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_http_error(401, b'{"message":"Bad credentials"}'),
+    with (
+        patch(
+            "pycastle.services._github_http_transport.urlopen",
+            side_effect=_make_http_error(401, b'{"message":"Bad credentials"}'),
+        ),
+        pytest.raises(GithubHttpTransportAuthError) as ei,
     ):
-        with pytest.raises(GithubHttpTransportAuthError) as ei:
-            transport.request("GET", "/user")
+        transport.request("GET", "/user")
     assert ei.value.status == 401
     assert "Bad credentials" in ei.value.body
 
@@ -470,33 +473,39 @@ def test_check_auth_with_scripted_transport_raises_github_api_error_on_http_fail
 
 def test_request_post_raises_github_api_error_on_5xx_without_retry():
     transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=_make_http_error(500, b"server boom"),
+    with (
+        patch(
+            "pycastle.services._github_http_transport.urlopen",
+            side_effect=_make_http_error(500, b"server boom"),
+        ),
+        pytest.raises(GithubHttpTransportAPIError) as ei,
     ):
-        with pytest.raises(GithubHttpTransportAPIError) as ei:
-            transport.request("POST", "/x")
+        transport.request("POST", "/x")
     assert ei.value.status == 500
 
 
 def test_request_post_raises_github_network_error_on_url_error():
     transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=URLError("dns fail"),
+    with (
+        patch(
+            "pycastle.services._github_http_transport.urlopen",
+            side_effect=URLError("dns fail"),
+        ),
+        pytest.raises(GithubHttpTransportNetworkError),
     ):
-        with pytest.raises(GithubHttpTransportNetworkError):
-            transport.request("POST", "/x")
+        transport.request("POST", "/x")
 
 
 def test_request_post_raises_github_network_error_on_socket_timeout():
     transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        side_effect=socket.timeout("timed out"),
+    with (
+        patch(
+            "pycastle.services._github_http_transport.urlopen",
+            side_effect=TimeoutError("timed out"),
+        ),
+        pytest.raises(GithubHttpTransportNetworkError),
     ):
-        with pytest.raises(GithubHttpTransportNetworkError):
-            transport.request("POST", "/x")
+        transport.request("POST", "/x")
 
 
 # ── production adapter: success/decoding ─────────────────────────────────────
@@ -538,12 +547,14 @@ def test_request_sends_json_body_when_data_provided():
 
 def test_request_raises_github_api_error_on_invalid_json():
     transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
-    with patch(
-        "pycastle.services._github_http_transport.urlopen",
-        return_value=_make_response(b"{not-json"),
+    with (
+        patch(
+            "pycastle.services._github_http_transport.urlopen",
+            return_value=_make_response(b"{not-json"),
+        ),
+        pytest.raises(GithubHttpTransportAPIError) as ei,
     ):
-        with pytest.raises(GithubHttpTransportAPIError) as ei:
-            transport.request("GET", "/x")
+        transport.request("GET", "/x")
     assert ei.value.status == 200
     assert ei.value.method == "GET"
     assert ei.value.path == "/x"
@@ -2074,9 +2085,8 @@ def test_get_open_issues_does_not_filter_issue_when_close_failed():
     )
     svc = _make_service(transport=transport)
 
-    with patch("time.sleep"):
-        with pytest.raises(OperatorActionableGithubError):
-            svc.close_issue(42)
+    with patch("time.sleep"), pytest.raises(OperatorActionableGithubError):
+        svc.close_issue(42)
     result = svc.get_open_issues("ready-for-agent")
 
     assert [r["number"] for r in result] == [42]
@@ -2711,9 +2721,8 @@ def test_create_issue_in_does_not_retry_transport_error():
     )
     svc = _make_service(transport=transport)
 
-    with patch("time.sleep") as mock_sleep:
-        with pytest.raises(GithubNetworkError):
-            svc.create_issue_in("Johannes-Kutsch/pycastle", "title", "body", ["bug"])
+    with patch("time.sleep") as mock_sleep, pytest.raises(GithubNetworkError):
+        svc.create_issue_in("Johannes-Kutsch/pycastle", "title", "body", ["bug"])
 
     mock_sleep.assert_not_called()
     assert transport.requests == [

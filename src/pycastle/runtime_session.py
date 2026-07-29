@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from .agents.output_protocol import AgentRole
 
@@ -291,7 +292,7 @@ __all__ = [
     "load_provider_state_session_id",
     "load_state_dir_provider_session_id",
     "normalize_state_dir_relpath",
-    "provider_state_session_id_path",
     "provider_state_relpath",
+    "provider_state_session_id_path",
     "select_resumable_provider_session_id",
 ]

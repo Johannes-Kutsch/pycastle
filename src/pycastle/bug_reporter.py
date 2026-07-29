@@ -177,7 +177,7 @@ def file_merge_close_failure_issue(
     *,
     issue_number: int,
     exc: BaseException,
-    github_svc: "GithubService",
+    github_svc: GithubService,
 ) -> int | None:
     """File one deduped issue on the consuming project's tracker when a child
     issue fails to close after merge. Never files on bug_report_repo. Never raises."""
@@ -215,7 +215,7 @@ def file_operator_actionable_git_issue(
     op: str,
     stderr: str,
     attempt_count: int,
-    github_svc: "GithubService",
+    github_svc: GithubService,
 ) -> None:
     """File one deduped issue on the consuming project's origin tracker for an
     OperatorActionableGitError. Never files on bug_report_repo. Never raises."""

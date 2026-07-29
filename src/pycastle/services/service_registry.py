@@ -3,17 +3,17 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime
 
-from .runtime_services import AgentService
 from ..config.types import StageOverride
 from ..stage_priority_chain import (
     ConfiguredCandidateAvailability,
     StageOverrideChain,
 )
+from .runtime_services import AgentService
 
 ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
 
 
-def _try_next_wake_time(service: AgentService) -> "datetime | None":
+def _try_next_wake_time(service: AgentService) -> datetime | None:
     try:
         return service.next_wake_time()
     except RuntimeError:

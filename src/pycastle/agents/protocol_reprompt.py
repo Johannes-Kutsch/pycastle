@@ -153,8 +153,8 @@ def plan_protocol_reprompt(
 
 
 __all__ = [
-    "ExpectedOutputShapeRenderer",
     "GENERIC_PROTOCOL_REPROMPT_MESSAGE",
+    "ExpectedOutputShapeRenderer",
     "GenericProtocolReprompt",
     "ProtocolRepromptPlan",
     "TemplateSpecificProtocolReprompt",

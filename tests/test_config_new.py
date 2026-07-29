@@ -264,7 +264,7 @@ def test_resolve_dockerfile_rejects_service_keyword_argument():
 def test_resolve_dockerfile_without_bundled_default_raises_config_validation_error(
     tmp_path, monkeypatch
 ):
-    import pycastle.config.loader as loader
+    from pycastle.config import loader
 
     pycastle_dir = tmp_path / "pycastle"
     pycastle_dir.mkdir()

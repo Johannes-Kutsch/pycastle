@@ -6,20 +6,48 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from agent_runtime.errors import HardAgentError
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.provider_session_adapter import (
+    provider_session_adapter_for_service,
+    provider_session_adapter_for_service_name,
+)
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
+    is_exact_resumable_service_session,
     load_provider_state_session_id,
+    select_resumable_provider_session_id,
 )
+from pycastle.services import ClaudeService, CodexService
+from pycastle.services.runtime_services import AgentService, OpenCodeService
+from pycastle.session import (
+    ProviderSessionStateRequest as PreparedProviderSessionStateRequest,
+)
+from pycastle.session import (
+    RoleSession,
+    RunKind,
+    prepare_provider_session_state,
+)
+from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.run_dispatch import (
     PreparedRunSession as PreparedAgentSession,
+)
+from pycastle.session.run_dispatch import (
     RunSessionRequest as SessionDispatchRequest,
+)
+from pycastle.session.run_dispatch import (
     prepare_run_session as prepare_agent_session,
+)
+from pycastle.session.run_dispatch import (
     record_successful_provider_session_metadata,
+)
+from pycastle.session.run_session import (
+    AuthSeedingRequirement,
+    RecoveredSessionIdPersistence,
 )
 from pycastle.session.service_session_store import (
     load_service_session_id,
@@ -27,32 +55,11 @@ from pycastle.session.service_session_store import (
     service_session_metadata_path,
     store_for_role_session,
 )
-from pycastle.session.run_session import (
-    AuthSeedingRequirement,
-    RecoveredSessionIdPersistence,
-)
-from pycastle.session import (
-    ProviderSessionStateRequest as PreparedProviderSessionStateRequest,
-    RoleSession,
-    RunKind,
-    prepare_provider_session_state,
-)
 from pycastle.session_planning import (
     ProviderRunStatePlan,
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
 )
-from pycastle.runtime_session import (
-    is_exact_resumable_service_session,
-    select_resumable_provider_session_id,
-)
-from agent_runtime.errors import HardAgentError
-from pycastle.provider_session_adapter import provider_session_adapter_for_service_name
-from pycastle.provider_session_adapter import provider_session_adapter_for_service
-from pycastle.services import ClaudeService, CodexService
-from pycastle.services.runtime_services import AgentService
-from pycastle.services.runtime_services import OpenCodeService
-from pycastle.session.role import session_uuid_for_role_session_path
 
 
 def _role_session_session_uuid(role_session: object) -> str:
@@ -289,7 +296,7 @@ def _provider_request(
         worktree=tmp_path,
         role=role,
         session_namespace=namespace,
-        service=service or cast(AgentService, _ClaudeFilesystemStandIn()),
+        service=service or cast("AgentService", _ClaudeFilesystemStandIn()),
     )
 
 
@@ -304,6 +311,8 @@ def test_session_package_public_interface_prepares_fresh_claude_run_state(
 ):
     from pycastle.session import (
         ProviderSessionStateRequest as PublicProviderSessionStateRequest,
+    )
+    from pycastle.session import (
         prepare_provider_session_state as public_prepare_provider_session_state,
     )
 
@@ -312,7 +321,7 @@ def test_session_package_public_interface_prepares_fresh_claude_run_state(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             session_namespace="",
-            service=cast(AgentService, _ClaudeFilesystemStandIn()),
+            service=cast("AgentService", _ClaudeFilesystemStandIn()),
         )
     )
 
@@ -373,6 +382,8 @@ def test_session_package_public_interface_records_success_metadata_for_runtime_s
     from pycastle.session import (
         RunSessionRequest,
         prepare_run_session,
+    )
+    from pycastle.session import (
         record_successful_provider_session_metadata as record_public_success_metadata,
     )
 
@@ -522,7 +533,7 @@ def test_prepare_provider_session_state_fresh_codex_uses_selected_state_dir_for_
     state = prepare_provider_session_state(
         _provider_request(
             tmp_path,
-            service=cast(AgentService, _CustomCodexStateDirService()),
+            service=cast("AgentService", _CustomCodexStateDirService()),
         )
     )
 
@@ -1087,7 +1098,7 @@ def test_prepare_agent_session_improve_main_uses_namespaced_provider_state_dir_f
             tmp_path,
             role=AgentRole.IMPROVE,
             namespace="main",
-            service=cast(AgentService, _LegacyStateDirService()),
+            service=cast("AgentService", _LegacyStateDirService()),
             container_workspace="/workspace",
         )
     )
@@ -1110,7 +1121,7 @@ def test_prepare_agent_session_namespaced_resume_state_does_not_leak_between_nam
             tmp_path,
             role=AgentRole.IMPROVE,
             namespace="issues",
-            service=cast(AgentService, _LegacyStateDirService(name="claude")),
+            service=cast("AgentService", _LegacyStateDirService(name="claude")),
         )
     )
 
@@ -1125,7 +1136,7 @@ def test_prepare_agent_session_improve_issues_uses_namespaced_provider_state_dir
             tmp_path,
             role=AgentRole.IMPROVE,
             namespace="issues",
-            service=cast(AgentService, _LegacyStateDirService()),
+            service=cast("AgentService", _LegacyStateDirService()),
             container_workspace="/workspace",
         )
     )
@@ -1146,7 +1157,7 @@ def test_prepare_agent_session_empty_namespace_preserves_legacy_path_and_uuid_fo
             tmp_path,
             role=AgentRole.IMPLEMENTER,
             namespace="",
-            service=cast(AgentService, _LegacyStateDirService(name="claude")),
+            service=cast("AgentService", _LegacyStateDirService(name="claude")),
         )
     )
 
@@ -1219,7 +1230,7 @@ def test_prepare_agent_session_fresh_opencode_uses_selected_provider_state_dir_w
         _request(
             tmp_path,
             role=AgentRole.IMPROVE,
-            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            service=cast("AgentService", _CustomOpenCodeStateDirService()),
             namespace="main",
         )
     )
@@ -1261,7 +1272,7 @@ def test_prepare_provider_session_state_resume_opencode_uses_persisted_session_i
         _provider_request(
             tmp_path,
             role=AgentRole.IMPROVE,
-            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            service=cast("AgentService", _CustomOpenCodeStateDirService()),
             namespace="main",
         )
     )
@@ -1271,7 +1282,7 @@ def test_prepare_provider_session_state_resume_opencode_uses_persisted_session_i
         _provider_request(
             tmp_path,
             role=AgentRole.IMPROVE,
-            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            service=cast("AgentService", _CustomOpenCodeStateDirService()),
             namespace="main",
         )
     )
@@ -1294,12 +1305,12 @@ def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_wi
         worktree=tmp_path,
         role=AgentRole.IMPROVE,
         namespace="main",
-        service=cast(AgentService, service),
+        service=cast("AgentService", service),
         role_session=store_for_role_session(
             RoleSession(tmp_path, AgentRole.IMPROVE, "main")
         ),
         provider_session_adapter=provider_session_adapter_for_service(
-            cast(AgentService, service)
+            cast("AgentService", service)
         ),
     )
     planned_state = plan_provider_run_state(request)
@@ -1311,7 +1322,7 @@ def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_wi
             tmp_path,
             AgentRole.IMPROVE,
             "main",
-            cast(AgentService, service),
+            cast("AgentService", service),
             provider_run_state_plan=planned_state,
         )
     )
@@ -1357,7 +1368,7 @@ def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_fo
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             session_namespace="main",
-            service=cast(AgentService, service),
+            service=cast("AgentService", service),
             provider_run_state_plan=plan,
         )
     )
@@ -1406,7 +1417,7 @@ def test_prepare_provider_session_state_fresh_opencode_when_selected_state_dir_e
         _provider_request(
             tmp_path,
             role=AgentRole.IMPROVE,
-            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            service=cast("AgentService", _CustomOpenCodeStateDirService()),
             namespace="main",
         )
     )
@@ -1432,7 +1443,7 @@ def test_prepare_agent_session_opencode_resume_uses_selected_service_state_dir(
         _request(
             tmp_path,
             role=AgentRole.IMPROVE,
-            service=cast(AgentService, _CustomOpenCodeStateDirService()),
+            service=cast("AgentService", _CustomOpenCodeStateDirService()),
             namespace="main",
         )
     )
@@ -1462,7 +1473,7 @@ def test_prepare_provider_session_state_captures_opencode_session_id_in_selected
         _provider_request(
             tmp_path,
             role=AgentRole.IMPROVE,
-            service=cast(AgentService, service),
+            service=cast("AgentService", service),
             namespace="main",
         )
     )

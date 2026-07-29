@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
+from pycastle.bug_reporter import auto_file_issue
 from pycastle.config import Config
 from pycastle.iteration import (
     AbortedAgentCredentialFailure,
@@ -31,7 +31,6 @@ from pycastle.iteration.outcome_routing import (
     SleepThenContinue,
     route_outcome,
 )
-from pycastle.bug_reporter import auto_file_issue
 from pycastle.services import GithubService
 from pycastle.services.runtime_services import AgentService
 from pycastle.services.service_registry import ServiceRegistry
@@ -39,7 +38,7 @@ from tests.support import RecordingStatusDisplay
 
 
 def _now() -> datetime:
-    return datetime(2026, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
+    return datetime(2026, 1, 1, 14, 30, 0, tzinfo=UTC)
 
 
 def _make_deps(

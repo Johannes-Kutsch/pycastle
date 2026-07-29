@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Callable
 
 from ..config import Config, StageOverride
 from ..services._wake_time import compute_wake_time

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 import warnings
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote
@@ -10,9 +10,13 @@ from urllib.parse import quote
 from ..config import Config
 from ._github_http_transport import (
     GithubHttpTransport as _GithubHttpTransport,
+)
+from ._github_http_transport import (
     GithubHttpTransportAPIError,
     GithubHttpTransportAuthError,
     GithubHttpTransportNetworkError,
+)
+from ._github_http_transport import (
     UrllibGithubHttpTransport as _UrllibGithubHttpTransport,
 )
 
@@ -539,10 +543,10 @@ def _fixed_retry_delay_seconds(headers: dict[str, str]) -> int | None:
             except (TypeError, ValueError):
                 return None
             if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
+                parsed = parsed.replace(tzinfo=UTC)
             return max(
                 0,
-                int((parsed - datetime.now(timezone.utc)).total_seconds()),
+                int((parsed - datetime.now(UTC)).total_seconds()),
             )
 
     rate_limit_reset = normalized_headers.get("x-ratelimit-reset")

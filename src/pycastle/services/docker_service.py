@@ -12,7 +12,6 @@ from ._docker_build_output import (
     DockerBuildOutputInterpreter,
 )
 
-
 _PROGRESS_PREFIX = "Building Docker Image · "
 
 

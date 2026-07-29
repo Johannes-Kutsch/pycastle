@@ -6,19 +6,21 @@ from typing import Any, Literal
 
 import click
 
+from . import orchestration as pycastle_orchestration
+from ._universal_image_build import UniversalImageBuildOptions
 from .config import (
     Config,
     load_config,
     load_credential_env,
     resolve_logs_dir,
 )
+from .display.status_display import PlainStatusDisplay
 from .errors import (
     ClaudeCliNotFoundError,
     ConfigValidationError,
     DockerServiceError,
 )
 from .layout import describe_config_layers, resolve_layout
-from . import orchestration as pycastle_orchestration
 from .run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
     prepare_run_startup,
@@ -29,8 +31,6 @@ from .stage_priority_chain import (
     render_chain_label,
     validation_labels,
 )
-from ._universal_image_build import UniversalImageBuildOptions
-from .display.status_display import PlainStatusDisplay
 
 
 class _AgentRuntimeAdapter:
@@ -221,7 +221,7 @@ def _do_run(
         _load_env(cfg=cfg),
         RunStartupImproveModeFlagFacts(
             no_improve=no_improve,
-            improve_mode_flag=cast(RunImproveMode, improve_mode_flag),
+            improve_mode_flag=cast("RunImproveMode", improve_mode_flag),
         ),
     )
     if startup.validation_error_message is not None:
@@ -239,7 +239,7 @@ def _do_run(
     asyncio.run(
         agent_runtime.run(
             startup.shared_container_env,
-            Path(".").resolve(),
+            Path().resolve(),
             service_registry=startup.runtime_registry,
             improve_mode=startup.effective_improve_mode,
         )
@@ -324,7 +324,7 @@ def cron_cmd(no_improve: bool) -> None:
             _in_main_thread = threading.current_thread() is threading.main_thread()
 
             def _on_alarm(signum: int, frame: object) -> None:
-                raise TimeoutError()
+                raise TimeoutError
 
             if _in_main_thread:
                 old_handler = signal.signal(signal.SIGALRM, _on_alarm)

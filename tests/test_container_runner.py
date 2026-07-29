@@ -13,8 +13,8 @@ from agent_runtime.runtime import (
     NewSessionRunRequest,
     ProviderUnavailable,
     ResumedSessionRunRequest,
-    RuntimeOutcome,
     RunResult,
+    RuntimeOutcome,
     TimedOut,
     UsageLimited,
 )
@@ -23,19 +23,18 @@ from agent_runtime.types import ProviderSelection, ResolvedProvider
 from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
 from pycastle.config import Config, load_config
 from pycastle.errors import (
-    TransientAgentError,
     AgentTimeoutError,
     DockerError,
+    TransientAgentError,
     UsageLimitError,
 )
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession
-from pycastle.runtime_session import RunKind
-from pycastle.services.runtime_services import AgentService, ToolPolicy
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
-
+from pycastle.runtime_session import RunKind
+from pycastle.services.runtime_services import AgentService, ToolPolicy
 from tests.support import RecordingStatusDisplay
 
 _ROLE = AgentRole.IMPLEMENTER
@@ -185,12 +184,12 @@ def _make_runner(
         session._container = type("Container", (), {"id": "container-123"})()
     runner = ContainerRunner(
         name,
-        cast(DockerSession, session),
+        cast("DockerSession", session),
         model=model,
         effort=effort,
         status_display=status_display,
         cfg=cfg,
-        service=cast(AgentService, _FakeService("claude")),
+        service=cast("AgentService", _FakeService("claude")),
         runtime_client=runtime_client,
         mount_path=mount_path,
     )
@@ -204,7 +203,7 @@ def test_container_runner_constructor_takes_session(tmp_path):
     session = FakeDockerSession()
     runner = ContainerRunner(
         "agent",
-        cast(DockerSession, session),
+        cast("DockerSession", session),
         cfg=Config(logs_dir=tmp_path),
         service=_FakeService("claude"),
     )

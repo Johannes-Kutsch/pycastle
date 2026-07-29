@@ -1,11 +1,12 @@
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from agent_runtime.contracts import ToolAccess, ToolPolicy
 from agent_runtime.runtime import (
     Completed,
     Continuation,
@@ -14,7 +15,6 @@ from agent_runtime.runtime import (
     RuntimeOutcome,
     TimedOut,
 )
-from agent_runtime.contracts import ToolAccess, ToolPolicy
 from agent_runtime.types import ResolvedProvider
 
 from pycastle.agents.output_protocol import (
@@ -33,7 +33,6 @@ from pycastle.prompts.dispatch import PromptInvocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.runtime_session import ProviderSessionState
 from pycastle.services import GitService
-
 from tests.support import RecordingStatusDisplay
 
 
@@ -715,10 +714,10 @@ def test_agent_runner_parallel_runtime_rows_switch_to_work_independently(
         del git_name, git_email, work_body
         if self.name == agent_a:
             await setup_a.wait()
-            return None
+            return
         if self.name == agent_b:
             await setup_b.wait()
-            return None
+            return
         raise AssertionError(f"unexpected setup call for {self.name}")
 
     monkeypatch.setattr(
@@ -871,7 +870,7 @@ def test_agent_runner_routes_opencode_timeout_to_usage_limit_without_retries(
     status_display = RecordingStatusDisplay()
     continuation = Continuation(serialized="opaque-continuation")
     runtime_client = _TimedOutRuntimeClient(continuation)
-    now = datetime(2026, 6, 27, 12, 30, tzinfo=timezone.utc)
+    now = datetime(2026, 6, 27, 12, 30, tzinfo=UTC)
 
     monkeypatch.setattr(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
@@ -920,9 +919,7 @@ def test_agent_runner_routes_opencode_timeout_to_usage_limit_without_retries(
     assert excinfo.value.provider == "opencode"
     assert runtime_client.new_session_calls == 1
     assert runtime_client.resumed_session_calls == 0
-    assert service.mark_exhausted_calls == [
-        datetime(2026, 6, 27, 14, 0, tzinfo=timezone.utc)
-    ]
+    assert service.mark_exhausted_calls == [datetime(2026, 6, 27, 14, 0, tzinfo=UTC)]
     assert not any(
         call[0] == "print" and "Timeout — restarting" in str(call[2])
         for call in status_display.calls

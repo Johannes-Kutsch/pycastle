@@ -1,7 +1,7 @@
 import pytest
 
-import pycastle.agents.output_protocol as output_protocol
-import pycastle.execution_contracts as execution_contracts
+from pycastle import execution_contracts
+from pycastle.agents import output_protocol
 
 
 @pytest.mark.parametrize(

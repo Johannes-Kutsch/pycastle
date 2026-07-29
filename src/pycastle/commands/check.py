@@ -9,7 +9,7 @@ from .._host_check import HostCheckVerdict
 from ..agents.runner import AgentRunnerProtocol
 from ..config import Config, load_config
 from ..display.status_display import PlainStatusDisplay, StatusDisplay
-from ..services import GitService, GithubService, ServiceRegistry
+from ..services import GithubService, GitService, ServiceRegistry
 from . import host_check_run as _host_check_run
 from .host_check_run import HostCheckRunPassed, run_host_check_command
 
@@ -26,7 +26,7 @@ def main(
     service_registry: ServiceRegistry | None = None,
 ) -> None:
     resolved_cfg = cfg or load_config()
-    repo_root = Path(".").resolve()
+    repo_root = Path().resolve()
     git_svc = git_service or GitService(resolved_cfg)
     resolved_status_display = status_display or PlainStatusDisplay()
 

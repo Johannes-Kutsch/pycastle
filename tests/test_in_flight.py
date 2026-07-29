@@ -4,13 +4,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pycastle.config import Config
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.config import Config
 from pycastle.infrastructure.worktree import worktree_identity
-from pycastle.iteration.in_flight import select_in_flight_issues
 from pycastle.iteration.implement import branch_for
+from pycastle.iteration.in_flight import select_in_flight_issues
 from pycastle.services import GitService
-from pycastle.session.role import RoleSession, SESSION_DIR_NAME
+from pycastle.session.role import SESSION_DIR_NAME, RoleSession
 from pycastle.session.service_session_store import save_service_session_metadata
 
 

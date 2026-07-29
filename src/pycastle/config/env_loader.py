@@ -6,14 +6,15 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from dotenv import dotenv_values
+
 from pycastle.layout import resolve_layout
 
 __all__ = [
     "DEFAULT_ENV_FILE",
     "KNOWN_CREDENTIAL_ENV_KEYS",
-    "parse_credential_list",
     "load_credential_env",
     "load_env",
+    "parse_credential_list",
 ]
 
 DEFAULT_ENV_FILE = Path("pycastle/.env")

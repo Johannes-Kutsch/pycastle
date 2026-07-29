@@ -2,9 +2,9 @@ import pytest
 
 from pycastle.config import Config
 from pycastle.issue_readiness import (
+    BODY_FLOOR,
     AFKBlockedOutcome,
     AFKReadyOutcome,
-    BODY_FLOOR,
     BlockedIssueOutcome,
     IssueReadiness,
     IssueReadinessKind,

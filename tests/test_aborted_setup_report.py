@@ -13,7 +13,6 @@ from pycastle.iteration.aborted_setup_report import translate_aborted_setup_to_d
 from pycastle.iteration.outcome_routing import ExitFailure
 from tests.support import RecordingStatusDisplay
 
-
 # ── Test doubles ─────────────────────────────────────────────────────────────
 
 

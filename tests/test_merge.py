@@ -6,6 +6,7 @@ import subprocess
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
+from agent_runtime.errors import HardAgentError
 
 from pycastle.agents.output_protocol import (
     AgentRole,
@@ -15,18 +16,24 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config
-from agent_runtime.errors import HardAgentError
 from pycastle.errors import (
-    TransientAgentError,
     AgentTimeoutError,
+    TransientAgentError,
     UsageLimitError,
     WorktreeError,
     WorktreeTimeoutError,
 )
 from pycastle.infrastructure.worktree import worktree_identity
+from pycastle.iteration.merge import MergeResult, merge_phase
+from pycastle.iteration.preflight import PreflightAFK, PreflightHITL, PreflightReady
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import GitCommandError, GitService, GitTimeoutError
-from pycastle.services import GithubAPIError, GithubService
+from pycastle.services import (
+    GitCommandError,
+    GithubAPIError,
+    GithubService,
+    GitService,
+    GitTimeoutError,
+)
 from pycastle.session import RoleSession
 from tests.support import (
     FakeAgentRunner,
@@ -35,8 +42,6 @@ from tests.support import (
     _make_deps,
     functional_git_svc,
 )
-from pycastle.iteration.merge import MergeResult, merge_phase
-from pycastle.iteration.preflight import PreflightAFK, PreflightHITL, PreflightReady
 
 
 @pytest.fixture

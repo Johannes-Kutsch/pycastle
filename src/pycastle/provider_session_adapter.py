@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from .agents.output_protocol import AgentRole
-from .services.runtime_services import AgentService, ClaudeService
 from .runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -17,6 +16,7 @@ from .runtime_session import (
     load_state_dir_provider_session_id,
     provider_state_relpath,
 )
+from .services.runtime_services import AgentService, ClaudeService
 from .session.role import session_uuid_for_role_session_path
 
 
@@ -357,13 +357,13 @@ def provider_session_adapter_for_service(
     service: AgentService,
 ) -> ProviderSessionAdapter:
     if isinstance(service, ClaudeService):
-        return cast(ProviderSessionAdapter, _ClaudeProviderSessionAdapter())
+        return cast("ProviderSessionAdapter", _ClaudeProviderSessionAdapter())
     if service.name == "codex":
-        return cast(ProviderSessionAdapter, _CodexProviderSessionAdapter(service))
+        return cast("ProviderSessionAdapter", _CodexProviderSessionAdapter(service))
     if service.name == "opencode":
-        return cast(ProviderSessionAdapter, _OpenCodeProviderSessionAdapter(service))
+        return cast("ProviderSessionAdapter", _OpenCodeProviderSessionAdapter(service))
     return cast(
-        ProviderSessionAdapter,
+        "ProviderSessionAdapter",
         _DelegatingProviderSessionAdapter(service.name, service),
     )
 
@@ -372,12 +372,12 @@ def provider_session_adapter_for_service_name(
     service_name: str,
 ) -> ProviderSessionAdapter:
     if service_name == "claude":
-        return cast(ProviderSessionAdapter, _ClaudeProviderSessionAdapter())
+        return cast("ProviderSessionAdapter", _ClaudeProviderSessionAdapter())
     if service_name == "codex":
-        return cast(ProviderSessionAdapter, _CodexProviderSessionAdapter())
+        return cast("ProviderSessionAdapter", _CodexProviderSessionAdapter())
     if service_name == "opencode":
-        return cast(ProviderSessionAdapter, _OpenCodeProviderSessionAdapter())
-    return cast(ProviderSessionAdapter, _BaseProviderSessionAdapter(service_name))
+        return cast("ProviderSessionAdapter", _OpenCodeProviderSessionAdapter())
+    return cast("ProviderSessionAdapter", _BaseProviderSessionAdapter(service_name))
 
 
 def _provider_session_uuid_for_request(

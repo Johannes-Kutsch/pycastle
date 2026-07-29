@@ -6,27 +6,23 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from agent_runtime.errors import AgentCredentialFailureError
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.provider_session_adapter import provider_session_adapter_for_service_name
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
+    is_exact_resumable_service_session,
+    select_resumable_provider_session_id,
 )
-from pycastle.session.service_session_store import load_service_session_id
-from pycastle.session.service_session_store import save_service_session_metadata
-from agent_runtime.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService
-from pycastle.services.runtime_services import CodexService
-from pycastle.services.runtime_services import OpenCodeService
-from pycastle.session.role import session_uuid_for_role_session_path
-from pycastle.session.agent import RunSessionPlanRequest, plan_run_session
-from pycastle.session.run_session import (
-    AuthSeedingRequirement,
-    LocalAuthSeedAction,
-    RecoveredSessionIdPersistence,
-    RunSessionPlan,
+from pycastle.services.runtime_services import (
+    AgentService,
+    CodexService,
+    OpenCodeService,
 )
 from pycastle.session import (
     RoleSession,
@@ -34,17 +30,23 @@ from pycastle.session import (
     has_exact_transcript_match,
     provider_state_relpath,
 )
-from pycastle.provider_session_adapter import provider_session_adapter_for_service_name
-from pycastle.session.service_session_store import store_for_role_session
+from pycastle.session.agent import RunSessionPlanRequest, plan_run_session
+from pycastle.session.role import session_uuid_for_role_session_path
+from pycastle.session.run_session import (
+    AuthSeedingRequirement,
+    LocalAuthSeedAction,
+    RecoveredSessionIdPersistence,
+    RunSessionPlan,
+)
+from pycastle.session.service_session_store import (
+    load_service_session_id,
+    save_service_session_metadata,
+    store_for_role_session,
+)
 from pycastle.session_planning import (
     ProviderRunStatePlan,
     record_observed_provider_session_id,
 )
-from pycastle.runtime_session import (
-    is_exact_resumable_service_session,
-    select_resumable_provider_session_id,
-)
-from pycastle.services.runtime_services import AgentService
 
 
 def _role_session_session_uuid(role_session: object) -> str:
@@ -237,7 +239,7 @@ class _ClaudeExecutionOnlyService(ClaudeService):
 
 def test_run_session_plan_uses_service_state_dir_for_namespaced_role(tmp_path: Path):
     service = cast(
-        AgentService, _FakeAgentService(".pycastle-session/improve/main/codex/")
+        "AgentService", _FakeAgentService(".pycastle-session/improve/main/codex/")
     )
 
     plan = RunSessionPlan.for_service(
@@ -333,7 +335,7 @@ def test_plan_run_session_public_interface_preserves_namespaced_role_session_fac
     tmp_path: Path,
 ):
     service = cast(
-        AgentService, _FakeAgentService(".pycastle-session/improve/main/codex/")
+        "AgentService", _FakeAgentService(".pycastle-session/improve/main/codex/")
     )
 
     plan = plan_run_session(
@@ -364,7 +366,7 @@ def test_run_session_plan_uses_selected_codex_provider_state_dir_layout_when_ser
     tmp_path: Path,
 ):
     service = cast(
-        AgentService,
+        "AgentService",
         _FakeAgentService("custom/codex-state", name="codex", resumable=True),
     )
 
@@ -384,7 +386,7 @@ def test_run_session_plan_uses_selected_opencode_provider_state_dir_for_fresh_co
     tmp_path: Path,
 ):
     service = cast(
-        AgentService,
+        "AgentService",
         _FakeAgentService("custom/opencode-state", name="opencode", resumable=True),
     )
     state_dir = tmp_path / "custom" / "opencode-state"
@@ -406,7 +408,7 @@ def test_run_session_plan_uses_selected_opencode_provider_state_dir_for_fresh_co
 def test_run_session_plan_keeps_none_service_state_dir_when_service_has_no_state_dir(
     tmp_path: Path,
 ):
-    service = cast(AgentService, _FakeAgentService(None))
+    service = cast("AgentService", _FakeAgentService(None))
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.PLANNER,
@@ -468,7 +470,7 @@ def test_run_session_plan_uses_claude_provider_session_adapter_for_fresh_identit
         role=AgentRole.IMPLEMENTER,
         worktree=tmp_path,
         namespace="",
-        service=cast(AgentService, _ClaudeExecutionOnlyService()),
+        service=cast("AgentService", _ClaudeExecutionOnlyService()),
     )
 
     assert plan.run_kind is RunKind.FRESH
@@ -521,7 +523,7 @@ def test_run_session_plan_uses_claude_provider_session_adapter_for_resume_exact_
         role=AgentRole.IMPLEMENTER,
         worktree=tmp_path,
         namespace="",
-        service=cast(AgentService, _ClaudeExecutionOnlyService()),
+        service=cast("AgentService", _ClaudeExecutionOnlyService()),
     )
 
     assert plan.run_kind is RunKind.RESUME
@@ -588,7 +590,7 @@ def test_run_session_plan_preserves_claude_provider_session_persistence_from_ser
     tmp_path: Path,
 ):
     service = cast(
-        AgentService,
+        "AgentService",
         _FakeAgentService(
             ".pycastle-session/implementer/claude/",
             name="claude",
@@ -649,7 +651,7 @@ def test_has_exact_transcript_match_accepts_sidecar_backed_opencode_handoff_with
     tmp_path: Path,
 ):
     service = cast(
-        AgentService,
+        "AgentService",
         _FakeAgentService(
             "custom/opencode-state/",
             name="opencode",
@@ -888,14 +890,10 @@ def test_codex_provider_session_state_returns_resume_decision_for_saved_sidecar(
 
     assert decision.run_kind is RunKind.RESUME
     assert decision.provider_session_id == "thread-from-sidecar"
-    assert (
-        getattr(decision, "state_dir_relpath") == ".pycastle-session/implementer/codex/"
-    )
-    assert getattr(decision, "state_dir_path") == state_dir
-    assert (
-        getattr(decision, "auth_seeding_requirement") is AuthSeedingRequirement.REQUIRED
-    )
-    action = getattr(decision, "auth_seed_action")
+    assert decision.state_dir_relpath == ".pycastle-session/implementer/codex/"
+    assert decision.state_dir_path == state_dir
+    assert decision.auth_seeding_requirement is AuthSeedingRequirement.REQUIRED
+    action = decision.auth_seed_action
     assert action is not None
     assert action.source == Path.home() / ".codex" / "auth.json"
     assert action.destination == state_dir / "auth.json"
@@ -1050,7 +1048,7 @@ def test_run_session_plan_requires_auth_seeding_for_fresh_codex_without_auth_jso
 def test_run_session_plan_does_not_require_auth_seeding_for_fresh_codex_without_service_auth_policy(
     tmp_path: Path,
 ):
-    service = cast(AgentService, _CodexWithoutAuthPolicyService("custom/codex-state"))
+    service = cast("AgentService", _CodexWithoutAuthPolicyService("custom/codex-state"))
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
@@ -1285,7 +1283,7 @@ def test_run_session_plan_captures_generic_provider_session_id_for_same_plan_reu
     tmp_path: Path,
 ):
     service = cast(
-        AgentService,
+        "AgentService",
         _FakeAgentService(".pycastle-session/implementer/fake/"),
     )
     plan = RunSessionPlan.for_service(
@@ -1363,7 +1361,7 @@ def test_run_session_plan_does_not_require_auth_seeding_for_resume_codex_without
     state_dir = tmp_path / "custom" / "codex-state"
     (state_dir / "sessions").mkdir(parents=True)
     service = cast(
-        AgentService,
+        "AgentService",
         _CodexWithoutAuthPolicyService(
             relpath="custom/codex-state",
             resumable=True,
@@ -1419,7 +1417,7 @@ def test_run_session_plan_skips_auth_seeding_for_resume_codex_with_provider_auth
         encoding="utf-8",
     )
     service = cast(
-        AgentService,
+        "AgentService",
         _CodexWithoutAuthPolicyService(
             relpath="custom/codex-state",
             resumable=True,
@@ -1444,7 +1442,7 @@ def test_run_session_plan_skips_auth_seed_action_when_selected_codex_state_dir_a
     tmp_path: Path,
 ):
     service = cast(
-        AgentService,
+        "AgentService",
         _FakeAgentService("custom/codex-state", name="codex", resumable=True),
     )
     state_dir = tmp_path / "custom" / "codex-state"
@@ -1481,7 +1479,7 @@ def test_local_auth_seed_action_applies_only_to_preserved_codex_provider_state_d
     monkeypatch.setattr(Path, "home", lambda: home)
 
     service = cast(
-        AgentService,
+        "AgentService",
         _FakeAgentService("custom/codex-state", name="codex", resumable=True),
     )
 

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import tomllib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-
 from pycastle.services import ResetTimeSyntaxMode, parse_reset_time
 
-_UTC = timezone.utc
+_UTC = UTC
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

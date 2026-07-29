@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 
+from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.iteration import StatusRow, status_row
-from pycastle.display.status_display import PlainStatusDisplay
 
 
 def test_status_row_phase_success_path_registers_and_closes(

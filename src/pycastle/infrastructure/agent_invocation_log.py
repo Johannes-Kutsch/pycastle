@@ -52,7 +52,7 @@ class WorkInvocationLog:
 
 
 class LogicalAgentInvocationLog:
-    def __init__(self, owner: "AgentInvocationLog", *, log_path: Path) -> None:
+    def __init__(self, owner: AgentInvocationLog, *, log_path: Path) -> None:
         self._owner = owner
         self.log_path = log_path
         self._latest_work_invocation: WorkInvocationLog | None = None

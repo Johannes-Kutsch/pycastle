@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from .errors import ConfigValidationError
 from .services._docker_build_output import BuildOutcome

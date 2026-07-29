@@ -38,7 +38,7 @@ def main(
         docker_service,
         resolve_universal_image_build_request(
             cfg,
-            project_root=Path("."),
+            project_root=Path(),
             options=options,
         ),
     )

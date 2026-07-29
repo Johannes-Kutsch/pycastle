@@ -12,7 +12,6 @@ from click.testing import CliRunner
 from pycastle.config import Config
 from pycastle.config.loader import derive_docker_image_name
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 

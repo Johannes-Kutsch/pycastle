@@ -4,6 +4,7 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.session_planning import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -13,7 +14,6 @@ from pycastle.session_planning import (
     ResidentSessionPlan,
     plan_provider_run_state,
 )
-from pycastle.provider_session_adapter import provider_session_adapter_for_service
 
 from ...agents.output_protocol import AgentRole
 from ..role import RoleSession
@@ -28,12 +28,12 @@ class RunSessionPlanRequest:
     role: AgentRole
     worktree: Path
     namespace: str
-    service: "AgentService"
+    service: AgentService
 
 
 @dataclasses.dataclass(frozen=True)
 class RunSessionPlan(ResidentSessionPlan):
-    service: "AgentService"
+    service: AgentService
     auth_seed_action: LocalAuthSeedAction | None = None
     recovered_session_id_persistence: RecoveredSessionIdPersistence = (
         RecoveredSessionIdPersistence.SKIP
@@ -49,8 +49,8 @@ class RunSessionPlan(ResidentSessionPlan):
         role: AgentRole,
         worktree: Path,
         namespace: str,
-        service: "AgentService",
-    ) -> "RunSessionPlan":
+        service: AgentService,
+    ) -> RunSessionPlan:
         return plan_run_session(
             RunSessionPlanRequest(
                 role=role,
@@ -90,7 +90,7 @@ def plan_run_session(request: RunSessionPlanRequest) -> RunSessionPlan:
             provider_run_state_plan.recovered_session_id_persistence
         ),
         auth_seed_action=cast(
-            LocalAuthSeedAction | None,
+            "LocalAuthSeedAction | None",
             provider_run_state_plan.auth_seed_action,
         ),
         exact_transcript_match=provider_run_state_plan.exact_transcript_match,
@@ -106,7 +106,7 @@ def run_session_plan_from_provider_run_state_plan(
     role: AgentRole,
     worktree: Path,
     namespace: str,
-    service: "AgentService",
+    service: AgentService,
     provider_run_state_plan: ProviderRunStatePlan,
 ) -> RunSessionPlan:
     return RunSessionPlan(
@@ -124,7 +124,7 @@ def run_session_plan_from_provider_run_state_plan(
             provider_run_state_plan.recovered_session_id_persistence
         ),
         auth_seed_action=cast(
-            LocalAuthSeedAction | None,
+            "LocalAuthSeedAction | None",
             provider_run_state_plan.auth_seed_action,
         ),
         exact_transcript_match=provider_run_state_plan.exact_transcript_match,

@@ -1,6 +1,5 @@
 from typing import cast
-
-from pycastle.services.service_registry import ServiceRegistry
+from unittest.mock import patch
 
 from pycastle.config import Config, StageOverride
 from pycastle.run_startup_preparation import (
@@ -9,16 +8,19 @@ from pycastle.run_startup_preparation import (
     StageOverrideValidationFailure,
     prepare_run_startup,
 )
-from pycastle.services.runtime_services import ClaudeService, CodexService
-from pycastle.services.runtime_services import OpenCodeService
-from unittest.mock import patch
+from pycastle.services.runtime_services import (
+    ClaudeService,
+    CodexService,
+    OpenCodeService,
+)
+from pycastle.services.service_registry import ServiceRegistry
 
 
 def test_run_startup_preparation_returns_none_validation_error_message_without_failures():
     startup = RunStartupPreparation(
         validation_failures=(),
         configured_provider_adapters={},
-        runtime_registry=cast(ServiceRegistry, object()),
+        runtime_registry=cast("ServiceRegistry", object()),
         shared_container_env={},
         effective_improve_mode=None,
     )
@@ -39,7 +41,7 @@ def test_run_startup_preparation_renders_validation_error_message_in_existing_cl
             ),
         ),
         configured_provider_adapters={},
-        runtime_registry=cast(ServiceRegistry, object()),
+        runtime_registry=cast("ServiceRegistry", object()),
         shared_container_env={},
         effective_improve_mode=None,
     )

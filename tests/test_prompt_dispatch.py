@@ -9,7 +9,7 @@ from pycastle.prompts.dispatch import (
     build_prompt_invocation,
     render_prompt_invocation,
 )
-from pycastle.prompts.pipeline import PromptRenderError, PromptRenderer, PromptTemplate
+from pycastle.prompts.pipeline import PromptRenderer, PromptRenderError, PromptTemplate
 from pycastle.session import RunKind
 
 

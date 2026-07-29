@@ -3,12 +3,13 @@ import hashlib
 from pathlib import Path
 from typing import Protocol
 
+from agent_runtime.errors import HardAgentError
+
 from ..agents.output_protocol import AgentRole, CommitMessageOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..bug_reporter import file_merge_close_failure_issue
 from ..config import Config
 from ..display.status_display import StatusDisplay
-from agent_runtime.errors import HardAgentError
 from ..errors import (
     AgentTimeoutError,
     SetupPhaseError,
@@ -23,17 +24,17 @@ from ..infrastructure.worktree import (
     teardown_worktree,
     worktree_identity,
 )
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import build_merge_scope_args
-from ..services import GitCommandError, GitService, GithubService
-from ..session import RoleSession
 from ..managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
+from ..prompts.dispatch import build_prompt_invocation
+from ..prompts.pipeline import PromptTemplate
+from ..prompts.scope_args import build_merge_scope_args
+from ..services import GitCommandError, GithubService, GitService
+from ..session import RoleSession
 from ._fingerprint import prepare_fingerprint_gate
 from ._merge_reporting import MergeProgressReporter
 from .implement import branch_for

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .services.service_registry import ServiceRegistry
-
 from .iteration._deps import ImproveMode
+from .services.service_registry import ServiceRegistry
 
 
 async def run(

@@ -8,7 +8,6 @@ import click
 import pytest
 from click.testing import CliRunner
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -365,6 +364,7 @@ def test_url_uses_cfg_bug_report_repo(monkeypatch):
 
 def _make_github_svc():
     from unittest.mock import MagicMock
+
     from pycastle.services import GithubService
 
     svc = MagicMock(spec=GithubService)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from agent_runtime.errors import AgentCredentialFailureError
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.session_state import (
@@ -10,10 +11,9 @@ from pycastle.agents.session_state import (
     prepare_agent_run_session_state,
     record_observed_provider_session_id,
 )
-from agent_runtime.errors import AgentCredentialFailureError
 from pycastle.services import ClaudeService, CodexService, OpenCodeService
-from pycastle.session.agent import RunSessionPlan
 from pycastle.session import RoleSession, RunKind
+from pycastle.session.agent import RunSessionPlan
 from pycastle.session.role import session_uuid_for_role_session_path
 
 
@@ -254,6 +254,8 @@ def test_session_package_public_interface_reports_no_protocol_resume_for_unrecov
 
     from pycastle.session import (
         AgentRunSessionStateRequest as PublicAgentRunSessionStateRequest,
+    )
+    from pycastle.session import (
         prepare_agent_run_session_state as public_prepare_agent_run_session_state,
     )
 

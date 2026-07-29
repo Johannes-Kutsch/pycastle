@@ -36,7 +36,7 @@ def _layout_for_scope(scope: str):
 def test_init_wizard_exports_init_plan_public_names():
     from pycastle import init_wizard
 
-    assert init_wizard.__all__ == [
+    assert set(init_wizard.__all__) == {
         "ConfigFileAction",
         "ConfigHintAction",
         "CredentialPrompt",
@@ -54,7 +54,7 @@ def test_init_wizard_exports_init_plan_public_names():
         "ScaffoldStageChainFacts",
         "build_init_plan",
         "build_init_plan_for_scope",
-    ]
+    }
 
 
 def test_init_plan_types_capture_init_wizard_planning_facts():
@@ -68,8 +68,8 @@ def test_init_plan_types_capture_init_wizard_planning_facts():
         InitWizardLayoutFacts,
         InitWizardPlanningInputs,
         LabelPromptEligibility,
-        PlannedEnvFileAction,
         PlannedEnvFile,
+        PlannedEnvFileAction,
         PlannedWarning,
         ScaffoldStageChainFacts,
         build_init_plan_for_scope,

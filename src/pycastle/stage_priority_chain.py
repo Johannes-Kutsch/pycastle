@@ -87,9 +87,7 @@ class StageOverrideChain:
         object.__setattr__(
             self,
             "rendered_chain_label",
-            " -> ".join(
-                entry.service if entry.service else "<missing>" for entry in entries
-            ),
+            " -> ".join(entry.service or "<missing>" for entry in entries),
         )
         object.__setattr__(
             self,
@@ -313,10 +311,10 @@ def _deduplicated_service_names(
 __all__ = [
     "ChainEntry",
     "ConfiguredCandidateAvailability",
-    "StageOverrideChain",
     "ConfiguredCandidateChain",
     "ConfiguredCandidateSelection",
     "StageOverride",
+    "StageOverrideChain",
     "chain_entries",
     "configured_candidate_chain",
     "iter_stage_chain",

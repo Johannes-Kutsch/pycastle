@@ -10,12 +10,6 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..prompts.pipeline import PromptTemplate
-from ..services import GitService, ServiceRegistry
-from ..services.runtime_services import AgentService
-from ..services.github_service import GithubService
-from ..session import RoleSession, has_exact_transcript_match
-from ..runtime_session import session_uuid
 from ..display.status_display import StatusDisplay
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import (
@@ -23,19 +17,24 @@ from ..infrastructure.worktree import (
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
-from ._fingerprint import prepare_fingerprint_gate
 from ..managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
+from ..prompts.pipeline import PromptTemplate
+from ..runtime_session import session_uuid
+from ..services import GitService, ServiceRegistry
+from ..services.github_service import GithubService
+from ..services.runtime_services import AgentService
+from ..session import RoleSession, has_exact_transcript_match
+from ._fingerprint import prepare_fingerprint_gate
 from ._rows import status_row
 from .improve_preparation import (
     prepare_improve_step,
 )
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
-
 
 IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
@@ -304,7 +303,7 @@ async def improve_phase(
                         worktree=sandbox_path,
                         role=AgentRole.IMPROVE,
                         session_namespace="main",
-                        service=cast(AgentService, service),
+                        service=cast("AgentService", service),
                     )
                 )
                 if not has_exact_main_transcript:

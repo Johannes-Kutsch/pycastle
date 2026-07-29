@@ -6,11 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from agent_runtime.errors import HardAgentError
+
 from ..agents.output_protocol import AgentRole, CommitMessageOutput
 from ..agents.result import CancellationToken
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from agent_runtime.errors import HardAgentError
+from ..display.status_display import StatusDisplay
 from ..errors import (
     AgentFailedError,
     BranchCollisionError,
@@ -19,18 +21,17 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..issue_readiness import require_ready_slice_outcome_for_issue
-from ..session import RoleSession, is_stage_done_for
-from ..display.status_display import StatusDisplay
-from ..services import GitService, GithubService
 from ..infrastructure.worktree import (
     DurableIssueWorktreeIntent,
     durable_issue_worktree,
     issue_branch,
     worktree_identity,
 )
+from ..issue_readiness import require_ready_slice_outcome_for_issue
+from ..prompts.dispatch import build_prompt_invocation
+from ..prompts.pipeline import PromptTemplate
+from ..services import GithubService, GitService
+from ..session import RoleSession, is_stage_done_for
 from ._deps import Logger
 from .implement_issue_plan import IssueRoleStepPlan, plan_issue_execution_from_worktree
 
@@ -343,7 +344,7 @@ async def implement_phase(
     for issue, result in zip(issues, results):
         if isinstance(result, UsageLimitError):
             continue
-        elif isinstance(result, Exception):
+        if isinstance(result, Exception):
             deps.logger.log_error(issue, result)
             errors.append((issue, result))
         elif isinstance(result, dict):

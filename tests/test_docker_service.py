@@ -7,7 +7,6 @@ from pycastle.errors import DockerBuildError, DockerServiceError, PycastleError
 from pycastle.services import DockerService
 from pycastle.services.docker_service import BuildOutcome
 
-
 # ── Helpers: streaming mode ───────────────────────────────────────────────────
 
 _BUILDKIT_ALL_CACHED = [
@@ -195,39 +194,48 @@ def test_build_image_no_python_version_omits_build_arg(tmp_path):
 
 
 def test_build_image_raises_docker_build_error_on_nonzero_exit(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.run",
-        return_value=_fail_result(returncode=1),
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.run",
+            return_value=_fail_result(returncode=1),
+        ),
+        pytest.raises(DockerBuildError),
     ):
-        with pytest.raises(DockerBuildError):
-            DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
+        DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
 
 
 def test_build_image_error_includes_exit_code(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.run",
-        return_value=_fail_result(returncode=2),
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.run",
+            return_value=_fail_result(returncode=2),
+        ),
+        pytest.raises(DockerBuildError) as exc_info,
     ):
-        with pytest.raises(DockerBuildError) as exc_info:
-            DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
+        DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
     assert "2" in str(exc_info.value)
 
 
 def test_build_image_raises_docker_service_error_when_docker_not_found(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.run", side_effect=FileNotFoundError
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.run",
+            side_effect=FileNotFoundError,
+        ),
+        pytest.raises(DockerServiceError),
     ):
-        with pytest.raises(DockerServiceError):
-            DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
+        DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
 
 
 def test_build_image_raises_docker_build_error_on_timeout(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.run",
-        side_effect=subprocess.TimeoutExpired(["docker"], 60),
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["docker"], 60),
+        ),
+        pytest.raises(DockerBuildError),
     ):
-        with pytest.raises(DockerBuildError):
-            DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
+        DockerService().build_image("img", tmp_path / "Dockerfile", tmp_path)
 
 
 # ── build_image: accepts Path and str arguments ───────────────────────────────
@@ -282,38 +290,44 @@ def test_default_non_streaming_path_returns_none(tmp_path):
 
 
 def test_streaming_raises_docker_build_error_on_nonzero_exit(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(_BUILDKIT_ALL_CACHED, returncode=1),
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(_BUILDKIT_ALL_CACHED, returncode=1),
+        ),
+        pytest.raises(DockerBuildError, match="exit 1"),
     ):
-        with pytest.raises(DockerBuildError, match="exit 1"):
-            DockerService().build_image(
-                "img", tmp_path / "Dockerfile", tmp_path, stream=True
-            )
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True
+        )
 
 
 def test_streaming_raises_docker_service_error_when_docker_not_found(tmp_path):
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        side_effect=FileNotFoundError,
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            side_effect=FileNotFoundError,
+        ),
+        pytest.raises(DockerServiceError),
     ):
-        with pytest.raises(DockerServiceError):
-            DockerService().build_image(
-                "img", tmp_path / "Dockerfile", tmp_path, stream=True
-            )
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True
+        )
 
 
 def test_streaming_raises_docker_build_error_on_timeout(tmp_path):
     mock_proc = _mock_popen(_BUILDKIT_ALL_CACHED)
     mock_proc.wait.side_effect = subprocess.TimeoutExpired(["docker"], 60)
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=mock_proc,
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=mock_proc,
+        ),
+        pytest.raises(DockerBuildError, match="timed out"),
     ):
-        with pytest.raises(DockerBuildError, match="timed out"):
-            DockerService().build_image(
-                "img", tmp_path / "Dockerfile", tmp_path, stream=True, timeout=60.0
-            )
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, timeout=60.0
+        )
 
 
 def test_streaming_pipes_output_to_terminal(tmp_path, capsys):
@@ -520,14 +534,16 @@ def test_terse_tty_final_line_ends_with_newline(tmp_path):
 def test_terse_failure_prints_failed_summary(tmp_path, capsys):
     """Terse mode: non-zero exit prints 'failed' line then dumps docker output."""
     docker_output = ["#1 [1/2] FROM python:3.12\n", "#1 DONE 1.0s\n", "ERROR: oops\n"]
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(docker_output, returncode=1),
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(docker_output, returncode=1),
+        ),
+        pytest.raises(DockerBuildError),
     ):
-        with pytest.raises(DockerBuildError):
-            DockerService().build_image(
-                "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
-            )
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
     captured = capsys.readouterr()
     assert "Building Docker Image · failed" in captured.out
     assert "ERROR: oops" in captured.out
@@ -537,14 +553,16 @@ def test_terse_failure_prints_failed_summary(tmp_path, capsys):
 def test_terse_failure_dumps_all_captured_docker_output(tmp_path, capsys):
     """Failure case: every docker line is dumped verbatim in original order."""
     docker_output = [f"line{i}\n" for i in range(10)]
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=_mock_popen(docker_output, returncode=1),
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=_mock_popen(docker_output, returncode=1),
+        ),
+        pytest.raises(DockerBuildError),
     ):
-        with pytest.raises(DockerBuildError):
-            DockerService().build_image(
-                "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
-            )
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
     captured = capsys.readouterr()
     for i in range(10):
         assert f"line{i}" in captured.out
@@ -582,33 +600,37 @@ def test_terse_tty_failure_clears_progress_before_failed_line(tmp_path):
 
 def test_terse_raises_docker_service_error_when_docker_not_found(tmp_path):
     """Terse mode: FileNotFoundError from Popen raises DockerServiceError."""
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        side_effect=FileNotFoundError,
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            side_effect=FileNotFoundError,
+        ),
+        pytest.raises(DockerServiceError),
     ):
-        with pytest.raises(DockerServiceError):
-            DockerService().build_image(
-                "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
-            )
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
 
 
 def test_terse_raises_docker_build_error_on_timeout(tmp_path):
     """Terse mode: TimeoutExpired from proc.wait raises DockerBuildError."""
     mock_proc = _mock_popen(_BUILDKIT_ALL_CACHED)
     mock_proc.wait.side_effect = subprocess.TimeoutExpired(["docker"], 60)
-    with patch(
-        "pycastle.services.docker_service.subprocess.Popen",
-        return_value=mock_proc,
+    with (
+        patch(
+            "pycastle.services.docker_service.subprocess.Popen",
+            return_value=mock_proc,
+        ),
+        pytest.raises(DockerBuildError, match="timed out"),
     ):
-        with pytest.raises(DockerBuildError, match="timed out"):
-            DockerService().build_image(
-                "img",
-                tmp_path / "Dockerfile",
-                tmp_path,
-                stream=True,
-                terse=True,
-                timeout=60.0,
-            )
+        DockerService().build_image(
+            "img",
+            tmp_path / "Dockerfile",
+            tmp_path,
+            stream=True,
+            terse=True,
+            timeout=60.0,
+        )
 
 
 # ── build_image: verbose stream unaffected by terse ──────────────────────────
