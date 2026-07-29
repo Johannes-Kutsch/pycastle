@@ -31,6 +31,7 @@ from pycastle.iteration.outcome_routing import (
     SleepThenContinue,
     route_outcome,
 )
+from pycastle.bug_reporter import auto_file_issue
 from pycastle.services import GithubService
 from pycastle.services.runtime_services import AgentService
 from pycastle.services.service_registry import ServiceRegistry
@@ -234,45 +235,22 @@ def test_route_outcome_merge_close_failure_returns_break_loop_with_filed_numbers
 # ── AbortedSetup ──────────────────────────────────────────────────────────────
 
 
-def test_route_outcome_aborted_setup_returns_exit_failure_and_prints_phase_message():
-    display = RecordingStatusDisplay()
-    result = route_outcome(
-        AbortedSetup(phase="lint", message="ruff failed", command=None, output=None),
-        _make_deps(status_display=display),
+def test_route_outcome_aborted_setup_delegates_to_translate_aborted_setup_to_directive():
+    from unittest.mock import patch
+
+    outcome = AbortedSetup(
+        phase="lint", message="ruff failed", command=None, output=None
     )
+    deps = _make_deps()
+    with patch(
+        "pycastle.iteration.outcome_routing.translate_aborted_setup_to_directive",
+        return_value=ExitFailure(code=1),
+    ) as mock_fn:
+        result = route_outcome(outcome, deps)
     assert result == ExitFailure(code=1)
-    msgs = _printed_messages(display)
-    assert any("lint" in m and "ruff failed" in m for m in msgs)
-
-
-def test_route_outcome_aborted_setup_with_command_and_output_includes_them_in_message():
-    display = RecordingStatusDisplay()
-    result = route_outcome(
-        AbortedSetup(
-            phase="test",
-            message="pytest failed",
-            command="pytest tests/",
-            output="FAILED tests/foo.py",
-        ),
-        _make_deps(status_display=display),
+    mock_fn.assert_called_once_with(
+        outcome, deps.cfg, deps.status_display, auto_file_issue
     )
-    assert result == ExitFailure(code=1)
-    msgs = _printed_messages(display)
-    combined = " ".join(msgs)
-    assert "pytest tests/" in combined
-    assert "FAILED tests/foo.py" in combined
-
-
-def test_route_outcome_aborted_setup_without_command_omits_command_from_message():
-    display = RecordingStatusDisplay()
-    route_outcome(
-        AbortedSetup(phase="test", message="failed", command=None, output=None),
-        _make_deps(status_display=display),
-    )
-    msgs = _printed_messages(display)
-    combined = " ".join(msgs)
-    assert "Command:" not in combined
-    assert "Output:" not in combined
 
 
 # ── AbortedUsageLimit ─────────────────────────────────────────────────────────

@@ -10,13 +10,18 @@ routing.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 
 from ..bug_reporter import BUG_REPORT_LABEL_LIST
 from ..config import Config
 from ..display.status_display import StatusDisplay
 from . import AbortedSetup
-from .outcome_routing import ExitFailure
+
+
+@dataclasses.dataclass(frozen=True)
+class ExitFailure:
+    code: int
 
 
 def translate_aborted_setup_to_directive(

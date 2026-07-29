@@ -5,7 +5,6 @@ from datetime import datetime
 from typing import TypeAlias
 
 from ..bug_reporter import (
-    BUG_REPORT_LABEL_LIST,
     auto_file_issue,
     file_operator_actionable_git_issue,
 )
@@ -28,6 +27,7 @@ from . import (
     MergeCloseFailure,
     NoCandidate,
 )
+from .aborted_setup_report import ExitFailure, translate_aborted_setup_to_directive
 from .usage_limit_decision import (
     ContinueNow,
     SleepUntil,
@@ -52,11 +52,6 @@ class SleepThenContinue:
 @dataclasses.dataclass(frozen=True)
 class BreakLoop:
     pass
-
-
-@dataclasses.dataclass(frozen=True)
-class ExitFailure:
-    code: int
 
 
 LoopDirective: TypeAlias = ContinueLoop | SleepThenContinue | BreakLoop | ExitFailure
@@ -170,34 +165,9 @@ def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
                 f"Merge close failure: issue close failed. Filed {numbers_str} for triage.",
             )
             return BreakLoop()
-        case AbortedSetup(
-            phase=phase,
-            message=message,
-            command=command,
-            output=output,
-        ):
-            first_line = next(iter(message.splitlines()), "")
-            title = f"[pycastle] {phase} setup failure: {first_line}"
-            body_parts = [
-                "## Setup phase failure\n",
-                f"Phase: {phase}\n",
-                f"```\n{message}\n```\n",
-            ]
-            if command:
-                body_parts.append(f"Command: `{command}`\n")
-            if output:
-                body_parts.append(f"Output:\n\n```\n{output}\n```\n")
-            body = "\n".join(body_parts)
-            url = auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
-            local_parts = [f"{phase} setup failed: {message}"]
-            if command:
-                local_parts.append(f"Command: {command}")
-            if output:
-                local_parts.append(f"Output: {output}")
-            deps.status_display.print(
-                "",
-                "\n".join(local_parts) + (f"\nReport: {url}" if url else ""),
+        case AbortedSetup():
+            return translate_aborted_setup_to_directive(
+                outcome, deps.cfg, deps.status_display, auto_file_issue
             )
-            return ExitFailure(code=1)
         case Continue():
             return ContinueLoop()
