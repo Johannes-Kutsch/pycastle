@@ -24,7 +24,7 @@ dependencies = [
 dev = [
     "pytest",
     "mypy",
-    "ruff",
+    "ruff>=0.16,<0.17",
     "setuptools>=68",
     "setuptools-scm>=8",
     "time-machine",
@@ -102,7 +102,159 @@ markers = [
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+select = ["ALL"]
+ignore = [
+    # ── permanent rejections (see ADR 0052) ──────────────────────────────────
+    "D",       # docstrings: mandated docstrings degrade into signature restatements
+    "COM",     # trailing comma: fights ruff format (ruff docs say so explicitly)
+    "E501",    # line length: ruff format owns line width; re-reports formatter decisions
+    "TRY003",  # exception-message: pushes toward custom exception per message; contradicts ADR 0048
+    "EM101",   # string-in-exception: same pressure as TRY003, rejected with it
+    "EM102",   # f-string-in-exception: same pressure as TRY003, rejected with it
+    "PLR09",   # numeric-thresholds: arbitrary; C901 is the better-calibrated alternative
+    "CPY001",  # copyright: repository has LICENSE; per-file headers add nothing
+    # ── backlog (drain one entry per ticket) ─────────────────────────────────
+    # imports
+    "PLC0415",  # import-outside-toplevel (538 findings)
+    "TID252",   # banned-relative-import (456 findings)
+    "I001",     # import-sorting (116 findings)
+    "PLR0402",  # manual-from-import (4 findings)
+    "UP035",    # deprecated-import (5 findings)
+    # type-checking imports
+    "TC001",    # typing-only-first-party-import (48 findings)
+    "TC002",    # typing-only-third-party-import (2 findings)
+    "TC003",    # typing-only-stdlib-import (40 findings)
+    "TC005",    # typing-only-type-checking-import (2 findings)
+    "TC006",    # runtime-cast-value (88 findings)
+    # simplify / modernise
+    "SIM117",   # multiple-with-statements (91 findings)
+    "SIM105",   # suppressible-exception (10 findings)
+    "SIM103",   # needless-bool (8 findings)
+    "SIM102",   # collapsible-if (5 findings)
+    "SIM115",   # open-file-with-context-handler (1 finding)
+    "SIM114",   # if-with-same-arms (1 finding)
+    "SIM300",   # yoda-conditions (1 finding)
+    # pyupgrade
+    "UP017",    # datetime-timezone-utc (88 findings)
+    "UP037",    # quoted-annotation (23 findings)
+    "UP040",    # non-pep695-type-alias (19 findings)
+    "UP042",    # replace-str-enum (3 findings)
+    "UP046",    # non-pep695-generic-class (1 finding)
+    "UP041",    # timeout-error-alias (1 finding)
+    # exceptions / try
+    "BLE001",   # blind-exception (38 findings)
+    "TRY300",   # try-consider-else (8 findings)
+    "TRY004",   # type-check-without-type-error (4 findings)
+    "TRY301",   # raise-within-try (2 findings)
+    "TRY201",   # verbose-raise (1 finding)
+    "B904",     # raise-without-from-inside-except (3 findings)
+    "S110",     # try-except-pass (8 findings)
+    # annotations
+    "ANN401",   # dynamically-typed-expression (36 findings)
+    "ANN001",   # missing-type-function-argument (24 findings)
+    "ANN201",   # missing-return-type-public-function (8 findings)
+    "ANN202",   # missing-return-type-private-function (7 findings)
+    "ANN204",   # missing-return-type-special-method (1 finding)
+    "ANN002",   # missing-type-args (1 finding)
+    # pytest
+    "PT018",    # composite-assertion (27 findings)
+    "PT006",    # pytest-parametrize-names-wrong-type (5 findings)
+    "PT001",    # pytest-fixture-incorrect-parentheses-style (4 findings)
+    "PT012",    # pytest-raises-with-multiple-statements (2 findings)
+    "PT030",    # pytest (1 finding)
+    # booleans
+    "FBT001",   # boolean-typed-positional-argument (23 findings)
+    "FBT002",   # boolean-default-positional-argument (8 findings)
+    "FBT003",   # boolean-positional-value-in-call (4 findings)
+    # complexity
+    "C901",     # complex-structure (22 findings)
+    # magic values / private access
+    "PLR2004",  # magic-value-comparison (20 findings, src/ only)
+    "SLF001",   # private-member-access (19 findings)
+    # subprocess
+    "PLW1510",  # subprocess-run-without-check (18 findings)
+    "S603",     # subprocess-without-shell-equals-true (5 findings, src/ only)
+    "S602",     # subprocess-popen-with-shell-equals-true (1 finding)
+    # assert / print
+    "S101",     # assert (17 findings, src/ only)
+    "T201",     # print (26 findings)
+    # strings / f-strings
+    "FLY002",   # static-join-to-fstring (18 findings)
+    "ISC004",   # unnecessary-escaped-quote (15 findings)
+    "RUF005",   # collection-literal-concatenation (5 findings)
+    "RUF010",   # explicit-f-string-type-conversion (1 finding)
+    "RUF003",   # ambiguous-unicode-character-comment (2 findings)
+    # return / control flow
+    "RET501",   # unnecessary-return-none (9 findings)
+    "RET504",   # unnecessary-assign (2 findings)
+    "RET507",   # superfluous-else-continue (1 finding)
+    "RET503",   # implicit-return (1 finding)
+    "PLR1711",  # useless-return (6 findings)
+    # pathlib
+    "PTH201",   # pathlib (10 findings)
+    "PTH123",   # pathlib (10 findings)
+    "PTH101",   # pathlib (2 findings)
+    "PTH108",   # pathlib (1 finding)
+    # async
+    "ASYNC221", # blocking-subprocess-in-async-function (11 findings)
+    "ASYNC240", # blocking-dns-lookup (3 findings)
+    "ASYNC251", # blocking-sleep-in-async-function (1 finding)
+    "ASYNC110", # blocking-busy-wait (1 finding)
+    # ruff-specific
+    "RUF059",   # unused-unpacked-variable (12 findings)
+    "RUF043",   # pytest-raises-without-match (12 findings)
+    "RUF022",   # unsorted-dunder-all (12 findings)
+    "RUF012",   # mutable-class-attributes (3 findings)
+    "RUF023",   # unsorted-dunder-slots (1 finding)
+    # loops / builtins
+    "B023",     # function-uses-loop-variable (9 findings)
+    "B009",     # do-not-call-getattr-with-constant (4 findings)
+    "B010",     # do-not-call-setattr-with-constant (3 findings)
+    "B905",     # zip-without-explicit-strict (2 findings)
+    "B008",     # function-call-in-default-argument (1 finding)
+    # raise
+    "RSE102",   # unnecessary-paren-on-raise-exception (8 findings)
+    # pep695 / typing
+    "PYI034",   # non-self-return-type (3 findings)
+    # pylint misc
+    "PLW0108",  # unnecessary-lambda (6 findings)
+    "ARG002",   # unused-method-argument (12 findings, src/ only)
+    "ARG001",   # unused-function-argument (6 findings, src/ only)
+    "PLR1730",  # if-stmt-min-max (2 findings)
+    "PLC0207",  # unnecessary-dict-index-lookup (2 findings)
+    # performance
+    "PERF401",  # manual-list-comprehension (2 findings)
+    # futurize
+    "FURB177",  # int-on-slice-len (6 findings)
+    "FURB192",  # sorted-min-max (2 findings)
+    "FURB122",  # f-string-in-gettext (1 finding)
+    "FURB110",  # or-else-ternary (1 finding)
+    "RUF100",   # unused-noqa-directive (transition period: noqa directives become redundant as backlog drains)
+    # misc
+    "C420",     # unnecessary-dict-comprehension (2 findings)
+    "PIE810",   # single-starts-ends-with (1 finding)
+    "N806",     # non-lowercase-variable-in-function (1 finding)
+    "EXE001",   # shebang-not-executable (1 finding)
+    "ERA001",   # commented-out-code (1 finding)
+    "S310",     # suspicious-url-open-usage (2 findings)
+    "S102",     # use-of-exec (2 findings)
+    "S107",     # hardcoded-password-default (1 finding)
+    "S105",     # hardcoded-password-string (1 finding, src/ only)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",    # assert
+    "ANN",     # annotation
+    "S108",    # hardcoded-temp-path
+    "S105",    # hardcoded-secret (hardcoded-password-string)
+    "S106",    # hardcoded-secret (hardcoded-password-func-arg)
+    "DTZ",     # naive-datetime
+    "ARG",     # unused-argument
+    "PLR2004", # magic-value
+    "S603",    # subprocess-path (subprocess-without-shell-equals-true)
+    "S607",    # subprocess-path (start-process-with-partial-path)
+]
 
 [tool.mypy]
 python_version = "3.12"
