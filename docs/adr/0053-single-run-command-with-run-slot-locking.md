@@ -1,0 +1,50 @@
+# Single run command with run-slot locking
+
+`pycastle cron` is folded into `pycastle run`. One command now always acquires a **run slot**, refreshes the managed scaffold, runs the pipeline, and sweeps logs. The run slot is two artifacts in pycastle home: a host-wide **global run lock** (`.run.lock`) held for the whole run by lock-respecting runs, and a per-project **project run marker** (`.runs/<sanitised-project>.lock`) held for the whole run by *every* run. `--ignore-global-lock` skips the queue but not the marker, producing a **queue-jumping run**.
+
+## Why
+
+`cron` was `run` plus four things — the lock, `init --refresh`, the log sweep, and no `--improve` flag — which meant two startup paths where only one was ever exercised unattended. Worse, the locking was on the wrong command: `pycastle run` took **no lock at all**, so a manual run could already start on top of a live cron tick and fight it over `pycastle/.worktrees/`, the same issue branches, and the same `.pycastle-session/` role state. Merging the commands fixes that by construction, and creates the one problem the flag exists to solve: an operator's ad-hoc run for project B would otherwise queue behind project A's tick for up to six hours.
+
+## Decision detail
+
+The two artifacts have different jobs and the words for them differ deliberately. The **global run lock is only a queue** — it answers "whose turn is it among lock-respecting runs" and carries no presence information. The **project run marker is only presence and integrity** — `marker held ⇔ a run is active for that project`, and a busy marker is a hard abort no flag can override, because two runs in one project corrupt each other's worktrees and session state.
+
+Acquisition order is load-bearing: **token → scan → marker.**
+
+1. Block on the global run lock, holding nothing else.
+2. Wait until *all* project run markers are free.
+3. Try-lock this project's marker; if a queue-jumping run took it in the meantime, warn and abort.
+4. Run the pipeline holding both.
+
+A queue-jumping run does step 3 only, and therefore never waits for anything.
+
+This order is what makes deadlock structurally impossible. The only marker holders are queue-jumping runs, which never touch the token and never wait, and the single lock-respecting run currently holding the token, which takes its marker only after step 2 clears. Every queued run is parked in step 1 holding *nothing*, so the wait graph is a chain — queued runs → token holder → active queue-jumping runs → nothing — never a cycle. Take the marker before the token and it deadlocks immediately: project A (marker held, queued for token) and project B (token held, scanning, sees A's marker) wait on each other forever. Scanning *before* taking the marker also means a lock-respecting run that is merely queueing does not pin its own project, so an operator can still force that project through.
+
+Every lock is exclusive and acquired with a **non-blocking try-lock plus a poll loop**, never a blocking `flock`. That buys three things: identical semantics on Linux (`fcntl.flock`, `LOCK_EX | LOCK_NB`) and Windows (`msvcrt.locking`, `LK_NBLCK`), so the platform the project is developed on exercises the production semantics; a wait that can print who it is waiting for; and the deletion of the `signal.SIGALRM` / main-thread-detection branch the old blocking path needed. Markers are created lazily and **never deleted**, so there is no prune race and nothing to unlink while a handle is open. Crash safety is free — the OS drops locks when a process dies.
+
+Placement: the ordering, poll loop, timeout, and platform primitive live in `src/pycastle/run_lock.py` behind a `run_slot(...)` context manager raising typed errors from `errors.py`, alongside `log_maintenance.py` and `run_startup_preparation.py`. `main.py` stays an adapter that maps those errors to exit codes. The context-manager shape makes "held for the whole run" structurally true instead of a convention.
+
+Startup order is unchanged from `cron`, with the layer summary hoisted above the wait so a queued run identifies itself before going quiet: validate flags → `pycastle/` directory check → layer summary → acquire slot → `init --refresh` → `load_config` → startup prep, build, pipeline → release → `maintain_logs`. Config is loaded *after* refresh because the effective `logs_dir` the sweep uses must reflect post-refresh config; the directory check stays before acquisition so an uninitialised project never creates lock files.
+
+Project identity in the marker filename is `derive_docker_image_name(repo_root.name)` — the sanitisation `docker_image_name` and the global `logs_dir` subdirectory already use. Two same-named checkouts on one host collide, but they already share a Docker image tag and a log directory, so no third identity scheme is introduced to fix it here.
+
+`pycastle cron` survives as a **hidden deprecated alias** with identical parameters. Without it, a deployed host breaks permanently: the crontab calls the `cron.sh` already on disk, which pip-upgrades pycastle and then execs `pycastle cron`; if that command is gone the tick dies before reaching `init --refresh`, so `cron.sh` is never rewritten and every subsequent 01:00 tick fails the same way. The alias lets the first post-upgrade tick refresh `cron.sh` to call `pycastle run`, after which the alias is dead weight and is removed by a ready-for-human ticket.
+
+## Considered options
+
+- **`run --unattended` instead of a merge.** Rejected: that is `cron` renamed, with both behaviours still maintained. The scaffold refresh only rewrites pycastle-owned, already-gitignored files, and the log sweep only prunes `*.log` older than 30 days, so neither needs to be gated for interactive use.
+- **One artifact, retreat-and-retry.** A run takes its own marker, re-scans, and on conflict releases the marker, sleeps a jittered interval, and retries. Genuinely simpler in artifacts and deadlock-free, but trades kernel-ordered queueing for hand-rolled backoff with no fairness, and opens a window where a waiter can be made to abort by a run that started after it.
+- **A `LOCK_SH` / `LOCK_EX` presence file** instead of per-project markers. Least code, but `msvcrt` has no shared locks, so Windows semantics would diverge from production; and a queue-jumping run's `LOCK_SH` can in principle queue behind a pending `LOCK_EX`, i.e. wait — the one thing the flag promises never happens.
+- **Byte-range slots in a single file.** One artifact, no directory. Rejected because POSIX record locks (`lockf`) are per-*process*, so a competing holder cannot be simulated in-process and every contention test would need a subprocess; `test_cron_command.py` tests contention in-process today.
+- **N anonymous slot files** for queue-jumping runs. Superseded by per-project markers, which carry the same presence information *and* enforce one-run-per-project *and* let the warning name the project, with no fixed concurrency cap.
+- **Keeping `.cron.lock` as the token filename** so an old-version tick still serialises against a new-version run during the upgrade night. Rejected: today's `pycastle run` locks nothing, so that night is no worse than the status quo, and the name would carry "cron" forever.
+- **Making the 6h timeout a config field.** It exists to stop nightly ticks stacking up forever, not to be tuned per project.
+
+## Consequences
+
+- **Head-of-line blocking:** while the token holder waits out a long queue-jumping run, every other project's tick is stalled behind it, bounded by the 6h cap and then exit 1. A stream of manually started queue-jumping runs can starve the queue until that cap.
+- **`--ignore-global-lock` is CLI-only**, deliberately not a `Config` field: a config value would make every tick on that host bypass serialisation permanently, inverting the queue's purpose.
+- **Same-project overlap always aborts with exit 1** — for lock-respecting and queue-jumping runs alike. Cross-project contention waits; same-project contention is an anomaly (a previous tick still running), not something to queue behind.
+- **Known gap: `pycastle check` takes no run slot.** It creates a transient worktree in the same project and can still collide with an active run. Extending the marker to `check` would add an abort path to its CLI contract, so it is left as a separate decision.
+- **Transition night:** a run under this scheme is invisible to an old-version `cron` process still holding `.cron.lock`, and vice versa. One-off, and no worse than today's unlocked `run`.
