@@ -33,6 +33,7 @@ from tests.support import (
     RecordingStatusDisplay,
     StubPreflightCache,
     _make_deps,
+    functional_git_svc,
 )
 from pycastle.iteration.merge import MergeResult, merge_phase
 from pycastle.iteration.preflight import PreflightAFK, PreflightHITL, PreflightReady
@@ -40,21 +41,13 @@ from pycastle.iteration.preflight import PreflightAFK, PreflightHITL, PreflightR
 
 @pytest.fixture
 def git_svc():
-    svc = MagicMock(spec=GitService)
+    svc = functional_git_svc(try_merge=True, is_ancestor=True, start_merge=False)
     svc.is_working_tree_clean.return_value = True
-    svc.try_merge.return_value = True
-    svc.is_ancestor.return_value = True
     svc.get_current_branch.return_value = "main"
     svc.get_head_sha.return_value = "abc123"
+    svc.list_worktrees.side_effect = None
     svc.list_worktrees.return_value = []
-    svc.verify_ref_exists.return_value = False
-
-    def _fake_create_worktree(repo, wt, branch, sha=None):
-        wt.mkdir(parents=True, exist_ok=True)
-        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
-
-    svc.create_worktree.side_effect = _fake_create_worktree
-    svc.start_merge.return_value = False
+    svc.remove_worktree.side_effect = None
     return svc
 
 
