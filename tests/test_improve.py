@@ -14,7 +14,7 @@ from pycastle.agents.output_protocol import (
     NoCandidateOutput,
 )
 from pycastle.config import Config, StageOverride
-from tests.support import FakeAgentRunner, _make_deps
+from tests.support import FakeAgentRunner, _make_deps, functional_git_svc
 from pycastle.iteration.improve import (
     IMPROVE_SANDBOX,
     ImproveContinue,
@@ -22,7 +22,7 @@ from pycastle.iteration.improve import (
     improve_phase,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import GitService, GithubNetworkError, ServiceRegistry
+from pycastle.services import GithubNetworkError, ServiceRegistry
 from pycastle.services.runtime_services import CodexService
 from pycastle.services.runtime_services import OpenCodeService
 from pycastle.session import RoleSession
@@ -32,18 +32,13 @@ from pycastle.session.service_session_store import save_service_session_metadata
 
 @pytest.fixture
 def git_svc(tmp_path):
-    svc = MagicMock(spec=GitService)
+    svc = functional_git_svc()
     svc.get_head_sha.return_value = "abc123"
     svc.is_working_tree_clean.return_value = True
-    svc.verify_ref_exists.return_value = False
     svc.get_current_branch.return_value = IMPROVE_SANDBOX
+    svc.list_worktrees.side_effect = None
     svc.list_worktrees.return_value = []
-
-    def _fake_create_worktree(repo, wt, branch, sha=None):
-        wt.mkdir(parents=True, exist_ok=True)
-        (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
-
-    svc.create_worktree.side_effect = _fake_create_worktree
+    svc.remove_worktree.side_effect = None
     return svc
 
 
