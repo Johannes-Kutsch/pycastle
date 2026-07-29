@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 from pycastle.config import Config
@@ -236,8 +236,6 @@ def test_route_outcome_merge_close_failure_returns_break_loop_with_filed_numbers
 
 
 def test_route_outcome_aborted_setup_delegates_to_translate_aborted_setup_to_directive():
-    from unittest.mock import patch
-
     outcome = AbortedSetup(
         phase="lint", message="ruff failed", command=None, output=None
     )
