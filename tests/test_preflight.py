@@ -2,7 +2,6 @@
 
 import asyncio
 import hashlib
-import shutil
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -20,7 +19,7 @@ from pycastle.services import (
     UnrelatedHistoriesError,
 )
 from pycastle.services.runtime_services import AgentService
-from tests.support import FakeAgentRunner, _make_deps
+from tests.support import FakeAgentRunner, _make_deps, functional_git_svc
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.iteration.preflight import (
     PreflightAFK,
@@ -69,7 +68,7 @@ def _conflict_git_svc(sha: str, branch: str) -> MagicMock:
 
 @pytest.fixture
 def git_svc():
-    svc = MagicMock(spec=GitService)
+    svc = functional_git_svc()
     svc.get_head_sha.return_value = "abc123"
     svc.is_working_tree_clean.return_value = True
     return svc
@@ -751,33 +750,12 @@ def test_get_safe_sha_parallel_callers_run_preflight_once(
 # ── get_safe_sha: divergence resolution via agent ────────────────────────────
 
 
-def _setup_worktree_mocks(git_svc):
-    """Configure git_svc to support managed_worktree (creates real dirs)."""
-    _registered: list = []
-
-    def _fake_create_worktree(repo, path, branch, sha=None):
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\n")
-        _registered.append(path)
-
-    def _fake_remove_worktree(repo, path):
-        shutil.rmtree(path, ignore_errors=True)
-        _registered[:] = [p for p in _registered if p != path]
-
-    git_svc.verify_ref_exists.return_value = False
-    git_svc.list_worktrees.side_effect = lambda repo: list(_registered)
-    git_svc.create_worktree.side_effect = _fake_create_worktree
-    git_svc.remove_worktree.side_effect = _fake_remove_worktree
-
-
 def test_get_safe_sha_resolves_divergence_via_agent_and_returns_ready(
     tmp_path, git_svc, github_svc
 ):
     """When pull_with_merge_fallback raises a textual-conflict error, get_safe_sha
     spawns the divergence-resolution agent; on success it fast-forwards main and
     returns PreflightReady with the post-merge SHA."""
-    _setup_worktree_mocks(git_svc)
-
     git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
         "git merge origin/main failed due to conflicts"
     )
@@ -799,8 +777,6 @@ def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
     tmp_path, git_svc, github_svc
 ):
     """The divergence-resolver RunRequest uses the merge stage override's service."""
-    _setup_worktree_mocks(git_svc)
-
     git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
         "git merge origin/main failed due to conflicts"
     )
@@ -830,8 +806,6 @@ def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
 def test_get_safe_sha_dispatches_divergence_resolver_for_current_branch(
     tmp_path, git_svc, github_svc
 ):
-    _setup_worktree_mocks(git_svc)
-
     git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
         "git merge origin/main failed due to conflicts"
     )
@@ -854,8 +828,6 @@ def test_get_safe_sha_dispatches_divergence_resolver_for_current_branch(
 def test_get_safe_sha_routes_divergence_recovery_through_sandbox_identity(
     tmp_path, git_svc, github_svc
 ):
-    _setup_worktree_mocks(git_svc)
-
     git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
         "git merge origin/main failed due to conflicts"
     )
@@ -896,8 +868,6 @@ def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(
     """When the divergence agent fails (FailedOutput), the original GitCommandError
     propagates and no PreflightReady is returned."""
     from pycastle.agents.output_protocol import FailedOutput
-
-    _setup_worktree_mocks(git_svc)
 
     pull_err = GitCommandError("git merge origin/main failed due to conflicts")
     git_svc.pull_with_merge_fallback.side_effect = pull_err
