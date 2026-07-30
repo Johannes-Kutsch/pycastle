@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import enum
 import re
-from collections.abc import Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pycastle.config import Config
 from pycastle.label_catalog import PROMPT_GLOBAL_LABEL_SPECS
 from pycastle.prompts.source import EffectivePromptFile, PromptReference, PromptSource
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")

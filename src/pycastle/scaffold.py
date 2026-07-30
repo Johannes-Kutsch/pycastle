@@ -5,9 +5,11 @@ import re
 import stat
 from dataclasses import dataclass
 from functools import cached_property
-from importlib.resources.abc import Traversable
-from pathlib import Path
-from typing import Literal, overload
+from typing import TYPE_CHECKING, Literal, overload
+
+if TYPE_CHECKING:
+    from importlib.resources.abc import Traversable
+    from pathlib import Path
 
 ScaffoldStatus = Literal["created", "overwrote", "unchanged", "preserved"]
 

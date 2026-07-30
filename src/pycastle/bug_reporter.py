@@ -19,9 +19,8 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from pycastle.config import Config
-
 if TYPE_CHECKING:
+    from pycastle.config import Config
     from pycastle.services import GithubService
 
 BUG_REPORT_REPO = "Johannes-Kutsch/pycastle"

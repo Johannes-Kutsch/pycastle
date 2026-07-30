@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import RunKind
-from pycastle.services.runtime_services import AgentService
 from pycastle.session.agent import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -33,7 +31,13 @@ from pycastle.session.run_dispatch import (
     record_successful_provider_session_metadata,
 )
 from pycastle.session.run_state import ProviderFreshFallbackReason, ProviderRunState
-from pycastle.session_planning import ProviderRunStatePlan
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.services.runtime_services import AgentService
+    from pycastle.session_planning import ProviderRunStatePlan
 
 
 @dataclasses.dataclass(frozen=True)

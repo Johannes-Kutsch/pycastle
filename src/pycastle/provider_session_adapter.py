@@ -3,9 +3,8 @@ from __future__ import annotations
 import dataclasses
 import json
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
-from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -18,6 +17,9 @@ from pycastle.runtime_session import (
 )
 from pycastle.services.runtime_services import AgentService, ClaudeService
 from pycastle.session.role import session_uuid_for_role_session_path
+
+if TYPE_CHECKING:
+    from pycastle.agents.output_protocol import AgentRole
 
 
 class ProviderStatePreparationAction(Protocol):

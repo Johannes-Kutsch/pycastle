@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from pycastle.agents.output_protocol import (
     AgentOutput,
@@ -31,8 +31,10 @@ from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.runtime_session import session_uuid
 from pycastle.services import GitService, ServiceRegistry
 from pycastle.services.github_service import GithubService
-from pycastle.services.runtime_services import AgentService
 from pycastle.session import RoleSession, has_exact_transcript_match
+
+if TYPE_CHECKING:
+    from pycastle.services.runtime_services import AgentService
 
 IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"

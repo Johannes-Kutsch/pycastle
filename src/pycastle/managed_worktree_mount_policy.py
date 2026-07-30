@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 from pycastle.errors import ManagedWorktreeMountPreconditionError
 from pycastle.infrastructure.worktree import PROJECT_LOCAL_PYCASTLE_DIR
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(frozen=True)

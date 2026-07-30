@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pycastle.config.loader import derive_docker_image_name
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 InitWizardScopeChoice = Literal["global", "local"]
 EnvKeyActionKind = Literal["keep", "prompt", "overwrite_prompt", "add_missing"]

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import datetime
+from typing import TYPE_CHECKING
 
-from pycastle.config.types import StageOverride
 from pycastle.services.runtime_services import AgentService
 from pycastle.stage_priority_chain import (
     ConfiguredCandidateAvailability,
     StageOverrideChain,
 )
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from pycastle.config.types import StageOverride
 
 ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
 

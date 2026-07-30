@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import shutil
-from datetime import datetime
 from pathlib import Path
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 from agent_runtime.errors import (
     AgentCredentialFailureError,
@@ -28,7 +27,6 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from pycastle.iteration._deps import Deps
 from pycastle.iteration._rows import StatusRow as StatusRow
 from pycastle.iteration._rows import status_row as status_row
 from pycastle.iteration.implement import branch_for, implement_phase
@@ -47,6 +45,11 @@ from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_failure_report_scope_args
 from pycastle.services import OperatorActionableGitError
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from pycastle.iteration._deps import Deps
 
 _FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
 

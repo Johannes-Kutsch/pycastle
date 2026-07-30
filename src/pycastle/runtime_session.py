@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
-from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from pycastle.agents.output_protocol import AgentRole
-
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from pycastle.agents.output_protocol import AgentRole
     from pycastle.session_planning import (
         AuthSeedingRequirement,
         LocalAuthSeedAction,

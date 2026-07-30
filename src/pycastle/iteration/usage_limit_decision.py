@@ -3,11 +3,14 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
-from pycastle.config import Config, StageOverride
-from pycastle.iteration import AbortedModelNotAvailable, AbortedUsageLimit
 from pycastle.services._wake_time import compute_wake_time
-from pycastle.services.service_registry import ServiceRegistry
+
+if TYPE_CHECKING:
+    from pycastle.config import Config, StageOverride
+    from pycastle.iteration import AbortedModelNotAvailable, AbortedUsageLimit
+    from pycastle.services.service_registry import ServiceRegistry
 
 
 @dataclasses.dataclass(frozen=True)

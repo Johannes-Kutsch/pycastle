@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pycastle.prompts.pipeline import PromptRenderer, PromptTemplate
 from pycastle.prompts.scope_args import validated_scope_args_for_template
 from pycastle.session import RunKind
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 
 class PromptDispatchRenderer(Protocol):

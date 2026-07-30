@@ -1,18 +1,14 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Callable
-from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from pycastle.agents.output_protocol import AgentRole
 from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.runtime_session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
 )
-from pycastle.services.runtime_services import AgentService
 from pycastle.session.agent import (
     LocalAuthSeedAction,
     RunSessionPlan,
@@ -25,6 +21,13 @@ from pycastle.session_planning import (
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.services.runtime_services import AgentService
 
 
 @dataclasses.dataclass(frozen=True)

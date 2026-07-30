@@ -4,14 +4,17 @@ import asyncio
 import platform
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pycastle._host_check import HostCheckVerdict
-from pycastle.agents.runner import AgentRunnerProtocol
 from pycastle.commands import host_check_run as _host_check_run
 from pycastle.commands.host_check_run import HostCheckRunPassed, run_host_check_command
 from pycastle.config import Config, load_config
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.services import GithubService, GitService, ServiceRegistry
+
+if TYPE_CHECKING:
+    from pycastle._host_check import HostCheckVerdict
+    from pycastle.agents.runner import AgentRunnerProtocol
 
 HostCheckFailedError = _host_check_run.HostCheckFailedError
 

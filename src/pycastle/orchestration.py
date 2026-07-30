@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pycastle.iteration._deps import ImproveMode
-from pycastle.services.service_registry import ServiceRegistry
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pycastle.iteration._deps import ImproveMode
+    from pycastle.services.service_registry import ServiceRegistry
 
 
 async def run(
