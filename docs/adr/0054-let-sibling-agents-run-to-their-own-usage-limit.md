@@ -22,5 +22,7 @@ The fix splits the two roles the `CancellationToken` was serving:
 - `_run_with_runtime_client` early guard: `if token.is_cancelled or not service.is_available()`.
 - `token.cancel()` removed from: `UsageLimited`, `ProviderUnavailable` (non-transient), OpenCode `TimedOut`, OpenCode `AgentCredentialFailureError`.
 - `token.cancel()` kept for: `HardAgentError`, non-OpenCode `AgentCredentialFailureError`.
+
+**Amendment (ar 0.2.9 / ar ADR 0022):** The OpenCode `TimedOut` and OpenCode `AgentCredentialFailureError` branches mentioned above no longer exist in pycastle's runner. Ar 0.2.9 normalizes both signals before pycastle sees them: idle-timeout → `UsageLimited(reset_time=None, is_permanent=False)`; 401 permanent account exhaustion → `UsageLimitError(is_permanent=True)`. The no-cancel policy for those paths is preserved — it now applies through the existing `UsageLimited` handler.
 - A cancelled-by-hard-error agent displays `"cancelled"` (interrupted style); an agent that hits its own limit displays `"usage limit reached"` (same as before).
 - `implement_phase` result aggregation is unchanged — it already handles mixed outcomes where some issues complete and some hit limits.

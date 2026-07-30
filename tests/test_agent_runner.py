@@ -237,7 +237,7 @@ class _TimedOutRuntimeClient:
         del request
         self.new_session_calls += 1
         return RuntimeOutcome(
-            kind=TimedOut(),
+            kind=UsageLimited(reset_time=None, is_permanent=False),
             result=RunResult(
                 output="",
                 usage=None,
@@ -253,7 +253,7 @@ class _TimedOutRuntimeClient:
     async def run_resumed_session(self, request):
         del request
         self.resumed_session_calls += 1
-        raise AssertionError("OpenCode timeout should not enter the resume loop")
+        raise AssertionError("OpenCode usage limit should not enter the resume loop")
 
 
 class _RetryingTimedOutRuntimeClient:
@@ -1545,6 +1545,24 @@ class _UsageLimitedRuntimeClient:
         )
 
 
+class _PermanentUsageLimitedRuntimeClient:
+    async def run_new_session(self, request):
+        del request
+        return RuntimeOutcome(
+            kind=UsageLimited(reset_time=None, is_permanent=True),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="opencode",
+                    model="open-code",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
 class _ServiceNotAvailableRuntimeClient:
     async def run_new_session(self, request):
         del request
@@ -1575,8 +1593,18 @@ class _HardErrorRuntimeClient:
 class _OpenCodeCredentialFailureRuntimeClient:
     async def run_new_session(self, request):
         del request
-        raise AgentCredentialFailureError(
-            "credentials expired", service_name="opencode"
+        return RuntimeOutcome(
+            kind=UsageLimited(reset_time=None, is_permanent=True),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="opencode",
+                    model="open-code",
+                    effort="medium",
+                ),
+            ),
         )
 
 
@@ -1993,6 +2021,32 @@ def test_usage_limited_outcome_does_not_cancel_shared_token(tmp_path, monkeypatc
     assert service.mark_exhausted_calls
 
 
+def test_permanent_usage_limited_outcome_calls_mark_permanently_exhausted(
+    tmp_path, monkeypatch
+):
+    service = _ExhaustableService("opencode")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_PermanentUsageLimitedRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+
+    with pytest.raises(UsageLimitError) as excinfo:
+        asyncio.run(
+            runner.run(
+                _make_implement_request(mount_path, "opencode", 2054, token=token)
+            )
+        )
+
+    assert excinfo.value.is_permanent is True
+    assert not token.is_cancelled
+    assert not service.is_available()
+    assert not service.mark_exhausted_calls
+
+
 def test_opencode_credential_failure_does_not_cancel_shared_token(
     tmp_path, monkeypatch
 ):
@@ -2006,13 +2060,14 @@ def test_opencode_credential_failure_does_not_cancel_shared_token(
     )
     token = CancellationToken()
 
-    with pytest.raises(AgentCredentialFailureError):
+    with pytest.raises(UsageLimitError) as excinfo:
         asyncio.run(
             runner.run(
                 _make_implement_request(mount_path, "opencode", 2054, token=token)
             )
         )
 
+    assert excinfo.value.is_permanent is True
     assert not token.is_cancelled
     assert not service.is_available()
 

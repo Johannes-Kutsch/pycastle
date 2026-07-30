@@ -17,7 +17,7 @@ dependencies = [
     "platformdirs",
     "python-dotenv",
     "rich",
-    "ruhken-agent-runtime>=0.2.7",
+    "ruhken-agent-runtime>=0.2.9",
 ]
 
 [project.optional-dependencies]

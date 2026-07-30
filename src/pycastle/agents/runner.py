@@ -757,28 +757,8 @@ class AgentRunner:
                 )
             except AgentCredentialFailureError as err:
                 err.caller = request.name
-                if (err.service_name or service.name) == "opencode":
-                    transformed = UsageLimitError(
-                        reset_time=None,
-                        raw_message=str(err),
-                        provider=service.name,
-                        is_permanent=True,
-                    )
-                    self._handle_provider_account_exhaustion(service, transformed)
-                    if service.is_available():
-                        provider_auth = _provider_auth_from_env(
-                            service.build_env(str(role_session.path))
-                        )
-                        current_run_kind = RunKind.FRESH
-                        current_prompt = await self._render_runtime_prompt(
-                            request=request,
-                            runner=runner,
-                            run_kind=current_run_kind,
-                        )
-                        continue
-                else:
-                    if request.token is not None:
-                        request.token.cancel()
+                if request.token is not None:
+                    request.token.cancel()
                 raise
             except HardAgentError as err:
                 if request.token is not None:
@@ -834,6 +814,7 @@ class AgentRunner:
                 error = UsageLimitError(
                     reset_time=outcome.kind.reset_time,
                     provider=outcome.result.selected.service,
+                    is_permanent=outcome.kind.is_permanent,
                 )
                 self._handle_provider_account_exhaustion(service, error)
                 raise error
@@ -855,12 +836,6 @@ class AgentRunner:
                 self._handle_provider_account_exhaustion(service, error)
                 raise error
             if isinstance(outcome.kind, TimedOut):
-                if outcome.result.selected.service == "opencode":
-                    error = UsageLimitError(
-                        provider=outcome.result.selected.service,
-                    )
-                    self._handle_provider_account_exhaustion(service, error)
-                    raise error
                 if retries_left <= 0:
                     raise AgentTimeoutError(
                         "Provider timed out",
