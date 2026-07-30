@@ -141,17 +141,17 @@ class DockerSession:
         if self._auto_overlay is not None:
             try:
                 self._auto_overlay.unlink(missing_ok=True)
-            except Exception:
+            except OSError:
                 pass
             self._auto_overlay = None
         if self._container is not None:
             try:
                 self._container.stop(timeout=5)
-            except Exception:
+            except (docker.errors.DockerException, OSError):
                 pass
             try:
                 self._container.remove(force=True)
-            except Exception:
+            except (docker.errors.DockerException, OSError):
                 pass
             self._container = None
 
@@ -172,7 +172,7 @@ class DockerSession:
                     workdir="/home/agent/workspace",
                     environment=self._container_env,
                 )
-            except Exception as exc:
+            except (docker.errors.DockerException, OSError) as exc:
                 exc_holder[0] = exc
 
         thread = threading.Thread(target=_run, daemon=True)

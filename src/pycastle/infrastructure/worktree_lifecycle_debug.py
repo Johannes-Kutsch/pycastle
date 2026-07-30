@@ -6,7 +6,8 @@ import stat
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pycastle.config import Config, resolve_logs_dir
+from pycastle.config import Config, load_config, resolve_logs_dir
+from pycastle.errors import ConfigValidationError
 
 _ENV_LOG_PATH = "PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG"
 
@@ -35,22 +36,17 @@ def _log_target(
 ) -> Path | None:
     env_path = os.getenv(_ENV_LOG_PATH)
     if env_path:
-        try:
-            return Path(env_path)
-        except Exception:
-            return None
+        return Path(env_path)
     if cfg is not None:
         try:
             return resolve_logs_dir(cfg) / "worktree-lifecycle-debug.log"
-        except Exception:
+        except OSError:
             return None
     if repo_root is not None:
         try:
-            from pycastle.config import load_config
-
             loaded_cfg = load_config(repo_root=repo_root)
             return resolve_logs_dir(loaded_cfg) / "worktree-lifecycle-debug.log"
-        except Exception:
+        except (OSError, ConfigValidationError):
             return None
     return None
 
@@ -85,5 +81,5 @@ def log_worktree_lifecycle_event(
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-    except Exception:
+    except OSError:
         return
