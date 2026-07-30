@@ -4,9 +4,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..session import RunKind
-from .pipeline import PromptRenderer, PromptTemplate
-from .scope_args import validated_scope_args_for_template
+from pycastle.prompts.pipeline import PromptRenderer, PromptTemplate
+from pycastle.prompts.scope_args import validated_scope_args_for_template
+from pycastle.session import RunKind
 
 
 class PromptDispatchRenderer(Protocol):

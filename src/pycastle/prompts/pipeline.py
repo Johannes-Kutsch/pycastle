@@ -7,9 +7,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
-from ..config import Config
-from ..label_catalog import PROMPT_GLOBAL_LABEL_SPECS
-from .source import EffectivePromptFile, PromptReference, PromptSource
+from pycastle.config import Config
+from pycastle.label_catalog import PROMPT_GLOBAL_LABEL_SPECS
+from pycastle.prompts.source import EffectivePromptFile, PromptReference, PromptSource
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")
@@ -381,7 +381,7 @@ class PromptRenderer:
         template: PromptTemplate,
         scope_args: dict[str, str],
     ) -> str:
-        from .scope_args import validated_scope_args_for_template
+        from pycastle.prompts.scope_args import validated_scope_args_for_template
 
         validated_scope_args_for_template(template, scope_args)
         all_args = {**self._global_args, **scope_args}
@@ -436,7 +436,7 @@ class PromptRenderer:
         scope_args: dict[str, str],
         exec_fn,
     ) -> str:
-        from .scope_args import validated_scope_args_for_template
+        from pycastle.prompts.scope_args import validated_scope_args_for_template
 
         validated_scope_args_for_template(template, scope_args)
 

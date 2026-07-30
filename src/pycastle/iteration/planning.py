@@ -3,38 +3,38 @@ import hashlib
 from pathlib import Path
 from typing import Protocol
 
-from ..agents.output_protocol import (
+from pycastle.agents.output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
     PlannerOutput,
 )
-from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..config import Config
-from ..display.status_display import StatusDisplay
-from ..errors import SetupPhaseError
-from ..infrastructure.worktree import (
+from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.config import Config
+from pycastle.display.status_display import StatusDisplay
+from pycastle.errors import SetupPhaseError
+from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
-from ..managed_worktree_mount_policy import (
+from pycastle.iteration import planning_issue_intake
+from pycastle.iteration._fingerprint import prepare_fingerprint_gate
+from pycastle.iteration._rows import status_row
+from pycastle.iteration.implement import branch_for
+from pycastle.iteration.planning_issue_intake import PlanReady, PreparedPlanningIssueSet
+from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import build_plan_scope_args
-from ..services import GitService
-from ..services.github_service import GithubService
-from ..session import RoleSession
-from . import planning_issue_intake
-from ._fingerprint import prepare_fingerprint_gate
-from ._rows import status_row
-from .implement import branch_for
-from .planning_issue_intake import PlanReady, PreparedPlanningIssueSet
-from .preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.scope_args import build_plan_scope_args
+from pycastle.services import GitService
+from pycastle.services.github_service import GithubService
+from pycastle.session import RoleSession
 
 
 class _PlanningDeps(Protocol):

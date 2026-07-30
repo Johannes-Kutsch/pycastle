@@ -6,27 +6,22 @@ from typing import Any, Literal
 
 import click
 
-from . import orchestration as pycastle_orchestration
-from ._universal_image_build import UniversalImageBuildOptions
-from .config import (
-    Config,
-    load_config,
-    load_credential_env,
-    resolve_logs_dir,
-)
-from .display.status_display import PlainStatusDisplay
-from .errors import (
+from pycastle import orchestration as pycastle_orchestration
+from pycastle._universal_image_build import UniversalImageBuildOptions
+from pycastle.config import Config, load_config, load_credential_env, resolve_logs_dir
+from pycastle.display.status_display import PlainStatusDisplay
+from pycastle.errors import (
     ClaudeCliNotFoundError,
     ConfigValidationError,
     DockerServiceError,
 )
-from .layout import describe_config_layers, resolve_layout
-from .run_startup_preparation import (
+from pycastle.layout import describe_config_layers, resolve_layout
+from pycastle.run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
     prepare_run_startup,
 )
-from .services.service_registry import ServiceRegistry
-from .stage_priority_chain import (
+from pycastle.services.service_registry import ServiceRegistry
+from pycastle.stage_priority_chain import (
     chain_entries,
     render_chain_label,
     validation_labels,
@@ -102,7 +97,7 @@ class _BugReportingGroup(click.Group):
         except (click.ClickException, click.exceptions.Exit, click.Abort):
             raise
         except Exception as exc:
-            from .bug_reporter import report_and_exit
+            from pycastle.bug_reporter import report_and_exit
 
             report_and_exit(exc)
 
@@ -110,7 +105,7 @@ class _BugReportingGroup(click.Group):
 @click.group(cls=_BugReportingGroup)
 @click.version_option(package_name="pycastle", prog_name="pycastle")
 def main() -> None:
-    from .infrastructure.shutdown_hook import install_urllib3_shutdown_hook
+    from pycastle.infrastructure.shutdown_hook import install_urllib3_shutdown_hook
 
     install_urllib3_shutdown_hook()
 
@@ -139,8 +134,8 @@ def main() -> None:
     "without prompts. Leaves config.py and .env untouched.",
 )
 def init_cmd(global_flag: bool, local_flag: bool, refresh_flag: bool) -> None:
-    from .commands.init import main as _init
-    from .commands.init import refresh as _refresh
+    from pycastle.commands.init import main as _init
+    from pycastle.commands.init import refresh as _refresh
 
     _print_layer_summary()
     if refresh_flag:
@@ -167,7 +162,7 @@ def init_cmd(global_flag: bool, local_flag: bool, refresh_flag: bool) -> None:
 
 @main.command("labels")
 def labels_cmd() -> None:
-    from .commands.labels import main as _labels
+    from pycastle.commands.labels import main as _labels
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
@@ -182,7 +177,7 @@ def labels_cmd() -> None:
     help="Build without using the Docker cache.",
 )
 def build_cmd(no_cache: bool) -> None:
-    from .commands.build import main as _build
+    from pycastle.commands.build import main as _build
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
@@ -195,7 +190,7 @@ def build_cmd(no_cache: bool) -> None:
 
 @main.command("check")
 def check_cmd() -> None:
-    from .commands.check import main as _check
+    from pycastle.commands.check import main as _check
 
     _print_layer_summary()
     cfg = _load_config_or_exit()
@@ -213,8 +208,8 @@ def _do_run(
 ) -> None:
     from typing import cast
 
-    from .commands.build import main as _build
-    from .run_startup_preparation import RunImproveMode
+    from pycastle.commands.build import main as _build
+    from pycastle.run_startup_preparation import RunImproveMode
 
     startup = prepare_run_startup(
         cfg,
@@ -291,8 +286,8 @@ def cron_cmd(no_improve: bool) -> None:
     import threading
     import time as _time
 
-    from .commands.init import refresh as _refresh
-    from .log_maintenance import maintain_logs
+    from pycastle.commands.init import refresh as _refresh
+    from pycastle.log_maintenance import maintain_logs
 
     _check_pycastle_dir_or_exit()
     layout = resolve_layout()

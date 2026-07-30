@@ -4,17 +4,15 @@ import difflib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
-from .config import Config, StageOverride, parse_credential_list
-from .config.loader import referenced_services
-from .services.service_registry import ServiceRegistry
-from .stage_priority_chain import (
-    StageOverrideChain,
-)
+from pycastle.config import Config, StageOverride, parse_credential_list
+from pycastle.config.loader import referenced_services
+from pycastle.services.service_registry import ServiceRegistry
+from pycastle.stage_priority_chain import StageOverrideChain
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from .services.runtime_services import AgentService
+    from pycastle.services.runtime_services import AgentService
 
 _KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
 RunImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
@@ -155,7 +153,11 @@ def prepare_run_startup(
 def configured_provider_adapters_for_run(
     cfg: Config, credential_env: Mapping[str, str]
 ) -> dict[str, AgentService]:
-    from .services.runtime_services import ClaudeService, CodexService, OpenCodeService
+    from pycastle.services.runtime_services import (
+        ClaudeService,
+        CodexService,
+        OpenCodeService,
+    )
 
     referenced = referenced_services(cfg)
     service_registry: dict[str, AgentService] = {}
@@ -194,7 +196,11 @@ def configured_provider_adapters_for_run(
 
 
 def _validation_services() -> dict[str, AgentService]:
-    from .services.runtime_services import ClaudeService, CodexService, OpenCodeService
+    from pycastle.services.runtime_services import (
+        ClaudeService,
+        CodexService,
+        OpenCodeService,
+    )
 
     return {
         "claude": ClaudeService(),

@@ -1,4 +1,4 @@
-from .dispatch import (
+from pycastle.prompts.dispatch import (
     PromptDispatchRenderer,
     PromptInvocation,
     build_prompt_invocation,

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import (
     ServiceResumeIdentityStore,
     load_provider_state_session_id,
@@ -12,12 +13,10 @@ from pycastle.runtime_session import (
     is_exact_resumable_service_session as runtime_is_exact_resumable_service_session,
 )
 
-from ..agents.output_protocol import AgentRole
-
 if TYPE_CHECKING:
-    from ..services import ServiceRegistry
-    from ..services.runtime_services import AgentService
-    from .role import RoleSession
+    from pycastle.services import ServiceRegistry
+    from pycastle.services.runtime_services import AgentService
+    from pycastle.session.role import RoleSession
 
 _SERVICE_SESSION_METADATA_FILENAME = "_service_session_metadata.json"
 _SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
@@ -244,7 +243,9 @@ def recover_state_dir_provider_session_id(
     state_dir: Path | None,
     service_name: str,
 ) -> str | None:
-    from ..provider_session_adapter import provider_session_adapter_for_service_name
+    from pycastle.provider_session_adapter import (
+        provider_session_adapter_for_service_name,
+    )
 
     return provider_session_adapter_for_service_name(
         service_name
@@ -256,7 +257,7 @@ def is_service_session_metadata_path(path: Path) -> bool:
 
 
 def _role_session_path(worktree: Path, role: AgentRole, namespace: str) -> Path:
-    from .role import SESSION_DIR_NAME
+    from pycastle.session.role import SESSION_DIR_NAME
 
     base = worktree / SESSION_DIR_NAME / role.value
     return base / namespace if namespace else base
@@ -279,7 +280,9 @@ def _is_exact_resumable_provider_session(
     provider_session_id: str | None,
     provider_state_dir: Path | None,
 ) -> bool:
-    from ..provider_session_adapter import provider_session_adapter_for_service_name
+    from pycastle.provider_session_adapter import (
+        provider_session_adapter_for_service_name,
+    )
 
     return provider_session_adapter_for_service_name(
         service_name

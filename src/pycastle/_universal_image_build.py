@@ -4,11 +4,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from .errors import ConfigValidationError
-from .services._docker_build_output import BuildOutcome
+from pycastle.errors import ConfigValidationError
+from pycastle.services._docker_build_output import BuildOutcome
 
 if TYPE_CHECKING:
-    from .config import Config
+    from pycastle.config import Config
 
 
 _MISSING_DOCKER_IMAGE_NAME_MESSAGE = (

@@ -8,8 +8,12 @@ from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
-from .status_display import WORK_PHASE, ModelDisplayMetadata
-from .status_print_sequencing import Kind, OutputEvent, StatusPrintSequencer
+from pycastle.display.status_display import WORK_PHASE, ModelDisplayMetadata
+from pycastle.display.status_print_sequencing import (
+    Kind,
+    OutputEvent,
+    StatusPrintSequencer,
+)
 
 _PALETTE: list[tuple[int, int, int]] = [
     (149, 97, 226),  # 0 deep purple

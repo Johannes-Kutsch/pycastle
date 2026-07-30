@@ -2,9 +2,9 @@ import sys
 
 import click
 
-from ..config import Config, load_config, load_credential_env
-from ..label_catalog import CANONICAL_LABEL_SPECS
-from ..services import (
+from pycastle.config import Config, load_config, load_credential_env
+from pycastle.label_catalog import CANONICAL_LABEL_SPECS
+from pycastle.services import (
     GithubAPIError,
     GithubAuthError,
     GithubService,

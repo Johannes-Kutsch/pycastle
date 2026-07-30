@@ -4,7 +4,7 @@ import re
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
 
-from .. import _time as _time_module
+from pycastle import _time as _time_module
 
 _MONTHS = {
     "january": 1,

@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
-from ..prompts.dispatch import PromptInvocation, build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate, Scope
-from ..prompts.scope_args import (
+from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
+from pycastle.prompts.pipeline import PromptTemplate, Scope
+from pycastle.prompts.scope_args import (
     build_issue_scope_args,
     validated_scope_args_for_template,
 )

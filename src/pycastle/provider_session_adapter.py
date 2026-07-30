@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 from typing import Protocol, cast
 
-from .agents.output_protocol import AgentRole
-from .runtime_session import (
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
@@ -16,8 +16,8 @@ from .runtime_session import (
     load_state_dir_provider_session_id,
     provider_state_relpath,
 )
-from .services.runtime_services import AgentService, ClaudeService
-from .session.role import session_uuid_for_role_session_path
+from pycastle.services.runtime_services import AgentService, ClaudeService
+from pycastle.session.role import session_uuid_for_role_session_path
 
 
 class ProviderStatePreparationAction(Protocol):

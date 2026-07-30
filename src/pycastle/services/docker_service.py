@@ -5,9 +5,9 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from .._universal_image_build import UniversalImageBuildRequest
-from ..errors import DockerBuildError, DockerServiceError
-from ._docker_build_output import (
+from pycastle._universal_image_build import UniversalImageBuildRequest
+from pycastle.errors import DockerBuildError, DockerServiceError
+from pycastle.services._docker_build_output import (
     BuildOutcome,
     DockerBuildOutputInterpreter,
 )

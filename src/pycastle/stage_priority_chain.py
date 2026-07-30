@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 
-from .config.types import StageOverride
+from pycastle.config.types import StageOverride
 
 
 @dataclass(frozen=True)

@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from .. import _time as _time_module
-from ..errors import UsageLimitError
-from ..runtime_session import (
+from pycastle import _time as _time_module
+from pycastle.errors import UsageLimitError
+from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
@@ -21,14 +21,12 @@ from ..runtime_session import (
     provider_state_relpath,
     select_resumable_provider_session_id,
 )
-from ..runtime_session import (
-    session_uuid as runtime_session_uuid,
-)
-from ._wake_time import compute_wake_time
-from .credential_pool import CredentialPool
+from pycastle.runtime_session import session_uuid as runtime_session_uuid
+from pycastle.services._wake_time import compute_wake_time
+from pycastle.services.credential_pool import CredentialPool
 
 if TYPE_CHECKING:
-    from ..session.agent import AuthSeedingRequirement, LocalAuthSeedAction
+    from pycastle.session.agent import AuthSeedingRequirement, LocalAuthSeedAction
 else:
     AuthSeedingRequirement = object
     LocalAuthSeedAction = object
@@ -733,7 +731,9 @@ def _is_exact_resumable_codex_session(
 def _codex_auth_seeding_requirement(
     provider_state_dir: Path | None,
 ) -> AuthSeedingRequirement:
-    from ..session.agent import AuthSeedingRequirement as RuntimeAuthSeedingRequirement
+    from pycastle.session.agent import (
+        AuthSeedingRequirement as RuntimeAuthSeedingRequirement,
+    )
 
     if provider_state_dir is None or (provider_state_dir / "auth.json").exists():
         return RuntimeAuthSeedingRequirement.NOT_REQUIRED
@@ -743,12 +743,10 @@ def _codex_auth_seeding_requirement(
 def _codex_auth_seed_action(
     provider_state_dir: Path | None,
 ) -> LocalAuthSeedAction | None:
-    from ..session.agent import (
+    from pycastle.session.agent import (
         AuthSeedingRequirement as RuntimeAuthSeedingRequirement,
     )
-    from ..session.agent import (
-        LocalAuthSeedAction as RuntimeLocalAuthSeedAction,
-    )
+    from pycastle.session.agent import LocalAuthSeedAction as RuntimeLocalAuthSeedAction
 
     if (
         _codex_auth_seeding_requirement(provider_state_dir)

@@ -2,8 +2,8 @@ import asyncio
 from pathlib import Path
 from typing import Protocol
 
-from ..display.status_display import StatusDisplay
-from ..services import GitService
+from pycastle.display.status_display import StatusDisplay
+from pycastle.services import GitService
 
 
 class _UtilDeps(Protocol):

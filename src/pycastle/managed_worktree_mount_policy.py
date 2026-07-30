@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
 
-from .errors import ManagedWorktreeMountPreconditionError
-from .infrastructure.worktree import PROJECT_LOCAL_PYCASTLE_DIR
+from pycastle.errors import ManagedWorktreeMountPreconditionError
+from pycastle.infrastructure.worktree import PROJECT_LOCAL_PYCASTLE_DIR
 
 
 @dataclass(frozen=True)

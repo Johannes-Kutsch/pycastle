@@ -5,10 +5,10 @@ import dataclasses
 from pathlib import Path
 from typing import Any
 
-from . import _time as _time_module
-from .agents.output_protocol import AgentRole
-from .config.types import StageOverride
-from .execution_contracts import (
+from pycastle import _time as _time_module
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.config.types import StageOverride
+from pycastle.execution_contracts import (
     CancellationToken,
     PreparedProviderRunSession,
     PreparedRunSessionState,
@@ -21,11 +21,11 @@ from .execution_contracts import (
     TextOutputAdapter,
     WorktreeMount,
 )
-from .runtime_session import RunKind
-from .services.runtime_services import ToolPolicy
-from .services.service_registry import ServiceRegistry
-from .session_planning import ResidentSessionPlan
-from .stage_priority_chain import iter_stage_chain
+from pycastle.runtime_session import RunKind
+from pycastle.services.runtime_services import ToolPolicy
+from pycastle.services.service_registry import ServiceRegistry
+from pycastle.session_planning import ResidentSessionPlan
+from pycastle.stage_priority_chain import iter_stage_chain
 
 __all__ = [
     "OneShotRunRequest",
@@ -179,7 +179,7 @@ def _require_execution_adapter_method(
     method = getattr(adapter, method_name, None)
     if callable(method):
         return method
-    from .errors import RuntimeConfigurationError
+    from pycastle.errors import RuntimeConfigurationError
 
     raise RuntimeConfigurationError(
         f"Prompt runtime requires an execution adapter with callable `{method_name}()`."
@@ -389,7 +389,7 @@ async def run_one_shot(
     service_registry: ServiceRegistry,
     request: OneShotRunRequest,
 ) -> OneShotRunResult:
-    from .errors import RuntimeConfigurationError, UsageLimitError
+    from pycastle.errors import RuntimeConfigurationError, UsageLimitError
 
     if not service_registry.has_configured_candidate(request.override):
         raise RuntimeConfigurationError(
@@ -557,7 +557,7 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
 
     token = request.token if request.token is not None else CancellationToken()
     if token.is_cancelled:
-        from .errors import UsageLimitError
+        from pycastle.errors import UsageLimitError
 
         raise UsageLimitError(
             reset_time=None,
@@ -638,7 +638,7 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
                         HardAgentError,
                     )
 
-                    from .errors import (
+                    from pycastle.errors import (
                         AgentTimeoutError,
                         TransientAgentError,
                         UsageLimitError,

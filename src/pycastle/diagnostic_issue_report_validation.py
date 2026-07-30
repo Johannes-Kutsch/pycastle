@@ -3,9 +3,9 @@ from __future__ import annotations
 import dataclasses
 from typing import Protocol
 
-from .agents.output_protocol import IssueOutput
-from .config import Config
-from .issue_readiness import (
+from pycastle.agents.output_protocol import IssueOutput
+from pycastle.config import Config
+from pycastle.issue_readiness import (
     classify_issue_readiness,
     issue_readiness_error_for_issue,
     resolve_issue_readiness,

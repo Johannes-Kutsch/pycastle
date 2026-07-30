@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, TypeAlias
 
-from .managed_worktree_mount_policy import (
+from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountAccepted,
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,

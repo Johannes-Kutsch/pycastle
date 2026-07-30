@@ -5,12 +5,12 @@ from typing import Protocol
 
 from agent_runtime.errors import HardAgentError
 
-from ..agents.output_protocol import AgentRole, CommitMessageOutput
-from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..bug_reporter import file_merge_close_failure_issue
-from ..config import Config
-from ..display.status_display import StatusDisplay
-from ..errors import (
+from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
+from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.bug_reporter import file_merge_close_failure_issue
+from pycastle.config import Config
+from pycastle.display.status_display import StatusDisplay
+from pycastle.errors import (
     AgentTimeoutError,
     SetupPhaseError,
     TransientAgentError,
@@ -18,26 +18,26 @@ from ..errors import (
     WorktreeError,
     WorktreeTimeoutError,
 )
-from ..infrastructure.worktree import (
+from pycastle.infrastructure.worktree import (
     replaceable_merge_sandbox_worktree,
     reusable_sandbox_worktree,
     teardown_worktree,
     worktree_identity,
 )
-from ..managed_worktree_mount_policy import (
+from pycastle.iteration._fingerprint import prepare_fingerprint_gate
+from pycastle.iteration._merge_reporting import MergeProgressReporter
+from pycastle.iteration.implement import branch_for
+from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import build_merge_scope_args
-from ..services import GitCommandError, GithubService, GitService
-from ..session import RoleSession
-from ._fingerprint import prepare_fingerprint_gate
-from ._merge_reporting import MergeProgressReporter
-from .implement import branch_for
+from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.scope_args import build_merge_scope_args
+from pycastle.services import GitCommandError, GithubService, GitService
+from pycastle.session import RoleSession
 
 MERGE_SANDBOX_PREFIX = "pycastle/merge-sandbox"
 

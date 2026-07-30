@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from ..config.loader import derive_docker_image_name
+from pycastle.config.loader import derive_docker_image_name
 
 InitWizardScopeChoice = Literal["global", "local"]
 EnvKeyActionKind = Literal["keep", "prompt", "overwrite_prompt", "add_missing"]

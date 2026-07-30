@@ -8,9 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
 
-from .. import _time as _time_module
-from ..agents.output_protocol import AgentRole
-from ..runtime_session import RunKind
+from pycastle import _time as _time_module
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.runtime_session import RunKind
 
 
 class WorkInvocationLog:

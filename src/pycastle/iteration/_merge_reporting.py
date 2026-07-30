@@ -1,7 +1,7 @@
 import dataclasses
 
-from ..display.status_display import StatusDisplay
-from .implement import branch_for
+from pycastle.display.status_display import StatusDisplay
+from pycastle.iteration.implement import branch_for
 
 
 @dataclasses.dataclass

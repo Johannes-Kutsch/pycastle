@@ -6,12 +6,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol, cast
 
-from .agents.output_protocol import AgentRole
-from .provider_session_adapter import (
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
 )
-from .runtime_session import (
+from pycastle.runtime_session import (
     ProviderSessionPreferencesRequest,
     ProviderSessionStateRequest,
     RunKind,
@@ -19,9 +19,9 @@ from .runtime_session import (
     normalize_state_dir_relpath,
     session_uuid,
 )
-from .services.runtime_services import AgentService
-from .session.role import session_uuid_for_role_session_path
-from .session.service_session_store import (
+from pycastle.services.runtime_services import AgentService
+from pycastle.session.role import session_uuid_for_role_session_path
+from pycastle.session.service_session_store import (
     clear_service_session_metadata,
     save_service_session_metadata,
 )

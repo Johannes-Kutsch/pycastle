@@ -3,12 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime
 
-from ..config.types import StageOverride
-from ..stage_priority_chain import (
+from pycastle.config.types import StageOverride
+from pycastle.services.runtime_services import AgentService
+from pycastle.stage_priority_chain import (
     ConfiguredCandidateAvailability,
     StageOverrideChain,
 )
-from .runtime_services import AgentService
 
 ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
 

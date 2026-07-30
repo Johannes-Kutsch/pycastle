@@ -6,7 +6,7 @@ import stat
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..config import Config, resolve_logs_dir
+from pycastle.config import Config, resolve_logs_dir
 
 _ENV_LOG_PATH = "PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG"
 
@@ -46,7 +46,7 @@ def _log_target(
             return None
     if repo_root is not None:
         try:
-            from ..config import load_config
+            from pycastle.config import load_config
 
             loaded_cfg = load_config(repo_root=repo_root)
             return resolve_logs_dir(loaded_cfg) / "worktree-lifecycle-debug.log"

@@ -1,3 +1,3 @@
-from .pipeline import PromptRenderer
+from pycastle.prompts.pipeline import PromptRenderer
 
 __all__ = ["PromptRenderer"]

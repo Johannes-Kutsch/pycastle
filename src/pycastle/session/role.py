@@ -21,7 +21,7 @@ _DONE_FILENAME = "_done"
 _FINGERPRINT_FILENAME = "_fingerprint"
 
 if TYPE_CHECKING:
-    from ..services import ServiceRegistry
+    from pycastle.services import ServiceRegistry
 
 
 def session_uuid_for_role_session_path(role_session_path: Path) -> str | None:
@@ -123,12 +123,12 @@ class RoleSession:
         return self._worktree / self.provider_state_relpath(provider_name)
 
     def service_session_id_path(self, service_name: str) -> Path:
-        from .service_session_store import service_session_id_path
+        from pycastle.session.service_session_store import service_session_id_path
 
         return service_session_id_path(self.path, service_name)
 
     def save_service_session_id(self, service_name: str, session_id: str) -> None:
-        from .service_session_store import save_service_session_id
+        from pycastle.session.service_session_store import save_service_session_id
 
         save_service_session_id(self.path, service_name, session_id)
 
@@ -138,7 +138,9 @@ class RoleSession:
         provider_session_id: str | None,
         provider_state_dir: Path | None,
     ) -> bool:
-        from .service_session_store import is_exact_resumable_service_session
+        from pycastle.session.service_session_store import (
+            is_exact_resumable_service_session,
+        )
 
         return is_exact_resumable_service_session(
             self,
@@ -148,12 +150,14 @@ class RoleSession:
         )
 
     def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
-        from .service_session_store import load_service_session_metadata
+        from pycastle.session.service_session_store import load_service_session_metadata
 
         return load_service_session_metadata(self.path, service_name)
 
     def exact_transcript_service_name(self) -> str | None:
-        from .service_session_store import load_exact_transcript_service_name
+        from pycastle.session.service_session_store import (
+            load_exact_transcript_service_name,
+        )
 
         return load_exact_transcript_service_name(self.path)
 
@@ -162,7 +166,7 @@ class RoleSession:
         registry: "ServiceRegistry | None",
         service_name: str,
     ) -> bool:
-        from .service_session_store import (
+        from pycastle.session.service_session_store import (
             has_exact_provider_transcript_for_selected_service,
         )
 
@@ -218,7 +222,9 @@ class RoleSession:
         self.path.mkdir(parents=True, exist_ok=True)
 
     def clear_provider_state_and_signal_completion(self) -> None:
-        from .service_session_store import is_service_session_metadata_path
+        from pycastle.session.service_session_store import (
+            is_service_session_metadata_path,
+        )
 
         if not self.path.is_dir():
             return

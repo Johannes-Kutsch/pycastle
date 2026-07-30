@@ -4,26 +4,26 @@ import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
-from ..agents.output_protocol import AgentRole
-from ..config import Config
-from ..infrastructure.worktree import issue_branch
-from ..issue_readiness import require_ready_slice_outcome_for_issue
-from ..managed_worktree_mount_policy import (
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.config import Config
+from pycastle.infrastructure.worktree import issue_branch
+from pycastle.issue_readiness import require_ready_slice_outcome_for_issue
+from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
-from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import build_per_issue_scope_args
-from ..services import GitService
-from ..session import RoleSession, RunKind, is_stage_done_for
-from ..session.service_session_store import (
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.scope_args import build_per_issue_scope_args
+from pycastle.services import GitService
+from pycastle.session import RoleSession, RunKind, is_stage_done_for
+from pycastle.session.service_session_store import (
     has_exact_provider_transcript_for_selected_service,
 )
 
 if TYPE_CHECKING:
-    from ..services import ServiceRegistry
+    from pycastle.services import ServiceRegistry
 
 
 RoleName: TypeAlias = Literal["implementer", "reviewer"]

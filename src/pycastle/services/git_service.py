@@ -4,9 +4,9 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
-from ..config import Config
-from ._base import _SubprocessService
-from ._git_remote_retry import (
+from pycastle.config import Config
+from pycastle.services._base import _SubprocessService
+from pycastle.services._git_remote_retry import (
     DEFAULT_REMOTE_GIT_RETRY_POLICY,
     EscalateOperatorActionableGitFailure,
     PassthroughRemoteFailure,

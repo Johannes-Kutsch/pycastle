@@ -15,9 +15,8 @@ from pycastle.config.loader import (
     resolve_dockerfile,
     resolve_logs_dir,
 )
+from pycastle.config.types import StageOverride
 from pycastle.layout import resolve_global_dir
-
-from .types import StageOverride
 
 __all__ = [
     "DEFAULT_ENV_FILE",

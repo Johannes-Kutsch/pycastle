@@ -1,11 +1,11 @@
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..agents.output_protocol import AgentRole
-from ..infrastructure.worktree import worktree_identity
-from ..services import GitService
-from ..session import RoleSession
-from .implement import branch_for
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.infrastructure.worktree import worktree_identity
+from pycastle.iteration.implement import branch_for
+from pycastle.services import GitService
+from pycastle.session import RoleSession
 
 
 def select_in_flight_issues(

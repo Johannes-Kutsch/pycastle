@@ -1,4 +1,4 @@
-from .planning import (
+from pycastle.init_wizard.planning import (
     ConfigFileAction,
     ConfigHintAction,
     CredentialPrompt,

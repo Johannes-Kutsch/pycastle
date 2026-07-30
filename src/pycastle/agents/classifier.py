@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..issue_readiness import (
+from pycastle.issue_readiness import (
     BlockedIssueOutcome,
     IssueReadiness,
     IssueReadinessKind,

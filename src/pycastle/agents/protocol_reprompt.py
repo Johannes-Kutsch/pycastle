@@ -5,9 +5,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal, TypeAlias
 
-from ..prompts.dispatch import PromptInvocation
-from ..prompts.pipeline import PromptTemplate
-from .output_protocol import AgentRole
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.prompts.dispatch import PromptInvocation
+from pycastle.prompts.pipeline import PromptTemplate
 
 GENERIC_PROTOCOL_REPROMPT_MESSAGE = (
     "Your last response did not include the required protocol output. "
