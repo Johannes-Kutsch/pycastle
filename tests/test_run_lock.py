@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import sys
 import threading
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -115,42 +113,23 @@ def test_lock_respecting_run_releases_both_locks_on_exception(
 # ── B3: Queue-jumping acquisition ─────────────────────────────────────────────
 
 
-def test_queue_jumping_run_holds_only_project_marker_not_global_lock(
+def test_queue_jumping_run_starts_immediately_when_global_lock_is_held(
     tmp_path: Path,
 ) -> None:
-    layout = _layout(tmp_path)
+    layout_a = _layout(tmp_path, repo_name="project-alpha")
+    layout_b = resolve_layout(
+        repo_root=tmp_path / "project-beta",
+        pycastle_home=tmp_path / "pycastle-home",
+    )
+    (tmp_path / "project-beta").mkdir(exist_ok=True)
 
-    with _hold_lock_in_thread(layout, ignore_global_lock=True):
-        # While queue-jumping run holds its marker, another lock-respecting run
-        # can still acquire the global run lock (just not the same marker).
-        # Verify this by checking the global lock is NOT held by the queue-jumper.
-        # We do so by trying to acquire the global lock independently.
-        if sys.platform == "win32":
-            import msvcrt
-
-            layout.global_run_lock_path.parent.mkdir(parents=True, exist_ok=True)
-            layout.global_run_lock_path.touch(exist_ok=True)
-            with open(layout.global_run_lock_path, "r+b") as fh:
-                try:
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-                    global_free = True
-                except OSError:
-                    global_free = False
-        else:
-            import fcntl
-
-            layout.global_run_lock_path.parent.mkdir(parents=True, exist_ok=True)
-            layout.global_run_lock_path.touch(exist_ok=True)
-            with open(layout.global_run_lock_path, "r+b") as fh:
-                try:
-                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    fcntl.flock(fh, fcntl.LOCK_UN)
-                    global_free = True
-                except BlockingIOError:
-                    global_free = False
-
-        assert global_free, "Queue-jumping run must not hold the global run lock"
+    # project-alpha holds the global run lock; project-beta queue-jumps past it.
+    # If the queue-jumper incorrectly needed the global lock this would time out.
+    with (
+        _hold_lock_in_thread(layout_a),
+        run_slot(layout_b, ignore_global_lock=True),
+    ):
+        pass
 
 
 def test_queue_jumping_run_releases_on_exception(tmp_path: Path) -> None:
@@ -197,24 +176,23 @@ def test_wait_for_global_lock_emits_begin_and_clear_notifications(
 ) -> None:
     layout = _layout(tmp_path)
     notifications: list[str] = []
+    waiting_started = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        waiting_started.set()
 
     with _hold_lock_in_thread(layout) as release:
-        # Another lock-respecting run must wait for global lock.
         done = threading.Event()
 
         def _run():
-            with run_slot(
-                layout,
-                timeout=10,
-                poll_interval=0.01,
-                on_wait=notifications.append,
-            ):
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
                 pass
             done.set()
 
         t = threading.Thread(target=_run, daemon=True)
         t.start()
-        time.sleep(0.05)
+        waiting_started.wait(timeout=5)
         release.set()
         done.wait(timeout=5)
         t.join(timeout=5)
@@ -232,23 +210,23 @@ def test_wait_for_project_marker_names_the_blocked_project(tmp_path: Path) -> No
     (tmp_path / "project-beta").mkdir(exist_ok=True)
 
     notifications: list[str] = []
+    waiting_started = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        waiting_started.set()
 
     with _hold_lock_in_thread(layout_a, ignore_global_lock=True) as release:
         done = threading.Event()
 
         def _run():
-            with run_slot(
-                layout_b,
-                timeout=10,
-                poll_interval=0.01,
-                on_wait=notifications.append,
-            ):
+            with run_slot(layout_b, timeout=10, poll_interval=0.01, on_wait=_on_wait):
                 pass
             done.set()
 
         t = threading.Thread(target=_run, daemon=True)
         t.start()
-        time.sleep(0.05)
+        waiting_started.wait(timeout=5)
         release.set()
         done.wait(timeout=5)
         t.join(timeout=5)
@@ -326,7 +304,9 @@ def test_timeout_waiting_for_project_markers_raises_run_slot_timeout_error(
 # ── B8: Waiting lock-respecting run holds no own marker ───────────────────────
 
 
-def test_lock_respecting_holds_no_own_marker_while_waiting(tmp_path: Path) -> None:
+def test_lock_respecting_holds_no_own_marker_while_waiting_for_other_marker(
+    tmp_path: Path,
+) -> None:
     layout_a = _layout(tmp_path, repo_name="project-alpha")
     layout_b = resolve_layout(
         repo_root=tmp_path / "project-beta",
@@ -335,10 +315,8 @@ def test_lock_respecting_holds_no_own_marker_while_waiting(tmp_path: Path) -> No
     (tmp_path / "project-beta").mkdir(exist_ok=True)
 
     waiting = threading.Event()
-    notifications: list[str] = []
 
-    def _on_wait(msg: str):
-        notifications.append(msg)
+    def _on_wait(msg: str) -> None:
         waiting.set()
 
     with _hold_lock_in_thread(layout_a, ignore_global_lock=True) as release:
@@ -346,43 +324,21 @@ def test_lock_respecting_holds_no_own_marker_while_waiting(tmp_path: Path) -> No
         def _run():
             try:
                 with run_slot(
-                    layout_b,
-                    timeout=10,
-                    poll_interval=0.01,
-                    on_wait=_on_wait,
+                    layout_b, timeout=10, poll_interval=0.01, on_wait=_on_wait
                 ):
                     pass
-            except RunSlotTimeoutError:
+            except (RunSlotTimeoutError, RunAlreadyInProgressError):
                 pass
 
         t = threading.Thread(target=_run, daemon=True)
         t.start()
         waiting.wait(timeout=5)
 
-        # While project-beta is waiting, its marker must NOT be locked.
-        marker_b = layout_b.project_run_marker_path
-        if marker_b.exists():
-            if sys.platform == "win32":
-                import msvcrt
-
-                with open(marker_b, "r+b") as fh:
-                    try:
-                        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-                        marker_free = True
-                    except OSError:
-                        marker_free = False
-            else:
-                import fcntl
-
-                with open(marker_b, "r+b") as fh:
-                    try:
-                        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        fcntl.flock(fh, fcntl.LOCK_UN)
-                        marker_free = True
-                    except BlockingIOError:
-                        marker_free = False
-            assert marker_free, "Waiting run must not hold its own project marker"
+        # project-beta is now in its wait loop for project-alpha's marker.
+        # If it incorrectly held its own marker, this queue-jumping run would
+        # raise RunAlreadyInProgressError. Succeeding proves the marker is free.
+        with run_slot(layout_b, ignore_global_lock=True):
+            pass
 
         release.set()
         t.join(timeout=5)
