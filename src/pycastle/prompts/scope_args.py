@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import platform
-from collections.abc import Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.session import RunKind
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 _ISSUE_VALUE_KEYS = Scope.PER_ISSUE.placeholders & Scope.IMPROVE_ISSUES.placeholders
 

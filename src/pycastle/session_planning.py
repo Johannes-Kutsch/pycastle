@@ -4,9 +4,8 @@ import dataclasses
 import shutil
 from enum import Enum
 from pathlib import Path
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
-from pycastle.agents.output_protocol import AgentRole
 from pycastle.provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
@@ -19,12 +18,15 @@ from pycastle.runtime_session import (
     normalize_state_dir_relpath,
     session_uuid,
 )
-from pycastle.services.runtime_services import AgentService
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import (
     clear_service_session_metadata,
     save_service_session_metadata,
 )
+
+if TYPE_CHECKING:
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.services.runtime_services import AgentService
 
 
 class AuthSeedingRequirement(Enum):

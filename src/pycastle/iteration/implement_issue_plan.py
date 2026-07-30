@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.config import Config
 from pycastle.infrastructure.worktree import issue_branch
 from pycastle.issue_readiness import require_ready_slice_outcome_for_issue
 from pycastle.managed_worktree_mount_policy import (
@@ -16,14 +14,16 @@ from pycastle.managed_worktree_mount_policy import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_per_issue_scope_args
-from pycastle.services import GitService
 from pycastle.session import RoleSession, RunKind, is_stage_done_for
 from pycastle.session.service_session_store import (
     has_exact_provider_transcript_for_selected_service,
 )
 
 if TYPE_CHECKING:
-    from pycastle.services import ServiceRegistry
+    from pathlib import Path
+
+    from pycastle.config import Config
+    from pycastle.services import GitService, ServiceRegistry
 
 
 RoleName: TypeAlias = Literal["implementer", "reviewer"]

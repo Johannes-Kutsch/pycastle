@@ -12,14 +12,18 @@ routing.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
-
-from agent_runtime.errors import HardAgentError
+from typing import TYPE_CHECKING
 
 from pycastle.bug_reporter import BUG_REPORT_LABEL_LIST
-from pycastle.config import Config
-from pycastle.display.status_display import StatusDisplay
 from pycastle.iteration import AbortedHardApiError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from agent_runtime.errors import HardAgentError
+
+    from pycastle.config import Config
+    from pycastle.display.status_display import StatusDisplay
 
 _SERVICE_LABEL_MAP = {
     "claude": "Claude",

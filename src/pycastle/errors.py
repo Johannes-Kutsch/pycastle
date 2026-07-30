@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class PycastleError(RuntimeError):

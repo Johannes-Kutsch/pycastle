@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pycastle.layout import describe_config_layers, resolve_global_dir, resolve_layout
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_resolve_layout_returns_fixed_pycastle_paths_and_cron_lock_path(

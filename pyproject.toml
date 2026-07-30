@@ -116,10 +116,6 @@ ignore = [
     # ── backlog (drain one entry per ticket) ─────────────────────────────────
     # imports
     "PLC0415",  # import-outside-toplevel (545 findings)
-    # type-checking imports
-    "TC001",    # typing-only-first-party-import (52 findings)
-    "TC002",    # typing-only-third-party-import (1 finding)
-    "TC003",    # typing-only-stdlib-import (43 findings)
     # simplify / modernise
     "SIM105",   # suppressible-exception (10 findings)
     "SIM102",   # collapsible-if (5 findings)

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from dotenv import dotenv_values
 
 from pycastle.layout import resolve_layout
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 __all__ = [
     "DEFAULT_ENV_FILE",

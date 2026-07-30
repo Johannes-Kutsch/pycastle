@@ -21,9 +21,8 @@ from urllib.parse import quote
 
 import click
 
-from pycastle.config import Config
-
 if TYPE_CHECKING:
+    from pycastle.config import Config
     from pycastle.services import GithubService
 
 BUG_REPORT_REPO = "Johannes-Kutsch/pycastle"

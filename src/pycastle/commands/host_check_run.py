@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, cast
 
 from pycastle import _host_check as _host_check_module
 from pycastle._host_check import (
@@ -40,6 +38,10 @@ from pycastle.run_startup_preparation import (
     prepare_run_startup,
 )
 from pycastle.services import GithubService, GitService, ServiceRegistry
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from contextlib import AbstractAsyncContextManager
 
 
 @dataclass(frozen=True)

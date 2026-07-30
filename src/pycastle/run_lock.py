@@ -3,11 +3,15 @@ from __future__ import annotations
 import contextlib
 import sys
 import time
-from collections.abc import Callable, Iterator
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pycastle.errors import RunAlreadyInProgressError, RunSlotTimeoutError
-from pycastle.layout import PycastleLayout
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from pathlib import Path
+
+    from pycastle.layout import PycastleLayout
 
 __all__ = ["run_slot"]
 

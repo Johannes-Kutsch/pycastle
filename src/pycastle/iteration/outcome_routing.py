@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import dataclasses
-from datetime import datetime
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 from pycastle.bug_reporter import auto_file_issue, file_operator_actionable_git_issue
-from pycastle.config import Config
-from pycastle.display.status_display import StatusDisplay
 from pycastle.iteration import (
     AbortedAgentCredentialFailure,
     AbortedAgentFailure,
@@ -34,7 +31,13 @@ from pycastle.iteration.usage_limit_decision import (
     decide_model_not_available_continuation,
     decide_usage_limit_continuation,
 )
-from pycastle.services import GithubService, ServiceRegistry
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from pycastle.config import Config
+    from pycastle.display.status_display import StatusDisplay
+    from pycastle.services import GithubService, ServiceRegistry
 
 
 @dataclasses.dataclass(frozen=True)

@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.prompts.dispatch import PromptInvocation
 from pycastle.prompts.pipeline import PromptTemplate
+
+if TYPE_CHECKING:
+    from pycastle.prompts.dispatch import PromptInvocation
 
 GENERIC_PROTOCOL_REPROMPT_MESSAGE = (
     "Your last response did not include the required protocol output. "

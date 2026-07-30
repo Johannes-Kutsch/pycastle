@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.session import RoleSession
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture

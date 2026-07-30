@@ -1,4 +1,4 @@
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
 from pycastle.config import Config, StageOverride
@@ -13,7 +13,9 @@ from pycastle.services.runtime_services import (
     CodexService,
     OpenCodeService,
 )
-from pycastle.services.service_registry import ServiceRegistry
+
+if TYPE_CHECKING:
+    from pycastle.services.service_registry import ServiceRegistry
 
 
 def test_run_startup_preparation_returns_none_validation_error_message_without_failures():

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
 
 from pycastle.errors import RunAlreadyInProgressError, RunSlotTimeoutError
 from pycastle.layout import resolve_layout

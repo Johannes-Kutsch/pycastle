@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from pycastle.config.types import StageOverride
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 
 @dataclass(frozen=True)

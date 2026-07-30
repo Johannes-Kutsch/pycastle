@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from pycastle.services.runtime_services import AgentService
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pycastle.services.runtime_services import AgentService
 
 
 def render_service_summary_line(

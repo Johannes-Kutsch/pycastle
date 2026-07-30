@@ -3,10 +3,13 @@ from __future__ import annotations
 import dataclasses
 import os
 import re
-from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import platformdirs
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 __all__ = [
     "PycastleLayout",

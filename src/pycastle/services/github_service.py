@@ -4,10 +4,9 @@ import time
 import warnings
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
-from pycastle.config import Config
 from pycastle.services._github_http_transport import (
     GithubHttpTransport as _GithubHttpTransport,
 )
@@ -19,6 +18,9 @@ from pycastle.services._github_http_transport import (
 from pycastle.services._github_http_transport import (
     UrllibGithubHttpTransport as _UrllibGithubHttpTransport,
 )
+
+if TYPE_CHECKING:
+    from pycastle.config import Config
 
 
 class GithubServiceError(RuntimeError):

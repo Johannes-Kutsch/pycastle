@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pycastle import _time as _time_module
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.config.types import StageOverride
 from pycastle.execution_contracts import (
     CancellationToken,
     PreparedProviderRunSession,
@@ -24,8 +22,13 @@ from pycastle.execution_contracts import (
 from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import ToolPolicy
 from pycastle.services.service_registry import ServiceRegistry
-from pycastle.session_planning import ResidentSessionPlan
 from pycastle.stage_priority_chain import iter_stage_chain
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pycastle.config.types import StageOverride
+    from pycastle.session_planning import ResidentSessionPlan
 
 __all__ = [
     "OneShotRunRequest",

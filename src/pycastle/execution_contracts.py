@@ -5,12 +5,14 @@ import dataclasses
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import Any, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.config.types import StageOverride
 from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import AgentService, ToolPolicy
+
+if TYPE_CHECKING:
+    from pycastle.config.types import StageOverride
 
 RuntimeResultT = TypeVar("RuntimeResultT")
 

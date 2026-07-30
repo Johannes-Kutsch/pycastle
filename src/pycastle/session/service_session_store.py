@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import (
     ServiceResumeIdentityStore,
     load_provider_state_session_id,
@@ -14,6 +12,9 @@ from pycastle.runtime_session import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pycastle.agents.output_protocol import AgentRole
     from pycastle.services import ServiceRegistry
     from pycastle.services.runtime_services import AgentService
     from pycastle.session.role import RoleSession

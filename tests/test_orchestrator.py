@@ -1,7 +1,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
@@ -43,7 +43,6 @@ from pycastle.services import (
     OperatorActionableGithubError,
     ServiceRegistry,
 )
-from pycastle.services.runtime_services import AgentService
 from pycastle.session import RunKind
 from tests.support import (
     FakeAgentRunner,
@@ -51,6 +50,9 @@ from tests.support import (
     _make_deps,
     functional_git_svc,
 )
+
+if TYPE_CHECKING:
+    from pycastle.services.runtime_services import AgentService
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 

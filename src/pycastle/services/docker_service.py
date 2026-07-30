@@ -2,15 +2,19 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from collections.abc import Callable
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pycastle._universal_image_build import UniversalImageBuildRequest
 from pycastle.errors import DockerBuildError, DockerServiceError
 from pycastle.services._docker_build_output import (
     BuildOutcome,
     DockerBuildOutputInterpreter,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
+
+    from pycastle._universal_image_build import UniversalImageBuildRequest
 
 _PROGRESS_PREFIX = "Building Docker Image · "
 

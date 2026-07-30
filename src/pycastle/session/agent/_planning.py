@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from pycastle.agents.output_protocol import AgentRole
 from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.session.role import RoleSession
 from pycastle.session.service_session_store import store_for_role_session
@@ -19,6 +17,9 @@ from pycastle.session_planning import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pycastle.agents.output_protocol import AgentRole
     from pycastle.services.runtime_services import AgentService
 
 

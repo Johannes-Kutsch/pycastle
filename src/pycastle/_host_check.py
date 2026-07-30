@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import platform
 from collections.abc import Awaitable, Callable
-from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol, TypeAlias
 
-from pycastle.agents.output_protocol import IssueOutput
-from pycastle.agents.runner import RunRequest
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.iteration._rows import status_row
+
+if TYPE_CHECKING:
+    from contextlib import AbstractAsyncContextManager
+
+    from pycastle.agents.output_protocol import IssueOutput
+    from pycastle.agents.runner import RunRequest
 
 
 @dataclass(frozen=True)

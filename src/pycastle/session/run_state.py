@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from pycastle.runtime_session import RunKind
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from pycastle.runtime_session import RunKind
 
 
 class ProviderFreshFallbackReason(Enum):

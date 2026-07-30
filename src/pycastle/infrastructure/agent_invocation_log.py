@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime
-from pathlib import Path
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
 
 from pycastle import _time as _time_module
-from pycastle.agents.output_protocol import AgentRole
-from pycastle.runtime_session import RunKind
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from datetime import datetime
+    from pathlib import Path
+
+    from pycastle.agents.output_protocol import AgentRole
+    from pycastle.runtime_session import RunKind
 
 
 class WorkInvocationLog:
