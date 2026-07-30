@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 from typing import Protocol, TypeAlias, cast
 
+from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
+
 from pycastle import _time as _time_module
 from pycastle.agents.output_protocol import (
     AgentOutputProtocolError,
@@ -22,7 +24,16 @@ from pycastle.diagnostic_mount_fallback import (
     decide_diagnostic_mount_dispatch,
 )
 from pycastle.display.status_display import StatusDisplay
-from pycastle.errors import SetupPhaseError
+from pycastle.errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    ModelNotAvailableError,
+    SetupPhaseError,
+    TransientAgentError,
+    UsageLimitError,
+    WorktreeError,
+    WorktreeTimeoutError,
+)
 from pycastle.infrastructure.preflight_failure_interpreter import (
     MissingDeclaredPythonToolDecision,
     OrdinaryPreflightFailureDecision,
@@ -197,7 +208,21 @@ class BranchRefreshBoundary:
                         deps.repo_root, branch, sandbox_identity.branch
                     )
                     role_session.discard()
-            except Exception:
+            except AgentCredentialFailureError:
+                raise
+            except (
+                SetupPhaseError,
+                WorktreeError,
+                WorktreeTimeoutError,
+                AgentTimeoutError,
+                TransientAgentError,
+                HardAgentError,
+                AgentFailedError,
+                UsageLimitError,
+                ModelNotAvailableError,
+                GitCommandError,
+                OSError,
+            ):
                 raise pull_exc from None
 
 

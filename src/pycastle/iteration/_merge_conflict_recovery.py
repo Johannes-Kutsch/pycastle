@@ -5,13 +5,18 @@ from typing import Protocol
 
 from agent_runtime.errors import HardAgentError
 
-from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
+from pycastle.agents.output_protocol import (
+    AgentOutputProtocolError,
+    AgentRole,
+    CommitMessageOutput,
+)
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
 from pycastle.bug_reporter import file_merge_close_failure_issue
 from pycastle.config import Config
 from pycastle.display.status_display import StatusDisplay
 from pycastle.errors import (
     AgentTimeoutError,
+    ModelNotAvailableError,
     SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
@@ -36,7 +41,12 @@ from pycastle.managed_worktree_mount_policy import (
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_merge_scope_args
-from pycastle.services import GitCommandError, GithubService, GitService
+from pycastle.services import (
+    GitCommandError,
+    GithubService,
+    GithubServiceError,
+    GitService,
+)
 from pycastle.session import RoleSession
 
 MERGE_SANDBOX_PREFIX = "pycastle/merge-sandbox"
@@ -106,7 +116,7 @@ async def _delete_conflict_branch(
         if worktree_path in registered_worktrees:
             try:
                 teardown_worktree(deps.git_svc, deps.repo_root, worktree_path)
-            except Exception as exc:
+            except (GitCommandError, OSError) as exc:
                 deps.status_display.print(
                     "Merge",
                     f"Warning: could not remove worktree for {branch!r}: {exc}",
@@ -129,7 +139,7 @@ async def _delete_conflict_branch(
 def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> int | None:
     try:
         deps.github_svc.close_issue_with_parents(issue["number"])
-    except Exception as exc:
+    except GithubServiceError as exc:
         return file_merge_close_failure_issue(
             issue_number=issue["number"],
             exc=exc,
@@ -232,7 +242,13 @@ async def _recover_active_conflict(
         WorktreeTimeoutError,
     ):
         raise
-    except Exception as exc:
+    except (
+        SetupPhaseError,
+        RuntimeError,
+        GitCommandError,
+        ModelNotAvailableError,
+        AgentOutputProtocolError,
+    ) as exc:
         return exc
     return None
 

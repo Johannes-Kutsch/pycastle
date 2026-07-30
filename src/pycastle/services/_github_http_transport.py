@@ -93,7 +93,7 @@ class UrllibGithubHttpTransport:
             err_body = ""
             try:
                 err_body = exc.read().decode("utf-8", errors="replace")
-            except Exception:
+            except OSError:
                 pass
             status = exc.code
             err_headers = dict(exc.headers.items()) if exc.headers is not None else {}

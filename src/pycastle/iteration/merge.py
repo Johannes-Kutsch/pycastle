@@ -112,7 +112,7 @@ async def _delete_merged_branches(
                         deps.repo_root,
                         worktree_path_,
                     )
-                except Exception as e:
+                except (GitCommandError, OSError) as e:
                     deps.status_display.print(
                         "Merge",
                         f"Warning: could not remove worktree for {branch!r}: {e}",
