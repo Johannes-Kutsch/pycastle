@@ -4,58 +4,58 @@ import hashlib
 from pathlib import Path
 from typing import Protocol, TypeAlias, cast
 
-from .. import _time as _time_module
-from ..agents.output_protocol import (
+from pycastle import _time as _time_module
+from pycastle.agents.output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
     IssueOutput,
 )
-from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..config import Config
-from ..diagnostic_issue_report_validation import (
+from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.config import Config
+from pycastle.diagnostic_issue_report_validation import (
     DiagnosticIssueReportValidationAFK,
     DiagnosticIssueReportValidationHITL,
     validate_diagnostic_issue_report,
 )
-from ..diagnostic_mount_fallback import (
+from pycastle.diagnostic_mount_fallback import (
     DiagnosticMountFallbackIssue,
     decide_diagnostic_mount_dispatch,
 )
-from ..display.status_display import StatusDisplay
-from ..errors import SetupPhaseError
-from ..infrastructure.preflight_failure_interpreter import (
+from pycastle.display.status_display import StatusDisplay
+from pycastle.errors import SetupPhaseError
+from pycastle.infrastructure.preflight_failure_interpreter import (
     MissingDeclaredPythonToolDecision,
     OrdinaryPreflightFailureDecision,
     PreflightFailureDecision,
     interpret_preflight_command_failures,
 )
-from ..infrastructure.worktree import (
+from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
-from ..managed_worktree_mount_policy import (
+from pycastle.iteration._fingerprint import prepare_fingerprint_gate
+from pycastle.iteration._utils import _wait_for_clean_working_tree
+from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import (
+from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.scope_args import (
     build_divergence_scope_args,
     build_preflight_scope_args,
 )
-from ..services import (
+from pycastle.services import (
     GitCommandError,
     GithubService,
     GitService,
     ServiceRegistry,
     UnrelatedHistoriesError,
 )
-from ..session import RoleSession
-from ._fingerprint import prepare_fingerprint_gate
-from ._utils import _wait_for_clean_working_tree
+from pycastle.session import RoleSession
 
 
 def _diverge_sandbox_fingerprint(safe_sha: str, branch: str) -> str:
@@ -306,7 +306,7 @@ class PreflightCache:
         await self._branch_refresh.pull_with_resolution(deps)
 
     async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
-        from ..infrastructure.worktree import detached_transient_worktree
+        from pycastle.infrastructure.worktree import detached_transient_worktree
 
         async with self._lock:
             await _wait_for_clean_working_tree(deps, "Preflight")

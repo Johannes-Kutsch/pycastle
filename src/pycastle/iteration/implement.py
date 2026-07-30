@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from agent_runtime.errors import HardAgentError
 
-from ..agents.output_protocol import AgentRole, CommitMessageOutput
-from ..agents.result import CancellationToken
-from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..config import Config
-from ..display.status_display import StatusDisplay
-from ..errors import (
+from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
+from pycastle.agents.result import CancellationToken
+from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.config import Config
+from pycastle.display.status_display import StatusDisplay
+from pycastle.errors import (
     AgentFailedError,
     BranchCollisionError,
     ModelNotAvailableError,
@@ -21,22 +21,25 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from ..infrastructure.worktree import (
+from pycastle.infrastructure.worktree import (
     DurableIssueWorktreeIntent,
     durable_issue_worktree,
     issue_branch,
     worktree_identity,
 )
-from ..issue_readiness import require_ready_slice_outcome_for_issue
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..services import GithubService, GitService
-from ..session import RoleSession, is_stage_done_for
-from ._deps import Logger
-from .implement_issue_plan import IssueRoleStepPlan, plan_issue_execution_from_worktree
+from pycastle.issue_readiness import require_ready_slice_outcome_for_issue
+from pycastle.iteration._deps import Logger
+from pycastle.iteration.implement_issue_plan import (
+    IssueRoleStepPlan,
+    plan_issue_execution_from_worktree,
+)
+from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.services import GithubService, GitService
+from pycastle.session import RoleSession, is_stage_done_for
 
 if TYPE_CHECKING:
-    from ..services import ServiceRegistry
+    from pycastle.services import ServiceRegistry
 
 
 class _ImplementDeps(Protocol):

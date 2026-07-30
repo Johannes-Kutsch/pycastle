@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .runtime_services import (
+from pycastle.services.runtime_services import (
     AgentService,
     ClaudeService,
     CodexService,
@@ -11,8 +11,8 @@ from .runtime_services import (
 )
 
 if TYPE_CHECKING:
-    from .docker_service import DockerService
-    from .git_service import (
+    from pycastle.services.docker_service import DockerService
+    from pycastle.services.git_service import (
         GitCommandError,
         GitNotFoundError,
         GitService,
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
         OperatorActionableGitError,
         UnrelatedHistoriesError,
     )
-    from .github_service import (
+    from pycastle.services.github_service import (
         GithubAPIError,
         GithubAuthError,
         GithubNetworkError,
@@ -29,8 +29,8 @@ if TYPE_CHECKING:
         GithubServiceError,
         OperatorActionableGithubError,
     )
-    from .reset_time_parser import ResetTimeSyntaxMode
-    from .service_registry import ServiceRegistry
+    from pycastle.services.reset_time_parser import ResetTimeSyntaxMode
+    from pycastle.services.service_registry import ServiceRegistry
 
 __all__ = [
     "AgentService",
@@ -60,7 +60,7 @@ __all__ = [
 
 def __getattr__(name: str):
     if name == "DockerService":
-        from .docker_service import DockerService
+        from pycastle.services.docker_service import DockerService
 
         return DockerService
     if name in {
@@ -72,7 +72,7 @@ def __getattr__(name: str):
         "OperatorActionableGitError",
         "UnrelatedHistoriesError",
     }:
-        from . import git_service
+        from pycastle.services import git_service
 
         return getattr(git_service, name)
     if name in {
@@ -83,19 +83,19 @@ def __getattr__(name: str):
         "GithubService",
         "GithubServiceError",
     }:
-        from . import github_service
+        from pycastle.services import github_service
 
         return getattr(github_service, name)
     if name in {"ResetTimeSyntaxMode", "parse_reset_time"}:
-        from . import reset_time_parser
+        from pycastle.services import reset_time_parser
 
         return getattr(reset_time_parser, name)
     if name in {"ClaudeService", "CodexService", "OpenCodeService", "ToolPolicy"}:
-        from . import runtime_services
+        from pycastle.services import runtime_services
 
         return getattr(runtime_services, name)
     if name == "ServiceRegistry":
-        from .service_registry import ServiceRegistry
+        from pycastle.services.service_registry import ServiceRegistry
 
         return ServiceRegistry
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

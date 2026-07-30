@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from .agents.output_protocol import AgentRole
+from pycastle.agents.output_protocol import AgentRole
 
 if TYPE_CHECKING:
     from pycastle.session_planning import (
@@ -229,7 +229,7 @@ def select_resumable_provider_session_id(
         return ProviderSessionSelection(provider_session_id=None)
 
     role_session_path = getattr(role_session, "path", None)
-    from .session.service_session_store import load_service_session_id
+    from pycastle.session.service_session_store import load_service_session_id
 
     provider_session_id = (
         load_service_session_id(role_session_path, service_name)

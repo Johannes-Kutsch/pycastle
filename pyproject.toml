@@ -116,7 +116,6 @@ ignore = [
     # ── backlog (drain one entry per ticket) ─────────────────────────────────
     # imports
     "PLC0415",  # import-outside-toplevel (545 findings)
-    "TID252",   # banned-relative-import (456 findings)
     # type-checking imports
     "TC001",    # typing-only-first-party-import (52 findings)
     "TC002",    # typing-only-third-party-import (1 finding)
@@ -219,6 +218,9 @@ ignore = [
     "S603",    # subprocess-path (subprocess-without-shell-equals-true)
     "S607",    # subprocess-path (start-process-with-partial-path)
 ]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
 
 [tool.mypy]
 python_version = "3.12"

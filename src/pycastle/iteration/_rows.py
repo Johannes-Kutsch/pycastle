@@ -2,8 +2,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from ..display.status_display import ModelDisplayMetadata, StatusDisplay
-from ..errors import AgentTimeoutError, UsageLimitError
+from pycastle.display.status_display import ModelDisplayMetadata, StatusDisplay
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 
 
 class StatusRow:

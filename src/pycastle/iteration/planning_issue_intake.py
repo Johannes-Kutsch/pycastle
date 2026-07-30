@@ -2,9 +2,9 @@ import dataclasses
 import re
 from typing import Literal, TypeAlias
 
-from ..agents.output_protocol import PlannerOutput
-from ..config import Config
-from ..issue_readiness import (
+from pycastle.agents.output_protocol import PlannerOutput
+from pycastle.config import Config
+from pycastle.issue_readiness import (
     BODY_FLOOR,
     IssueReadiness,
     IssueReadinessKind,

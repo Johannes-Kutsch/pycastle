@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias, cast
 
-from .. import _host_check as _host_check_module
-from .._host_check import (
+from pycastle import _host_check as _host_check_module
+from pycastle._host_check import (
     HostCheckCommandExecutor,
     HostCheckCommandResult,
     HostCheckFailure,
@@ -21,27 +21,25 @@ from .._host_check import (
     prepare_host_check_loop,
     run_host_check_loop,
 )
-from ..agents.output_protocol import AgentRole, IssueOutput
-from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..config import Config, StageOverride, load_credential_env
-from ..diagnostic_issue_report_validation import (
-    validate_diagnostic_issue_report,
-)
-from ..diagnostic_mount_fallback import (
+from pycastle.agents.output_protocol import AgentRole, IssueOutput
+from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.config import Config, StageOverride, load_credential_env
+from pycastle.diagnostic_issue_report_validation import validate_diagnostic_issue_report
+from pycastle.diagnostic_mount_fallback import (
     DiagnosticMountFallbackIssue,
     decide_diagnostic_mount_dispatch,
 )
-from ..display.status_display import PlainStatusDisplay, StatusDisplay
-from ..errors import SetupPhaseError
-from ..infrastructure.worktree import detached_transient_worktree
-from ..prompts import scope_args as prompt_scope_args
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..run_startup_preparation import (
+from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
+from pycastle.errors import SetupPhaseError
+from pycastle.infrastructure.worktree import detached_transient_worktree
+from pycastle.prompts import scope_args as prompt_scope_args
+from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
     prepare_run_startup,
 )
-from ..services import GithubService, GitService, ServiceRegistry
+from pycastle.services import GithubService, GitService, ServiceRegistry
 
 
 @dataclass(frozen=True)
@@ -81,7 +79,7 @@ def _resolve_agent_runner(
     cfg: Config,
     git_svc: GitService,
 ) -> tuple[AgentRunnerProtocol, ServiceRegistry]:
-    from ..agents.runner import AgentRunner
+    from pycastle.agents.runner import AgentRunner
 
     env = load_credential_env()
     startup = prepare_run_startup(
@@ -106,7 +104,7 @@ def _resolve_reporter_override(
     override = cfg.preflight_issue_override
     if service_registry is None:
         return override
-    from .. import _time as _time_module
+    from pycastle import _time as _time_module
 
     return service_registry.resolve(override, _time_module.now_local())
 

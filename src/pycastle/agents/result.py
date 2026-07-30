@@ -1,3 +1,3 @@
-from ..execution_contracts import CancellationToken
+from pycastle.execution_contracts import CancellationToken
 
 __all__ = ["CancellationToken"]

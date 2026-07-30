@@ -10,10 +10,15 @@ from typing import cast
 import docker
 from docker.models.containers import Container as DockerContainer
 
-from ..config import Config
-from ..errors import DockerError, DockerTimeoutError
-from .worktree import CONTAINER_PARENT_GIT, patch_gitdir_for_container
-from .worktree_lifecycle_debug import log_worktree_lifecycle_event
+from pycastle.config import Config
+from pycastle.errors import DockerError, DockerTimeoutError
+from pycastle.infrastructure.worktree import (
+    CONTAINER_PARENT_GIT,
+    patch_gitdir_for_container,
+)
+from pycastle.infrastructure.worktree_lifecycle_debug import (
+    log_worktree_lifecycle_event,
+)
 
 _AGENT_USER_LOCAL_BIN = "/home/agent/.local/bin"
 _MISSING_TOOL_PATTERNS = (

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .._universal_image_build import (
+from pycastle._universal_image_build import (
     UniversalImageBuildAdapter,
     UniversalImageBuildOptions,
     build_universal_image,
     resolve_universal_image_build_request,
 )
-from ..config import Config, load_config
-from ..services import DockerService
+from pycastle.config import Config, load_config
+from pycastle.services import DockerService
 
 
 def main(

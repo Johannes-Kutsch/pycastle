@@ -15,17 +15,19 @@ from agent_runtime.errors import (
     HardAgentError,
 )
 
-from ..config import Config, load_config
-from ..errors import (
+from pycastle.config import Config, load_config
+from pycastle.errors import (
     AgentFailedError,
     TransientAgentError,
     UsageLimitError,
     WorktreeError,
     WorktreeTimeoutError,
 )
-from ..services import GitCommandError, GitService, GitTimeoutError
-from ..session import SESSION_DIR_NAME, any_role_dir_present
-from .worktree_lifecycle_debug import log_worktree_lifecycle_event
+from pycastle.infrastructure.worktree_lifecycle_debug import (
+    log_worktree_lifecycle_event,
+)
+from pycastle.services import GitCommandError, GitService, GitTimeoutError
+from pycastle.session import SESSION_DIR_NAME, any_role_dir_present
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
 PRESERVED_FAILURE_MARKER = ".preserved-failure"

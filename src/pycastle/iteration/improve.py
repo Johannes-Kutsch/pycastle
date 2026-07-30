@@ -2,39 +2,37 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
-from ..agents.output_protocol import (
+from pycastle.agents.output_protocol import (
     AgentOutput,
     AgentRole,
     IssueOutput,
     NoCandidateOutput,
 )
-from ..agents.runner import AgentRunnerProtocol, RunRequest
-from ..config import Config
-from ..display.status_display import StatusDisplay
-from ..errors import SetupPhaseError
-from ..infrastructure.worktree import (
+from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.config import Config
+from pycastle.display.status_display import StatusDisplay
+from pycastle.errors import SetupPhaseError
+from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
-from ..managed_worktree_mount_policy import (
+from pycastle.iteration._fingerprint import prepare_fingerprint_gate
+from pycastle.iteration._rows import status_row
+from pycastle.iteration.improve_preparation import prepare_improve_step
+from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
-from ..prompts.pipeline import PromptTemplate
-from ..runtime_session import session_uuid
-from ..services import GitService, ServiceRegistry
-from ..services.github_service import GithubService
-from ..services.runtime_services import AgentService
-from ..session import RoleSession, has_exact_transcript_match
-from ._fingerprint import prepare_fingerprint_gate
-from ._rows import status_row
-from .improve_preparation import (
-    prepare_improve_step,
-)
-from .preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.runtime_session import session_uuid
+from pycastle.services import GitService, ServiceRegistry
+from pycastle.services.github_service import GithubService
+from pycastle.services.runtime_services import AgentService
+from pycastle.session import RoleSession, has_exact_transcript_match
 
 IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"

@@ -7,16 +7,16 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import quote
 
-from ..config import Config
-from ._github_http_transport import (
+from pycastle.config import Config
+from pycastle.services._github_http_transport import (
     GithubHttpTransport as _GithubHttpTransport,
 )
-from ._github_http_transport import (
+from pycastle.services._github_http_transport import (
     GithubHttpTransportAPIError,
     GithubHttpTransportAuthError,
     GithubHttpTransportNetworkError,
 )
-from ._github_http_transport import (
+from pycastle.services._github_http_transport import (
     UrllibGithubHttpTransport as _UrllibGithubHttpTransport,
 )
 

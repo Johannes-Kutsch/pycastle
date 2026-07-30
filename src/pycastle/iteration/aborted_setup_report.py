@@ -13,10 +13,10 @@ from __future__ import annotations
 import dataclasses
 from collections.abc import Callable
 
-from ..bug_reporter import BUG_REPORT_LABEL_LIST
-from ..config import Config
-from ..display.status_display import StatusDisplay
-from . import AbortedSetup
+from pycastle.bug_reporter import BUG_REPORT_LABEL_LIST
+from pycastle.config import Config
+from pycastle.display.status_display import StatusDisplay
+from pycastle.iteration import AbortedSetup
 
 
 @dataclasses.dataclass(frozen=True)

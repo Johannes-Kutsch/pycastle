@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypeAlias
 
-from .agents.output_protocol import IssueOutput
-from .agents.runner import RunRequest
-from .display.status_display import PlainStatusDisplay, StatusDisplay
-from .iteration._rows import status_row
+from pycastle.agents.output_protocol import IssueOutput
+from pycastle.agents.runner import RunRequest
+from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
+from pycastle.iteration._rows import status_row
 
 
 @dataclass(frozen=True)

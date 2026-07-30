@@ -6,8 +6,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
-from ..session import RunKind
-from .pipeline import PromptRenderError, PromptTemplate, Scope
+from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
+from pycastle.session import RunKind
 
 _ISSUE_VALUE_KEYS = Scope.PER_ISSUE.placeholders & Scope.IMPROVE_ISSUES.placeholders
 
@@ -115,7 +115,7 @@ def build_plan_scope_args(
 def build_merge_scope_args(
     *, conflict_issues: list[dict], active_issue: dict
 ) -> dict[str, str]:
-    from ..iteration.implement import branch_for
+    from pycastle.iteration.implement import branch_for
 
     active_branch = branch_for(active_issue["number"])
     return validated_scope_args_for_template(

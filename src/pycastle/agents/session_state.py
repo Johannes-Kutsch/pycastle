@@ -1,4 +1,4 @@
-from ..session.run_dispatch import (
+from pycastle.session.run_dispatch import (
     AgentRunSessionState,
     AgentRunSessionStateRequest,
     PreparedAgentProviderRunSession,

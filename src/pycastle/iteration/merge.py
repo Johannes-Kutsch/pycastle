@@ -4,23 +4,24 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
-from ..agents.runner import AgentRunnerProtocol
-from ..bug_reporter import file_merge_close_failure_issue
-from ..config import Config
-from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import (
+from pycastle.agents.runner import AgentRunnerProtocol
+from pycastle.bug_reporter import file_merge_close_failure_issue
+from pycastle.config import Config
+from pycastle.display.status_display import StatusDisplay
+from pycastle.infrastructure.worktree import (
     cleanup_durable_issue_worktree_after_success,
     worktree_identity,
 )
-from ..services import GitCommandError, GithubService, GitService
-from ._merge_conflict_recovery import (
-    recover_conflicts,
+from pycastle.iteration._merge_conflict_recovery import recover_conflicts
+from pycastle.iteration._merge_reporting import (
+    MergeProgressReporter,
+    build_merge_close_message,
 )
-from ._merge_reporting import MergeProgressReporter, build_merge_close_message
-from ._rows import status_row
-from ._utils import _wait_for_clean_working_tree
-from .implement import branch_for
-from .preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.iteration._rows import status_row
+from pycastle.iteration._utils import _wait_for_clean_working_tree
+from pycastle.iteration.implement import branch_for
+from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.services import GitCommandError, GithubService, GitService
 
 
 class _MergeDeps(Protocol):

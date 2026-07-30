@@ -8,15 +8,15 @@ from typing import Literal
 
 import click
 
-from ..init_wizard import (
+from pycastle.init_wizard import (
     ConfigFileAction,
     HostAuthFacts,
     InitPlan,
     ScaffoldStageChainFacts,
     build_init_plan_for_scope,
 )
-from ..layout import resolve_layout
-from ..scaffold import InitScaffold
+from pycastle.layout import resolve_layout
+from pycastle.scaffold import InitScaffold
 
 
 def _write_env_key(env_file: Path, key: str, value: str) -> None:
@@ -361,7 +361,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     if label_plan.label_prompt_eligibility.should_prompt and click.confirm(
         "Create GitHub labels?", default=False
     ):
-        from .labels import create_labels_interactive
+        from pycastle.commands.labels import create_labels_interactive
 
         create_labels_interactive(gh_token)
 

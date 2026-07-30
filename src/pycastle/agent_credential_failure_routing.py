@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
 if TYPE_CHECKING:
-    from .services import GithubService
+    from pycastle.services import GithubService
 
 _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION = (
     "operator_actionable_agent_credential_failure"

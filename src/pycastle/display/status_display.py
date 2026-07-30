@@ -2,7 +2,11 @@ import builtins
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from .status_print_sequencing import Kind, OutputEvent, StatusPrintSequencer
+from pycastle.display.status_print_sequencing import (
+    Kind,
+    OutputEvent,
+    StatusPrintSequencer,
+)
 
 WORK_PHASE = "Work"
 

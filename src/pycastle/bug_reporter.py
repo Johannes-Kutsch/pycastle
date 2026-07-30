@@ -19,10 +19,10 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from .config import Config
+from pycastle.config import Config
 
 if TYPE_CHECKING:
-    from .services import GithubService
+    from pycastle.services import GithubService
 
 BUG_REPORT_REPO = "Johannes-Kutsch/pycastle"
 BUG_REPORT_LABEL_LIST = ["bug", "needs-triage"]
@@ -98,7 +98,7 @@ def _build_bug_report_url(
 
 def _safe_load_config() -> Config | None:
     try:
-        from .config import load_config
+        from pycastle.config import load_config
 
         return load_config()
     except Exception:
@@ -112,7 +112,7 @@ def _safe_resolve_token(cfg: Config | None) -> str | None:
     if cfg is None:
         return None
     try:
-        from .config import load_credential_env
+        from pycastle.config import load_credential_env
 
         env = load_credential_env()
         return env.get("GH_TOKEN")
@@ -126,7 +126,7 @@ def _try_api_path(
     """Attempt to file an issue via the API. Returns (number, html_url) on
     success, None on any failure."""
     try:
-        from .services import GithubService
+        from pycastle.services import GithubService
 
         svc = GithubService(repo, token, cfg)
         number = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)

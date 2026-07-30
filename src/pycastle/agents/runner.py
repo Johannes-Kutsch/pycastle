@@ -28,58 +28,9 @@ from agent_runtime.runtime import (
     UsageLimited,
 )
 
-from pycastle.services._wake_time import compute_wake_time
-
-from .. import _time as _time_module
-from ..config import Config, StageOverride, image_name_for
-from ..display.status_display import (
-    WORK_PHASE,
-    ModelDisplayMetadata,
-    PlainStatusDisplay,
-    StatusDisplay,
-)
-from ..errors import (
-    AgentFailedError,
-    AgentTimeoutError,
-    DockerError,
-    ModelNotAvailableError,
-    SetupPhaseError,
-    TransientAgentError,
-    UsageLimitError,
-)
-from ..execution_contracts import (
-    RuntimeInvocationDependencies,
-    RuntimeModelDisplayMetadata,
-    RuntimeRunSession,
-)
-from ..infrastructure.container_runner import ContainerRunner
-from ..infrastructure.docker_session import DockerSession, build_volume_spec
-from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailure
-from ..managed_worktree_mount_policy import enforce_managed_worktree_mount
-from ..prompts.dispatch import (
-    PromptInvocation,
-    render_prompt_invocation,
-)
-from ..prompts.pipeline import PromptRenderer
-from ..prompts.scope_args import build_interrupted_work_clause
-from ..runtime_session import ProviderSessionStateRequest
-from ..services import GitService
-from ..services.runtime_services import (
-    AgentService,
-    ClaudeService,
-)
-from ..services.runtime_services import (
-    ToolPolicy as ServiceToolPolicy,
-)
-from ..session import RoleSession, RunKind
-from ..session.agent import (
-    RunSessionPlan,
-    run_session_plan_from_provider_run_state_plan,
-)
-from ..session.run_dispatch import RunSessionRequest, prepare_run_session
-from ..session_planning import ProviderRunStatePlan
-from . import protocol_reprompt
-from .output_protocol import (
+from pycastle import _time as _time_module
+from pycastle.agents import protocol_reprompt
+from pycastle.agents.output_protocol import (
     AgentOutput,
     AgentOutputProtocolError,
     AgentRole,
@@ -88,7 +39,49 @@ from .output_protocol import (
     FailedOutput,
     extract_output,
 )
-from .result import CancellationToken
+from pycastle.agents.result import CancellationToken
+from pycastle.config import Config, StageOverride, image_name_for
+from pycastle.display.status_display import (
+    WORK_PHASE,
+    ModelDisplayMetadata,
+    PlainStatusDisplay,
+    StatusDisplay,
+)
+from pycastle.errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    DockerError,
+    ModelNotAvailableError,
+    SetupPhaseError,
+    TransientAgentError,
+    UsageLimitError,
+)
+from pycastle.execution_contracts import (
+    RuntimeInvocationDependencies,
+    RuntimeModelDisplayMetadata,
+    RuntimeRunSession,
+)
+from pycastle.infrastructure.container_runner import ContainerRunner
+from pycastle.infrastructure.docker_session import DockerSession, build_volume_spec
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
+from pycastle.managed_worktree_mount_policy import enforce_managed_worktree_mount
+from pycastle.prompts.dispatch import PromptInvocation, render_prompt_invocation
+from pycastle.prompts.pipeline import PromptRenderer
+from pycastle.prompts.scope_args import build_interrupted_work_clause
+from pycastle.runtime_session import ProviderSessionStateRequest
+from pycastle.services import GitService
+from pycastle.services._wake_time import compute_wake_time
+from pycastle.services.runtime_services import AgentService, ClaudeService
+from pycastle.services.runtime_services import ToolPolicy as ServiceToolPolicy
+from pycastle.session import RoleSession, RunKind
+from pycastle.session.agent import (
+    RunSessionPlan,
+    run_session_plan_from_provider_run_state_plan,
+)
+from pycastle.session.run_dispatch import RunSessionRequest, prepare_run_session
+from pycastle.session_planning import ProviderRunStatePlan
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
@@ -358,7 +351,7 @@ class AgentRunner:
             startup_message: str = "started",
             model_display: ModelDisplayMetadata | None = None,
         ) -> AbstractAsyncContextManager[Any]:
-            from ..iteration._rows import status_row
+            from pycastle.iteration._rows import status_row
 
             pycastle_model_display = (
                 None
@@ -603,7 +596,7 @@ class AgentRunner:
         ],
         color_key: int | None,
     ) -> AgentOutput:
-        from ..iteration._rows import status_row
+        from pycastle.iteration._rows import status_row
 
         token = request.token if request.token is not None else CancellationToken()
         if token.is_cancelled:
@@ -1053,7 +1046,7 @@ class AgentRunner:
         status_display=None,
         work_body: str = "",
     ) -> list[PreflightCommandFailure]:
-        from ..iteration._rows import status_row
+        from pycastle.iteration._rows import status_row
 
         if status_display is None:
             status_display = PlainStatusDisplay()

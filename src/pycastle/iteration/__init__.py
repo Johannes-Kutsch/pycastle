@@ -11,21 +11,16 @@ from agent_runtime.errors import (
     HardAgentError,
 )
 
-from ..agent_credential_failure_routing import (
-    route_agent_credential_failure,
-)
-from ..agents.output_protocol import AgentRole, IssueOutput
-from ..agents.result import CancellationToken
-from ..agents.runner import RunRequest
-from ..bug_reporter import (
-    BUG_REPORT_LABEL_LIST,
-    auto_file_issue,
-)
-from ..diagnostic_mount_fallback import (
+from pycastle.agent_credential_failure_routing import route_agent_credential_failure
+from pycastle.agents.output_protocol import AgentRole, IssueOutput
+from pycastle.agents.result import CancellationToken
+from pycastle.agents.runner import RunRequest
+from pycastle.bug_reporter import BUG_REPORT_LABEL_LIST, auto_file_issue
+from pycastle.diagnostic_mount_fallback import (
     DiagnosticMountFallbackIssue,
     decide_diagnostic_mount_dispatch,
 )
-from ..errors import (
+from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
     ModelNotAvailableError,
@@ -33,30 +28,25 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import build_failure_report_scope_args
-from ..services import OperatorActionableGitError
-from ._deps import Deps
-from ._rows import StatusRow as StatusRow
-from ._rows import status_row as status_row
-from .implement import branch_for, implement_phase
-from .improve import ImproveContinue as ImproveContinue
-from .improve import ImproveNoCandidate as ImproveNoCandidate
-from .improve import improve_phase
-from .in_flight import select_in_flight_issues
-from .merge import merge_phase
-from .planning import AllBlocked as AllBlocked
-from .planning import PlanReady as PlanReady
-from .planning import planning_phase
-from .planning_issue_intake import prepare_planning_issue_set
-from .preflight import (
-    PreflightAFK,
-    PreflightHITL,
-)
-from .preflight import (
-    PreflightCache as PreflightCache,
-)
+from pycastle.iteration._deps import Deps
+from pycastle.iteration._rows import StatusRow as StatusRow
+from pycastle.iteration._rows import status_row as status_row
+from pycastle.iteration.implement import branch_for, implement_phase
+from pycastle.iteration.improve import ImproveContinue as ImproveContinue
+from pycastle.iteration.improve import ImproveNoCandidate as ImproveNoCandidate
+from pycastle.iteration.improve import improve_phase
+from pycastle.iteration.in_flight import select_in_flight_issues
+from pycastle.iteration.merge import merge_phase
+from pycastle.iteration.planning import AllBlocked as AllBlocked
+from pycastle.iteration.planning import PlanReady as PlanReady
+from pycastle.iteration.planning import planning_phase
+from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+from pycastle.iteration.preflight import PreflightAFK, PreflightHITL
+from pycastle.iteration.preflight import PreflightCache as PreflightCache
+from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.scope_args import build_failure_report_scope_args
+from pycastle.services import OperatorActionableGitError
 
 _FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
 
@@ -450,7 +440,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         routed_result = _route_and_abort_agent_credential_failure(err, deps)
         if routed_result is not None:
             return routed_result
-        from .hard_agent_error_report import (
+        from pycastle.iteration.hard_agent_error_report import (
             translate_hard_agent_error_to_abort,
         )
 

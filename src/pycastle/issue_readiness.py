@@ -4,10 +4,10 @@ import dataclasses
 import enum
 from typing import TYPE_CHECKING, Literal
 
-from .prompts.pipeline import PromptTemplate
+from pycastle.prompts.pipeline import PromptTemplate
 
 if TYPE_CHECKING:
-    from .config import Config
+    from pycastle.config import Config
 
 
 class SliceMode(enum.Enum):
