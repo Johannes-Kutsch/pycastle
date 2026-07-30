@@ -186,6 +186,17 @@ class DockerBuildError(DockerServiceError):
     pass
 
 
+class RunAlreadyInProgressError(PycastleError):
+    def __init__(self, project: str) -> None:
+        self.project = project
+        super().__init__(f"A run is already in progress for project {project!r}")
+
+
+class RunSlotTimeoutError(PycastleError, TimeoutError):
+    def __init__(self, message: str = "") -> None:
+        super().__init__(message)
+
+
 __all__ = [
     "AgentFailedError",
     "AgentTimeoutError",
@@ -202,6 +213,8 @@ __all__ = [
     "ManagedWorktreeMountPreconditionError",
     "ModelNotAvailableError",
     "PycastleError",
+    "RunAlreadyInProgressError",
+    "RunSlotTimeoutError",
     "RuntimeConfigurationError",
     "SetupPhaseError",
     "TransientAgentError",

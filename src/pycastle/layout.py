@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -15,6 +16,10 @@ __all__ = [
 ]
 
 
+def _sanitize_project_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
 @dataclasses.dataclass(frozen=True)
 class PycastleLayout:
     repo_root: Path
@@ -25,6 +30,9 @@ class PycastleLayout:
     global_env_file: Path
     local_env_file: Path
     cron_lock_path: Path
+    global_run_lock_path: Path
+    run_markers_dir: Path
+    project_run_marker_path: Path
     _display_os_name: str | None = dataclasses.field(
         default=None, repr=False, compare=False
     )
@@ -66,6 +74,10 @@ def resolve_layout(
     resolved_pycastle_home = resolve_global_dir(pycastle_home, resolved_env)
     global_config_file = resolved_pycastle_home / "config.py"
     local_config_file = resolved_pycastle_dir / "config.py"
+    run_markers_dir = resolved_pycastle_home / ".runs"
+    project_run_marker_path = (
+        run_markers_dir / f"{_sanitize_project_name(resolved_repo_root.name)}.lock"
+    )
     return PycastleLayout(
         repo_root=resolved_repo_root,
         pycastle_dir=resolved_pycastle_dir,
@@ -75,6 +87,9 @@ def resolve_layout(
         global_env_file=resolved_pycastle_home / ".env",
         local_env_file=resolved_pycastle_dir / ".env",
         cron_lock_path=resolved_pycastle_home / ".cron.lock",
+        global_run_lock_path=resolved_pycastle_home / ".run.lock",
+        run_markers_dir=run_markers_dir,
+        project_run_marker_path=project_run_marker_path,
         _display_os_name=os_name,
         _display_appdata=resolved_env.get("APPDATA"),
     )
