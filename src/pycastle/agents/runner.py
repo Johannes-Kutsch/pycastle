@@ -757,12 +757,8 @@ class AgentRunner:
                 )
             except AgentCredentialFailureError as err:
                 err.caller = request.name
-                if request.token is not None:
-                    request.token.cancel()
                 raise
             except HardAgentError as err:
-                if request.token is not None:
-                    request.token.cancel()
                 err.caller = request.name
                 raise
             except RuntimeContinuationUnrecoverableError:
@@ -820,8 +816,6 @@ class AgentRunner:
                 raise error
             if isinstance(outcome.kind, ProviderUnavailable):
                 if outcome.kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
-                    if request.token is not None:
-                        request.token.cancel()
                     status_display.print(
                         request.name,
                         format_transient_status_message(
@@ -858,8 +852,6 @@ class AgentRunner:
             if isinstance(outcome.kind, ModelNotAvailable):
                 model = outcome.result.selected.model
                 service.mark_model_restricted(model)
-                if request.token is not None:
-                    request.token.cancel()
                 raise ModelNotAvailableError(
                     service=outcome.result.selected.service,
                     model=model,

@@ -35,6 +35,7 @@ from pycastle.config import Config
 from pycastle.errors import (
     AgentTimeoutError,
     ModelNotAvailableError,
+    TransientAgentError,
     UsageLimitError,
 )
 from pycastle.prompts.dispatch import PromptInvocation
@@ -1614,6 +1615,45 @@ class _NonOpenCodeCredentialFailureRuntimeClient:
         raise AgentCredentialFailureError("credentials expired", service_name="codex")
 
 
+class _TransientApiErrorRuntimeClient:
+    async def run_new_session(self, request):
+        del request
+        return RuntimeOutcome(
+            kind=ProviderUnavailable(
+                reason=ProviderUnavailableReason.TRANSIENT_API_ERROR,
+                detail="upstream timeout",
+            ),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+class _ModelNotAvailableRuntimeClient:
+    async def run_new_session(self, request):
+        del request
+        return RuntimeOutcome(
+            kind=ModelNotAvailable(),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
 def _setup_runner_for_token_tests(
     tmp_path,
     monkeypatch,
@@ -2068,7 +2108,9 @@ def test_opencode_credential_failure_does_not_cancel_shared_token(
     assert not service.is_available()
 
 
-def test_non_opencode_credential_failure_cancels_shared_token(tmp_path, monkeypatch):
+def test_non_opencode_credential_failure_does_not_cancel_shared_token(
+    tmp_path, monkeypatch
+):
     service = _ExhaustableService("codex")
     runner, mount_path = _setup_runner_for_token_tests(
         tmp_path,
@@ -2084,10 +2126,10 @@ def test_non_opencode_credential_failure_cancels_shared_token(tmp_path, monkeypa
             runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
         )
 
-    assert token.is_cancelled
+    assert not token.is_cancelled
 
 
-def test_hard_agent_error_cancels_shared_token(tmp_path, monkeypatch):
+def test_hard_agent_error_does_not_cancel_shared_token(tmp_path, monkeypatch):
     service = _ExhaustableService("codex")
     runner, mount_path = _setup_runner_for_token_tests(
         tmp_path,
@@ -2103,7 +2145,45 @@ def test_hard_agent_error_cancels_shared_token(tmp_path, monkeypatch):
             runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
         )
 
-    assert token.is_cancelled
+    assert not token.is_cancelled
+
+
+def test_transient_api_error_does_not_cancel_shared_token(tmp_path, monkeypatch):
+    service = _ExhaustableService("codex")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_TransientApiErrorRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+
+    with pytest.raises(TransientAgentError):
+        asyncio.run(
+            runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
+        )
+
+    assert not token.is_cancelled
+
+
+def test_model_not_available_does_not_cancel_shared_token(tmp_path, monkeypatch):
+    service = _ExhaustableService("codex")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_ModelNotAvailableRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+
+    with pytest.raises(ModelNotAvailableError):
+        asyncio.run(
+            runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
+        )
+
+    assert not token.is_cancelled
 
 
 def test_early_guard_fires_on_unavailable_service_without_cancelled_token(
