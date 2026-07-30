@@ -93,10 +93,10 @@ def test_full_traceback_printed_to_stderr(monkeypatch):
     from pycastle.main import main as cli
 
     _install_crashing_subcommand(monkeypatch, RuntimeError("stderr-marker"))
-    result = CliRunner(mix_stderr=False).invoke(cli, ["build"])
+    result = CliRunner().invoke(cli, ["build"])
 
-    assert "Traceback" in result.stderr
-    assert "RuntimeError: stderr-marker" in result.stderr
+    assert "Traceback" in result.output
+    assert "RuntimeError: stderr-marker" in result.output
 
 
 # ── Truncation: long traceback ────────────────────────────────────────────────
@@ -130,9 +130,9 @@ def test_long_traceback_full_text_still_on_stderr(monkeypatch):
 
     needle = "needle-" + "x" * 49_000
     _install_crashing_subcommand(monkeypatch, RuntimeError(needle))
-    result = CliRunner(mix_stderr=False).invoke(cli, ["build"])
+    result = CliRunner().invoke(cli, ["build"])
 
-    assert needle in result.stderr
+    assert needle in result.output
 
 
 # ── Click flow control passes through unchanged ───────────────────────────────
