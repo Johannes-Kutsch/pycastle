@@ -19,6 +19,8 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
+import click
+
 from pycastle.config import Config
 
 if TYPE_CHECKING:
@@ -260,7 +262,7 @@ def report_and_exit(
 ) -> None:
     """Print stderr traceback, file/print a bug report, then exit 1."""
     tb_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    print(tb_text, file=sys.stderr, end="")
+    click.echo(tb_text, err=True, nl=False)
 
     auto_file_issue(
         title=_format_title(exc),

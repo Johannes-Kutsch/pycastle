@@ -255,10 +255,11 @@ async def run(
                 sys.exit(1)
             improve_dispatched_count = deps.improve_dispatched_count
 
+            _post_iteration_now = _time_module.now_local()
             router_deps = RouterDeps(
                 cfg=cfg,
                 service_registry=service_registry,
-                now=_now,
+                now=_post_iteration_now,
                 status_display=status_display,  # type: ignore[arg-type]
                 github_svc=github_service,
             )
@@ -272,7 +273,9 @@ async def run(
                     slept_once_after=slept_after,
                 ):
                     status_display.print("", sleep_msg)  # type: ignore[union-attr]
-                    time.sleep((wake_time - _now).total_seconds())
+                    time.sleep(
+                        max(0.0, (wake_time - _time_module.now_local()).total_seconds())
+                    )
                     slept_once = slept_after
                     continue
                 case BreakLoop():

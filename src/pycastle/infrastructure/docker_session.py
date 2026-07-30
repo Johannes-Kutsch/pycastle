@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 from typing import cast
 
 import docker
+import docker.errors
 from docker.models.containers import Container as DockerContainer
 
 from pycastle.config import Config

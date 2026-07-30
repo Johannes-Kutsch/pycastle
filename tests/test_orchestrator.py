@@ -1685,6 +1685,80 @@ def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     )
 
 
+def test_sleep_duration_uses_time_at_sleep_call_not_iteration_start(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """time.sleep() must receive (wake_time - now_at_sleep), not (wake_time - iteration_start).
+
+    If an iteration runs for several hours before hitting a usage limit, the sleep
+    duration must be measured from the actual moment sleep is called.  Using the
+    stale _now captured at iteration start makes pycastle sleep iteration_duration
+    hours longer than intended.
+    """
+    iteration_start = datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC)
+    sleep_call_time = datetime(2026, 1, 1, 17, 30, 0, tzinfo=UTC)  # 7.5 h later
+    reset_time = datetime(2026, 1, 1, 18, 0, 0, tzinfo=UTC)
+    # compute_wake_time adds a 2-minute buffer to reset_time
+    expected_wake = reset_time + timedelta(minutes=2)
+    expected_sleep_s = (expected_wake - sleep_call_time).total_seconds()  # 1920 s
+
+    call_times = [iteration_start, sleep_call_time, sleep_call_time]
+    call_idx = [0]
+
+    def _advancing_now():
+        t = call_times[min(call_idx[0], len(call_times) - 1)]
+        call_idx[0] += 1
+        return t
+
+    monkeypatch.setattr(
+        "pycastle.iteration.orchestrator._time_module.now_local", _advancing_now
+    )
+
+    mock_github = _make_github_svc(numbers=[1])
+    mock_github.get_open_issues.side_effect = [
+        [
+            {
+                "number": 1,
+                "title": "Issue 1",
+                "body": "x" * 100,
+                "comments": [],
+                "labels": ["behavior-slice"],
+            }
+        ],
+        [],
+    ]
+
+    async def _fake_run_agent(request: RunRequest):
+        if request.name == "Plan Agent":
+            return _plan_output(
+                [{"number": 1, "title": "Issue 1", "body": "x" * 100, "comments": []}]
+            )
+        if request.name.startswith("Implement Agent"):
+            raise UsageLimitError(
+                reset_time=reset_time,
+                provider="claude",
+            )
+        return CompletionOutput()
+
+    with patch("time.sleep") as mock_sleep:
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            git_service=_make_git_svc(try_merge_side_effect=[True]),
+            max_iterations=2,
+        )
+
+    mock_sleep.assert_called_once()
+    actual_sleep_s = mock_sleep.call_args[0][0]
+    assert actual_sleep_s == pytest.approx(expected_sleep_s, abs=1), (
+        f"Expected sleep of ~{expected_sleep_s:.0f}s ({expected_sleep_s / 3600:.2f}h) "
+        f"but got {actual_sleep_s:.0f}s ({actual_sleep_s / 3600:.2f}h). "
+        "Sleep must be measured from the moment of the sleep call, not from iteration start."
+    )
+
+
 # ── Preflight-phase usage-limit handling ─────────────────────────────────────
 
 

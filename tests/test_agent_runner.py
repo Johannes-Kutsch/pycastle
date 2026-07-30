@@ -1611,9 +1611,7 @@ class _OpenCodeCredentialFailureRuntimeClient:
 class _NonOpenCodeCredentialFailureRuntimeClient:
     async def run_new_session(self, request):
         del request
-        raise AgentCredentialFailureError(
-            "credentials expired", service_name="codex"
-        )
+        raise AgentCredentialFailureError("credentials expired", service_name="codex")
 
 
 def _setup_runner_for_token_tests(
@@ -1624,9 +1622,7 @@ def _setup_runner_for_token_tests(
     runtime_client,
     issue: int,
 ):
-    mount_path = (
-        tmp_path / "repo" / "pycastle" / ".worktrees" / f"issue-{issue}"
-    )
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / f"issue-{issue}"
     mount_path.mkdir(parents=True)
 
     git_service = MagicMock(spec=GitService)
@@ -2085,9 +2081,7 @@ def test_non_opencode_credential_failure_cancels_shared_token(tmp_path, monkeypa
 
     with pytest.raises(AgentCredentialFailureError):
         asyncio.run(
-            runner.run(
-                _make_implement_request(mount_path, "codex", 2054, token=token)
-            )
+            runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
         )
 
     assert token.is_cancelled
@@ -2106,9 +2100,7 @@ def test_hard_agent_error_cancels_shared_token(tmp_path, monkeypatch):
 
     with pytest.raises(HardAgentError):
         asyncio.run(
-            runner.run(
-                _make_implement_request(mount_path, "codex", 2054, token=token)
-            )
+            runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
         )
 
     assert token.is_cancelled
@@ -2122,7 +2114,9 @@ def test_early_guard_fires_on_unavailable_service_without_cancelled_token(
 
     class _NeverCalledRuntimeClient:
         async def run_new_session(self, request):
-            raise AssertionError("runtime must not be reached when service is unavailable")
+            raise AssertionError(
+                "runtime must not be reached when service is unavailable"
+            )
 
     runner, mount_path = _setup_runner_for_token_tests(
         tmp_path,
