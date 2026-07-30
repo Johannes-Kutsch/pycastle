@@ -328,11 +328,13 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     driver.record_outcome(step1, CompletionOutput())
 
     step2 = driver.next()
-    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    assert step2 is not None
+    assert step2.prompt_key == "02-prd.md"
     driver.record_outcome(step2, IssueOutput(number=77, labels=[]))
 
     step3 = driver.next()
-    assert step3 is not None and step3.prompt_key == "03-issues.md"
+    assert step3 is not None
+    assert step3.prompt_key == "03-issues.md"
     github_port = _GithubPortStandIn(
         issue={"number": 77, "title": "Improve PRD", "body": "PRD body"},
         comments=[
@@ -377,7 +379,8 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
     driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
     step = driver.start()
 
-    assert step is not None and step.prompt_key == "03-issues.md"
+    assert step is not None
+    assert step.prompt_key == "03-issues.md"
     github_port = _GithubPortStandIn(
         issue_error=AssertionError("phase 03 resume without parent PRD must not read")
     )
@@ -413,11 +416,13 @@ def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
     driver.record_outcome(step1, CompletionOutput())
 
     step2 = driver.next()
-    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    assert step2 is not None
+    assert step2.prompt_key == "02-prd.md"
     driver.record_outcome(step2, IssueOutput(number=77, labels=[]))
 
     step3 = driver.next()
-    assert step3 is not None and step3.prompt_key == "03-issues.md"
+    assert step3 is not None
+    assert step3.prompt_key == "03-issues.md"
     github_port = _GithubPortStandIn(
         issue={"number": 77, "title": "Edited PRD", "body": "Edited PRD body"},
         comments=[

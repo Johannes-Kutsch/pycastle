@@ -130,9 +130,7 @@ class _PlainStatusDisplay:
         if caller == self._last_caller:
             return False
         kinds = {self._last_kind, self._kinds.get(caller)}
-        if "agent" in kinds and kinds <= {"phase", "agent"}:
-            return False
-        return True
+        return not ("agent" in kinds and kinds <= {"phase", "agent"})
 
     def register(
         self,

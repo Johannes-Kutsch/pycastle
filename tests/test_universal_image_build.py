@@ -539,8 +539,10 @@ def test_docker_service_build_rejects_empty_image_tag_without_starting_docker(
         context_dir=tmp_path,
     )
 
-    with patch("pycastle.services.docker_service.subprocess.run") as mock_run:
-        with pytest.raises(ValueError, match="image_name must not be empty"):
-            docker_service.build(request)
+    with (
+        patch("pycastle.services.docker_service.subprocess.run") as mock_run,
+        pytest.raises(ValueError, match="image_name must not be empty"),
+    ):
+        docker_service.build(request)
 
     mock_run.assert_not_called()

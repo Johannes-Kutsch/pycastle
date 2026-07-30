@@ -734,9 +734,11 @@ def test_close_issue_raises_operator_actionable_error_after_retry_exhaustion():
     )
     svc = _make_service(transport=transport)
 
-    with patch("time.sleep") as mock_sleep:
-        with pytest.raises(OperatorActionableGithubError) as exc_info:
-            svc.close_issue(42)
+    with (
+        patch("time.sleep") as mock_sleep,
+        pytest.raises(OperatorActionableGithubError) as exc_info,
+    ):
+        svc.close_issue(42)
 
     assert exc_info.value.method == "PATCH"
     assert exc_info.value.path == "/repos/owner/repo/issues/42"
@@ -835,7 +837,7 @@ def test_close_issue_on_410_marks_issue_as_closed_for_get_open_issues():
     )
     svc = _make_service(transport=transport)
 
-    with pytest.warns(UserWarning):
+    with pytest.warns(UserWarning, match="99"):
         svc.close_issue(99)
     open_issues = svc.get_open_issues("ready-for-agent")
 
@@ -1193,9 +1195,11 @@ def test_get_issue_title_raises_operator_actionable_error_after_retry_exhaustion
     )
     svc = _make_service(transport=transport)
 
-    with patch("time.sleep") as mock_sleep:
-        with pytest.raises(OperatorActionableGithubError) as exc_info:
-            svc.get_issue_title(7)
+    with (
+        patch("time.sleep") as mock_sleep,
+        pytest.raises(OperatorActionableGithubError) as exc_info,
+    ):
+        svc.get_issue_title(7)
 
     assert exc_info.value.method == "GET"
     assert exc_info.value.path == "/repos/owner/repo/issues/7"
@@ -1254,9 +1258,11 @@ def test_get_issue_title_does_not_retry_stable_403():
     )
     svc = _make_service(transport=transport)
 
-    with patch("time.sleep") as mock_sleep:
-        with pytest.raises(GithubAPIError) as exc_info:
-            svc.get_issue_title(7)
+    with (
+        patch("time.sleep") as mock_sleep,
+        pytest.raises(GithubAPIError) as exc_info,
+    ):
+        svc.get_issue_title(7)
 
     assert exc_info.value.status == 403
     mock_sleep.assert_not_called()
@@ -1378,9 +1384,11 @@ def test_get_recent_improve_prds_raises_operator_actionable_error_after_retry_ex
         ]
     )
     svc = _make_service(transport=transport)
-    with patch("time.sleep") as mock_sleep:
-        with pytest.raises(OperatorActionableGithubError) as exc_info:
-            svc.get_recent_improve_prds()
+    with (
+        patch("time.sleep") as mock_sleep,
+        pytest.raises(OperatorActionableGithubError) as exc_info,
+    ):
+        svc.get_recent_improve_prds()
 
     assert exc_info.value.path == "/repos/owner/repo/issues?state=all&per_page=100"
     assert [call.args[0] for call in mock_sleep.call_args_list] == [10, 60, 300]
@@ -2558,9 +2566,11 @@ def test_add_label_to_issue_does_not_retry_stable_403():
     )
     svc = _make_service(transport=transport)
 
-    with patch("time.sleep") as mock_sleep:
-        with pytest.raises(GithubAPIError) as exc_info:
-            svc.add_label_to_issue(42, "bug")
+    with (
+        patch("time.sleep") as mock_sleep,
+        pytest.raises(GithubAPIError) as exc_info,
+    ):
+        svc.add_label_to_issue(42, "bug")
 
     assert exc_info.value.status == 403
     mock_sleep.assert_not_called()

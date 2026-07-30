@@ -816,7 +816,8 @@ def test_rich_new_api_print_error_style_renders_entire_line_in_red() -> None:
     d.print("X", "msg", style="error")
     ansi = buf.getvalue()
     caller_idx = ansi.find("[X]")
-    assert caller_idx >= 0 and "msg" in ansi
+    assert caller_idx >= 0
+    assert "msg" in ansi
     assert _has_code(ansi[:caller_idx], 31)  # red precedes [X]
 
 
@@ -826,7 +827,8 @@ def test_rich_new_api_print_success_style_renders_entire_line_in_green() -> None
     d.print("X", "msg", style="success")
     ansi = buf.getvalue()
     caller_idx = ansi.find("[X]")
-    assert caller_idx >= 0 and "msg" in ansi
+    assert caller_idx >= 0
+    assert "msg" in ansi
     assert _has_code(ansi[:caller_idx], 32)  # green precedes [X]
 
 
@@ -849,7 +851,8 @@ def test_rich_new_api_remove_prints_finished_in_green() -> None:
     d = RichStatusDisplay(console=console)
     d.remove("X")
     ansi = buf.getvalue()
-    assert "[X]" in ansi and "finished" in ansi
+    assert "[X]" in ansi
+    assert "finished" in ansi
     # Green (32) must appear before [X] — [X] and message are separate bold/green spans
     assert _has_code(ansi[: ansi.find("[X]")], 32)
 
@@ -859,7 +862,8 @@ def test_rich_new_api_remove_error_style_prints_in_red() -> None:
     d = RichStatusDisplay(console=console)
     d.remove("X", shutdown_message="failed", shutdown_style="error")
     ansi = buf.getvalue()
-    assert "[X]" in ansi and "failed" in ansi
+    assert "[X]" in ansi
+    assert "failed" in ansi
     # Red (31) must appear before [X]
     assert _has_code(ansi[: ansi.find("[X]")], 31)
 
@@ -983,7 +987,8 @@ def test_rich_remove_warning_style_renders_in_yellow() -> None:
     d = RichStatusDisplay(console=console)
     d.remove("X", shutdown_message="warning msg", shutdown_style="warning")
     ansi = buf.getvalue()
-    assert "[X]" in ansi and "warning msg" in ansi
+    assert "[X]" in ansi
+    assert "warning msg" in ansi
     assert _has_code(ansi[: ansi.find("[X]")], 33)  # yellow precedes [X]
 
 
@@ -994,7 +999,8 @@ def test_rich_remove_multiline_warning_style_renders_all_lines_in_yellow() -> No
     ansi = buf.getvalue()
     first_x = ansi.find("[X]")
     second_x = ansi.find("[X]", first_x + 1)
-    assert first_x >= 0 and second_x >= 0
+    assert first_x >= 0
+    assert second_x >= 0
     assert _has_code(ansi[:first_x], 33)  # yellow before first [X]
     assert _has_code(ansi[first_x:second_x], 33)  # yellow before second [X]
 
@@ -1224,7 +1230,8 @@ def test_rich_same_issue_number_gives_same_prefix_color() -> None:
     rgb_pattern = re.compile(r"(\d+;\d+;\d+)")
     impl_rgb = rgb_pattern.search(impl_before)
     review_rgb = rgb_pattern.search(review_before)
-    assert impl_rgb and review_rgb
+    assert impl_rgb
+    assert review_rgb
     assert impl_rgb.group(1) == review_rgb.group(1)
 
 

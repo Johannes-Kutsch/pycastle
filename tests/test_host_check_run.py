@@ -52,7 +52,7 @@ def test_prepare_host_check_run_refreshes_before_clean_tree_and_fails_early():
     git_svc.is_working_tree_clean.side_effect = fake_clean
 
     with pytest.raises(
-        RuntimeError, match="Working tree must be clean before running host checks."
+        RuntimeError, match=r"Working tree must be clean before running host checks\."
     ):
         run_mod.prepare_host_check_run(git_svc=git_svc)
 
@@ -1050,7 +1050,7 @@ def test_run_host_check_run_keeps_clean_tree_abort_behavior_with_phase_row(capsy
     git_svc.is_working_tree_clean.return_value = False
 
     with pytest.raises(
-        RuntimeError, match="Working tree must be clean before running host checks."
+        RuntimeError, match=r"Working tree must be clean before running host checks\."
     ):
         asyncio.run(
             run_mod.run_host_check_run(

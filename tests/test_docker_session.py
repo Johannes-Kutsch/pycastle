@@ -18,7 +18,7 @@ def test_plain_repo_mounts_mount_path_rw_at_workspace(tmp_path):
     """Plain repo (.git is a directory): single RW mount at /home/agent/workspace."""
     (tmp_path / ".git").mkdir()
 
-    volumes, auto_overlay = build_volume_spec(tmp_path)
+    volumes, _auto_overlay = build_volume_spec(tmp_path)
 
     bound_paths = {v["bind"]: k for k, v in volumes.items()}
     assert "/home/agent/workspace" in bound_paths
@@ -71,7 +71,7 @@ def test_implicit_worktree_mounts_mount_path_rw_at_workspace(tmp_path):
     """Implicit worktree (.git is a file): mount_path bound RW at /home/agent/workspace."""
     worktree, _ = _make_implicit_worktree(tmp_path)
 
-    volumes, auto_overlay = build_volume_spec(worktree)
+    volumes, _auto_overlay = build_volume_spec(worktree)
 
     bound_paths = {v["bind"]: k for k, v in volumes.items()}
     assert "/home/agent/workspace" in bound_paths

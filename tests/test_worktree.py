@@ -154,7 +154,7 @@ def test_managed_worktree_raises_when_registered_worktree_has_no_project_files(
     branch_deps.git_svc.list_worktrees.return_value = [wt_path]
 
     async def _run():
-        with pytest.raises(WorktreeError, match="(?i)commit"):
+        with pytest.raises(WorktreeError, match=r"(?i)commit"):
             async with managed_worktree(
                 "issue-42",
                 branch="pycastle/issue-42",
@@ -563,7 +563,7 @@ def test_managed_worktree_preserves_clean_worktree_on_unexpected_agent_failure(
     captured: dict = {}
 
     async def _run():
-        with pytest.raises(RuntimeError, match="unexpected crash"):
+        with pytest.raises(RuntimeError, match="unexpected crash"):  # noqa: PT012 — async context manager is the unit under test; error propagates through managed_worktree
             async with managed_worktree(
                 "issue-unexpected-failure",
                 branch="pycastle/issue-unexpected-failure",
@@ -674,7 +674,7 @@ def test_managed_worktree_raises_on_same_branch_conflict(real_branch_deps):
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
         ):
-            with pytest.raises(WorktreeError, match="(?i)worktree add failed"):
+            with pytest.raises(WorktreeError, match=r"(?i)worktree add failed"):
                 async with managed_worktree(
                     "name2",
                     branch="feature/same",
@@ -691,7 +691,7 @@ def test_managed_worktree_raises_when_project_files_missing(bare_branch_deps):
     """A repo with no pyproject.toml must cause managed_worktree to raise."""
 
     async def _run():
-        with pytest.raises(WorktreeError, match="(?i)commit"):
+        with pytest.raises(WorktreeError, match=r"(?i)commit"):
             async with managed_worktree(
                 "issue-42",
                 branch="pycastle/issue-42",
@@ -872,7 +872,7 @@ def test_managed_worktree_raises_when_non_ancestor_branch_has_no_project_files(
     deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
 
     async def _run():
-        with pytest.raises(WorktreeError, match="(?i)commit"):
+        with pytest.raises(WorktreeError, match=r"(?i)commit"):
             async with managed_worktree(
                 "issue-2",
                 branch="issue/2-real-work",
@@ -1594,7 +1594,7 @@ def test_managed_worktree_preserves_worktree_on_agent_failed_error(branch_deps):
 
 
 @pytest.mark.parametrize(
-    "dirty, usage_limit_exc, has_resumable_session, expected_teardown",
+    ("dirty", "usage_limit_exc", "has_resumable_session", "expected_teardown"),
     [
         (False, False, False, True),
         (True, False, False, False),
@@ -1711,7 +1711,9 @@ def test_managed_worktree_cleans_up_on_agent_credential_failure(branch_deps):
     assert not marker.exists()
 
 
-@pytest.mark.parametrize("dirty, has_resumable_session", [(True, False), (False, True)])
+@pytest.mark.parametrize(
+    ("dirty", "has_resumable_session"), [(True, False), (False, True)]
+)
 def test_managed_worktree_preserves_independent_worktree_state_on_agent_credential_failure(
     branch_deps, dirty, has_resumable_session
 ):
@@ -1719,7 +1721,7 @@ def test_managed_worktree_preserves_independent_worktree_state_on_agent_credenti
     branch_deps.git_svc.is_working_tree_clean.return_value = not dirty
 
     async def _run():
-        with pytest.raises(AgentCredentialFailureError):
+        with pytest.raises(AgentCredentialFailureError):  # noqa: PT012 — async context manager is the unit under test; error propagates through managed_worktree
             async with managed_worktree(
                 "issue-42",
                 branch="pycastle/issue-42",

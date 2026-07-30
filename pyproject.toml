@@ -122,9 +122,7 @@ ignore = [
     "TC002",    # typing-only-third-party-import (1 finding)
     "TC003",    # typing-only-stdlib-import (43 findings)
     # simplify / modernise
-    "SIM117",   # multiple-with-statements (29 findings)
     "SIM105",   # suppressible-exception (10 findings)
-    "SIM103",   # needless-bool (8 findings)
     "SIM102",   # collapsible-if (5 findings)
     "SIM115",   # open-file-with-context-handler (1 finding)
     # pyupgrade
@@ -146,11 +144,6 @@ ignore = [
     "ANN202",   # missing-return-type-private-function (7 findings)
     "ANN204",   # missing-return-type-special-method (1 finding)
     "ANN002",   # missing-type-args (1 finding)
-    # pytest
-    "PT018",    # composite-assertion (27 findings)
-    "PT006",    # pytest-parametrize-names-wrong-type (5 findings)
-    "PT012",    # pytest-raises-with-multiple-statements (2 findings)
-    "PT030",    # pytest (1 finding)
     # booleans
     "FBT001",   # boolean-typed-positional-argument (23 findings)
     "FBT002",   # boolean-default-positional-argument (8 findings)
@@ -185,11 +178,8 @@ ignore = [
     "ASYNC251", # blocking-sleep-in-async-function (1 finding)
     "ASYNC110", # blocking-busy-wait (1 finding)
     # ruff-specific
-    "RUF059",   # unused-unpacked-variable (12 findings)
-    "RUF043",   # pytest-raises-without-match (12 findings)
     "RUF012",   # mutable-class-attributes (3 findings)
     # loops / builtins
-    "B023",     # function-uses-loop-variable (9 findings)
     "B010",     # do-not-call-setattr-with-constant (3 findings; setattr used intentionally to bypass mypy on untyped attrs)
     "B905",     # zip-without-explicit-strict (2 findings)
     "B008",     # function-call-in-default-argument (1 finding)
@@ -198,7 +188,6 @@ ignore = [
     # pep695 / typing
     "PYI034",   # non-self-return-type (3 findings)
     # pylint misc
-    "PLW0108",  # unnecessary-lambda (6 findings)
     "ARG002",   # unused-method-argument (12 findings, src/ only)
     "ARG001",   # unused-function-argument (6 findings, src/ only)
     # performance

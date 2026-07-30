@@ -582,11 +582,11 @@ def test_terse_tty_failure_clears_progress_before_failed_line(tmp_path):
             return_value=_mock_popen(docker_output, returncode=1),
         ),
         patch("pycastle.services.docker_service.sys.stdout", buf),
+        pytest.raises(DockerBuildError),
     ):
-        with pytest.raises(DockerBuildError):
-            DockerService().build_image(
-                "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
-            )
+        DockerService().build_image(
+            "img", tmp_path / "Dockerfile", tmp_path, stream=True, terse=True
+        )
 
     output = buf.getvalue()
     # The clear sequence (\r\x1b[K) must appear before the "failed" line

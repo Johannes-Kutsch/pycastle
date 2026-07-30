@@ -102,7 +102,7 @@ def test_check_propagates_host_check_run_failures_without_extra_summary(
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(
-        RuntimeError, match="Working tree must be clean before running host checks."
+        RuntimeError, match=r"Working tree must be clean before running host checks\."
     ):
         check_mod.main(cfg=Config())
 

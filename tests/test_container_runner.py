@@ -114,6 +114,9 @@ class FakeDockerSession:
         self._container: object | None = None
         self._exec_handlers = exec_handlers or {}
 
+    def set_active_container(self, container_id: str = "container-123") -> None:
+        self._container = type("Container", (), {"id": container_id})()
+
     def __enter__(self) -> "FakeDockerSession":
         self.entered = True
         return self
@@ -181,7 +184,7 @@ def _make_runner(
     if cfg is None:
         cfg = Config(logs_dir=tmp_path or Path("/tmp/pycastle-tests"))
     if active_container:
-        session._container = type("Container", (), {"id": "container-123"})()
+        session.set_active_container()
     runner = ContainerRunner(
         name,
         cast("DockerSession", session),
@@ -219,7 +222,6 @@ def test_container_runner_does_not_expose_exec_simple_or_write_file(tmp_path):
 
 def test_container_runner_builds_argv_transform_for_container_invocation(tmp_path):
     session = FakeDockerSession()
-    session._container = type("Container", (), {"id": "container-123"})()
     runner, _ = _make_runner(tmp_path=tmp_path, session=session, active_container=True)
 
     transform = runner.provider_argv_transform()

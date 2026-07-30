@@ -1377,7 +1377,7 @@ def test_merge_phase_completes_normally_after_polling_through_multiple_dirty_sta
     recording_deps, git_svc
 ):
     """merge_phase must complete normally when the working tree becomes clean after multiple polls."""
-    deps, recording = recording_deps
+    deps, _recording = recording_deps
     git_svc.is_working_tree_clean.side_effect = [False, False, True]
     issues = [{"number": 1, "title": "Fix A"}]
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
@@ -1388,7 +1388,7 @@ def test_merge_phase_completes_normally_after_polling_through_multiple_dirty_sta
 
 def test_merge_phase_polls_dirty_tree_every_10_seconds(recording_deps, git_svc):
     """merge_phase must sleep exactly 10 s between dirty-tree polls."""
-    deps, recording = recording_deps
+    deps, _recording = recording_deps
     # Initial: dirty → print; loop: dirty → sleep, dirty → sleep, clean → exit
     git_svc.is_working_tree_clean.side_effect = [False, False, False, True]
     issues = [{"number": 1, "title": "Fix A"}]
@@ -1785,7 +1785,8 @@ def test_merge_phase_preserves_sandbox_and_session_on_usage_limit_error(
 
     assert sandbox_path.exists(), "sandbox worktree must be preserved"
     session_dir = sandbox_path / ".pycastle-session" / "merger"
-    assert session_dir.exists() and any(session_dir.rglob("*"))
+    assert session_dir.exists()
+    assert any(session_dir.rglob("*"))
 
 
 @pytest.mark.parametrize(
@@ -2009,7 +2010,7 @@ def test_branch_deletion_warning_routed_to_status_display_not_stderr(
 
 def test_all_branches_processed_in_parallel_teardown(recording_deps, git_svc):
     """All branches must be deleted even when processed in parallel."""
-    deps, recording = recording_deps
+    deps, _recording = recording_deps
     issues = [
         {"number": 1, "title": "A"},
         {"number": 2, "title": "B"},
@@ -2026,7 +2027,7 @@ def test_all_branches_processed_in_parallel_teardown(recording_deps, git_svc):
 
 
 def test_close_issue_failure_does_not_abort_merge_phase(recording_deps, github_svc):
-    deps, recording = recording_deps
+    deps, _recording = recording_deps
     github_svc.close_issue_with_parents.side_effect = RuntimeError("API error")
     issues = [{"number": 1, "title": "Fix A"}]
     result = _run(issues, deps)
@@ -2037,7 +2038,7 @@ def test_close_issue_failure_does_not_abort_merge_phase(recording_deps, github_s
 def test_close_issue_failure_in_conflict_path_does_not_abort(
     recording_deps, git_svc, github_svc
 ):
-    deps, recording = recording_deps
+    deps, _recording = recording_deps
     git_svc.try_merge.return_value = False
     github_svc.close_issue_with_parents.side_effect = RuntimeError(
         "conflict close failed"
@@ -2066,7 +2067,7 @@ def test_conflict_close_failure_does_not_advance_closing_progress(
 
 
 def test_close_issue_all_failures_reported(recording_deps, github_svc):
-    deps, recording = recording_deps
+    deps, _recording = recording_deps
     errors = {1: RuntimeError("first"), 2: RuntimeError("second")}
 
     def _side_effect(number):
@@ -2209,7 +2210,7 @@ def test_uncaught_exception_in_teardown_does_not_cancel_siblings(
     recording_deps, git_svc
 ):
     """An uncaught exception from is_ancestor in one task does not abort sibling teardowns."""
-    deps, recording = recording_deps
+    deps, _recording = recording_deps
 
     def _is_ancestor_raises_for_one(branch, repo_root):
         if "issue-1" in branch:
@@ -2370,9 +2371,7 @@ def test_conflict_branch_stays_incomplete_until_target_branch_is_verified_merged
     git_svc.try_merge.side_effect = _conflict_on([2])
 
     def _is_ancestor(branch, repo_path):
-        if branch == "pycastle/issue-2" and repo_path == deps.repo_root:
-            return False
-        return True
+        return not (branch == "pycastle/issue-2" and repo_path == deps.repo_root)
 
     git_svc.is_ancestor.side_effect = _is_ancestor
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]

@@ -1770,9 +1770,10 @@ def test_skip_message_emitted_before_any_agent_when_no_issues(tmp_path, capsys):
     _run(tmp_path, _fake_run_agent, github_service=mock_github)
 
     out = capsys.readouterr().out
-    assert "No unblocked issues with label" in out and "found. Skipping." in out, (
+    assert "No unblocked issues with label" in out, (
         f"Skip message not printed; stdout={out!r}"
     )
+    assert "found. Skipping." in out, f"Skip message not printed; stdout={out!r}"
     assert agent_names == [], (
         f"No agents must run when there are no matching issues; got {agent_names}"
     )
@@ -2257,7 +2258,7 @@ def test_run_full_iteration_cold_path(git_repo):
 
     closed_issues: list[int] = []
     mock_github = _make_github_svc()
-    mock_github.close_issue_with_parents.side_effect = lambda n: closed_issues.append(n)
+    mock_github.close_issue_with_parents.side_effect = closed_issues.append
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -3499,7 +3500,7 @@ def test_orchestrator_files_issue_on_consuming_repo_when_no_existing_match(tmp_p
     assert exc_info.value.code != 0
     github_svc.create_issue_in.assert_called_once()
     call_args = github_svc.create_issue_in.call_args
-    owner_repo, title, body, labels = call_args[0]
+    owner_repo, title, _body, labels = call_args[0]
     assert owner_repo == "consuming-owner/consuming-repo"
     assert title.startswith("[pycastle] git remote unreachable")
     assert labels == ["bug", "needs-triage"]
@@ -3816,9 +3817,7 @@ def test_model_not_available_stage_scoped_routing_uses_chain_not_global_availabi
             self._restricted_model = restricted_model
 
         def is_available(self, now=None, *, model=None) -> bool:
-            if model is not None and model == self._restricted_model:
-                return False
-            return True
+            return not (model is not None and model == self._restricted_model)
 
         def next_wake_time(self):
             return None

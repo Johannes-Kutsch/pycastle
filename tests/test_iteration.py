@@ -1254,7 +1254,7 @@ def test_single_ready_issue_planning_uses_carried_ready_slice_outcome_for_work_b
 
 
 @pytest.mark.parametrize(
-    "label,mode",
+    ("label", "mode"),
     [
         ("refactor-slice", "refactor"),
         ("docs-slice", "docs"),

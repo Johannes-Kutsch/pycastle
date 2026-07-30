@@ -143,9 +143,11 @@ def test_get_user_name_raises_git_timeout_error_on_timeout():
 
 def test_get_user_name_raises_git_not_found_error_when_git_missing():
     svc = GitService(_cfg)
-    with patch("subprocess.run", side_effect=FileNotFoundError):
-        with pytest.raises(GitNotFoundError):
-            svc.get_user_name()
+    with (
+        patch("subprocess.run", side_effect=FileNotFoundError),
+        pytest.raises(GitNotFoundError),
+    ):
+        svc.get_user_name()
 
 
 def test_get_user_name_strips_trailing_newline():
@@ -164,9 +166,11 @@ def test_try_merge_raises_unrelated_histories_error_on_unrelated_histories():
         stdout=b"",
         stderr=b"fatal: refusing to merge unrelated histories",
     )
-    with patch("subprocess.run", return_value=merge_result):
-        with pytest.raises(UnrelatedHistoriesError):
-            svc.try_merge(Path("/repo"), "origin/main")
+    with (
+        patch("subprocess.run", return_value=merge_result),
+        pytest.raises(UnrelatedHistoriesError),
+    ):
+        svc.try_merge(Path("/repo"), "origin/main")
 
 
 # ── get_user_email() ───────────────────────────────────────────────────────────
@@ -527,9 +531,11 @@ def test_create_worktree_uses_existing_branch_when_ref_exists(tmp_path):
 
 def test_create_worktree_raises_git_command_error_on_add_failure(tmp_path):
     svc = GitService(_cfg)
-    with patch("subprocess.run", side_effect=_make_fake_run(add_rc=1)):
-        with pytest.raises(GitCommandError):
-            svc.create_worktree(tmp_path, tmp_path / "wt", "feature/conflict")
+    with (
+        patch("subprocess.run", side_effect=_make_fake_run(add_rc=1)),
+        pytest.raises(GitCommandError),
+    ):
+        svc.create_worktree(tmp_path, tmp_path / "wt", "feature/conflict")
 
 
 def test_create_worktree_raises_git_timeout_error_on_timeout(tmp_path):
@@ -663,7 +669,8 @@ def test_remove_worktree_calls_git_worktree_remove(tmp_path):
     with patch("subprocess.run", return_value=MagicMock(returncode=0, stderr=b"")) as m:
         svc.remove_worktree(tmp_path, worktree)
     cmd = m.call_args[0][0]
-    assert "worktree" in cmd and "remove" in cmd
+    assert "worktree" in cmd
+    assert "remove" in cmd
 
 
 def test_remove_worktree_falls_back_to_rmtree_when_git_fails(tmp_path):
@@ -1029,9 +1036,11 @@ def test_checkout_detached_raises_git_command_error_on_add_failure(tmp_path):
             return MagicMock(returncode=128, stdout=b"", stderr=b"fatal: bad sha")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
-    with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(GitCommandError):
-            svc.checkout_detached(tmp_path, tmp_path / "wt", "badbad")
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        pytest.raises(GitCommandError),
+    ):
+        svc.checkout_detached(tmp_path, tmp_path / "wt", "badbad")
 
 
 def test_checkout_detached_raises_git_timeout_error_on_timeout(tmp_path):
@@ -1075,9 +1084,11 @@ def test_fast_forward_branch_raises_git_command_error_on_merge_failure(tmp_path)
             )
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
-    with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(GitCommandError):
-            svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        pytest.raises(GitCommandError),
+    ):
+        svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
 
 
 def test_fast_forward_branch_raises_git_command_error_on_checkout_failure(tmp_path):
@@ -1297,9 +1308,11 @@ def test_commit_raises_git_command_error_on_add_failure(tmp_path):
             return MagicMock(returncode=1, stdout=b"", stderr=b"add error")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
-    with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(GitCommandError):
-            svc.commit(tmp_path / "wt", tmp_path, "msg")
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        pytest.raises(GitCommandError),
+    ):
+        svc.commit(tmp_path / "wt", tmp_path, "msg")
 
     assert all("commit" not in cmd for cmd in captured)
 
@@ -1314,9 +1327,11 @@ def test_commit_raises_git_command_error_on_commit_failure(tmp_path):
             return MagicMock(returncode=1, stdout=b"", stderr=b"")
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
-    with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(GitCommandError):
-            svc.commit(tmp_path / "wt", tmp_path, "msg")
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        pytest.raises(GitCommandError),
+    ):
+        svc.commit(tmp_path / "wt", tmp_path, "msg")
 
 
 def test_commit_raises_git_timeout_error_on_timeout(tmp_path):
@@ -1451,9 +1466,9 @@ def test_remote_op_raises_operator_actionable_error_immediately_for_stable_misco
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            run_remote_op(svc, tmp_path)
+        run_remote_op(svc, tmp_path)
 
     assert attempts == 1
     assert exc_info.value.op == op
@@ -1595,9 +1610,11 @@ def test_push_raises_after_four_non_fast_forward_rejections(tmp_path):
             return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
         return _git_result()
 
-    with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(GitCommandError) as exc_info:
-            asyncio.run(svc.push(tmp_path))
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        pytest.raises(GitCommandError) as exc_info,
+    ):
+        asyncio.run(svc.push(tmp_path))
 
     assert push_count == 4
     assert "[rejected]" in exc_info.value.stderr
@@ -1649,9 +1666,11 @@ def test_push_raises_when_pull_with_merge_fallback_fails_on_conflict(tmp_path):
             return _git_failure(b"CONFLICT (content): conflict in file.py")
         return _git_result()
 
-    with patch("subprocess.run", side_effect=fake_run):
-        with pytest.raises(GitCommandError):
-            asyncio.run(svc.push(tmp_path))
+    with (
+        patch("subprocess.run", side_effect=fake_run),
+        pytest.raises(GitCommandError),
+    ):
+        asyncio.run(svc.push(tmp_path))
 
 
 def test_push_does_not_fetch_rebase_on_transient_failure(tmp_path):
@@ -1961,9 +1980,9 @@ def test_fetch_retries_on_auth_failure_and_raises_operator_actionable_on_exhaust
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            svc.fetch(tmp_path)
+        svc.fetch(tmp_path)
 
     assert attempts == 4
     assert mock_sleep.call_count == 3

@@ -144,6 +144,7 @@ def fake_session(tmp_path):
             docker_client=mock_client,
         )
         session.__enter__()
+        session.mock_container = mock_client.containers.run.return_value
         return session
 
     return _make
@@ -158,7 +159,9 @@ def test_exec_simple_raises_docker_error_on_nonzero_exit(fake_session):
 def test_exec_simple_raises_docker_timeout_error_on_timeout(fake_session):
     blocker = threading.Event()
     session = fake_session()
-    session._container.exec_run.side_effect = lambda *a, **kw: blocker.wait() or None
+    session.mock_container.exec_run.side_effect = lambda *a, **kw: (
+        blocker.wait() or None
+    )
     try:
         with pytest.raises(DockerTimeoutError):
             session.exec_simple("sleep inf", timeout=0.05)

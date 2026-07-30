@@ -149,7 +149,7 @@ def test_interpret_preflight_command_failures_preserves_original_command_failure
 
 
 @pytest.mark.parametrize(
-    "command, output",
+    ("command", "output"),
     [
         (
             "python -X dev -m ruff check .",

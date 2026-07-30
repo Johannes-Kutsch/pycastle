@@ -255,8 +255,8 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_all_diagno
             role=role,
             invocation=_invocation(template),
             parser_error="unexpected <issue> tag while ignoring <promise>COMPLETE</promise>",
-            render_expected_output_shape=lambda: (
-                f"shape for {template.name} with {expected_scope_fragment}"
+            render_expected_output_shape=lambda t=template, esf=expected_scope_fragment: (
+                f"shape for {t.name} with {esf}"
             ),
         )
 
@@ -294,8 +294,8 @@ def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes(
             role=role,
             invocation=invocation,
             parser_error="unexpected <promise>COMPLETE</promise> tag",
-            render_expected_output_shape=lambda: (
-                f"shape for {template.name} with {invocation.scope_args[scope_key]}"
+            render_expected_output_shape=lambda t=template, inv=invocation, sk=scope_key: (
+                f"shape for {t.name} with {inv.scope_args[sk]}"
             ),
         )
 
@@ -323,9 +323,9 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_work_famil
     ):
         invocation = _invocation(template)
 
-        def render_expected_output_shape() -> str:
+        def render_expected_output_shape(t=template, inv=invocation) -> str:
             render_calls.append(object())
-            return f"shape for {template.name} with {invocation.scope_args['BRANCH']}"
+            return f"shape for {t.name} with {inv.scope_args['BRANCH']}"
 
         plan = plan_protocol_reprompt(
             role=role,
@@ -386,8 +386,8 @@ def test_plan_protocol_reprompt_preserves_exact_improve_phase_invocations():
                 "unexpected <issue>123</issue> while ignoring "
                 "<promise>COMPLETE</promise>"
             ),
-            render_expected_output_shape=lambda: (
-                f"shape for {template.name} with {expected_scope_fragment}"
+            render_expected_output_shape=lambda t=template, esf=expected_scope_fragment: (
+                f"shape for {t.name} with {esf}"
             ),
         )
 

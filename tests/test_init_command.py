@@ -30,7 +30,8 @@ def test_universal_dockerfile_installs_gh_from_github_apt():
     pkg = files("pycastle").joinpath("defaults")
     content = (pkg / "Dockerfile").read_text()
     assert "cli.github.com/packages" in content
-    assert "apt-get install" in content and " gh" in content
+    assert "apt-get install" in content
+    assert " gh" in content
 
 
 @pytest.mark.parametrize("service", ["claude", "codex", "opencode"])
@@ -1524,9 +1525,7 @@ def test_init_local_always_prompts_for_credentials(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     def confirm_side_effect(message, *args, **kwargs):
-        if "Create local .env" in message:
-            return True
-        return False
+        return "Create local .env" in message
 
     with (
         patch(
@@ -1697,9 +1696,7 @@ def test_init_no_flag_prompts_for_scope(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
     def confirm_side_effect(message, *args, **kwargs):
-        if "global" in message.lower():
-            return True
-        return False
+        return "global" in message.lower()
 
     with (
         patch("click.prompt", return_value=""),
@@ -1917,9 +1914,7 @@ def test_init_overwrite_yes_replaces_existing_gh_token(tmp_path, monkeypatch):
     env_file.write_text("GH_TOKEN=old-gh\nCLAUDE_CODE_OAUTH_TOKEN=\n")
 
     def confirm_side_effect(message, *args, **kwargs):
-        if "Overwrite" in message and "GH_TOKEN" in message:
-            return True
-        return False
+        return "Overwrite" in message and "GH_TOKEN" in message
 
     def prompt_side_effect(*args, **kwargs):
         msg = args[0] if args else ""
@@ -1969,9 +1964,7 @@ def test_init_overwrite_yes_replaces_existing_claude_token(tmp_path, monkeypatch
     env_file.write_text("GH_TOKEN=\nCLAUDE_CODE_OAUTH_TOKEN=old-claude\n")
 
     def confirm_side_effect(message, *args, **kwargs):
-        if "Overwrite" in message and "CLAUDE_CODE_OAUTH_TOKEN" in message:
-            return True
-        return False
+        return "Overwrite" in message and "CLAUDE_CODE_OAUTH_TOKEN" in message
 
     def prompt_side_effect(*args, **kwargs):
         msg = args[0] if args else ""
@@ -2622,12 +2615,12 @@ def test_init_invalid_service_selection_exits_with_clear_error(
 
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(click.ClickException, match="Invalid service selection"):
-        with (
-            patch("click.prompt", side_effect=[selection]),
-            patch("click.confirm", return_value=False),
-        ):
-            main(scope="local")
+    with (
+        pytest.raises(click.ClickException, match="Invalid service selection"),
+        patch("click.prompt", side_effect=[selection]),
+        patch("click.confirm", return_value=False),
+    ):
+        main(scope="local")
 
 
 # ── Issue #790: --refresh picks Dockerfile template by config walk ─────────────

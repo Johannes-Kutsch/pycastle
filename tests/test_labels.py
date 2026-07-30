@@ -28,7 +28,7 @@ def label_setup(monkeypatch):
 
     posted: list = []
     github_svc = MagicMock(spec=GithubService)
-    github_svc.create_label.side_effect = lambda body: posted.append(body)
+    github_svc.create_label.side_effect = posted.append
 
     return git_svc, github_svc, posted
 

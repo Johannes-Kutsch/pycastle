@@ -324,7 +324,7 @@ def test_claude_default_no_service_name_on_error():
     result = translate_hard_agent_error_to_abort(err, Config(), display, filer)
 
     assert isinstance(result, AbortedHardApiError)
-    title, body, labels = filer.calls[0]
+    title, body, _labels = filer.calls[0]
     assert "[pycastle] Claude API" in title
     assert "Service: claude" in body
 

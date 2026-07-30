@@ -125,7 +125,7 @@ def test_improve_phase_picked_path_runs_scan_then_prd(deps, agent_runner):
 
 
 @pytest.mark.parametrize(
-    "template,expected_name,expected_body",
+    ("template", "expected_name", "expected_body"),
     [
         (PromptTemplate.IMPROVE_SCAN, "Scan Agent", "picking an improvement"),
         (PromptTemplate.IMPROVE_PRD, "PRD Agent", "writing PRD"),

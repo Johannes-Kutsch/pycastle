@@ -170,15 +170,17 @@ def test_status_row_agent_registration_uses_agent_kind_and_work_body(
     d = PlainStatusDisplay()
 
     async def run() -> None:
-        async with status_row(d, "Implement", kind="phase", must_close=True):
-            async with status_row(
+        async with (
+            status_row(d, "Implement", kind="phase", must_close=True),
+            status_row(
                 d,
                 "Worker",
                 kind="agent",
                 must_close=False,
                 work_body="implementing #42",
-            ):
-                pass
+            ),
+        ):
+            pass
 
     asyncio.run(run())
     out = capsys.readouterr().out

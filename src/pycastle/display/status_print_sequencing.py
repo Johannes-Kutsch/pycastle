@@ -39,9 +39,7 @@ class StatusPrintSequencer:
         if caller == self._last_caller:
             return False
         kinds = {self._last_kind, self.caller_kind(caller)}
-        if "agent" in kinds and kinds <= {"phase", "agent"}:
-            return False
-        return True
+        return not ("agent" in kinds and kinds <= {"phase", "agent"})
 
     def record_output_event(self, event: str | OutputEvent) -> bool:
         caller = event if isinstance(event, str) else event.caller

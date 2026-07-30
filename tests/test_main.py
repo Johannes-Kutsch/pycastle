@@ -370,9 +370,11 @@ def test_build_cmd_uses_config_docker_image_name(tmp_path, monkeypatch):
     cfg = Config(docker_image_name="custom-img")
     fake_svc = MagicMock()
 
-    with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
-            CliRunner().invoke(cli, ["build"])
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        CliRunner().invoke(cli, ["build"])
 
     assert [request.image_tag for request in _built_requests(fake_svc)] == [
         "custom-img"
@@ -391,9 +393,11 @@ def test_build_cmd_exits_zero_on_success(tmp_path, monkeypatch):
     fake_svc = MagicMock()
     fake_svc.build.return_value = None
 
-    with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
-            result = CliRunner().invoke(cli, ["build"])
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["build"])
 
     assert result.exit_code == 0
     assert "Build complete" in result.output
@@ -408,9 +412,11 @@ def test_build_cmd_exits_one_on_docker_service_error(tmp_path, monkeypatch):
     fake_svc = MagicMock()
     fake_svc.build.side_effect = DockerServiceError("docker not found")
 
-    with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
-            result = CliRunner().invoke(cli, ["build"])
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["build"])
 
     assert result.exit_code == 1
     assert "docker not found" in result.output
@@ -425,9 +431,11 @@ def test_build_cmd_exits_one_on_docker_build_error(tmp_path, monkeypatch):
     fake_svc = MagicMock()
     fake_svc.build.side_effect = DockerBuildError("build failed")
 
-    with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.commands.build.DockerService", return_value=fake_svc):
-            result = CliRunner().invoke(cli, ["build"])
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+    ):
+        result = CliRunner().invoke(cli, ["build"])
 
     assert result.exit_code == 1
     assert "build failed" in result.output
@@ -483,11 +491,13 @@ def test_labels_cmd_creates_labels_with_config_issue_label(tmp_path, monkeypatch
     )
 
     fake_github = MagicMock()
-    fake_github.create_label.side_effect = lambda body: posted.append(body)
+    fake_github.create_label.side_effect = posted.append
 
-    with patch("pycastle.main.load_config", return_value=cfg):
-        with patch("pycastle.commands.labels.GithubService", return_value=fake_github):
-            CliRunner().invoke(cli, ["labels"])
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.labels.GithubService", return_value=fake_github),
+    ):
+        CliRunner().invoke(cli, ["labels"])
 
     label_names = {entry["name"] for entry in posted}
     assert "custom-ready" in label_names

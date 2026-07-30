@@ -1686,9 +1686,7 @@ def test_run_issue_calls_on_started_for_implement_and_review(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(
-        run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role))
-    )
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=fired.append))
 
     assert fired == ["implement", "review"]
 
@@ -1707,9 +1705,7 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(
-        run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role))
-    )
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=fired.append))
 
     assert fired == []
 
@@ -2034,9 +2030,7 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(
-        run_issue(issue, deps, "sha-abc", on_started=lambda role: fired.append(role))
-    )
+    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=fired.append))
 
     assert fired == ["review"]
 

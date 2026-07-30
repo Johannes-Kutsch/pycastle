@@ -1069,9 +1069,8 @@ def test_agent_runner_retries_malformed_planner_output_with_planner_specific_pro
         lambda _self: runtime_client,
     )
     monkeypatch.setattr(
-        runner._renderer,
-        "render_expected_output_shape",
-        lambda template, scope_args: (
+        "pycastle.prompts.pipeline.PromptRenderer.render_expected_output_shape",
+        lambda self, template, scope_args: (
             "<plan>{...}</plan>"
             if template is PromptTemplate.PLAN and scope_args is invocation.scope_args
             else ""
@@ -1239,7 +1238,7 @@ def test_stale_continuation_fresh_retry_succeeds_on_unrecoverable_error(
 def test_stale_continuation_fresh_retry_sets_interrupted_work_on_dirty_tree(
     tmp_path, monkeypatch
 ):
-    runner, mount_path, session_dir, git_service = _make_stale_continuation_runner(
+    runner, mount_path, _session_dir, git_service = _make_stale_continuation_runner(
         tmp_path, issue=1939
     )
     git_service.is_working_tree_clean.return_value = False

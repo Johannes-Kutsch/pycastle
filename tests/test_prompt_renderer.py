@@ -1139,7 +1139,7 @@ def test_renderer_ctor_rejects_broken_unknown_local_prompt_file(
     prompts_dir.mkdir(parents=True)
     (prompts_dir / "unknown.md").write_text("stale {{UNKNOWN_TOKEN}}")
 
-    with pytest.raises(PromptRenderError, match="unknown.md"):
+    with pytest.raises(PromptRenderError, match=r"unknown\.md"):
         PromptRenderer(Config())
 
 
@@ -1203,7 +1203,7 @@ def test_renderer_startup_rejects_unknown_local_prompt_notes(tmp_path: Path):
     prompts_dir.mkdir(parents=True)
     (prompts_dir / "notes.md").write_text("scratchpad {{UNKNOWN_KEY}}")
 
-    with pytest.raises(PromptRenderError, match="notes.md"):
+    with pytest.raises(PromptRenderError, match=r"notes\.md"):
         PromptRenderer(_cfg_for_prompts_dir(prompts_dir))
 
 
@@ -1215,7 +1215,7 @@ def test_renderer_startup_rejects_unknown_local_prompt_notes_in_default_local_di
     prompts_dir.mkdir(parents=True)
     (prompts_dir / "notes.md").write_text("scratchpad {{UNKNOWN_KEY}}")
 
-    with pytest.raises(PromptRenderError, match="notes.md"):
+    with pytest.raises(PromptRenderError, match=r"notes\.md"):
         PromptRenderer(Config())
 
 
@@ -1230,7 +1230,7 @@ def test_renderer_rejects_stale_local_prompt_file_not_in_bundled_set(
         "stale testing notes {{UNKNOWN_KEY}}"
     )
 
-    with pytest.raises(PromptRenderError, match="shared/standards/testing.md"):
+    with pytest.raises(PromptRenderError, match=r"shared/standards/testing\.md"):
         PromptRenderer(Config())
 
 

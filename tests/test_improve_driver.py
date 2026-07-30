@@ -52,15 +52,18 @@ def test_picked_path_full_sequence(driver_dir: Path) -> None:
     driver = _make_driver(driver_dir)
 
     step1 = driver.start()
-    assert step1 is not None and step1.prompt_key == "01-scan.md"
+    assert step1 is not None
+    assert step1.prompt_key == "01-scan.md"
     driver.record_outcome(step1, CompletionOutput())
 
     step2 = driver.next()
-    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    assert step2 is not None
+    assert step2.prompt_key == "02-prd.md"
     driver.record_outcome(step2, CompletionOutput())
 
     step3 = driver.next()
-    assert step3 is not None and step3.prompt_key == "03-issues.md"
+    assert step3 is not None
+    assert step3.prompt_key == "03-issues.md"
     driver.record_outcome(step3, CompletionOutput())
 
     assert driver.next() is None
@@ -77,7 +80,8 @@ def test_no_candidate_with_report_enabled_routes_to_04(driver_dir: Path) -> None
     driver.record_outcome(step1, NoCandidateOutput())
 
     step2 = driver.next()
-    assert step2 is not None and step2.prompt_key == "04-no-candidate-report.md"
+    assert step2 is not None
+    assert step2.prompt_key == "04-no-candidate-report.md"
     driver.record_outcome(step2, CompletionOutput())
 
     assert driver.next() is None
@@ -124,7 +128,8 @@ def test_orphan_reset_wipes_progress_and_restarts_at_01(driver_dir: Path) -> Non
     driver = _make_driver(driver_dir)
     step = driver.start()
 
-    assert step is not None and step.prompt_key == "01-scan.md"
+    assert step is not None
+    assert step.prompt_key == "01-scan.md"
     assert not progress_file.exists()
 
 
@@ -139,7 +144,8 @@ def test_orphan_reset_does_not_trigger_when_03_issues_in_flight(
     driver = _make_driver(driver_dir)
     step = driver.start()
 
-    assert step is not None and step.prompt_key == "03-issues.md"
+    assert step is not None
+    assert step.prompt_key == "03-issues.md"
 
 
 # ── send_role_prompt_on_resume ────────────────────────────────────────────────
@@ -162,7 +168,8 @@ def test_mid_phase_retry_does_not_send_role_prompt(driver_dir: Path) -> None:
     driver = _make_driver(driver_dir)
     step = driver.start()
 
-    assert step is not None and step.prompt_key == "02-prd.md"
+    assert step is not None
+    assert step.prompt_key == "02-prd.md"
     assert step.send_role_prompt_on_resume is False
 
 
@@ -174,7 +181,8 @@ def test_clean_phase_boundary_sends_role_prompt(driver_dir: Path) -> None:
     driver = _make_driver(driver_dir)
     step = driver.start()
 
-    assert step is not None and step.prompt_key == "02-prd.md"
+    assert step is not None
+    assert step.prompt_key == "02-prd.md"
     assert step.send_role_prompt_on_resume is True
 
 
@@ -186,7 +194,8 @@ def test_next_step_after_record_sends_role_prompt(driver_dir: Path) -> None:
     driver.record_outcome(step1, CompletionOutput())
 
     step2 = driver.next()
-    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    assert step2 is not None
+    assert step2.prompt_key == "02-prd.md"
     assert step2.send_role_prompt_on_resume is True
 
 
@@ -267,7 +276,8 @@ def test_prd_number_set_from_phase_02_issue_output(driver_dir: Path) -> None:
     driver.record_outcome(step1, CompletionOutput())
 
     step2 = driver.next()
-    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    assert step2 is not None
+    assert step2.prompt_key == "02-prd.md"
     driver.record_outcome(step2, IssueOutput(number=4242, labels=[]))
 
     assert driver.prd_number == 4242
@@ -284,7 +294,8 @@ def test_phase_02_outcome_does_not_persist_parent_prd_number_to_disk(
     driver.record_outcome(step1, CompletionOutput())
 
     step2 = driver.next()
-    assert step2 is not None and step2.prompt_key == "02-prd.md"
+    assert step2 is not None
+    assert step2.prompt_key == "02-prd.md"
     driver.record_outcome(step2, IssueOutput(number=4242, labels=[]))
 
     assert sorted(path.name for path in driver_dir.iterdir()) == ["_phase_progress"]
