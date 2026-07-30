@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import agent_runtime
 import pytest
@@ -29,13 +29,15 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.infrastructure.container_runner import ContainerRunner
-from pycastle.infrastructure.docker_session import DockerSession
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
 from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import AgentService, ToolPolicy
 from tests.support import RecordingStatusDisplay
+
+if TYPE_CHECKING:
+    from pycastle.infrastructure.docker_session import DockerSession
 
 _ROLE = AgentRole.IMPLEMENTER
 
