@@ -3375,6 +3375,10 @@ def test_orchestrator_files_setup_failure_via_api_when_auto_file_bugs_is_enabled
 
     with (
         patch(
+            "pycastle.services.github_service.GithubService.search_open_issues_by_title",
+            return_value=[],
+        ),
+        patch(
             "pycastle.services.github_service.GithubService.create_issue_in",
             return_value=321,
         ) as mock_create,

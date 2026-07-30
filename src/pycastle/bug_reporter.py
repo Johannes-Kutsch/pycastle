@@ -131,6 +131,10 @@ def _try_api_path(
         from pycastle.services import GithubService
 
         svc = GithubService(repo, token, cfg)
+        existing = svc.search_open_issues_by_title(title)
+        if existing:
+            html_url = f"https://github.com/{repo}/issues/{existing[0]}"
+            return existing[0], html_url
         number = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)
         html_url = f"https://github.com/{repo}/issues/{number}"
         return number, html_url

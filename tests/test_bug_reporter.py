@@ -279,6 +279,11 @@ def test_auto_file_bugs_true_reads_gh_token_from_local_env_layer(monkeypatch, tm
         lambda: Config(auto_file_bugs=True),
     )
 
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.search_open_issues_by_title",
+        lambda self, prefix: [],
+    )
+
     def _fake_create_issue_in(self, owner_repo, title, body, labels):
         assert self._token == "from-local-env"
         return 42
@@ -305,6 +310,10 @@ def test_api_path_503_falls_through_to_url(monkeypatch):
         "pycastle.bug_reporter._safe_load_config",
         lambda: Config(auto_file_bugs=True),
     )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.search_open_issues_by_title",
+        lambda self, prefix: [],
+    )
 
     from pycastle.services import GithubAPIError
 
@@ -330,6 +339,10 @@ def test_api_path_network_error_falls_through_to_url(monkeypatch):
         "pycastle.bug_reporter._safe_load_config",
         lambda: Config(auto_file_bugs=True),
     )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.search_open_issues_by_title",
+        lambda self, prefix: [],
+    )
 
     def _boom_net(self, owner_repo, title, body, labels):
         raise GithubNetworkError("dns fail", cause=OSError("dns"))
@@ -340,6 +353,35 @@ def test_api_path_network_error_falls_through_to_url(monkeypatch):
     result = CliRunner().invoke(cli, ["build"])
 
     _find_url_in_output(result.stdout)
+    assert result.exit_code == 1
+
+
+def test_api_path_deduplicates_existing_open_issue(monkeypatch):
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+
+    monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.search_open_issues_by_title",
+        lambda self, prefix: [99],
+    )
+
+    def _should_not_create(self, owner_repo, title, body, labels):
+        raise AssertionError("create_issue_in must not be called when duplicate found")
+
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.create_issue_in",
+        _should_not_create,
+    )
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    assert "https://github.com/Johannes-Kutsch/pycastle/issues/99" in result.stdout
     assert result.exit_code == 1
 
 
