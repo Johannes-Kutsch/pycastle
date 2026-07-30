@@ -7,13 +7,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from agent_runtime.contracts import ToolAccess, ToolPolicy
+from agent_runtime.errors import (
+    AgentCredentialFailureError,
+    HardAgentError,
+    ProviderUnavailableReason,
+)
 from agent_runtime.runtime import (
     Completed,
     Continuation,
     ModelNotAvailable,
+    ProviderUnavailable,
     RunResult,
     RuntimeOutcome,
     TimedOut,
+    UsageLimited,
 )
 from agent_runtime.types import ResolvedProvider
 
@@ -22,6 +29,7 @@ from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     PlannerOutput,
 )
+from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
@@ -1497,6 +1505,153 @@ def test_stale_continuation_proactive_service_mismatch_sets_interrupted_work_on_
     assert render_calls[1]["run_kind"].value == "fresh"
 
 
+class _ExhaustableService(_FakeService):
+    """Service that becomes unavailable after mark_exhausted is called."""
+
+    def __init__(self, name: str = "codex") -> None:
+        self.name = name
+        self.mark_exhausted_calls: list[object] = []
+        self._exhausted = False
+
+    def is_available(self, now=None, *, model=None) -> bool:
+        del now, model
+        return not self._exhausted
+
+    def mark_exhausted(self, reset_time, *, _now=None) -> None:
+        del _now
+        self.mark_exhausted_calls.append(reset_time)
+        self._exhausted = True
+
+    def mark_permanently_exhausted(self) -> str | None:
+        self._exhausted = True
+        return "exhausted-account"
+
+
+class _UsageLimitedRuntimeClient:
+    async def run_new_session(self, request):
+        del request
+        return RuntimeOutcome(
+            kind=UsageLimited(reset_time=None),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+class _ServiceNotAvailableRuntimeClient:
+    async def run_new_session(self, request):
+        del request
+        return RuntimeOutcome(
+            kind=ProviderUnavailable(
+                reason=ProviderUnavailableReason.SERVICE_NOT_AVAILABLE,
+                detail="account exhausted",
+            ),
+            result=RunResult(
+                output="",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+class _HardErrorRuntimeClient:
+    async def run_new_session(self, request):
+        del request
+        raise HardAgentError("fatal runtime error")
+
+
+class _OpenCodeCredentialFailureRuntimeClient:
+    async def run_new_session(self, request):
+        del request
+        raise AgentCredentialFailureError(
+            "credentials expired", service_name="opencode"
+        )
+
+
+class _NonOpenCodeCredentialFailureRuntimeClient:
+    async def run_new_session(self, request):
+        del request
+        raise AgentCredentialFailureError(
+            "credentials expired", service_name="codex"
+        )
+
+
+def _setup_runner_for_token_tests(
+    tmp_path,
+    monkeypatch,
+    *,
+    service,
+    runtime_client,
+    issue: int,
+):
+    mount_path = (
+        tmp_path / "repo" / "pycastle" / ".worktrees" / f"issue-{issue}"
+    )
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={service.name: service},
+    )
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+    return runner, mount_path
+
+
+def _make_implement_request(mount_path, service_name, issue, *, token=None):
+    return RunRequest(
+        name=f"Implement Agent #{issue}",
+        prompt=PromptInvocation(
+            template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+            scope_args={
+                "ISSUE_NUMBER": str(issue),
+                "ISSUE_TITLE": "Test issue",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": f"issue-{issue}",
+                "INTERRUPTED_WORK": "",
+            },
+        ),
+        mount_path=mount_path,
+        role=AgentRole.IMPLEMENTER,
+        model="gpt-5.5",
+        effort="medium",
+        service=service_name,
+        token=token,
+    )
+
+
 class _SessionStoreCapturingRuntimeClient:
     def __init__(self) -> None:
         self.session_store: Path | None = None
@@ -1813,3 +1968,169 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
         f"Expected phase 2 to resume phase 1's session but got: {runtime_client.calls}. "
         "PRD Agent must call run_resumed_session to continue Scan Agent's conversation."
     )
+
+
+# ── ADR 0054: sibling-agent cancellation policy ──────────────────────────────
+
+
+def test_usage_limited_outcome_does_not_cancel_shared_token(tmp_path, monkeypatch):
+    service = _ExhaustableService("codex")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_UsageLimitedRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
+        )
+
+    assert not token.is_cancelled
+    assert service.mark_exhausted_calls
+
+
+def test_opencode_credential_failure_does_not_cancel_shared_token(
+    tmp_path, monkeypatch
+):
+    service = _ExhaustableService("opencode")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_OpenCodeCredentialFailureRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+
+    with pytest.raises(AgentCredentialFailureError):
+        asyncio.run(
+            runner.run(
+                _make_implement_request(mount_path, "opencode", 2054, token=token)
+            )
+        )
+
+    assert not token.is_cancelled
+    assert not service.is_available()
+
+
+def test_non_opencode_credential_failure_cancels_shared_token(tmp_path, monkeypatch):
+    service = _ExhaustableService("codex")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_NonOpenCodeCredentialFailureRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+
+    with pytest.raises(AgentCredentialFailureError):
+        asyncio.run(
+            runner.run(
+                _make_implement_request(mount_path, "codex", 2054, token=token)
+            )
+        )
+
+    assert token.is_cancelled
+
+
+def test_hard_agent_error_cancels_shared_token(tmp_path, monkeypatch):
+    service = _ExhaustableService("codex")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_HardErrorRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+
+    with pytest.raises(HardAgentError):
+        asyncio.run(
+            runner.run(
+                _make_implement_request(mount_path, "codex", 2054, token=token)
+            )
+        )
+
+    assert token.is_cancelled
+
+
+def test_early_guard_fires_on_unavailable_service_without_cancelled_token(
+    tmp_path, monkeypatch
+):
+    service = _ExhaustableService("codex")
+    service.mark_exhausted(None)  # exhaust before the agent even starts
+
+    class _NeverCalledRuntimeClient:
+        async def run_new_session(self, request):
+            raise AssertionError("runtime must not be reached when service is unavailable")
+
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_NeverCalledRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+    assert not token.is_cancelled
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
+        )
+
+    assert not token.is_cancelled
+
+
+def test_opencode_timeout_does_not_cancel_shared_token(tmp_path, monkeypatch):
+    service = _ExhaustableService("opencode")
+    continuation = Continuation(serialized="opaque-continuation")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_TimedOutRuntimeClient(continuation),
+        issue=2054,
+    )
+    token = CancellationToken()
+    monkeypatch.setattr(
+        "pycastle.agents.runner._time_module.now_local",
+        lambda: datetime(2026, 6, 27, 12, 30, tzinfo=UTC),
+    )
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(
+                _make_implement_request(mount_path, "opencode", 2054, token=token)
+            )
+        )
+
+    assert not token.is_cancelled
+    assert service.mark_exhausted_calls
+
+
+def test_provider_unavailable_outcome_does_not_cancel_shared_token(
+    tmp_path, monkeypatch
+):
+    service = _ExhaustableService("codex")
+    runner, mount_path = _setup_runner_for_token_tests(
+        tmp_path,
+        monkeypatch,
+        service=service,
+        runtime_client=_ServiceNotAvailableRuntimeClient(),
+        issue=2054,
+    )
+    token = CancellationToken()
+
+    with pytest.raises(UsageLimitError):
+        asyncio.run(
+            runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
+        )
+
+    assert not token.is_cancelled
+    assert service.mark_exhausted_calls

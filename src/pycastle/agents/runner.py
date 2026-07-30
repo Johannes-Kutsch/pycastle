@@ -599,7 +599,7 @@ class AgentRunner:
         from pycastle.iteration._rows import status_row
 
         token = request.token if request.token is not None else CancellationToken()
-        if token.is_cancelled:
+        if token.is_cancelled or not service.is_available():
             raise UsageLimitError(
                 reset_time=None,
                 stage_key=_stage_key_for_role(request.role),
@@ -694,7 +694,10 @@ class AgentRunner:
                     status_display=status_display,
                     protocol_reprompt_plan=protocol_reprompt_plan,
                 )
-                row.close("finished")
+                if token.is_cancelled:
+                    row.close("cancelled", shutdown_style="interrupted")
+                else:
+                    row.close("finished")
                 return output
             finally:
                 try:
@@ -753,8 +756,6 @@ class AgentRunner:
                     resolved_effort=resolved_effort,
                 )
             except AgentCredentialFailureError as err:
-                if request.token is not None:
-                    request.token.cancel()
                 err.caller = request.name
                 if (err.service_name or service.name) == "opencode":
                     transformed = UsageLimitError(
@@ -775,6 +776,9 @@ class AgentRunner:
                             run_kind=current_run_kind,
                         )
                         continue
+                else:
+                    if request.token is not None:
+                        request.token.cancel()
                 raise
             except HardAgentError as err:
                 if request.token is not None:
@@ -832,8 +836,6 @@ class AgentRunner:
                     provider=outcome.result.selected.service,
                 )
                 self._handle_provider_account_exhaustion(service, error)
-                if request.token is not None:
-                    request.token.cancel()
                 raise error
             if isinstance(outcome.kind, ProviderUnavailable):
                 if outcome.kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
@@ -851,8 +853,6 @@ class AgentRunner:
                     raw_message=outcome.kind.detail,
                 )
                 self._handle_provider_account_exhaustion(service, error)
-                if request.token is not None:
-                    request.token.cancel()
                 raise error
             if isinstance(outcome.kind, TimedOut):
                 if outcome.result.selected.service == "opencode":
@@ -860,8 +860,6 @@ class AgentRunner:
                         provider=outcome.result.selected.service,
                     )
                     self._handle_provider_account_exhaustion(service, error)
-                    if request.token is not None:
-                        request.token.cancel()
                     raise error
                 if retries_left <= 0:
                     raise AgentTimeoutError(
