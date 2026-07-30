@@ -4,8 +4,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 from agent_runtime.errors import HardAgentError
+
 from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
@@ -16,7 +16,6 @@ from pycastle.errors import (
     WorktreeError,
     WorktreeTimeoutError,
 )
-
 
 # ── Hierarchy ─────────────────────────────────────────────────────────────────
 
@@ -88,7 +87,7 @@ def test_pycastle_error_shims_preserve_legacy_service_and_session_defaults():
     )
     failed_error = AgentFailedError(
         role_value="implementer",
-        worktree_path=Path("."),
+        worktree_path=Path(),
         service_name="claude",
     )
 
@@ -100,14 +99,14 @@ def test_pycastle_error_shims_preserve_legacy_service_and_session_defaults():
 def test_agent_failed_error_uses_posix_legacy_session_store_but_preserves_explicit_path():
     legacy_failure = AgentFailedError(
         role_value="reviewer",
-        worktree_path=Path("."),
+        worktree_path=Path(),
         namespace="main",
         service_name="codex",
     )
     explicit_path = Path("/tmp/session-store")
     runtime_failure = AgentFailedError(
         role_value="reviewer",
-        worktree_path=Path("."),
+        worktree_path=Path(),
         service_name="codex",
         session_store=explicit_path,
     )
@@ -173,11 +172,11 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
     from types import SimpleNamespace
 
     from pycastle.config import Config
-    from pycastle.services import GitService
     from pycastle.infrastructure.worktree import (
         BranchWorktreeLifecycle,
         managed_worktree,
     )
+    from pycastle.services import GitService
 
     subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
     subprocess.run(

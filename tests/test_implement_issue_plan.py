@@ -5,6 +5,14 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.config import Config, StageOverride
+from pycastle.issue_readiness import (
+    IssueReadiness,
+    IssueReadinessKind,
+    ReadyIssueOutcome,
+    SliceMode,
+    WellFormed,
+    WellFormedBody,
+)
 from pycastle.iteration.implement_issue_plan import (
     plan_issue_execution,
     plan_issue_execution_from_worktree,
@@ -13,14 +21,6 @@ from pycastle.iteration.implement_issue_plan import (
 from pycastle.managed_worktree_mount_policy import (
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
-)
-from pycastle.issue_readiness import (
-    IssueReadiness,
-    IssueReadinessKind,
-    ReadyIssueOutcome,
-    SliceMode,
-    WellFormed,
-    WellFormedBody,
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService, ServiceRegistry

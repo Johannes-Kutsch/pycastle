@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import dataclasses
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .. import _time as _time_module
 from ._wake_time import compute_wake_time
 
-
-PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=timezone.utc)
+PERMANENT_EXHAUSTION_WAKE = datetime(9999, 12, 31, 23, 59, tzinfo=UTC)
 
 
 @dataclasses.dataclass

@@ -2,40 +2,39 @@
 
 import asyncio
 import hashlib
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock
 
 from pycastle.agents.output_protocol import AgentRole, CompletionOutput, IssueOutput
 from pycastle.config import Config, StageOverride
-from pycastle.errors import DockerError, SetupPhaseError
-from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import (
-    GitCommandError,
-    GitService,
-    GithubService,
-    ServiceRegistry,
-    UnrelatedHistoriesError,
-)
-from pycastle.services.runtime_services import AgentService
-from tests.support import FakeAgentRunner, _make_deps, functional_git_svc
 from pycastle.display.status_display import PlainStatusDisplay
-from pycastle.iteration.preflight import (
-    PreflightAFK,
-    PreflightCache,
-    PreflightHITL,
-    PreflightReady,
+from pycastle.errors import DockerError, SetupPhaseError
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
 )
 from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
     reusable_sandbox_worktree_identity,
     worktree_identity,
 )
-from pycastle.infrastructure.preflight_failure_interpreter import (
-    PreflightCommandFailure,
+from pycastle.iteration.preflight import (
+    PreflightAFK,
+    PreflightCache,
+    PreflightHITL,
+    PreflightReady,
 )
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.services import (
+    GitCommandError,
+    GithubService,
+    GitService,
+    ServiceRegistry,
+    UnrelatedHistoriesError,
+)
+from pycastle.services.runtime_services import AgentService
 from pycastle.session import RoleSession
+from tests.support import FakeAgentRunner, _make_deps, functional_git_svc
 
 
 def _diverge_fingerprint(safe_sha: str, branch: str) -> str:

@@ -7,7 +7,7 @@ import pytest
 from pycastle.log_maintenance import maintain_logs
 
 
-@pytest.fixture()
+@pytest.fixture
 def logs_dir(tmp_path: Path) -> Path:
     d = tmp_path / "logs"
     d.mkdir()

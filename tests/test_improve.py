@@ -14,7 +14,6 @@ from pycastle.agents.output_protocol import (
     NoCandidateOutput,
 )
 from pycastle.config import Config, StageOverride
-from tests.support import FakeAgentRunner, _make_deps, functional_git_svc
 from pycastle.iteration.improve import (
     IMPROVE_SANDBOX,
     ImproveContinue,
@@ -23,11 +22,11 @@ from pycastle.iteration.improve import (
 )
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubNetworkError, ServiceRegistry
-from pycastle.services.runtime_services import CodexService
-from pycastle.services.runtime_services import OpenCodeService
+from pycastle.services.runtime_services import CodexService, OpenCodeService
 from pycastle.session import RoleSession
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import save_service_session_metadata
+from tests.support import FakeAgentRunner, _make_deps, functional_git_svc
 
 
 @pytest.fixture

@@ -6,40 +6,40 @@ from pathlib import Path
 from typing import Any, cast
 
 import agent_runtime.runtime
-from agent_runtime.contracts import ToolAccess, ToolPolicyProfile
 from agent_runtime import _provider_invocation, _session_backed_provider_execution
-from agent_runtime.errors import ProviderUnavailableReason
 from agent_runtime._provider_invocation import (
     ProviderInvocationFailure,
-    ProviderInvocationResult,
     ProviderInvocationRequest,
+    ProviderInvocationResult,
 )
+from agent_runtime.contracts import ToolAccess, ToolPolicyProfile
+from agent_runtime.errors import ProviderUnavailableReason
 from agent_runtime.runtime import (
+    Completed,
+    Continuation,
     NewSessionRunRequest,
     ProviderUnavailable,
     ResumedSessionRunRequest,
-    Completed,
-    UsageLimited,
     TimedOut,
-    Continuation,
+    UsageLimited,
 )
 from agent_runtime.types import ProviderSelection
 
 from ..agents.output_protocol import AgentOutput, AgentRole, extract_output
 from ..config import Config, resolve_logs_dir
-from ..display.status_display import PlainStatusDisplay, WORK_PHASE
-from .agent_invocation_log import AgentInvocationLog
-from ..services.runtime_services import AgentService, ToolPolicy as ServiceToolPolicy
-from .docker_session import DockerSession
+from ..display.status_display import WORK_PHASE, PlainStatusDisplay
 from ..errors import (
     AgentTimeoutError,
     DockerError,
     TransientAgentError,
     UsageLimitError,
 )
-from .preflight_failure_interpreter import PreflightCommandFailure
+from ..services.runtime_services import AgentService
+from ..services.runtime_services import ToolPolicy as ServiceToolPolicy
 from ..session import RunKind
-
+from .agent_invocation_log import AgentInvocationLog
+from .docker_session import DockerSession
+from .preflight_failure_interpreter import PreflightCommandFailure
 
 _DEFAULT_PROVIDER_EFFORT = "medium"
 
@@ -194,7 +194,7 @@ class ContainerRunner:
         [tuple[str, ...], Path, Mapping[str, str]],
         tuple[str, ...],
     ]:
-        session = cast(Any, self._session)
+        session = cast("Any", self._session)
         container = getattr(session, "_active_container", None)
         if container is None:
             container = session.__dict__.get("_container")
@@ -285,7 +285,7 @@ class ContainerRunner:
             self._status_display.update_tokens(self.name, tokens)
 
         return cast(
-            AgentOutput,
+            "AgentOutput",
             await self._run_with_runtime(
                 role=role,
                 prompt=prompt,
@@ -320,7 +320,7 @@ class ContainerRunner:
             self._status_display.update_tokens(self.name, tokens)
 
         return cast(
-            str,
+            "str",
             await self._run_with_runtime(
                 role=role,
                 prompt=prompt,

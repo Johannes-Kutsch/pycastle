@@ -115,32 +115,22 @@ ignore = [
     "CPY001",  # copyright: repository has LICENSE; per-file headers add nothing
     # ── backlog (drain one entry per ticket) ─────────────────────────────────
     # imports
-    "PLC0415",  # import-outside-toplevel (538 findings)
+    "PLC0415",  # import-outside-toplevel (545 findings)
     "TID252",   # banned-relative-import (456 findings)
-    "I001",     # import-sorting (116 findings)
-    "PLR0402",  # manual-from-import (4 findings)
-    "UP035",    # deprecated-import (5 findings)
     # type-checking imports
-    "TC001",    # typing-only-first-party-import (48 findings)
-    "TC002",    # typing-only-third-party-import (2 findings)
-    "TC003",    # typing-only-stdlib-import (40 findings)
-    "TC005",    # typing-only-type-checking-import (2 findings)
-    "TC006",    # runtime-cast-value (88 findings)
+    "TC001",    # typing-only-first-party-import (52 findings)
+    "TC002",    # typing-only-third-party-import (1 finding)
+    "TC003",    # typing-only-stdlib-import (43 findings)
     # simplify / modernise
-    "SIM117",   # multiple-with-statements (91 findings)
+    "SIM117",   # multiple-with-statements (29 findings)
     "SIM105",   # suppressible-exception (10 findings)
     "SIM103",   # needless-bool (8 findings)
     "SIM102",   # collapsible-if (5 findings)
     "SIM115",   # open-file-with-context-handler (1 finding)
-    "SIM114",   # if-with-same-arms (1 finding)
-    "SIM300",   # yoda-conditions (1 finding)
     # pyupgrade
-    "UP017",    # datetime-timezone-utc (88 findings)
-    "UP037",    # quoted-annotation (23 findings)
     "UP040",    # non-pep695-type-alias (19 findings)
     "UP042",    # replace-str-enum (3 findings)
     "UP046",    # non-pep695-generic-class (1 finding)
-    "UP041",    # timeout-error-alias (1 finding)
     # exceptions / try
     "BLE001",   # blind-exception (38 findings)
     "TRY300",   # try-consider-else (8 findings)
@@ -159,7 +149,6 @@ ignore = [
     # pytest
     "PT018",    # composite-assertion (27 findings)
     "PT006",    # pytest-parametrize-names-wrong-type (5 findings)
-    "PT001",    # pytest-fixture-incorrect-parentheses-style (4 findings)
     "PT012",    # pytest-raises-with-multiple-statements (2 findings)
     "PT030",    # pytest (1 finding)
     # booleans
@@ -182,16 +171,11 @@ ignore = [
     "FLY002",   # static-join-to-fstring (18 findings)
     "ISC004",   # unnecessary-escaped-quote (15 findings)
     "RUF005",   # collection-literal-concatenation (5 findings)
-    "RUF010",   # explicit-f-string-type-conversion (1 finding)
     "RUF003",   # ambiguous-unicode-character-comment (2 findings)
     # return / control flow
-    "RET501",   # unnecessary-return-none (9 findings)
     "RET504",   # unnecessary-assign (2 findings)
-    "RET507",   # superfluous-else-continue (1 finding)
     "RET503",   # implicit-return (1 finding)
-    "PLR1711",  # useless-return (6 findings)
     # pathlib
-    "PTH201",   # pathlib (10 findings)
     "PTH123",   # pathlib (10 findings)
     "PTH101",   # pathlib (2 findings)
     "PTH108",   # pathlib (1 finding)
@@ -203,35 +187,26 @@ ignore = [
     # ruff-specific
     "RUF059",   # unused-unpacked-variable (12 findings)
     "RUF043",   # pytest-raises-without-match (12 findings)
-    "RUF022",   # unsorted-dunder-all (12 findings)
     "RUF012",   # mutable-class-attributes (3 findings)
-    "RUF023",   # unsorted-dunder-slots (1 finding)
     # loops / builtins
     "B023",     # function-uses-loop-variable (9 findings)
-    "B009",     # do-not-call-getattr-with-constant (4 findings)
-    "B010",     # do-not-call-setattr-with-constant (3 findings)
+    "B010",     # do-not-call-setattr-with-constant (3 findings; setattr used intentionally to bypass mypy on untyped attrs)
     "B905",     # zip-without-explicit-strict (2 findings)
     "B008",     # function-call-in-default-argument (1 finding)
     # raise
-    "RSE102",   # unnecessary-paren-on-raise-exception (8 findings)
+    "RSE102",   # unnecessary-paren-on-raise-exception (7 findings)
     # pep695 / typing
     "PYI034",   # non-self-return-type (3 findings)
     # pylint misc
     "PLW0108",  # unnecessary-lambda (6 findings)
     "ARG002",   # unused-method-argument (12 findings, src/ only)
     "ARG001",   # unused-function-argument (6 findings, src/ only)
-    "PLR1730",  # if-stmt-min-max (2 findings)
-    "PLC0207",  # unnecessary-dict-index-lookup (2 findings)
     # performance
     "PERF401",  # manual-list-comprehension (2 findings)
     # futurize
     "FURB177",  # int-on-slice-len (6 findings)
     "FURB192",  # sorted-min-max (2 findings)
-    "FURB122",  # f-string-in-gettext (1 finding)
-    "FURB110",  # or-else-ternary (1 finding)
-    "RUF100",   # unused-noqa-directive (transition period: noqa directives become redundant as backlog drains)
     # misc
-    "C420",     # unnecessary-dict-comprehension (2 findings)
     "PIE810",   # single-starts-ends-with (1 finding)
     "N806",     # non-lowercase-variable-in-function (1 finding)
     "EXE001",   # shebang-not-executable (1 finding)

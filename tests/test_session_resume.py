@@ -12,22 +12,19 @@ from typing import cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
-from pycastle.session.service_session_store import (
-    load_service_session_id,
-    save_service_session_metadata,
-    service_session_metadata_path,
-)
-from pycastle.services.runtime_services import AgentService
-from pycastle.services.runtime_services import CodexService
-from pycastle.services.runtime_services import OpenCodeService
 from pycastle.services import ServiceRegistry
-from pycastle.provider_session_adapter import provider_session_adapter_for_service
+from pycastle.services.runtime_services import (
+    AgentService,
+    CodexService,
+    OpenCodeService,
+)
 from pycastle.session import (
     ProviderFreshFallbackReason,
     ProviderRunState,
@@ -36,13 +33,18 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
-from pycastle.session.service_session_store import store_for_role_session
+from pycastle.session.role import session_uuid_for_role_session_path
+from pycastle.session.service_session_store import (
+    load_service_session_id,
+    save_service_session_metadata,
+    service_session_metadata_path,
+    store_for_role_session,
+)
 from pycastle.session_planning import (
     ProviderRunStatePlanRequest,
     RecoveredSessionIdPersistence,
     plan_provider_run_state,
 )
-from pycastle.session.role import session_uuid_for_role_session_path
 
 
 def _role_session_session_uuid(role_session: object) -> str:
@@ -691,7 +693,7 @@ def test_role_session_reports_exact_provider_transcript_available_for_selected_o
     )
     rs.save_service_session_id("opencode", "sess-opencode-123")
     save_service_session_metadata(rs.path, "opencode", "sess-opencode-123")
-    registry = ServiceRegistry({"opencode": cast(AgentService, service)})
+    registry = ServiceRegistry({"opencode": cast("AgentService", service)})
 
     assert (
         rs.has_exact_provider_transcript_for_selected_service(
@@ -737,7 +739,7 @@ def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_
     )
     rs.save_service_session_id("codex", "thread-exact")
     save_service_session_metadata(rs.path, "codex", "thread-exact")
-    registry = ServiceRegistry(cast(dict[str, AgentService], registry_services))
+    registry = ServiceRegistry(cast("dict[str, AgentService]", registry_services))
 
     assert (
         rs.has_exact_provider_transcript_for_selected_service(
@@ -819,7 +821,7 @@ def test_role_session_reports_exact_provider_transcript_unavailable_without_exac
 
     assert (
         rs.has_exact_provider_transcript_for_selected_service(
-            ServiceRegistry({service.name: cast(AgentService, service)}),
+            ServiceRegistry({service.name: cast("AgentService", service)}),
             service.name,
         )
         is False

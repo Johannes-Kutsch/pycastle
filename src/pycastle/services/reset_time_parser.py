@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timedelta, timezone, tzinfo
+from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
 
 from .. import _time as _time_module
@@ -73,7 +73,7 @@ def parse_reset_time(
         return None
 
     local_now = now or _time_module.now_local()
-    utc_now = local_now.astimezone(timezone.utc)
+    utc_now = local_now.astimezone(UTC)
 
     hour = _parse_hour(match.group("hour"), match.group("ampm"))
     minute = _parse_minute(match.group("minute"))
@@ -202,7 +202,7 @@ def _parse_required_date_reset(
 
 def _combine_utc_date(base_date: date, hour: int, minute: int) -> datetime | None:
     try:
-        return datetime.combine(base_date, time(hour, minute), tzinfo=timezone.utc)
+        return datetime.combine(base_date, time(hour, minute), tzinfo=UTC)
     except ValueError:
         return None
 
@@ -211,6 +211,6 @@ def _build_utc_datetime(
     year: int, month: int, day: int, hour: int, minute: int
 ) -> datetime | None:
     try:
-        return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+        return datetime(year, month, day, hour, minute, tzinfo=UTC)
     except ValueError:
         return None

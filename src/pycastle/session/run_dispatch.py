@@ -267,7 +267,7 @@ def prepare_agent_run_session_state(
             service=request.service,
         )
     )
-    auth_seed_action = cast(LocalAuthSeedAction | None, plan.auth_seed_action)
+    auth_seed_action = cast("LocalAuthSeedAction | None", plan.auth_seed_action)
     if auth_seed_action is not None:
         auth_seed_action.require_source()
     role_session = RoleSession(

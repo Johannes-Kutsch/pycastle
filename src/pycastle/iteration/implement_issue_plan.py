@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 from ..agents.output_protocol import AgentRole
 from ..config import Config
+from ..infrastructure.worktree import issue_branch
 from ..issue_readiness import require_ready_slice_outcome_for_issue
 from ..managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
@@ -20,7 +21,6 @@ from ..session import RoleSession, RunKind, is_stage_done_for
 from ..session.service_session_store import (
     has_exact_provider_transcript_for_selected_service,
 )
-from ..infrastructure.worktree import issue_branch
 
 if TYPE_CHECKING:
     from ..services import ServiceRegistry
@@ -36,7 +36,7 @@ class ImplementIssuePlanDeps(Protocol):
     cfg: Config
     git_svc: GitService
     repo_root: Path
-    service_registry: "ServiceRegistry | None"
+    service_registry: ServiceRegistry | None
 
 
 @dataclasses.dataclass(frozen=True)

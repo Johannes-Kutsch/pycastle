@@ -1,6 +1,5 @@
 from pycastle.agents.result import CancellationToken
 
-
 # ── CancellationToken ─────────────────────────────────────────────────────────
 
 

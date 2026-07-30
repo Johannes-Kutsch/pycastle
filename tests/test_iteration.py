@@ -6,27 +6,39 @@ from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from agent_runtime.errors import (
     AgentCredentialFailureError,
     HardAgentError,
 )
-from pycastle.errors import (
-    TransientAgentError,
-    AgentFailedError,
-    AgentTimeoutError,
-    SetupPhaseError,
-    UsageLimitError,
-)
-from pycastle.config import Config, StageOverride
-from pycastle.services import GitService
-from pycastle.services import GithubService
+
 from pycastle.agent_credential_failure_routing import (
     AgentCredentialFailureRouteResult,
 )
+from pycastle.agents.output_protocol import (
+    AgentRole,
+    CommitMessageOutput,
+    CompletionOutput,
+    FailedOutput,
+    IssueOutput,
+    NoCandidateOutput,
+    PlannerOutput,
+    PromiseParseError,
+)
+from pycastle.agents.runner import RunRequest
+from pycastle.config import Config, StageOverride
+from pycastle.errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    SetupPhaseError,
+    TransientAgentError,
+    UsageLimitError,
+)
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from pycastle.iteration import (
-    AbortedAgentFailure,
     AbortedAgentCredentialFailure,
+    AbortedAgentFailure,
     AbortedHardApiError,
     AbortedHITL,
     AbortedModelNotAvailable,
@@ -38,36 +50,24 @@ from pycastle.iteration import (
     NoCandidate,
     run_iteration,
 )
-from pycastle.iteration.merge import merge_phase
-from pycastle.iteration.preflight import PreflightCache
-from pycastle.agents.runner import RunRequest
-from pycastle.infrastructure.preflight_failure_interpreter import (
-    PreflightCommandFailure,
-)
-from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.iteration._deps import (
     Deps,
 )
-from pycastle.agents.output_protocol import (
-    AgentRole,
-    CommitMessageOutput,
-    CompletionOutput,
-    IssueOutput,
-    FailedOutput,
-    NoCandidateOutput,
-    PlannerOutput,
-    PromiseParseError,
-)
+from pycastle.iteration.merge import merge_phase
+from pycastle.iteration.planning import planning_phase
+from pycastle.iteration.preflight import PreflightCache, PreflightReady
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.services import GithubService, GitService
+from pycastle.session import RoleSession
 from tests.support import (
     FakeAgentRunner,
     RecordingLogger,
     RecordingStatusDisplay,
     StubPreflightCache,
+)
+from tests.support import (
     _make_deps as _make_test_deps,
 )
-from pycastle.iteration.planning import planning_phase
-from pycastle.iteration.preflight import PreflightReady
-from pycastle.session import RoleSession
 
 
 def _preflight_failure(
@@ -2848,7 +2848,7 @@ def test_run_iteration_failure_report_includes_evidence_path_and_copies_invocati
 def test_run_iteration_failure_report_normalizes_windows_style_evidence_path(
     tmp_path, git_svc, logger, monkeypatch
 ):
-    import pycastle.iteration as iteration
+    from pycastle import iteration
 
     calls: list[RunRequest] = []
     expected_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
@@ -4450,8 +4450,8 @@ def test_run_iteration_returns_aborted_operator_actionable_on_operator_actionabl
 ):
     """When OperatorActionableGitError escapes from a git operation, run_iteration
     returns AbortedOperatorActionable carrying op name, stderr snippet, and attempt count."""
-    from pycastle.services import OperatorActionableGitError
     from pycastle.iteration import AbortedOperatorActionable
+    from pycastle.services import OperatorActionableGitError
 
     err = OperatorActionableGitError(
         "git pull failed after 4 attempts",
@@ -4480,8 +4480,8 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
 ):
     """OperatorActionableGitError catch arm must not invoke auto_file_issue
     and must not spawn the Failure-Report agent."""
-    from pycastle.services import OperatorActionableGitError
     from pycastle.iteration import AbortedOperatorActionable
+    from pycastle.services import OperatorActionableGitError
 
     err = OperatorActionableGitError(
         "git pull failed",

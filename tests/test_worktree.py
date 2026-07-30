@@ -9,30 +9,29 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from pycastle.config import Config
 from agent_runtime.errors import (
     AgentCredentialFailureError,
     HardAgentError,
 )
+
+from pycastle.config import Config
 from pycastle.errors import (
-    TransientAgentError,
     AgentFailedError,
+    TransientAgentError,
     UsageLimitError,
     WorktreeError,
     WorktreeTimeoutError,
 )
-from pycastle.services import GitCommandError, GitService, GitTimeoutError
 from pycastle.infrastructure.worktree import (
     BranchWorktreeLifecycle,
     DurableIssueWorktreeIntent,
     SandboxWorktreeIntent,
     cleanup_durable_issue_worktree_after_success,
-    prune_orphan_worktrees,
     detached_transient_worktree,
     durable_issue_worktree,
     managed_worktree,
     patch_gitdir_for_container,
+    prune_orphan_worktrees,
     replaceable_merge_sandbox_worktree,
     reusable_sandbox_worktree,
     transient_worktree,
@@ -41,7 +40,7 @@ from pycastle.infrastructure.worktree import (
 from pycastle.infrastructure.worktree_lifecycle_debug import (
     log_worktree_lifecycle_event,
 )
-
+from pycastle.services import GitCommandError, GitService, GitTimeoutError
 
 # ── Cycle 23-1: timeout constants ────────────────────────────────────────────
 
@@ -1939,7 +1938,7 @@ def test_prune_orphan_worktrees_removes_orphan_via_host_container_cleanup(
             "--user",
             "0",
             "-v",
-            f"{str(worktrees_dir)}:/pycastle-worktrees:rw",
+            f"{worktrees_dir!s}:/pycastle-worktrees:rw",
             "--entrypoint",
             "rm",
             "pycastle:test",

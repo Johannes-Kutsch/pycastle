@@ -4,10 +4,9 @@ import difflib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
-from .services.service_registry import ServiceRegistry
-
 from .config import Config, StageOverride, parse_credential_list
 from .config.loader import referenced_services
+from .services.service_registry import ServiceRegistry
 from .stage_priority_chain import (
     StageOverrideChain,
 )
@@ -85,7 +84,7 @@ class RunStartupImproveModeFlagFacts:
 @dataclass(frozen=True)
 class RunStartupPreparation:
     validation_failures: tuple[StageOverrideValidationFailure, ...]
-    configured_provider_adapters: dict[str, "AgentService"]
+    configured_provider_adapters: dict[str, AgentService]
     runtime_registry: ServiceRegistry
     shared_container_env: dict[str, str]
     effective_improve_mode: RunImproveMode
@@ -155,7 +154,7 @@ def prepare_run_startup(
 
 def configured_provider_adapters_for_run(
     cfg: Config, credential_env: Mapping[str, str]
-) -> dict[str, "AgentService"]:
+) -> dict[str, AgentService]:
     from .services.runtime_services import ClaudeService, CodexService, OpenCodeService
 
     referenced = referenced_services(cfg)
@@ -194,7 +193,7 @@ def configured_provider_adapters_for_run(
     return service_registry
 
 
-def _validation_services() -> dict[str, "AgentService"]:
+def _validation_services() -> dict[str, AgentService]:
     from .services.runtime_services import ClaudeService, CodexService, OpenCodeService
 
     return {
@@ -312,7 +311,7 @@ def _validate_locally_configured_stage_overrides(
 
 
 def _validate_configured_provider_stage_overrides(
-    cfg: Config, configured_provider_adapters: Mapping[str, "AgentService"]
+    cfg: Config, configured_provider_adapters: Mapping[str, AgentService]
 ) -> list[StageOverrideValidationFailure]:
     violations: list[StageOverrideValidationFailure] = []
     for stage_name, override in _stage_overrides(cfg):

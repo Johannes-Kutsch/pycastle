@@ -5,27 +5,27 @@ import traceback
 from pathlib import Path
 from typing import cast
 
+from .. import _time as _time_module
 from ..agents.runner import AgentRunner, AgentRunnerProtocol
 from ..config import load_config, replace_config_runtime_fields, resolve_logs_dir
-from . import run_iteration
-from ._deps import Deps as IterationDeps, ImproveMode
-from .preflight import PreflightCache
 from ..display.rich_status_display import RichStatusDisplay
+from ..display.status_display import StatusDisplay
+from ..infrastructure.worktree import prune_orphan_worktrees
+from ..log_maintenance import maintain_logs
 from ..services import (
     AgentService,
     GitCommandError,
     GithubAPIError,
     GithubAuthError,
-    OperatorActionableGithubError,
     GithubService,
     GitService,
+    OperatorActionableGithubError,
     ServiceRegistry,
 )
 from ..session import SESSION_DIR_NAME
-from ..display.status_display import StatusDisplay
-from ..infrastructure.worktree import prune_orphan_worktrees
-from ..log_maintenance import maintain_logs
-from .. import _time as _time_module
+from . import run_iteration
+from ._deps import Deps as IterationDeps
+from ._deps import ImproveMode
 from ._service_summary import render_service_summary_line
 from .outcome_routing import (
     BreakLoop,
@@ -35,6 +35,7 @@ from .outcome_routing import (
     SleepThenContinue,
     route_outcome,
 )
+from .preflight import PreflightCache
 
 
 class FileLogger:
@@ -102,8 +103,7 @@ def ensure_session_excludes(repo_root: Path) -> None:
     additions = [e for e in _SESSION_EXCLUDES if e not in existing]
     if additions:
         with open(exclude_file, "a", encoding="utf-8") as f:
-            for entry in additions:
-                f.write(f"{entry}\n")
+            f.writelines(f"{entry}\n" for entry in additions)
 
 
 async def run(
@@ -219,7 +219,7 @@ async def run(
                     cfg=_iter_cfg,
                     git_service=git_svc,
                     service_registry=(
-                        cast(dict[str, AgentService], service_registry.services)
+                        cast("dict[str, AgentService]", service_registry.services)
                         if service_registry is not None
                         else None
                     ),

@@ -5,8 +5,7 @@ from typing import Literal, Protocol, TypeAlias
 from ..agents.runner import AgentRunnerProtocol
 from ..config import Config
 from ..display.status_display import StatusDisplay
-from ..services import GitService
-from ..services import GithubService, ServiceRegistry
+from ..services import GithubService, GitService, ServiceRegistry
 from .preflight import PreflightCache
 
 ImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None

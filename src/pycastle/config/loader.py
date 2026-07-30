@@ -11,12 +11,14 @@ from typing import Any, Literal
 from pycastle._universal_image_build import resolve_universal_dockerfile
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
+from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
 from pycastle.layout import (
     describe_config_layers as _describe_config_layers,
+)
+from pycastle.layout import (
     resolve_global_dir,
     resolve_layout,
 )
-from pycastle.label_catalog import CANONICAL_LABEL_DEFAULTS
 from pycastle.stage_priority_chain import iter_stage_chain, referenced_service_names
 
 __all__ = [
@@ -25,9 +27,9 @@ __all__ = [
     "image_name_for",
     "load_config",
     "replace_config_runtime_fields",
-    "resolve_logs_dir",
     "resolve_dockerfile",
     "resolve_global_dir",
+    "resolve_logs_dir",
 ]
 
 _BUG_REPORT_REPO_RE = re.compile(r"^[^/]+/[^/]+$")

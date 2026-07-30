@@ -221,7 +221,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     tmp_path: Path,
 ) -> None:
     service = cast(
-        Any,
+        "Any",
         _FakeService(
             name="opencode",
             relpath="custom/opencode-state/",
@@ -250,7 +250,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     tmp_path: Path,
 ) -> None:
     service = cast(
-        Any,
+        "Any",
         _FakeService(
             name="opencode",
             relpath="custom/opencode-state/",
@@ -279,7 +279,7 @@ def test_has_exact_provider_transcript_for_selected_service_returns_true_for_reg
     tmp_path: Path,
 ) -> None:
     service = cast(
-        Any,
+        "Any",
         _FakeService(
             name="opencode",
             relpath="custom/opencode-state/",
@@ -313,7 +313,7 @@ def test_has_exact_provider_transcript_for_selected_service_returns_true_for_reg
         (ServiceRegistry({}), "opencode"),
         (
             ServiceRegistry(
-                {"opencode": cast(Any, _FakeService("opencode", "state", True))}
+                {"opencode": cast("Any", _FakeService("opencode", "state", True))}
             ),
             "",
         ),
@@ -340,7 +340,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_claude_with_
     tmp_path: Path,
 ) -> None:
     service = cast(
-        Any,
+        "Any",
         _FakeService(
             name="claude",
             relpath="custom/claude-state/",
@@ -370,7 +370,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_claude_with_
     [
         (
             cast(
-                Any,
+                "Any",
                 _FakeService(
                     name="claude", relpath="custom/claude-state/", resumable=True
                 ),
@@ -521,7 +521,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_different_s
     save_service_session_id(role_dir, "codex", "thread-exact")
     save_service_session_metadata(role_dir, "codex", "thread-exact")
     selected_service = cast(
-        Any,
+        "Any",
         _FakeService(
             name="claude",
             relpath="custom/claude-state/",
@@ -544,7 +544,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_non_resumab
     tmp_path: Path,
 ) -> None:
     service = cast(
-        Any,
+        "Any",
         _FakeService(
             name="claude",
             relpath="custom/claude-state/",

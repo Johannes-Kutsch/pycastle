@@ -2,8 +2,8 @@ import asyncio
 from pathlib import Path
 from typing import Protocol
 
-from ..services import GitService
 from ..display.status_display import StatusDisplay
+from ..services import GitService
 
 
 class _UtilDeps(Protocol):

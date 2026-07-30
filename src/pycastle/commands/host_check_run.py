@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import subprocess
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from pathlib import Path
-import subprocess
-from typing import Callable, TypeAlias, cast
+from typing import TypeAlias, cast
 
 from .. import _host_check as _host_check_module
 from .._host_check import (
     HostCheckCommandExecutor,
     HostCheckCommandResult,
     HostCheckFailure,
-    HostCheckIssuePayload,
     HostCheckIssueFiledVerdict,
     HostCheckIssueFiler,
+    HostCheckIssuePayload,
     HostCheckPassedVerdict,
     HostCheckVerdict,
     HostCheckWorktreeFactory,
@@ -23,24 +24,24 @@ from .._host_check import (
 from ..agents.output_protocol import AgentRole, IssueOutput
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config, StageOverride, load_credential_env
-from ..display.status_display import PlainStatusDisplay, StatusDisplay
+from ..diagnostic_issue_report_validation import (
+    validate_diagnostic_issue_report,
+)
 from ..diagnostic_mount_fallback import (
     DiagnosticMountFallbackIssue,
     decide_diagnostic_mount_dispatch,
 )
-from ..diagnostic_issue_report_validation import (
-    validate_diagnostic_issue_report,
-)
+from ..display.status_display import PlainStatusDisplay, StatusDisplay
 from ..errors import SetupPhaseError
 from ..infrastructure.worktree import detached_transient_worktree
+from ..prompts import scope_args as prompt_scope_args
 from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
-from ..prompts import scope_args as prompt_scope_args
 from ..run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
     prepare_run_startup,
 )
-from ..services import GitService, GithubService, ServiceRegistry
+from ..services import GithubService, GitService, ServiceRegistry
 
 
 @dataclass(frozen=True)
@@ -296,7 +297,7 @@ async def run_host_check_command(
     run_host_check: HostCheckCommandExecutor | None = None,
     transient_worktree_factory: HostCheckWorktreeFactory | None = None,
 ) -> HostCheckRunOutcome:
-    resolved_repo_root = repo_root or Path(".").resolve()
+    resolved_repo_root = repo_root or Path().resolve()
     resolved_status_display = status_display or PlainStatusDisplay()
     resolved_reporter_override: StageOverride | None = None
     if github_svc is not None and agent_runner is not None:
@@ -340,10 +341,10 @@ async def run_host_check_run(
     run_host_check: HostCheckCommandExecutor | None = None,
     transient_worktree_factory: HostCheckWorktreeFactory | None = None,
 ) -> HostCheckRunOutcome:
-    resolved_repo_root = repo_root or Path(".").resolve()
+    resolved_repo_root = repo_root or Path().resolve()
     execute_host_check = run_host_check or _run_host_check
     create_transient_worktree = cast(
-        HostCheckWorktreeFactory,
+        "HostCheckWorktreeFactory",
         transient_worktree_factory or transient_worktree,
     )
     file_issue_for_failure: HostCheckIssueFiler | None = None

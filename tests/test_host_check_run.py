@@ -1,11 +1,12 @@
-import pytest
-from unittest.mock import MagicMock
 import asyncio
 import platform
 import shlex
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
 
 from pycastle._host_check import HostCheckCommandResult
 from pycastle.agents.output_protocol import AgentRole
@@ -828,7 +829,6 @@ def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_
 
         async def __aexit__(self, exc_type, exc, tb) -> None:
             transient_calls.append(("exit", "checked-sha", tmp_path))
-            return None
 
     def fake_transient_worktree(name: str, *, sha: str | None, deps):
         assert name == "host-check-checked"
@@ -933,7 +933,6 @@ def test_run_host_check_run_surfaces_host_check_phase_row_before_worktree_steps(
 
         async def __aexit__(self, exc_type, exc, tb) -> None:
             events.append(("worktree-exit",))
-            return None
 
     display = RecordingStatusDisplay()
 

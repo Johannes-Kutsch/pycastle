@@ -1,6 +1,6 @@
 from .dispatch import (
-    PromptInvocation,
     PromptDispatchRenderer,
+    PromptInvocation,
     build_prompt_invocation,
     render_prompt_invocation,
 )

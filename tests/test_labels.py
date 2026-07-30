@@ -1,6 +1,8 @@
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
+from pycastle.commands.labels import _resolve_repo, create_labels_interactive
 from pycastle.config import Config
 from pycastle.services import (
     GithubAPIError,
@@ -8,8 +10,6 @@ from pycastle.services import (
     GitService,
     OperatorActionableGithubError,
 )
-from pycastle.commands.labels import _resolve_repo, create_labels_interactive
-
 
 # ── Shared fixture ─────────────────────────────────────────────────────────────
 

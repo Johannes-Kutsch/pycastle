@@ -8,7 +8,7 @@ class StageOverride:
     model: str = ""
     effort: str = ""
     service: str = ""
-    fallback: "StageOverride | None" = None
+    fallback: StageOverride | None = None
 
 
 __all__ = ["StageOverride"]

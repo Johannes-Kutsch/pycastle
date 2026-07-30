@@ -6,7 +6,6 @@ import click
 import pytest
 from click.testing import CliRunner
 
-
 # ── Issue #784 / #1045: bundled universal Dockerfile contract ─────────────────
 
 
@@ -893,8 +892,8 @@ def test_load_config_from_scaffolded_project_has_correct_stage_overrides(
     tmp_path, monkeypatch
 ):
     """load_config on a freshly scaffolded project must return the expected StageOverride values."""
-    from pycastle.config import StageOverride, load_config
     from pycastle.commands.init import main
+    from pycastle.config import StageOverride, load_config
 
     monkeypatch.chdir(tmp_path)
     with (
@@ -952,8 +951,8 @@ def test_init_service_selection_writes_same_stage_chains(
     tmp_path, monkeypatch, service
 ):
     from pycastle import StageOverride
-    from pycastle.config import load_config
     from pycastle.commands.init import main
+    from pycastle.config import load_config
 
     workspace = tmp_path / service
     workspace.mkdir()
@@ -1080,8 +1079,8 @@ def test_init_opencode_selection_adds_env_key_without_changing_stage_policy(
     tmp_path, monkeypatch
 ):
     from pycastle import StageOverride
-    from pycastle.config import load_config
     from pycastle.commands.init import main
+    from pycastle.config import load_config
 
     workspace = tmp_path / "opencode"
     workspace.mkdir()
@@ -2813,6 +2812,7 @@ def test_refresh_reports_created_for_every_copied_file_when_pycastle_dir_empty(
 def test_refresh_reports_unchanged_when_file_byte_equal(tmp_path, monkeypatch, capsys):
     """Byte-equal files are not shown in stdout; refresh prints only the confirmation line."""
     from importlib.resources import files
+
     from pycastle.commands.init import refresh
 
     monkeypatch.chdir(tmp_path)

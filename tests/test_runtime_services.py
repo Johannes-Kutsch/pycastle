@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -13,9 +13,8 @@ from pycastle.services.runtime_services import (
     OpenCodeService,
 )
 
-
-_FAR = datetime(2099, 1, 1, tzinfo=timezone.utc).astimezone()
-_NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc).astimezone()
+_FAR = datetime(2099, 1, 1, tzinfo=UTC).astimezone()
+_NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC).astimezone()
 
 
 def _role_session_mock() -> MagicMock:
@@ -155,7 +154,7 @@ def test_opencode_service_is_available_without_model_unaffected_by_model_restric
 
 
 def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and_wake():
-    past_reset = datetime(2025, 6, 1, tzinfo=timezone.utc).astimezone()
+    past_reset = datetime(2025, 6, 1, tzinfo=UTC).astimezone()
     svc = CodexService()
     svc.mark_model_restricted("gpt-5.5")
     svc.mark_exhausted(past_reset)  # wake time ~2025-06-01T00:02 UTC, before _NOW
@@ -169,7 +168,7 @@ def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and
 def test_claude_service_build_env_raises_usage_limit_error_when_pool_temporarily_exhausted():
     # Regression: pool exhaustion previously propagated as RuntimeError, causing the
     # orchestrator to loop endlessly instead of sleeping until accounts wake up.
-    future_reset = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    future_reset = datetime(2099, 1, 1, tzinfo=UTC)
     svc = ClaudeService(accounts=[("account 1", "tok-1")])
     svc.build_env()  # picks tok-1
     svc.mark_exhausted(future_reset)  # tok-1 exhausted with a finite wake time

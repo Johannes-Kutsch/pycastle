@@ -10,30 +10,30 @@ from ..agents.output_protocol import (
 )
 from ..agents.runner import AgentRunnerProtocol, RunRequest
 from ..config import Config
-from ..prompts.dispatch import build_prompt_invocation
-from ..prompts.pipeline import PromptTemplate
-from ..prompts.scope_args import build_plan_scope_args
-from ..services import GitService
-from ..services.github_service import GithubService
 from ..display.status_display import StatusDisplay
+from ..errors import SetupPhaseError
 from ..infrastructure.worktree import (
     SandboxWorktreeIntent,
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
-from ..session import RoleSession
-from ._fingerprint import prepare_fingerprint_gate
 from ..managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
-from ..errors import SetupPhaseError
+from ..prompts.dispatch import build_prompt_invocation
+from ..prompts.pipeline import PromptTemplate
+from ..prompts.scope_args import build_plan_scope_args
+from ..services import GitService
+from ..services.github_service import GithubService
+from ..session import RoleSession
+from . import planning_issue_intake
+from ._fingerprint import prepare_fingerprint_gate
 from ._rows import status_row
 from .implement import branch_for
 from .planning_issue_intake import PlanReady, PreparedPlanningIssueSet
-from . import planning_issue_intake
 from .preflight import PreflightAFK, PreflightCache, PreflightHITL
 
 

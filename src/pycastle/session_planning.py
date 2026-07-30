@@ -4,29 +4,26 @@ import dataclasses
 import shutil
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import Protocol, cast
 
 from .agents.output_protocol import AgentRole
-from .services.runtime_services import AgentService
 from .provider_session_adapter import (
     ProviderSessionAdapter,
     ProviderSessionPlanningRequest,
 )
+from .runtime_session import (
+    ProviderSessionPreferencesRequest,
+    ProviderSessionStateRequest,
+    RunKind,
+    ServiceResumeIdentityStore,
+    normalize_state_dir_relpath,
+    session_uuid,
+)
+from .services.runtime_services import AgentService
 from .session.role import session_uuid_for_role_session_path
 from .session.service_session_store import (
     clear_service_session_metadata,
     save_service_session_metadata,
-)
-
-if TYPE_CHECKING:
-    pass
-from .runtime_session import (
-    ProviderSessionPreferencesRequest,
-    ProviderSessionStateRequest,
-    session_uuid,
-    RunKind,
-    ServiceResumeIdentityStore,
-    normalize_state_dir_relpath,
 )
 
 
@@ -405,7 +402,7 @@ def plan_provider_run_state(
     provider_session_preferences = (
         provider_session_adapter.provider_session_preferences(
             ProviderSessionPreferencesRequest(
-                role_session=cast(ServiceResumeIdentityStore, request.role_session),
+                role_session=cast("ServiceResumeIdentityStore", request.role_session),
                 provider_state_dir=host_state_dir,
                 has_resumable_provider_state=has_resumable_provider_state,
                 state_dir_relpath=state_dir_relpath,
@@ -416,7 +413,7 @@ def plan_provider_run_state(
 
     provider_session_state = provider_session_adapter.provider_session_state(
         ProviderSessionStateRequest(
-            role_session=cast(ServiceResumeIdentityStore, request.role_session),
+            role_session=cast("ServiceResumeIdentityStore", request.role_session),
             provider_state_dir=host_state_dir,
             has_resumable_provider_state=has_resumable_provider_state,
             state_dir_relpath=state_dir_relpath,

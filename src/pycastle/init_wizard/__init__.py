@@ -1,5 +1,4 @@
 from .planning import (
-    build_init_plan_for_scope,
     ConfigFileAction,
     ConfigHintAction,
     CredentialPrompt,
@@ -11,11 +10,12 @@ from .planning import (
     InitWizardPlanningInputs,
     InitWizardScopeChoice,
     LabelPromptEligibility,
-    PlannedEnvFileAction,
     PlannedEnvFile,
+    PlannedEnvFileAction,
     PlannedWarning,
     ScaffoldStageChainFacts,
     build_init_plan,
+    build_init_plan_for_scope,
 )
 
 __all__ = [
@@ -30,8 +30,8 @@ __all__ = [
     "InitWizardPlanningInputs",
     "InitWizardScopeChoice",
     "LabelPromptEligibility",
-    "PlannedEnvFileAction",
     "PlannedEnvFile",
+    "PlannedEnvFileAction",
     "PlannedWarning",
     "ScaffoldStageChainFacts",
     "build_init_plan",

@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
+from agent_runtime.errors import HardAgentError
+
 from pycastle.agents.output_protocol import AgentOutput, AgentSuccessOutput
 from pycastle.agents.runner import (
     AgentRunnerProtocol,
@@ -13,13 +15,12 @@ from pycastle.agents.runner import (
 )
 from pycastle.config import Config
 from pycastle.display.status_display import ModelDisplayMetadata, StatusDisplay
-from agent_runtime.errors import HardAgentError
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
 from pycastle.iteration._deps import Deps, Logger
 from pycastle.iteration.preflight import PreflightCache, PreflightReady, PreflightResult
-from pycastle.services import GitService, GithubService, ServiceRegistry
+from pycastle.services import GithubService, GitService, ServiceRegistry
 
 
 class RecordingLogger:
@@ -267,8 +268,8 @@ def _make_deps(
     )
 
     if setup_worktrees:
-        git_mock = cast(Any, resolved_git_svc)
-        github_mock = cast(Any, resolved_github_svc)
+        git_mock = cast("Any", resolved_git_svc)
+        github_mock = cast("Any", resolved_github_svc)
         _wire_worktrees(git_mock)
         if isinstance(
             github_mock.get_all_open_issues_lightweight.return_value, MagicMock

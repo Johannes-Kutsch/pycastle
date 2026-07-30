@@ -125,7 +125,7 @@ def _coerce_request(
     if short_sid is None:
         raise TypeError("short_sid is required when preparing from a driver step")
 
-    step = cast(ImprovePreparationStep, request_or_step)
+    step = cast("ImprovePreparationStep", request_or_step)
     return ImproveStepPreparationRequest(
         prompt_template=step.cfg.template,
         session_namespace=step.cfg.namespace,

@@ -6,6 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TypeAlias
 
+from agent_runtime.errors import (
+    AgentCredentialFailureError,
+    HardAgentError,
+)
+
 from ..agent_credential_failure_routing import (
     route_agent_credential_failure,
 )
@@ -16,9 +21,9 @@ from ..bug_reporter import (
     BUG_REPORT_LABEL_LIST,
     auto_file_issue,
 )
-from agent_runtime.errors import (
-    AgentCredentialFailureError,
-    HardAgentError,
+from ..diagnostic_mount_fallback import (
+    DiagnosticMountFallbackIssue,
+    decide_diagnostic_mount_dispatch,
 )
 from ..errors import (
     AgentFailedError,
@@ -28,22 +33,18 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from ..diagnostic_mount_fallback import (
-    DiagnosticMountFallbackIssue,
-    decide_diagnostic_mount_dispatch,
-)
-from ..services import OperatorActionableGitError
 from ..prompts.dispatch import build_prompt_invocation
 from ..prompts.pipeline import PromptTemplate
 from ..prompts.scope_args import build_failure_report_scope_args
+from ..services import OperatorActionableGitError
 from ._deps import Deps
 from ._rows import StatusRow as StatusRow
 from ._rows import status_row as status_row
 from .implement import branch_for, implement_phase
-from .in_flight import select_in_flight_issues
 from .improve import ImproveContinue as ImproveContinue
 from .improve import ImproveNoCandidate as ImproveNoCandidate
 from .improve import improve_phase
+from .in_flight import select_in_flight_issues
 from .merge import merge_phase
 from .planning import AllBlocked as AllBlocked
 from .planning import PlanReady as PlanReady
@@ -51,8 +52,10 @@ from .planning import planning_phase
 from .planning_issue_intake import prepare_planning_issue_set
 from .preflight import (
     PreflightAFK,
-    PreflightCache as PreflightCache,
     PreflightHITL,
+)
+from .preflight import (
+    PreflightCache as PreflightCache,
 )
 
 _FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
@@ -91,7 +94,7 @@ def _copy_invocation_log_to_evidence_area(
 def _route_and_abort_agent_credential_failure(
     err: HardAgentError,
     deps: Deps,
-) -> "AbortedAgentCredentialFailure" | None:
+) -> AbortedAgentCredentialFailure | None:
     routed_failure = route_agent_credential_failure(
         provider_failure=err,
         github_svc=deps.github_svc,
@@ -447,7 +450,9 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         routed_result = _route_and_abort_agent_credential_failure(err, deps)
         if routed_result is not None:
             return routed_result
-        from .hard_agent_error_report import translate_hard_agent_error_to_abort  # noqa: PLC0415
+        from .hard_agent_error_report import (
+            translate_hard_agent_error_to_abort,
+        )
 
         return translate_hard_agent_error_to_abort(
             err, deps.cfg, deps.status_display, auto_file_issue

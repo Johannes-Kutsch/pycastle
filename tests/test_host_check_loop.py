@@ -1,15 +1,14 @@
 import asyncio
-from pathlib import Path
 import platform
+from pathlib import Path
 from unittest.mock import MagicMock
-
 
 from pycastle._host_check import (
     HostCheckCommandResult,
     HostCheckFailedError,
     HostCheckFailure,
-    HostCheckIssuePayload,
     HostCheckIssueFiledVerdict,
+    HostCheckIssuePayload,
     HostCheckPassedVerdict,
     run_host_check_loop,
 )
@@ -40,11 +39,9 @@ def test_run_host_check_loop_surfaces_aggregate_phase_row_before_returning_verdi
 
         async def __aexit__(self, exc_type, exc, tb) -> None:
             events.append(("worktree-exit",))
-            return None
 
     def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
         events.append(("host-check", name, command, cwd))
-        return None
 
     display = RecordingStatusDisplay()
 
@@ -102,7 +99,6 @@ def test_run_host_check_loop_closes_host_check_row_before_issue_filing_starts(
 
         async def __aexit__(self, exc_type, exc, tb) -> None:
             events.append(("worktree-exit",))
-            return None
 
     def fake_run_host_check(name: str, command: str, cwd: Path) -> None:
         raise HostCheckFailedError(name=name, command=command, output="tests broke")
@@ -173,7 +169,7 @@ def test_run_host_check_loop_collects_all_failed_commands_before_reporting_issue
                 output="tests broke",
             )
         if name == "lint":
-            return None
+            return
         raise HostCheckFailedError(
             name=name,
             command=command,

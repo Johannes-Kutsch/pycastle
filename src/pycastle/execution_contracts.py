@@ -5,15 +5,12 @@ import dataclasses
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 from .agents.output_protocol import AgentRole
-from .services.runtime_services import AgentService, ToolPolicy
-from .runtime_session import RunKind
 from .config.types import StageOverride
-
-if TYPE_CHECKING:
-    pass
+from .runtime_session import RunKind
+from .services.runtime_services import AgentService, ToolPolicy
 
 RuntimeResultT = TypeVar("RuntimeResultT")
 
@@ -547,6 +544,10 @@ __all__ = [
     "CancellationToken",
     "PreparedProviderRunSession",
     "PreparedRunSessionState",
+    "PromptRunRequest",
+    "PromptRunSession",
+    "PromptRuntimeExecutionAdapter",
+    "ProviderAccountExhaustionHandler",
     "RuntimeExecutionAdapter",
     "RuntimeInvocationDependencies",
     "RuntimeInvocationRequest",
@@ -557,10 +558,6 @@ __all__ = [
     "RuntimeStatusDisplay",
     "RuntimeStatusRow",
     "SessionStatePreparer",
-    "PromptRunRequest",
-    "PromptRunSession",
-    "PromptRuntimeExecutionAdapter",
-    "ProviderAccountExhaustionHandler",
     "SetupFailureTranslator",
     "StatusDisplayFactory",
     "StatusRowFactory",

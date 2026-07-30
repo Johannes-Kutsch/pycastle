@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-
 import json
 import platform
-from pathlib import Path
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Protocol
 
-from .pipeline import PromptRenderError, PromptTemplate, Scope
 from ..session import RunKind
+from .pipeline import PromptRenderError, PromptTemplate, Scope
 
 _ISSUE_VALUE_KEYS = Scope.PER_ISSUE.placeholders & Scope.IMPROVE_ISSUES.placeholders
 

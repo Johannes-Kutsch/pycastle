@@ -54,22 +54,30 @@ def test_run_returns_false_when_command_reports_branch_is_not_ancestor():
 
 def test_run_raises_timeout_error_when_command_exceeds_timeout():
     svc = _git_service(timeout=5)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd=["git", "merge-base"], timeout=5.0),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(
+                cmd=["git", "merge-base"], timeout=5.0
+            ),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.is_ancestor("HEAD", Path("repo"))
+        svc.is_ancestor("HEAD", Path("repo"))
 
 
 def test_run_timeout_error_message_includes_cmd_and_duration():
     svc = _git_service(timeout=5)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd=["git", "merge-base"], timeout=5.0),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(
+                cmd=["git", "merge-base"], timeout=5.0
+            ),
+        ),
+        pytest.raises(GitTimeoutError, match="5.0s"),
     ):
-        with pytest.raises(GitTimeoutError, match="5.0s"):
-            svc.is_ancestor("HEAD", Path("repo"))
+        svc.is_ancestor("HEAD", Path("repo"))
 
 
 def test_run_raises_not_found_error_when_executable_is_missing():
@@ -91,12 +99,14 @@ def test_run_not_found_error_message_includes_executable_name():
 
 def test_run_or_raise_propagates_timeout_error():
     svc = _git_service(timeout=5)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd=["cmd"], timeout=5.0),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd=["cmd"], timeout=5.0),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.get_current_branch(Path("repo"))
+        svc.get_current_branch(Path("repo"))
 
 
 def test_run_or_raise_propagates_not_found_error():

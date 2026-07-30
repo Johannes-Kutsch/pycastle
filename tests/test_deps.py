@@ -8,9 +8,9 @@ from pycastle.agents.runner import RunRequest
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
+from pycastle.iteration._deps import Deps
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.iteration._deps import Deps
 from tests.support import FakeAgentRunner, RecordingLogger, _make_deps
 
 
@@ -91,7 +91,7 @@ def _run_request(**kwargs) -> RunRequest:
     template = kwargs.pop("template")
     scope_args = kwargs.pop(
         "scope_args",
-        {placeholder: "" for placeholder in template.scope.placeholders},
+        dict.fromkeys(template.scope.placeholders, ""),
     )
     send_role_prompt_on_resume = kwargs.pop("send_role_prompt_on_resume", False)
     return RunRequest(

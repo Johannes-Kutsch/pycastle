@@ -7,24 +7,24 @@ from typing import Any
 
 from . import _time as _time_module
 from .agents.output_protocol import AgentRole
+from .config.types import StageOverride
 from .execution_contracts import (
     CancellationToken,
+    PreparedProviderRunSession,
+    PreparedRunSessionState,
     PromptRunRequest,
     PromptRunSession,
     PromptRuntimeExecutionAdapter,
-    PreparedProviderRunSession,
-    PreparedRunSessionState,
     RuntimeInvocationRequest,
     RuntimeModelDisplayMetadata,
     RuntimeRunSession,
     TextOutputAdapter,
     WorktreeMount,
 )
+from .runtime_session import RunKind
 from .services.runtime_services import ToolPolicy
 from .services.service_registry import ServiceRegistry
-from .runtime_session import RunKind
 from .session_planning import ResidentSessionPlan
-from .config.types import StageOverride
 from .stage_priority_chain import iter_stage_chain
 
 __all__ = [
@@ -33,15 +33,15 @@ __all__ = [
     "OneShotRuntime",
     "OneShotRuntimeExecutionAdapter",
     "OneShotRuntimeMetadata",
+    "PromptRunRequest",
+    "PromptRunSession",
+    "PromptRuntime",
+    "PromptRuntimeExecutionAdapter",
     "ResidentRunRequest",
     "ResidentRunResult",
     "ResidentRuntime",
     "ResidentRuntimeExecutionAdapter",
     "ResidentRuntimeMetadata",
-    "PromptRunRequest",
-    "PromptRunSession",
-    "PromptRuntime",
-    "PromptRuntimeExecutionAdapter",
     "ToolPolicy",
     "WorktreeMount",
     "run_one_shot",
@@ -637,6 +637,7 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
                         AgentCredentialFailureError,
                         HardAgentError,
                     )
+
                     from .errors import (
                         AgentTimeoutError,
                         TransientAgentError,

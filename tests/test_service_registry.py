@@ -1,20 +1,22 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from pycastle.config.types import StageOverride
+from pycastle.services.runtime_services import (
+    AgentService,
+    CodexService,
+    OpenCodeService,
+)
 from pycastle.services.service_registry import ServiceRegistry
-from pycastle.services.runtime_services import AgentService
-from pycastle.services.runtime_services import CodexService
-from pycastle.services.runtime_services import OpenCodeService
 
 runtime = SimpleNamespace(ServiceRegistry=ServiceRegistry, StageOverride=StageOverride)
 
 
 def _now() -> datetime:
-    return datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 
 def _make_svc(available: bool, wake: datetime | None = None) -> MagicMock:
@@ -178,7 +180,7 @@ def test_resolve_returns_first_configured_candidate_when_all_configured_are_exha
 
 def test_resolve_falls_through_exhausted_opencode_before_sleep() -> None:
     opencode = OpenCodeService(api_key="go-key")
-    opencode.mark_exhausted(datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc))
+    opencode.mark_exhausted(datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC))
     fallback_svc = _make_svc(available=True)
     registry = runtime.ServiceRegistry(
         services={"opencode": opencode, "claude": fallback_svc},
@@ -206,12 +208,12 @@ def test_resolve_skips_exhausted_opencode_slots_before_fallback() -> None:
         ]
     )
     opencode.mark_exhausted(
-        datetime(2040, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+        datetime(2040, 1, 1, 13, 0, 0, tzinfo=UTC),
         _now=_now(),
     )
     _ = opencode.build_env()
     opencode.mark_exhausted(
-        datetime(2040, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+        datetime(2040, 1, 1, 13, 0, 0, tzinfo=UTC),
         _now=_now(),
     )
     fallback_svc = _make_svc(available=True)
@@ -305,8 +307,8 @@ def test_has_available_returns_false_on_empty_registry() -> None:
 
 
 def test_next_wake_time_returns_earliest_exhausted_wake_time() -> None:
-    earlier = datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
-    later = datetime(2025, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
+    earlier = datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC)
+    later = datetime(2025, 1, 1, 14, 0, 0, tzinfo=UTC)
     svc_a = _make_svc(available=False, wake=earlier)
     svc_b = _make_svc(available=False, wake=later)
     registry = runtime.ServiceRegistry(services={"a": svc_a, "b": svc_b})
@@ -328,7 +330,7 @@ def test_next_wake_time_returns_none_on_empty_registry() -> None:
 
 
 def test_next_wake_time_skips_available_services() -> None:
-    wake = datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+    wake = datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC)
     exhausted = _make_svc(available=False, wake=wake)
     available = _make_svc(available=True)
     registry = runtime.ServiceRegistry(
@@ -340,7 +342,7 @@ def test_next_wake_time_skips_available_services() -> None:
 
 def test_next_wake_time_for_includes_configured_exhausted_opencode_only() -> None:
     opencode = OpenCodeService(api_key="go-key")
-    opencode.mark_exhausted(datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc))
+    opencode.mark_exhausted(datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC))
     registry = runtime.ServiceRegistry(services={"opencode": opencode})
     override = runtime.StageOverride(
         service="missing",
@@ -352,12 +354,12 @@ def test_next_wake_time_for_includes_configured_exhausted_opencode_only() -> Non
     )
 
     assert registry.next_wake_time_for(override, _now()) == datetime(
-        2025, 1, 1, 13, 2, 0, tzinfo=timezone.utc
+        2025, 1, 1, 13, 2, 0, tzinfo=UTC
     )
 
 
 def test_next_wake_time_for_skips_available_configured_fallbacks() -> None:
-    exhausted_wake = datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+    exhausted_wake = datetime(2025, 1, 1, 13, 0, 0, tzinfo=UTC)
     codex = _make_svc(available=False, wake=exhausted_wake)
     claude = _make_svc(available=True)
     registry = runtime.ServiceRegistry(services={"codex": codex, "claude": claude})

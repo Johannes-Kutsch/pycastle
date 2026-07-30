@@ -166,7 +166,7 @@ def _file_or_reuse_agent_credential_failure_issue(
     raw_result_envelope: str,
     remediation: str,
     observations: tuple[tuple[str, str], ...],
-    github_svc: "GithubService",
+    github_svc: GithubService,
 ) -> _CredentialFailureIssueLookupResult:
     try:
         existing = github_svc.search_open_issues_by_title(
@@ -309,7 +309,7 @@ def _interpret_agent_credential_failure(
 def route_agent_credential_failure(
     *,
     provider_failure: HardAgentError,
-    github_svc: "GithubService",
+    github_svc: GithubService,
 ) -> AgentCredentialFailureRouteResult | None:
     raw = provider_failure.args[0] if provider_failure.args else ""
     service_name = getattr(provider_failure, "service_name", "claude") or "claude"

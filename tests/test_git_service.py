@@ -119,22 +119,26 @@ def test_get_user_name_returns_name():
 
 def test_get_user_name_raises_git_command_error_on_failure():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+    with (
+        patch(
+            "subprocess.run",
+            return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+        ),
+        pytest.raises(GitCommandError),
     ):
-        with pytest.raises(GitCommandError):
-            svc.get_user_name()
+        svc.get_user_name()
 
 
 def test_get_user_name_raises_git_timeout_error_on_timeout():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.get_user_name()
+        svc.get_user_name()
 
 
 def test_get_user_name_raises_git_not_found_error_when_git_missing():
@@ -179,22 +183,26 @@ def test_get_user_email_returns_email():
 
 def test_get_user_email_raises_git_command_error_on_failure():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+    with (
+        patch(
+            "subprocess.run",
+            return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+        ),
+        pytest.raises(GitCommandError),
     ):
-        with pytest.raises(GitCommandError):
-            svc.get_user_email()
+        svc.get_user_email()
 
 
 def test_get_user_email_raises_git_timeout_error_on_timeout():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.get_user_email()
+        svc.get_user_email()
 
 
 # ── is_ancestor() ──────────────────────────────────────────────────────────────
@@ -214,12 +222,14 @@ def test_is_ancestor_returns_false_when_not_ancestor():
 
 def test_is_ancestor_raises_git_timeout_error_on_timeout():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.is_ancestor("main", Path("/tmp/repo"))
+        svc.is_ancestor("main", Path("/tmp/repo"))
 
 
 # ── verify_ref_exists() ────────────────────────────────────────────────────────
@@ -239,12 +249,14 @@ def test_verify_ref_exists_returns_false_when_ref_absent():
 
 def test_verify_ref_exists_raises_git_timeout_error_on_timeout():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.verify_ref_exists("main", Path("/tmp/repo"))
+        svc.verify_ref_exists("main", Path("/tmp/repo"))
 
 
 # ── delete_branch() ───────────────────────────────────────────────────────────
@@ -258,22 +270,26 @@ def test_delete_branch_succeeds_silently():
 
 def test_delete_branch_raises_git_command_error_on_failure():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=1, stderr=b"error: branch not found"),
+    with (
+        patch(
+            "subprocess.run",
+            return_value=MagicMock(returncode=1, stderr=b"error: branch not found"),
+        ),
+        pytest.raises(GitCommandError),
     ):
-        with pytest.raises(GitCommandError):
-            svc.delete_branch("nonexistent", Path("/tmp/repo"))
+        svc.delete_branch("nonexistent", Path("/tmp/repo"))
 
 
 def test_delete_branch_raises_git_timeout_error_on_timeout():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.delete_branch("main", Path("/tmp/repo"))
+        svc.delete_branch("main", Path("/tmp/repo"))
 
 
 # ── list_worktrees() ──────────────────────────────────────────────────────────
@@ -315,22 +331,26 @@ def test_list_worktrees_returns_empty_list_for_no_output():
 
 def test_list_worktrees_raises_git_command_error_on_failure():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+    with (
+        patch(
+            "subprocess.run",
+            return_value=MagicMock(returncode=1, stdout=b"", stderr=b"error"),
+        ),
+        pytest.raises(GitCommandError),
     ):
-        with pytest.raises(GitCommandError):
-            svc.list_worktrees(Path("/tmp/repo"))
+        svc.list_worktrees(Path("/tmp/repo"))
 
 
 def test_list_worktrees_raises_git_timeout_error_on_timeout():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.list_worktrees(Path("/tmp/repo"))
+        svc.list_worktrees(Path("/tmp/repo"))
 
 
 # ── get_remote_url() ──────────────────────────────────────────────────────────
@@ -350,22 +370,26 @@ def test_get_remote_url_returns_url():
 
 def test_get_remote_url_raises_git_command_error_on_failure():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(returncode=2, stdout=b"", stderr=b"no such remote"),
+    with (
+        patch(
+            "subprocess.run",
+            return_value=MagicMock(returncode=2, stdout=b"", stderr=b"no such remote"),
+        ),
+        pytest.raises(GitCommandError),
     ):
-        with pytest.raises(GitCommandError):
-            svc.get_remote_url()
+        svc.get_remote_url()
 
 
 def test_get_remote_url_raises_git_timeout_error_on_timeout():
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.get_remote_url()
+        svc.get_remote_url()
 
 
 def test_get_remote_url_uses_custom_remote():
@@ -510,12 +534,14 @@ def test_create_worktree_raises_git_command_error_on_add_failure(tmp_path):
 
 def test_create_worktree_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.create_worktree(tmp_path, tmp_path / "wt", "feature/new")
+        svc.create_worktree(tmp_path, tmp_path / "wt", "feature/new")
 
 
 def test_create_worktree_succeeds_when_orphan_dir_exists_at_path(tmp_path):
@@ -654,12 +680,14 @@ def test_remove_worktree_falls_back_to_rmtree_when_git_fails(tmp_path):
 
 def test_remove_worktree_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.remove_worktree(tmp_path, tmp_path / "wt")
+        svc.remove_worktree(tmp_path, tmp_path / "wt")
 
 
 # ── try_merge() ───────────────────────────────────────────────────────────────
@@ -807,12 +835,14 @@ def test_try_merge_already_up_to_date_returns_true(tmp_path):
 
 def test_try_merge_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.try_merge(tmp_path, "feature")
+        svc.try_merge(tmp_path, "feature")
 
 
 # ── is_working_tree_clean() ───────────────────────────────────────────────────
@@ -929,24 +959,28 @@ def test_get_current_branch_strips_whitespace(tmp_path):
 
 def test_get_current_branch_raises_git_command_error_on_failure(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(
-            returncode=128, stdout=b"", stderr=b"fatal: not a git repository"
+    with (
+        patch(
+            "subprocess.run",
+            return_value=MagicMock(
+                returncode=128, stdout=b"", stderr=b"fatal: not a git repository"
+            ),
         ),
+        pytest.raises(GitCommandError),
     ):
-        with pytest.raises(GitCommandError):
-            svc.get_current_branch(tmp_path)
+        svc.get_current_branch(tmp_path)
 
 
 def test_get_current_branch_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.get_current_branch(tmp_path)
+        svc.get_current_branch(tmp_path)
 
 
 # ── checkout_detached() ───────────────────────────────────────────────────────
@@ -1002,12 +1036,14 @@ def test_checkout_detached_raises_git_command_error_on_add_failure(tmp_path):
 
 def test_checkout_detached_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.checkout_detached(tmp_path, tmp_path / "wt", "deadbeef")
+        svc.checkout_detached(tmp_path, tmp_path / "wt", "deadbeef")
 
 
 # ── fast_forward_branch() ─────────────────────────────────────────────────────
@@ -1046,26 +1082,30 @@ def test_fast_forward_branch_raises_git_command_error_on_merge_failure(tmp_path)
 
 def test_fast_forward_branch_raises_git_command_error_on_checkout_failure(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        return_value=MagicMock(
-            returncode=1,
-            stdout=b"",
-            stderr=b"error: pathspec 'main' did not match any file(s)",
+    with (
+        patch(
+            "subprocess.run",
+            return_value=MagicMock(
+                returncode=1,
+                stdout=b"",
+                stderr=b"error: pathspec 'main' did not match any file(s)",
+            ),
         ),
+        pytest.raises(GitCommandError),
     ):
-        with pytest.raises(GitCommandError):
-            svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
+        svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
 
 
 def test_fast_forward_branch_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
+        svc.fast_forward_branch(tmp_path, "main", "pycastle/merge-sandbox")
 
 
 # ── checkout_detached() additional edge cases ─────────────────────────────────
@@ -1185,21 +1225,23 @@ def test_pull_raises_operator_actionable_error_after_exhausting_retries(tmp_path
             ),
         ),
         patch("time.sleep"),
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            svc.pull(tmp_path)
+        svc.pull(tmp_path)
     assert exc_info.value.op == "pull"
     assert exc_info.value.attempt_count == 4
 
 
 def test_pull_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.pull(tmp_path)
+        svc.pull(tmp_path)
 
 
 # ── commit() ──────────────────────────────────────────────────────────────────
@@ -1279,12 +1321,14 @@ def test_commit_raises_git_command_error_on_commit_failure(tmp_path):
 
 def test_commit_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.commit(tmp_path / "wt", tmp_path, "msg")
+        svc.commit(tmp_path / "wt", tmp_path, "msg")
 
 
 # ── push() ────────────────────────────────────────────────────────────────────
@@ -1321,21 +1365,23 @@ def test_push_raises_operator_actionable_error_after_exhausting_retries(tmp_path
             return_value=_git_failure(b"network error"),
         ),
         patch("time.sleep"),
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path))
     assert exc_info.value.op == "push"
     assert exc_info.value.attempt_count == 4
 
 
 def test_push_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path))
 
 
 # ── retry behaviour (pull / push / fetch) ─────────────────────────────────────
@@ -1374,9 +1420,9 @@ def test_pull_raises_git_command_error_immediately_on_divergence(tmp_path):
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
+        pytest.raises(GitCommandError),
     ):
-        with pytest.raises(GitCommandError):
-            svc.pull(tmp_path)
+        svc.pull(tmp_path)
 
     assert attempts == 1
     mock_sleep.assert_not_called()
@@ -1430,9 +1476,9 @@ def test_pull_final_exception_carries_last_attempt_stderr(tmp_path):
     with (
         patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
         patch("time.sleep"),
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            svc.pull(tmp_path)
+        svc.pull(tmp_path)
 
     assert exc_info.value.stderr == "transient error attempt 4"
 
@@ -1470,9 +1516,9 @@ def test_pull_timeout_error_is_not_retried(tmp_path):
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.pull(tmp_path)
+        svc.pull(tmp_path)
 
     assert call_count == 1
     mock_sleep.assert_not_called()
@@ -1490,9 +1536,9 @@ def test_pull_not_found_error_is_not_retried(tmp_path):
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
+        pytest.raises(GitNotFoundError),
     ):
-        with pytest.raises(GitNotFoundError):
-            svc.pull(tmp_path)
+        svc.pull(tmp_path)
 
     assert call_count == 1
     mock_sleep.assert_not_called()
@@ -1834,9 +1880,9 @@ def test_fetch_raises_operator_actionable_error_after_exhausting_retries(tmp_pat
             return_value=_git_failure(b"network error"),
         ),
         patch("time.sleep"),
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            svc.fetch(tmp_path)
+        svc.fetch(tmp_path)
     assert exc_info.value.op == "fetch"
     assert exc_info.value.attempt_count == 4
 
@@ -1855,9 +1901,9 @@ def test_fetch_final_exception_carries_last_attempt_stderr(tmp_path):
     with (
         patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
         patch("time.sleep"),
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            svc.fetch(tmp_path)
+        svc.fetch(tmp_path)
 
     assert exc_info.value.stderr == "transient error attempt 4"
 
@@ -1956,9 +2002,9 @@ def test_fetch_raises_git_command_error_immediately_for_divergence(tmp_path):
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
+        pytest.raises(GitCommandError) as exc_info,
     ):
-        with pytest.raises(GitCommandError) as exc_info:
-            svc.fetch(tmp_path)
+        svc.fetch(tmp_path)
 
     assert attempts == 1
     assert exc_info.value.stderr == stderr.decode()
@@ -1967,12 +2013,14 @@ def test_fetch_raises_git_command_error_immediately_for_divergence(tmp_path):
 
 def test_fetch_raises_git_timeout_error_on_timeout(tmp_path):
     svc = GitService(_cfg)
-    with patch(
-        "subprocess.run",
-        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+    with (
+        patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=30),
+        ),
+        pytest.raises(GitTimeoutError),
     ):
-        with pytest.raises(GitTimeoutError):
-            svc.fetch(tmp_path)
+        svc.fetch(tmp_path)
 
 
 # ── pull_with_merge_fallback() ────────────────────────────────────────────────
@@ -2165,9 +2213,9 @@ def test_pull_raises_operator_actionable_error_when_all_four_attempts_permission
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep"),
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            svc.pull(tmp_path)
+        svc.pull(tmp_path)
 
     assert attempts == 4
     assert exc_info.value.op == "pull"
@@ -2189,9 +2237,9 @@ def test_push_raises_operator_actionable_error_after_four_permission_denied_atte
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep"),
+        pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        with pytest.raises(OperatorActionableGitError) as exc_info:
-            asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path))
 
     assert attempts == 4
     assert exc_info.value.op == "push"
@@ -2211,9 +2259,9 @@ def test_push_non_nff_divergence_raises_git_command_error(tmp_path):
     with (
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
+        pytest.raises(GitCommandError) as exc_info,
     ):
-        with pytest.raises(GitCommandError) as exc_info:
-            asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path))
 
     assert attempts == 1
     assert exc_info.value.stderr == stderr.decode()

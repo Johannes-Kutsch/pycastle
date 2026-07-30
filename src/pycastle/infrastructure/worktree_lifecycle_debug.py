@@ -3,11 +3,10 @@ from __future__ import annotations
 import json
 import os
 import stat
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ..config import Config, resolve_logs_dir
-
 
 _ENV_LOG_PATH = "PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG"
 

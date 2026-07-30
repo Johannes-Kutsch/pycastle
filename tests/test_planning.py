@@ -1,15 +1,23 @@
 import asyncio
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock
 
 from pycastle.agents.output_protocol import (
     AgentRole,
     CompletionOutput,
-    PlanParseError,
     PlannerOutput,
+    PlanParseError,
 )
 from pycastle.config import Config, StageOverride
+from pycastle.iteration.planning import (
+    AllBlocked,
+    planning_phase,
+)
+from pycastle.iteration.planning_issue_intake import (
+    PlanReady,
+    prepare_planning_issue_set,
+)
 from pycastle.prompts.pipeline import PromptTemplate
 from tests.support import (
     FakeAgentRunner,
@@ -17,14 +25,6 @@ from tests.support import (
     StubPreflightCache,
     _make_deps,
     functional_git_svc,
-)
-from pycastle.iteration.planning_issue_intake import (
-    PlanReady,
-    prepare_planning_issue_set,
-)
-from pycastle.iteration.planning import (
-    AllBlocked,
-    planning_phase,
 )
 
 
@@ -1105,6 +1105,7 @@ def test_planning_phase_adds_both_marker_labels_and_comments_for_doubly_blocked_
     tmp_path, git_svc
 ):
     from unittest.mock import call
+
     from pycastle.services.github_service import GithubService
 
     well = {

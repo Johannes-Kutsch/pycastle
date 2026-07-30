@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -6,7 +6,7 @@ from pycastle.errors import UsageLimitError
 from pycastle.services.runtime_services import ClaudeService
 
 # Use a far-future base so exhausted_until stays > now_local() during test runs.
-_FAR = datetime(2099, 1, 1, tzinfo=timezone.utc).astimezone()
+_FAR = datetime(2099, 1, 1, tzinfo=UTC).astimezone()
 
 
 def _svc(*accounts: tuple[str, str]) -> ClaudeService:
@@ -34,8 +34,8 @@ def test_build_env_skips_exhausted_account_and_returns_next():
 
 
 def test_is_available_true_when_one_account_unexhausted():
-    now = datetime(2026, 1, 1, 14, 0, 0, tzinfo=timezone.utc).astimezone()
-    reset = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc).astimezone()
+    now = datetime(2026, 1, 1, 14, 0, 0, tzinfo=UTC).astimezone()
+    reset = datetime(2026, 1, 1, 15, 0, 0, tzinfo=UTC).astimezone()
     svc = _svc(("secondary", "tok-s"), ("primary", "tok-p"))
     svc.build_env()  # picks secondary
     svc.mark_exhausted(reset)  # wake = 15:02
@@ -43,7 +43,7 @@ def test_is_available_true_when_one_account_unexhausted():
 
 
 def test_is_available_false_when_all_accounts_exhausted():
-    now = datetime(2026, 1, 1, 14, 0, 0, tzinfo=timezone.utc).astimezone()
+    now = datetime(2026, 1, 1, 14, 0, 0, tzinfo=UTC).astimezone()
     svc = _svc(("secondary", "tok-s"), ("primary", "tok-p"))
 
     # exhaust secondary (far-future so it stays exhausted for the next build_env call)
@@ -57,9 +57,9 @@ def test_is_available_false_when_all_accounts_exhausted():
 
 
 def test_is_available_true_again_after_wake_time_passes():
-    early = datetime(2026, 1, 1, 14, 0, 0, tzinfo=timezone.utc).astimezone()
-    reset = datetime(2026, 1, 1, 14, 30, 0, tzinfo=timezone.utc).astimezone()
-    later = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc).astimezone()
+    early = datetime(2026, 1, 1, 14, 0, 0, tzinfo=UTC).astimezone()
+    reset = datetime(2026, 1, 1, 14, 30, 0, tzinfo=UTC).astimezone()
+    later = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC).astimezone()
     svc = _svc(("primary", "tok-p"))
 
     svc.build_env()
@@ -70,7 +70,7 @@ def test_is_available_true_again_after_wake_time_passes():
 
 
 def test_mark_exhausted_with_reset_time_sets_wake():
-    reset = datetime(2026, 1, 1, 14, 50, 0, tzinfo=timezone.utc).astimezone()
+    reset = datetime(2026, 1, 1, 14, 50, 0, tzinfo=UTC).astimezone()
     svc = _svc(("primary", "tok-p"))
 
     svc.build_env()
@@ -80,7 +80,7 @@ def test_mark_exhausted_with_reset_time_sets_wake():
 
 
 def test_mark_exhausted_without_reset_time_sets_wake():
-    now = datetime(2026, 1, 1, 14, 30, 0, tzinfo=timezone.utc).astimezone()
+    now = datetime(2026, 1, 1, 14, 30, 0, tzinfo=UTC).astimezone()
     svc = _svc(("primary", "tok-p"))
 
     svc.build_env()
@@ -91,8 +91,8 @@ def test_mark_exhausted_without_reset_time_sets_wake():
 
 def test_next_wake_time_returns_min_over_exhausted_entries():
     # Use ordered far-future dates so exhaustion persists across build_env() calls
-    early_reset = datetime(2099, 1, 1, 14, 30, 0, tzinfo=timezone.utc).astimezone()
-    late_reset = datetime(2099, 1, 1, 16, 0, 0, tzinfo=timezone.utc).astimezone()
+    early_reset = datetime(2099, 1, 1, 14, 30, 0, tzinfo=UTC).astimezone()
+    late_reset = datetime(2099, 1, 1, 16, 0, 0, tzinfo=UTC).astimezone()
     svc = _svc(("secondary", "tok-s"), ("primary", "tok-p"))
 
     # exhaust secondary with late reset

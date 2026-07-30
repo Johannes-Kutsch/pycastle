@@ -8,8 +8,8 @@ import pytest
 from pycastle.config import Config
 from pycastle.label_catalog import PROMPT_GLOBAL_LABEL_SPECS
 from pycastle.prompts.pipeline import (
-    PromptRenderError,
     PromptRenderer,
+    PromptRenderError,
     PromptTemplate,
     Scope,
 )

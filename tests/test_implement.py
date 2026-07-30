@@ -14,12 +14,9 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config, StageOverride
-from pycastle.infrastructure.worktree import worktree_identity
-from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.display.status_display import PlainStatusDisplay
-from pycastle.session import RoleSession
-from pycastle.session.service_session_store import save_service_session_metadata
+from pycastle.errors import AgentTimeoutError, UsageLimitError
+from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.iteration.implement import (
     ImplementResult,
     branch_for,
@@ -32,9 +29,10 @@ from pycastle.iteration.implement_issue_plan import (
     IssueRoleStepPlan,
     plan_issue_execution,
 )
-from pycastle.services import GitService, GithubService
-from pycastle.services import ServiceRegistry
-from pycastle.session import RunKind
+from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.services import GithubService, GitService, ServiceRegistry
+from pycastle.session import RoleSession, RunKind
+from pycastle.session.service_session_store import save_service_session_metadata
 from tests.support import (
     FakeAgentRunner,
     RecordingLogger,
@@ -2147,8 +2145,7 @@ def test_implement_phase_never_runs_more_than_max_parallel_agents_at_once(tmp_pa
     async def _agent(request: RunRequest):
         async with lock:
             active[0] += 1
-            if active[0] > peak[0]:
-                peak[0] = active[0]
+            peak[0] = max(peak[0], active[0])
         await asyncio.sleep(0)
         async with lock:
             active[0] -= 1
@@ -2198,8 +2195,7 @@ def test_implement_phase_never_opens_more_than_max_parallel_plus_one_worktrees(
         (path / "pyproject.toml").write_text("[project]\nname='t'\n")
         _registered.append(path)
         open_wts[0] += 1
-        if open_wts[0] > peak_wts[0]:
-            peak_wts[0] = open_wts[0]
+        peak_wts[0] = max(peak_wts[0], open_wts[0])
 
     def _sync_remove(repo, path):
         shutil.rmtree(path, ignore_errors=True)

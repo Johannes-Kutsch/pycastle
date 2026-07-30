@@ -4,8 +4,8 @@ import dataclasses
 import re
 import shlex
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 _DECLARED_TOOL_MISSING_PATTERNS = (
     re.compile(r"\b(?P<tool>[A-Za-z0-9_.-]+): command not found\b", re.IGNORECASE),

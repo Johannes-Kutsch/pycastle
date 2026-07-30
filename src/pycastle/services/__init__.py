@@ -25,9 +25,9 @@ if TYPE_CHECKING:
         GithubAPIError,
         GithubAuthError,
         GithubNetworkError,
-        OperatorActionableGithubError,
         GithubService,
         GithubServiceError,
+        OperatorActionableGithubError,
     )
     from .reset_time_parser import ResetTimeSyntaxMode
     from .service_registry import ServiceRegistry
@@ -42,18 +42,18 @@ __all__ = [
     "GitService",
     "GitServiceError",
     "GitTimeoutError",
-    "OperatorActionableGitError",
-    "UnrelatedHistoriesError",
     "GithubAPIError",
     "GithubAuthError",
     "GithubNetworkError",
-    "OperatorActionableGithubError",
     "GithubService",
     "GithubServiceError",
     "OpenCodeService",
+    "OperatorActionableGitError",
+    "OperatorActionableGithubError",
     "ResetTimeSyntaxMode",
     "ServiceRegistry",
     "ToolPolicy",
+    "UnrelatedHistoriesError",
     "parse_reset_time",
 ]
 

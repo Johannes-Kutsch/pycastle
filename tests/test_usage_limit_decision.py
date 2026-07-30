@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from pycastle.config import Config
@@ -13,12 +13,12 @@ from pycastle.iteration.usage_limit_decision import (
     Stop,
     decide_usage_limit_continuation,
 )
-from pycastle.services.service_registry import ServiceRegistry
 from pycastle.services.runtime_services import AgentService
+from pycastle.services.service_registry import ServiceRegistry
 
 
 def _now() -> datetime:
-    return datetime(2026, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
+    return datetime(2026, 1, 1, 14, 30, 0, tzinfo=UTC)
 
 
 def _make_service(
@@ -63,7 +63,7 @@ def _decide(
 
 
 def test_decide_usage_limit_continuation_returns_continue_now_for_stage_fallback():
-    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=primary_wake),
@@ -84,7 +84,7 @@ def test_decide_usage_limit_continuation_returns_continue_now_for_stage_fallback
 
 
 def test_decide_usage_limit_continuation_includes_same_day_switch_message():
-    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=primary_wake),
@@ -108,7 +108,7 @@ def test_decide_usage_limit_continuation_includes_same_day_switch_message():
 def test_decide_usage_limit_continuation_formats_same_local_day_switch_message():
     eastern = timezone(timedelta(hours=-5))
     now = datetime(2026, 1, 1, 20, 30, 0, tzinfo=eastern)
-    primary_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=timezone.utc)
+    primary_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=primary_wake),
@@ -130,8 +130,8 @@ def test_decide_usage_limit_continuation_formats_same_local_day_switch_message()
 
 
 def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
-    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
-    fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC)
+    fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=primary_wake),
@@ -156,8 +156,8 @@ def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
 
 
 def test_decide_usage_limit_continuation_keeps_failing_service_wake_on_continue_when_other_stage_services_are_exhausted():
-    failing_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
-    fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
+    failing_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC)
+    fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=failing_wake),
@@ -186,8 +186,8 @@ def test_decide_usage_limit_continuation_keeps_failing_service_wake_on_continue_
 
 
 def test_decide_usage_limit_continuation_formats_cross_day_sleep_message():
-    now = datetime(2026, 1, 1, 23, 30, 0, tzinfo=timezone.utc)
-    fallback_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 1, 23, 30, 0, tzinfo=UTC)
+    fallback_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=fallback_wake),
@@ -213,7 +213,7 @@ def test_decide_usage_limit_continuation_formats_cross_day_sleep_message():
 def test_decide_usage_limit_continuation_formats_same_local_day_sleep_message():
     eastern = timezone(timedelta(hours=-5))
     now = datetime(2026, 1, 1, 20, 30, 0, tzinfo=eastern)
-    fallback_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=timezone.utc)
+    fallback_wake = datetime(2026, 1, 2, 1, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=fallback_wake),
@@ -236,8 +236,8 @@ def test_decide_usage_limit_continuation_formats_same_local_day_sleep_message():
 
 
 def test_decide_usage_limit_continuation_ignores_exhausted_services_outside_stage_chain():
-    stage_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
-    unrelated_wake = datetime(2026, 1, 1, 14, 45, 0, tzinfo=timezone.utc)
+    stage_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=UTC)
+    unrelated_wake = datetime(2026, 1, 1, 14, 45, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=stage_wake),
@@ -262,7 +262,7 @@ def test_decide_usage_limit_continuation_ignores_exhausted_services_outside_stag
 
 
 def test_decide_usage_limit_continuation_ignores_available_services_outside_stage_chain():
-    claude_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
+    claude_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=claude_wake),
@@ -278,7 +278,7 @@ def test_decide_usage_limit_continuation_ignores_available_services_outside_stag
     )
 
     assert isinstance(decision, SleepUntil)
-    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=UTC)
     assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
@@ -287,7 +287,7 @@ def test_decide_usage_limit_continuation_ignores_available_services_outside_stag
 
 
 def test_decide_usage_limit_continuation_uses_global_fallback_when_stage_priority_chain_is_missing():
-    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=primary_wake),
@@ -309,8 +309,8 @@ def test_decide_usage_limit_continuation_uses_global_fallback_when_stage_priorit
 
 
 def test_decide_usage_limit_continuation_uses_global_next_wake_when_stage_priority_chain_is_missing():
-    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
-    fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=timezone.utc)
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC)
+    fallback_wake = datetime(2026, 1, 1, 15, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=primary_wake),
@@ -354,7 +354,7 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion():
 
 def test_decide_usage_limit_continuation_returns_continue_now_for_permanent_exhaustion_with_fallback():
     denial = "disabled Claude subscription access for Claude Code"
-    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    primary_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, wake_time=primary_wake),
@@ -450,7 +450,7 @@ def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
     )
 
     assert isinstance(decision, SleepUntil)
-    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=UTC)
     assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
@@ -460,7 +460,7 @@ def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
 
 def test_decide_usage_limit_continuation_uses_exact_reset_time_without_registry():
     now = _now()
-    reset_time = datetime(2026, 1, 1, 15, 30, 0, tzinfo=timezone.utc)
+    reset_time = datetime(2026, 1, 1, 15, 30, 0, tzinfo=UTC)
 
     decision = _decide(
         AbortedUsageLimit(reset_time=reset_time),
@@ -470,7 +470,7 @@ def test_decide_usage_limit_continuation_uses_exact_reset_time_without_registry(
     )
 
     assert isinstance(decision, SleepUntil)
-    assert decision.wake_time == datetime(2026, 1, 1, 15, 32, 0, tzinfo=timezone.utc)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 32, 0, tzinfo=UTC)
     assert decision.is_estimated is False
     assert (
         decision.message
@@ -479,8 +479,8 @@ def test_decide_usage_limit_continuation_uses_exact_reset_time_without_registry(
 
 
 def test_decide_usage_limit_continuation_formats_cross_day_exact_reset_without_registry():
-    now = datetime(2026, 1, 1, 23, 30, 0, tzinfo=timezone.utc)
-    reset_time = datetime(2026, 1, 2, 0, 30, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 1, 1, 23, 30, 0, tzinfo=UTC)
+    reset_time = datetime(2026, 1, 2, 0, 30, 0, tzinfo=UTC)
 
     decision = _decide(
         AbortedUsageLimit(reset_time=reset_time),
@@ -507,7 +507,7 @@ def test_decide_usage_limit_continuation_keeps_stage_key_behavior_without_regist
     )
 
     assert isinstance(decision, SleepUntil)
-    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=UTC)
     assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
@@ -530,7 +530,7 @@ def test_iteration_usage_limit_continuation_uses_provider_minimum_duration_for_u
     )
 
     assert isinstance(decision, SleepUntil)
-    assert decision.wake_time == datetime(2026, 1, 1, 16, 2, 0, tzinfo=timezone.utc)
+    assert decision.wake_time == datetime(2026, 1, 1, 16, 2, 0, tzinfo=UTC)
     assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 16:02 (estimated)."
@@ -551,7 +551,7 @@ def test_iteration_usage_limit_continuation_defaults_opencode_unknown_reset_to_o
     )
 
     assert isinstance(decision, SleepUntil)
-    assert decision.wake_time == datetime(2026, 1, 1, 16, 2, 0, tzinfo=timezone.utc)
+    assert decision.wake_time == datetime(2026, 1, 1, 16, 2, 0, tzinfo=UTC)
     assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 16:02 (estimated)."
@@ -572,7 +572,7 @@ def test_iteration_usage_limit_continuation_explicit_zero_opencode_unknown_reset
     )
 
     assert isinstance(decision, SleepUntil)
-    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=timezone.utc)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=UTC)
     assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
@@ -581,7 +581,7 @@ def test_iteration_usage_limit_continuation_explicit_zero_opencode_unknown_reset
 
 
 def test_iteration_usage_limit_continuation_keeps_parsed_reset_time_authoritative():
-    reset_time = datetime(2026, 1, 1, 15, 30, 0, tzinfo=timezone.utc)
+    reset_time = datetime(2026, 1, 1, 15, 30, 0, tzinfo=UTC)
 
     decision = decide_usage_limit_continuation(
         AbortedUsageLimit(
@@ -597,7 +597,7 @@ def test_iteration_usage_limit_continuation_keeps_parsed_reset_time_authoritativ
     )
 
     assert isinstance(decision, SleepUntil)
-    assert decision.wake_time == datetime(2026, 1, 1, 15, 32, 0, tzinfo=timezone.utc)
+    assert decision.wake_time == datetime(2026, 1, 1, 15, 32, 0, tzinfo=UTC)
     assert decision.is_estimated is False
     assert (
         decision.message
@@ -606,7 +606,7 @@ def test_iteration_usage_limit_continuation_keeps_parsed_reset_time_authoritativ
 
 
 def test_decide_usage_limit_continuation_sleeps_when_permanently_exhausted_but_other_candidate_has_finite_wake_time():
-    fallback_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=timezone.utc)
+    fallback_wake = datetime(2026, 1, 1, 16, 0, 0, tzinfo=UTC)
     registry = ServiceRegistry(
         {
             "claude": _make_service(available=False, permanently_exhausted=True),

@@ -8,9 +8,8 @@ from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
-from .status_display import ModelDisplayMetadata, WORK_PHASE
+from .status_display import WORK_PHASE, ModelDisplayMetadata
 from .status_print_sequencing import Kind, OutputEvent, StatusPrintSequencer
-
 
 _PALETTE: list[tuple[int, int, int]] = [
     (149, 97, 226),  # 0 deep purple
@@ -91,15 +90,15 @@ def _model_text(model_display: ModelDisplayMetadata | None) -> Text:
 
 class _AgentRow:
     __slots__ = (
-        "name",
         "color_key",
-        "phase",
-        "work_body",
-        "model_display",
-        "started_at",
-        "last_update",
         "current_tokens",
+        "last_update",
+        "model_display",
+        "name",
         "peak_tokens",
+        "phase",
+        "started_at",
+        "work_body",
     )
 
     def __init__(

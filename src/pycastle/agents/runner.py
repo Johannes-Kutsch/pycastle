@@ -10,9 +10,13 @@ import agent_runtime
 from agent_runtime import ProviderAuth
 from agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
 from agent_runtime.errors import (
+    AgentCredentialFailureError,
+    HardAgentError,
+    ProviderUnavailableReason,
+)
+from agent_runtime.errors import (
     ContinuationUnrecoverableError as RuntimeContinuationUnrecoverableError,
 )
-from agent_runtime.errors import ProviderUnavailableReason
 from agent_runtime.runtime import (
     Cancelled,
     Completed,
@@ -24,29 +28,15 @@ from agent_runtime.runtime import (
     UsageLimited,
 )
 
-from .. import _time as _time_module
-from ..execution_contracts import (
-    RuntimeInvocationDependencies,
-    RuntimeModelDisplayMetadata,
-    RuntimeRunSession,
-)
 from pycastle.services._wake_time import compute_wake_time
-from .output_protocol import (
-    AgentOutput,
-    AgentOutputProtocolError,
-    CompletionOutput,
-    AgentRole,
-    AgentSuccessOutput,
-    FailedOutput,
-    extract_output,
-)
-from .result import CancellationToken
+
+from .. import _time as _time_module
 from ..config import Config, StageOverride, image_name_for
-from ..infrastructure.container_runner import ContainerRunner
-from ..infrastructure.docker_session import DockerSession, build_volume_spec
-from agent_runtime.errors import (
-    AgentCredentialFailureError,
-    HardAgentError,
+from ..display.status_display import (
+    WORK_PHASE,
+    ModelDisplayMetadata,
+    PlainStatusDisplay,
+    StatusDisplay,
 )
 from ..errors import (
     AgentFailedError,
@@ -57,14 +47,30 @@ from ..errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from ..execution_contracts import (
+    RuntimeInvocationDependencies,
+    RuntimeModelDisplayMetadata,
+    RuntimeRunSession,
+)
+from ..infrastructure.container_runner import ContainerRunner
+from ..infrastructure.docker_session import DockerSession, build_volume_spec
+from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailure
 from ..managed_worktree_mount_policy import enforce_managed_worktree_mount
 from ..prompts.dispatch import (
     PromptInvocation,
     render_prompt_invocation,
 )
-from ..prompts.scope_args import build_interrupted_work_clause
 from ..prompts.pipeline import PromptRenderer
+from ..prompts.scope_args import build_interrupted_work_clause
 from ..runtime_session import ProviderSessionStateRequest
+from ..services import GitService
+from ..services.runtime_services import (
+    AgentService,
+    ClaudeService,
+)
+from ..services.runtime_services import (
+    ToolPolicy as ServiceToolPolicy,
+)
 from ..session import RoleSession, RunKind
 from ..session.agent import (
     RunSessionPlan,
@@ -72,20 +78,17 @@ from ..session.agent import (
 )
 from ..session.run_dispatch import RunSessionRequest, prepare_run_session
 from ..session_planning import ProviderRunStatePlan
-from ..services import GitService
-from ..services.runtime_services import (
-    AgentService,
-    ClaudeService,
-    ToolPolicy as ServiceToolPolicy,
-)
 from . import protocol_reprompt
-from ..display.status_display import (
-    ModelDisplayMetadata,
-    PlainStatusDisplay,
-    StatusDisplay,
-    WORK_PHASE,
+from .output_protocol import (
+    AgentOutput,
+    AgentOutputProtocolError,
+    AgentRole,
+    AgentSuccessOutput,
+    CompletionOutput,
+    FailedOutput,
+    extract_output,
 )
-from ..infrastructure.preflight_failure_interpreter import PreflightCommandFailure
+from .result import CancellationToken
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
@@ -305,7 +308,7 @@ class AgentRunner:
             )
         except Exception as exc:
             return cast(
-                DockerSession,
+                "DockerSession",
                 _UnavailableDockerSession(str(exc)),
             )
 
@@ -386,15 +389,15 @@ class AgentRunner:
                 return prepare_run_session(
                     RunSessionRequest(
                         worktree=run_session_plan.mount_path,
-                        role=cast(AgentRole, run_session_plan.role),
+                        role=cast("AgentRole", run_session_plan.role),
                         session_namespace=run_session_plan.session_namespace,
-                        service=cast(AgentService, run_session_plan.service),
+                        service=cast("AgentService", run_session_plan.service),
                         container_workspace=run_session_plan.container_workspace,
                         run_session_plan=run_session_plan_from_provider_run_state_plan(
-                            role=cast(AgentRole, run_session_plan.role),
+                            role=cast("AgentRole", run_session_plan.role),
                             worktree=run_session_plan.mount_path,
                             namespace=run_session_plan.session_namespace,
-                            service=cast(AgentService, run_session_plan.service),
+                            service=cast("AgentService", run_session_plan.service),
                             provider_run_state_plan=plan_payload,
                         ),
                         require_exact_transcript_for_strict_resume=True,
@@ -403,12 +406,12 @@ class AgentRunner:
             return prepare_run_session(
                 RunSessionRequest(
                     worktree=run_session_plan.mount_path,
-                    role=cast(AgentRole, run_session_plan.role),
+                    role=cast("AgentRole", run_session_plan.role),
                     session_namespace=run_session_plan.session_namespace,
-                    service=cast(AgentService, run_session_plan.service),
+                    service=cast("AgentService", run_session_plan.service),
                     container_workspace=run_session_plan.container_workspace,
                     run_session_plan=cast(
-                        RunSessionPlan | None,
+                        "RunSessionPlan | None",
                         run_session_plan.run_session_plan,
                     ),
                 )
@@ -434,7 +437,7 @@ class AgentRunner:
             stage_key_for_role=_stage_key_for_role,
             prepare_session=_prepare_session,
             build_session=cast(
-                Callable[[Path, AgentService, str | None], Any],
+                "Callable[[Path, AgentService, str | None], Any]",
                 self._build_session,
             ),
             build_runner=lambda session, status_display, mount_path: ContainerRunner(
@@ -468,7 +471,7 @@ class AgentRunner:
                 )
             ),
             handle_provider_account_exhaustion=cast(
-                Callable[[AgentService, Any], None],
+                "Callable[[AgentService, Any], None]",
                 _handle_provider_account_exhaustion,
             ),
             transient_status_message=format_transient_status_message,
@@ -525,8 +528,12 @@ class AgentRunner:
         from pycastle.runtime import (
             PromptRunRequest,
             PromptRunSession,
-            ToolPolicy as RuntimeToolPolicy,
             WorktreeMount,
+        )
+        from pycastle.runtime import (
+            ToolPolicy as RuntimeToolPolicy,
+        )
+        from pycastle.runtime import (
             run_prompt as run_runtime_prompt,
         )
 
@@ -536,7 +543,7 @@ class AgentRunner:
             role=AgentRole.IMPLEMENTER,
         )
         return await run_runtime_prompt(
-            runner=cast(Any, self),
+            runner=cast("Any", self),
             service_registry=self._runtime_service_registry(),
             request=PromptRunRequest(
                 name=name,
@@ -998,7 +1005,7 @@ class AgentRunner:
                             session_store=provider_state_dir,
                             timeout_seconds=self._cfg.idle_timeout,
                             on_live_output=_on_live_output,
-                            token=cast(Any, request.token),
+                            token=cast("Any", request.token),
                             argv_transform=runner.provider_argv_transform(),
                         )
                     )
@@ -1019,7 +1026,7 @@ class AgentRunner:
                             name=request.name,
                             status_display=request.status_display,
                             work_body=request.work_body,
-                            token=cast(Any, request.token),
+                            token=cast("Any", request.token),
                             on_live_output=_on_live_output,
                             argv_transform=runner.provider_argv_transform(),
                         )
