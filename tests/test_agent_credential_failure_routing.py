@@ -378,7 +378,9 @@ def test_route_agent_credential_failure_reports_reused_issue_in_terminal_status_
 
 def test_route_agent_credential_failure_returns_local_remediation_when_issue_filing_fails():
     github_svc = MagicMock(spec=GithubService)
-    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError("tracker down", cause=OSError())
+    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "tracker down", cause=OSError()
+    )
 
     err = AgentCredentialFailureError(
         message="Codex authentication missing: run `codex login` on the host.",
@@ -405,7 +407,9 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_fil
 
 def test_route_agent_credential_failure_redacts_local_fallback_evidence_when_issue_lookup_fails():
     github_svc = MagicMock(spec=GithubService)
-    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError("tracker down", cause=OSError())
+    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "tracker down", cause=OSError()
+    )
 
     err = AgentCredentialFailureError(
         message=(
@@ -438,7 +442,9 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_cre
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.side_effect = GithubNetworkError("tracker write failed", cause=OSError())
+    github_svc.create_issue_in.side_effect = GithubNetworkError(
+        "tracker write failed", cause=OSError()
+    )
 
     err = AgentCredentialFailureError(
         message="Codex authentication missing: run `codex login` on the host.",
@@ -465,7 +471,9 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_cre
 
 def test_route_agent_credential_failure_uses_raw_error_as_local_evidence_without_observations():
     github_svc = MagicMock(spec=GithubService)
-    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError("tracker down", cause=OSError())
+    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "tracker down", cause=OSError()
+    )
     message = "OpenCode request failed: 401 invalid API key for provider opencode-go"
     err = AgentCredentialFailureError(
         message=message,
@@ -629,7 +637,9 @@ def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issu
 
 def test_route_agent_credential_failure_propagates_non_github_service_errors():
     github_svc = MagicMock(spec=GithubService)
-    github_svc.search_open_issues_by_title.side_effect = RuntimeError("unexpected non-service error")
+    github_svc.search_open_issues_by_title.side_effect = RuntimeError(
+        "unexpected non-service error"
+    )
 
     err = AgentCredentialFailureError(
         message="Codex authentication missing: run `codex login` on the host.",

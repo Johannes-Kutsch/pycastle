@@ -2282,7 +2282,7 @@ class _FailingValidModelsService(_FakeService):
         raise ValueError("models unavailable")
 
 
-def test_default_model_propagates_valid_models_error(tmp_path, monkeypatch):
+def test_default_model_propagates_valid_models_error(tmp_path):
     mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2007"
     mount_path.mkdir(parents=True)
 
@@ -2294,17 +2294,6 @@ def test_default_model_propagates_valid_models_error(tmp_path, monkeypatch):
         cfg=Config(logs_dir=tmp_path / "logs"),
         git_service=git_service,
         service_registry={"codex": _FailingValidModelsService()},
-    )
-
-    monkeypatch.setattr(runner, "_build_session", lambda *_a, **_kw: _FakeDockerSession())
-    monkeypatch.setattr(runner, "_render_runtime_prompt", AsyncMock(return_value="prompt"))
-    monkeypatch.setattr(
-        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
-        AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
-        lambda _self: _FakeRuntimeClient(object()),
     )
 
     with pytest.raises(ValueError, match="models unavailable"):
@@ -2333,11 +2322,13 @@ def test_default_model_propagates_valid_models_error(tmp_path, monkeypatch):
         )
 
 
-def test_build_session_propagates_non_docker_exceptions(tmp_path, monkeypatch):
+def test_run_propagates_non_docker_exceptions_from_session_build(tmp_path, monkeypatch):
     mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2007"
     mount_path.mkdir(parents=True)
 
     git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
     runner = AgentRunner(
         env={},
         cfg=Config(logs_dir=tmp_path / "logs"),
@@ -2355,7 +2346,29 @@ def test_build_session_propagates_non_docker_exceptions(tmp_path, monkeypatch):
     )
 
     with pytest.raises(ValueError, match="non-docker init failure"):
-        runner._build_session(mount_path, _FakeService())
+        asyncio.run(
+            runner.run(
+                RunRequest(
+                    name="Test Agent",
+                    prompt=PromptInvocation(
+                        template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                        scope_args={
+                            "ISSUE_NUMBER": "2007",
+                            "ISSUE_TITLE": "Test",
+                            "ISSUE_BODY": "",
+                            "ISSUE_COMMENTS": "",
+                            "BRANCH": "issue-2007",
+                            "INTERRUPTED_WORK": "",
+                        },
+                    ),
+                    mount_path=mount_path,
+                    role=AgentRole.IMPLEMENTER,
+                    model="gpt-5.5",
+                    effort="medium",
+                    service="codex",
+                )
+            )
+        )
 
 
 def test_run_with_runtime_client_propagates_non_oserror_from_session_exit(
@@ -2377,7 +2390,9 @@ def test_run_with_runtime_client_propagates_non_oserror_from_session_exit(
     monkeypatch.setattr(
         runner, "_build_session", lambda *_a, **_kw: _ExplodingExitDockerSession()
     )
-    monkeypatch.setattr(runner, "_render_runtime_prompt", AsyncMock(return_value="prompt"))
+    monkeypatch.setattr(
+        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+    )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
         AsyncMock(return_value=None),
