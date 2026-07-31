@@ -150,7 +150,6 @@ def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> int | Non
 
 async def _recover_active_conflict(
     *,
-    conflict_issues: list[dict],
     active_issue: dict,
     deps: _ConflictRecoveryDeps,
 ) -> Exception | None:
@@ -207,7 +206,6 @@ async def _recover_active_conflict(
                     prompt=build_prompt_invocation(
                         PromptTemplate.MERGE,
                         build_merge_scope_args(
-                            conflict_issues=conflict_issues,
                             active_issue=active_issue,
                         ),
                     ),
@@ -265,7 +263,6 @@ async def recover_conflicts(
 
     for idx, active_issue in enumerate(conflict_issues):
         error = await _recover_active_conflict(
-            conflict_issues=conflict_issues,
             active_issue=active_issue,
             deps=deps,
         )

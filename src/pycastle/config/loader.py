@@ -74,7 +74,7 @@ def derive_docker_image_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
-def image_name_for(base: str, service: str) -> str:
+def image_name_for(base: str) -> str:
     return base
 
 

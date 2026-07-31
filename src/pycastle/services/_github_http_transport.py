@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 _API_BASE = "https://api.github.com"
+_HTTP_UNAUTHORIZED = 401
 
 
 def _user_agent() -> str:
@@ -96,7 +97,7 @@ class UrllibGithubHttpTransport:
                 err_body = exc.read().decode("utf-8", errors="replace")
             status = exc.code
             err_headers = dict(exc.headers.items()) if exc.headers is not None else {}
-            if status == 401:
+            if status == _HTTP_UNAUTHORIZED:
                 raise GithubHttpTransportAuthError(
                     f"GitHub API {method} {path} returned 401: {err_body}",
                     status=status,

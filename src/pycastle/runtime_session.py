@@ -175,7 +175,7 @@ def normalize_state_dir_relpath(
 def _session_root_for_relpath(state_dir_relpath: str) -> str:
     stripped = state_dir_relpath.strip("/")
     parts = stripped.split("/")
-    if len(parts) >= 3:
+    if len(parts) >= 3:  # noqa: PLR2004  # session root is at depth 3+ in path
         return parts[0]
     return ""
 

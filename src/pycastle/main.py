@@ -134,7 +134,7 @@ def main() -> None:
     help="Re-pull bundled pycastle-managed scaffold files into ./pycastle/ "
     "without prompts. Leaves config.py and .env untouched.",
 )
-def init_cmd(global_flag: bool, local_flag: bool, refresh_flag: bool) -> None:
+def init_cmd(*, global_flag: bool, local_flag: bool, refresh_flag: bool) -> None:
     from pycastle.commands.init import main as _init
     from pycastle.commands.init import refresh as _refresh
 
@@ -177,7 +177,7 @@ def labels_cmd() -> None:
     default=False,
     help="Build without using the Docker cache.",
 )
-def build_cmd(no_cache: bool) -> None:
+def build_cmd(*, no_cache: bool) -> None:
     from pycastle.commands.build import main as _build
 
     _print_layer_summary()
@@ -204,6 +204,7 @@ def check_cmd() -> None:
 
 def _do_run(
     cfg: Config,
+    *,
     no_improve: bool,
     improve_mode_flag: str | None,
 ) -> None:
@@ -283,7 +284,7 @@ _IGNORE_GLOBAL_LOCK_OPTION = click.option(
 @_NO_IMPROVE_OPTION
 @_IGNORE_GLOBAL_LOCK_OPTION
 def run_cmd(
-    improve_mode: str | None, no_improve: bool, ignore_global_lock: bool
+    *, improve_mode: str | None, no_improve: bool, ignore_global_lock: bool
 ) -> None:
     from pycastle.commands.init import refresh as _refresh
     from pycastle.errors import RunAlreadyInProgressError, RunSlotTimeoutError
@@ -327,7 +328,7 @@ def run_cmd(
 @main.command("cron", hidden=True)
 @_NO_IMPROVE_OPTION
 @click.pass_context
-def cron_cmd(ctx: click.Context, no_improve: bool) -> None:
+def cron_cmd(ctx: click.Context, *, no_improve: bool) -> None:
     click.echo(
         "Warning: 'pycastle cron' is deprecated — use 'pycastle run' instead.",
         err=True,

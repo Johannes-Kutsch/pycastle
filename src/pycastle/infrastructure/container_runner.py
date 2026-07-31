@@ -229,7 +229,7 @@ class ContainerRunner:
 
         return _transform
 
-    async def setup(self, git_name: str, git_email: str, work_body: str = "") -> None:
+    async def setup(self, git_name: str, git_email: str) -> None:
         self._logs_dir.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._session.__enter__)
@@ -351,6 +351,7 @@ class ContainerRunner:
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
         on_provider_session_id: Callable[[str], None] | None = None,
+        *,
         text_parsing: bool = False,
     ) -> AgentOutput | str:
         service = self._service

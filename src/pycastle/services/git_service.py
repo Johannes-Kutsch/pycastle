@@ -148,7 +148,7 @@ class GitService(_SubprocessService):
             return None
         path = path.removesuffix(".git").strip("/")
         parts = path.split("/")
-        if len(parts) != 2 or not all(parts):
+        if len(parts) != 2 or not all(parts):  # noqa: PLR2004  # owner/repo is exactly 2 path segments
             return None
         owner, repo = parts
         return owner, repo

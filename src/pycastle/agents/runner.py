@@ -94,6 +94,7 @@ from pycastle.session.run_dispatch import (
 from pycastle.session_planning import ProviderRunStatePlan
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
+_MAX_PROTOCOL_RETRIES = 2
 
 
 def format_transient_status_message(err: TransientAgentError) -> str:
@@ -242,7 +243,6 @@ class AgentRunnerProtocol(Protocol):
         *,
         name: str,
         mount_path: Path,
-        stage: str = "",
         status_display: StatusDisplay | None = None,
         work_body: str = "",
     ) -> list[PreflightCommandFailure]: ...
@@ -301,7 +301,7 @@ class AgentRunner:
             return DockerSession(
                 volumes=volumes,
                 container_env=container_env,
-                image_name=image_name_for(self._cfg.docker_image_name, service.name),
+                image_name=image_name_for(self._cfg.docker_image_name),
                 cfg=self._cfg,
                 docker_client=self._docker_client,
                 auto_overlay=auto_overlay,
@@ -482,7 +482,7 @@ class AgentRunner:
         return DockerSession(
             volumes=volumes,
             container_env=self._container_base_env(),
-            image_name=image_name_for(self._cfg.docker_image_name, ""),
+            image_name=image_name_for(self._cfg.docker_image_name),
             cfg=self._cfg,
             docker_client=self._docker_client,
             auto_overlay=auto_overlay,
@@ -684,7 +684,7 @@ class AgentRunner:
         ) as row:
             try:
                 try:
-                    await runner.setup(git_name, git_email, request.work_body)
+                    await runner.setup(git_name, git_email)
                 except DockerError as exc:
                     raise SetupPhaseError(request.role.value, str(exc)) from exc
                 status_display.update_phase(request.name, WORK_PHASE)
@@ -787,7 +787,7 @@ class AgentRunner:
                 try:
                     parsed = extract_output(outcome.result.output, request.role)
                 except AgentOutputProtocolError as exc:
-                    if attempt == 2:
+                    if attempt == _MAX_PROTOCOL_RETRIES:
                         raise AgentFailedError(
                             role_value=request.role.value,
                             worktree_path=request.mount_path,
@@ -1012,7 +1012,6 @@ class AgentRunner:
         *,
         name: str,
         mount_path: Path,
-        stage: str = "",
         status_display: StatusDisplay | None = None,
         work_body: str = "",
     ) -> list[PreflightCommandFailure]:
@@ -1040,7 +1039,7 @@ class AgentRunner:
             )
             try:
                 try:
-                    await runner.setup(git_name, git_email, work_body)
+                    await runner.setup(git_name, git_email)
                 except DockerError as exc:
                     raise SetupPhaseError("preflight", str(exc)) from exc
                 failures = await runner.preflight(list(self._cfg.preflight_checks))

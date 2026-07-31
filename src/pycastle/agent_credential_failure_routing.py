@@ -107,7 +107,7 @@ def _render_observations(
     for observation in observations:
         if (
             isinstance(observation, tuple)
-            and len(observation) == 2
+            and len(observation) == 2  # noqa: PLR2004  # 2-element (stream, text) tuple
             and isinstance(observation[0], str)
             and isinstance(observation[1], str)
         ):

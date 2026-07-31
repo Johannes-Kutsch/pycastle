@@ -13,6 +13,8 @@ from pycastle.services import (
     OperatorActionableGithubError,
 )
 
+_HTTP_UNPROCESSABLE_ENTITY = 422
+
 
 def _github_retry_exhaustion_message(exc: OperatorActionableGithubError) -> str:
     return (
@@ -84,7 +86,7 @@ def create_labels_interactive(
                 service.create_label(label)
                 counts["created"] += 1
             except GithubAPIError as exc:
-                if exc.status == 422:
+                if exc.status == _HTTP_UNPROCESSABLE_ENTITY:
                     counts["skipped"] += 1
                 else:
                     counts["failed"] += 1

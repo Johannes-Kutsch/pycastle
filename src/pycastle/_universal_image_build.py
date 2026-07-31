@@ -42,7 +42,7 @@ class UniversalImageBuildAdapter(Protocol):
 def _normalize_python_version(version: str) -> str:
     stripped_version = version.strip()
     parts = stripped_version.split(".")
-    return ".".join(parts[:2]) if len(parts) >= 2 else stripped_version
+    return ".".join(parts[:2]) if len(parts) >= 2 else stripped_version  # noqa: PLR2004  # 2-part major.minor version
 
 
 def _resolve_python_version(project_root: Path) -> str | None:

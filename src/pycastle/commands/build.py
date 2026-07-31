@@ -13,10 +13,10 @@ from pycastle.services import DockerService
 
 
 def main(
+    *,
     no_cache: bool = False,
     stream: bool = False,
     terse: bool = False,
-    *,
     options: UniversalImageBuildOptions | None = None,
     docker_service: UniversalImageBuildAdapter | None = None,
     cfg: Config | None = None,

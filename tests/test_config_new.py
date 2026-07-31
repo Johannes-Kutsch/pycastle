@@ -294,7 +294,7 @@ def test_resolve_dockerfile_falls_back_to_bundled_when_local_override_path_is_a_
 def test_image_name_for_returns_universal_image_name():
     from pycastle.config import image_name_for
 
-    assert image_name_for("myproject", "claude") == "myproject"
+    assert image_name_for("myproject") == "myproject"
 
 
 def test_config_has_bug_label_default():

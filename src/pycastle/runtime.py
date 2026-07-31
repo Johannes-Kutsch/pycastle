@@ -600,7 +600,7 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
         )
         try:
             git_name, git_email = request.dependencies.get_git_identity()
-            await runner.setup(git_name, git_email, request.work_body)
+            await runner.setup(git_name, git_email)
             prepared_session.prepare_for_run()
             loop = asyncio.get_running_loop()
 

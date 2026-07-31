@@ -841,7 +841,6 @@ def test_agent_runner_preflight_keeps_container_preflight_phase_names(
         runner.run_preflight(
             name="Preflight Agent #1905",
             mount_path=mount_path,
-            stage="implement",
             status_display=status_display,
             work_body="Fix Setup to Work phase transition",
         )
@@ -2453,6 +2452,5 @@ def test_run_preflight_propagates_non_oserror_from_session_exit(tmp_path, monkey
             runner.run_preflight(
                 name="Preflight Agent",
                 mount_path=mount_path,
-                stage="implement",
             )
         )

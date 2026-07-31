@@ -21,7 +21,7 @@ def driver_dir(tmp_path: Path) -> Path:
 def _make_driver(
     driver_dir: Path, *, no_candidate_report: bool = True
 ) -> ImprovePhaseDriver:
-    return ImprovePhaseDriver(driver_dir, no_candidate_report)
+    return ImprovePhaseDriver(driver_dir, no_candidate_report=no_candidate_report)
 
 
 # ── start() sequence ──────────────────────────────────────────────────────────

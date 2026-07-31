@@ -298,7 +298,7 @@ class _CommitMessageHandler:
             return CommitMessageOutput(message=body.strip())
         return None
 
-    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
+    def extract_final_output(self, text: str, _tail: str) -> AgentOutput:
         body = _last_tag_block(text, "commit_message")
         if body is None:
             return CommitMessageOutput(message=None)

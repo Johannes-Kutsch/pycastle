@@ -299,11 +299,6 @@ def test_build_merge_scope_args_builds_exact_renderable_merge_args(cfg, prompts_
     (prompts_dir / "coordination/merge.md").write_text("Branches:\n{{BRANCHES}}")
 
     scope_args = build_merge_scope_args(
-        conflict_issues=[
-            {"number": 2, "title": "First conflicting branch"},
-            {"number": 5, "title": "Active conflicting branch"},
-            {"number": 7, "title": "Later conflicting branch"},
-        ],
         active_issue={"number": 5, "title": "Active conflicting branch"},
     )
 

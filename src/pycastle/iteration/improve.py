@@ -97,7 +97,7 @@ class ImprovePhaseDriver:
         {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
     )
 
-    def __init__(self, role_session_dir: Path, no_candidate_report: bool) -> None:
+    def __init__(self, role_session_dir: Path, *, no_candidate_report: bool) -> None:
         self._dir = role_session_dir
         self._progress_file = role_session_dir / self._PROGRESS_FILE
         self._in_flight_file = role_session_dir / self._IN_FLIGHT_FILE
@@ -283,7 +283,9 @@ async def improve_phase(
                 sandbox_path, AgentRole.IMPROVE.value, "main"
             ).split("-")[0]
             role_session_dir = role_session.path
-            driver = ImprovePhaseDriver(role_session_dir, deps.cfg.diagnose_on_failure)
+            driver = ImprovePhaseDriver(
+                role_session_dir, no_candidate_report=deps.cfg.diagnose_on_failure
+            )
 
             step = driver.start()
             if (

@@ -37,7 +37,7 @@ def _configured_tool_name(command: str, check_name: str) -> str:
         parts = shlex.split(command)
     except ValueError:
         parts = command.split()
-    if len(parts) >= 3:
+    if len(parts) >= 3:  # noqa: PLR2004  # python -m <module> needs at least 3 tokens
         launcher = _normalize_package_name(Path(parts[0]).name)
         if launcher in _PYTHON_MODULE_LAUNCHERS or launcher.startswith("python"):
             try:

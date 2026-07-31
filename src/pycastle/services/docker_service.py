@@ -22,7 +22,7 @@ _PROGRESS_PREFIX = "Building Docker Image · "
 class _ProgressWriter:
     """Writes terse build-progress lines to stdout; handles TTY vs non-TTY."""
 
-    def __init__(self, is_tty: bool) -> None:
+    def __init__(self, *, is_tty: bool) -> None:
         self._is_tty = is_tty
         self._current: str | None = None
 
@@ -124,7 +124,7 @@ class DockerService:
         cmd: list[str],
         timeout: float | None,
     ) -> BuildOutcome:
-        writer = _ProgressWriter(sys.stdout.isatty())
+        writer = _ProgressWriter(is_tty=sys.stdout.isatty())
         interpreter = DockerBuildOutputInterpreter()
         writer.update(interpreter.initial_progress_text)
 

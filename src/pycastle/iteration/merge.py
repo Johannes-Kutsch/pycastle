@@ -211,7 +211,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         async def _close_issues(issues: list[dict]) -> None:
             batch_start = progress.close_done
 
-            def _on_progress(done: int, total: int) -> None:
+            def _on_progress(done: int, _total: int) -> None:
                 progress.update_close_done(batch_start + done)
 
             await _close_issues_parallel(
@@ -221,7 +221,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         async def _delete_branches(branches: list[str]) -> list[str]:
             batch_start = progress.remove_done or 0
 
-            def _on_teardown_progress(done: int, total: int) -> None:
+            def _on_teardown_progress(done: int, _total: int) -> None:
                 progress.update_remove_done(batch_start + done)
 
             deleted = await _delete_merged_branches(

@@ -15,6 +15,10 @@ from pycastle.display.status_print_sequencing import (
     StatusPrintSequencer,
 )
 
+_SECONDS_PER_MINUTE = 60
+_TOKEN_CRITICAL_THRESHOLD = 100_000
+_TOKEN_WARN_THRESHOLD = 80_000
+
 _PALETTE: list[tuple[int, int, int]] = [
     (149, 97, 226),  # 0 deep purple
     (255, 140, 50),  # 1 deep orange
@@ -57,9 +61,9 @@ def _row_priority(name: str, kinds: dict[str, Kind | None]) -> int:
 
 
 def _format_duration(seconds: int) -> str:
-    if seconds < 60:
+    if seconds < _SECONDS_PER_MINUTE:
         return f"{seconds}s"
-    return f"{seconds // 60}m {seconds % 60}s"
+    return f"{seconds // _SECONDS_PER_MINUTE}m {seconds % _SECONDS_PER_MINUTE}s"
 
 
 def _format_k(tokens: int) -> str:
@@ -67,9 +71,9 @@ def _format_k(tokens: int) -> str:
 
 
 def _token_style(tokens: int) -> str:
-    if tokens > 100_000:
+    if tokens > _TOKEN_CRITICAL_THRESHOLD:
         return "bold rgb(217,119,87)"
-    if tokens > 80_000:
+    if tokens > _TOKEN_WARN_THRESHOLD:
         return "bold rgb(212,168,67)"
     return ""
 

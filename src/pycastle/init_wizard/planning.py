@@ -118,7 +118,9 @@ class InitWizardPlanningInputs:
     target_env_exists: bool | None = None
     local_env_exists: bool | None = None
     global_env_exists: bool | None = None
-    host_auth: HostAuthFacts = field(default_factory=lambda: HostAuthFacts(False))
+    host_auth: HostAuthFacts = field(
+        default_factory=lambda: HostAuthFacts(has_host_codex_auth=False)
+    )
     scaffold_stage_chains: ScaffoldStageChainFacts = field(
         default_factory=ScaffoldStageChainFacts
     )
@@ -135,7 +137,7 @@ class InitPlan:
     warnings: tuple[PlannedWarning, ...] = ()
     config_file_action: ConfigFileAction | None = None
     label_prompt_eligibility: LabelPromptEligibility = field(
-        default_factory=lambda: LabelPromptEligibility(False)
+        default_factory=lambda: LabelPromptEligibility(should_prompt=False)
     )
 
     def warning_messages(self) -> tuple[str, ...]:
@@ -182,7 +184,7 @@ def build_init_plan_for_scope(
             target_env_exists=target_env_exists,
             local_env_exists=local_env_exists,
             global_env_exists=global_env_exists,
-            host_auth=host_auth or HostAuthFacts(False),
+            host_auth=host_auth or HostAuthFacts(has_host_codex_auth=False),
             scaffold_stage_chains=(scaffold_stage_chains or ScaffoldStageChainFacts()),
         )
     )
@@ -241,7 +243,7 @@ def _prompted_env_keys(selected_services: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(keys)
 
 
-def _resolve_env_exists(explicit_fact: bool | None, path: Path) -> bool:
+def _resolve_env_exists(*, explicit_fact: bool | None, path: Path) -> bool:
     if explicit_fact is not None:
         return explicit_fact
     return path.exists()
@@ -331,13 +333,13 @@ def build_init_plan(inputs: InitWizardPlanningInputs) -> InitPlan:
         key: value for key, value in inputs.existing_env_values.items() if value
     }
     target_env_exists = _resolve_env_exists(
-        inputs.target_env_exists, inputs.layout.target_env_file
+        explicit_fact=inputs.target_env_exists, path=inputs.layout.target_env_file
     )
     local_env_exists = _resolve_env_exists(
-        inputs.local_env_exists, inputs.layout.local_env_file
+        explicit_fact=inputs.local_env_exists, path=inputs.layout.local_env_file
     )
     global_env_exists = _resolve_env_exists(
-        inputs.global_env_exists, inputs.layout.global_env_file
+        explicit_fact=inputs.global_env_exists, path=inputs.layout.global_env_file
     )
     should_delete_local_env = inputs.scope_choice == "global" and local_env_exists
     should_create_local_env = (

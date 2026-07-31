@@ -360,9 +360,7 @@ class CancellationToken:
 
 
 class RuntimeExecutionAdapter(Protocol):
-    async def setup(
-        self, git_name: str, git_email: str, work_body: str = ""
-    ) -> None: ...
+    async def setup(self, git_name: str, git_email: str) -> None: ...
 
     async def work(
         self,
@@ -518,7 +516,7 @@ class TextOutputAdapter:
             on_provider_session_id=on_provider_session_id,
         )
 
-    def is_successful_result(self, result: str) -> bool:
+    def is_successful_result(self, result: str) -> bool:  # noqa: ARG002  # required by RuntimeOutputAdapter protocol
         return True
 
     def protocol_reprompt_message(self) -> str | None:

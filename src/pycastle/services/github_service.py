@@ -22,6 +22,12 @@ from pycastle.services._github_http_transport import (
 if TYPE_CHECKING:
     from pycastle.config import Config
 
+_HTTP_TOO_MANY_REQUESTS = 429
+_HTTP_SERVER_ERROR_MIN = 500
+_HTTP_SERVER_ERROR_MAX = 599
+_HTTP_FORBIDDEN = 403
+_RECENT_PRD_PAGE_SIZE = 12
+
 
 class GithubServiceError(RuntimeError):
     pass
@@ -162,11 +168,11 @@ class GithubService:
 
     @staticmethod
     def _is_retryable_api_error(exc: GithubAPIError) -> bool:
-        if exc.status == 429:
+        if exc.status == _HTTP_TOO_MANY_REQUESTS:
             return True
-        if 500 <= exc.status <= 599:
+        if _HTTP_SERVER_ERROR_MIN <= exc.status <= _HTTP_SERVER_ERROR_MAX:
             return True
-        if exc.status != 403:
+        if exc.status != _HTTP_FORBIDDEN:
             return False
         headers = {key.lower(): value for key, value in exc.headers.items()}
         if headers.get("x-ratelimit-remaining") == "0":
@@ -310,7 +316,7 @@ class GithubService:
                     "title": title.removeprefix(_IMPROVE_PRD_TITLE_PREFIX),
                 }
             )
-            if len(recent_prds) == 12:
+            if len(recent_prds) == _RECENT_PRD_PAGE_SIZE:
                 break
         return recent_prds
 

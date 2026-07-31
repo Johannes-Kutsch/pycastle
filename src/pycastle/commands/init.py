@@ -176,6 +176,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
 
     def plan_for_scope(
         plan_scope: Literal["global", "local"],
+        *,
         manage_env_file: bool = False,
         prompted_env_values: dict[str, str] | None = None,
         existing_env_keys: tuple[str, ...] = (),

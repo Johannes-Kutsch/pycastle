@@ -114,9 +114,7 @@ def build_plan_scope_args(
     }
 
 
-def build_merge_scope_args(
-    *, conflict_issues: list[dict], active_issue: dict
-) -> dict[str, str]:
+def build_merge_scope_args(*, active_issue: dict) -> dict[str, str]:
     from pycastle.iteration.implement import branch_for
 
     active_branch = branch_for(active_issue["number"])
@@ -199,7 +197,7 @@ def build_failure_report_scope_args(failure: FailureReportSource) -> dict[str, s
     )
 
 
-def build_interrupted_work_clause(run_kind: RunKind, is_dirty: bool) -> str:
+def build_interrupted_work_clause(run_kind: RunKind, *, is_dirty: bool) -> str:
     """Return interrupted-work instructions for fresh dispatches on dirty worktrees."""
     if run_kind != RunKind.FRESH or not is_dirty:
         return ""

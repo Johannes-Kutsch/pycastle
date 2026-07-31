@@ -6,6 +6,9 @@ from enum import StrEnum
 
 from pycastle import _time as _time_module
 
+_HOURS_IN_HALF_DAY = 12
+_MAX_MINUTE = 59
+
 _MONTHS = {
     "january": 1,
     "jan": 1,
@@ -97,20 +100,20 @@ def parse_claude_reset_time(
 
 def _parse_hour(hour_text: str, ampm_text: str) -> int | None:
     hour = int(hour_text)
-    if not 1 <= hour <= 12:
+    if not 1 <= hour <= _HOURS_IN_HALF_DAY:
         return None
 
     ampm = ampm_text.lower()
-    if ampm == "pm" and hour != 12:
-        return hour + 12
-    if ampm == "am" and hour == 12:
+    if ampm == "pm" and hour != _HOURS_IN_HALF_DAY:
+        return hour + _HOURS_IN_HALF_DAY
+    if ampm == "am" and hour == _HOURS_IN_HALF_DAY:
         return 0
     return hour
 
 
 def _parse_minute(minute_text: str | None) -> int | None:
     minute = int(minute_text or 0)
-    if 0 <= minute <= 59:
+    if 0 <= minute <= _MAX_MINUTE:
         return minute
     return None
 

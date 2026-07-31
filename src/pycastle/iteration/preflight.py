@@ -361,7 +361,6 @@ class PreflightCache:
                 failures = await deps.agent_runner.run_preflight(
                     name="Preflight Agent",
                     mount_path=mount_path,
-                    stage="PREFLIGHT",
                     status_display=deps.status_display,
                     work_body="Checking",
                 )

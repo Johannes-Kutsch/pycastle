@@ -275,7 +275,6 @@ class PromptRenderer:
         *,
         allowed_args: dict[str, str],
         required: bool,
-        template: PromptTemplate | None = None,
     ) -> str | None:
         if prompt_file is None:
             if required:
@@ -363,7 +362,6 @@ class PromptRenderer:
             prompt_file,
             allowed_args=resolved_args,
             required=True,
-            template=template,
         )
         assert rendered is not None
         cache[stack_key] = rendered
