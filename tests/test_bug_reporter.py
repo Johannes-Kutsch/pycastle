@@ -461,33 +461,88 @@ def test_merge_close_failure_dedups_by_existing_open_issue():
     github_svc.create_issue_in.assert_not_called()
 
 
-def test_merge_close_failure_issue_never_raises_on_search_error():
+def test_merge_close_failure_issue_github_service_error_is_caught():
+    from pycastle import bug_reporter
+    from pycastle.services import GithubAPIError, GithubNetworkError
+
+    github_svc = _make_github_svc()
+    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "dns fail", cause=OSError("dns")
+    )
+    exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
+    number = bug_reporter.file_merge_close_failure_issue(
+        issue_number=42,
+        exc=exc,
+        github_svc=github_svc,
+    )
+
+    assert number is None
+
+
+def test_merge_close_failure_issue_non_github_error_propagates():
     from pycastle import bug_reporter
     from pycastle.services import GithubAPIError
 
     github_svc = _make_github_svc()
     github_svc.search_open_issues_by_title.side_effect = RuntimeError("search exploded")
     exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
-    number = bug_reporter.file_merge_close_failure_issue(
-        issue_number=42,
-        exc=exc,
-        github_svc=github_svc,
-    )
 
-    assert number is None
+    with pytest.raises(RuntimeError, match="search exploded"):
+        bug_reporter.file_merge_close_failure_issue(
+            issue_number=42,
+            exc=exc,
+            github_svc=github_svc,
+        )
 
 
-def test_merge_close_failure_issue_never_raises_on_create_error():
+def test_merge_close_failure_issue_non_github_create_error_propagates():
     from pycastle import bug_reporter
     from pycastle.services import GithubAPIError
 
     github_svc = _make_github_svc()
     github_svc.create_issue_in.side_effect = RuntimeError("create exploded")
     exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
-    number = bug_reporter.file_merge_close_failure_issue(
-        issue_number=42,
-        exc=exc,
+
+    with pytest.raises(RuntimeError, match="create exploded"):
+        bug_reporter.file_merge_close_failure_issue(
+            issue_number=42,
+            exc=exc,
+            github_svc=github_svc,
+        )
+
+
+# ── Issue #2005: file_operator_actionable_git_issue narrowed to GithubServiceError ─
+
+
+def test_operator_actionable_git_issue_github_service_error_is_swallowed():
+    from pycastle import bug_reporter
+    from pycastle.services import GithubNetworkError
+
+    github_svc = _make_github_svc()
+    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "connection refused", cause=OSError("refused")
+    )
+
+    bug_reporter.file_operator_actionable_git_issue(
+        op="push",
+        stderr="permission denied",
+        attempt_count=3,
         github_svc=github_svc,
     )
 
-    assert number is None
+
+def test_operator_actionable_git_issue_non_github_error_propagates():
+    from pycastle import bug_reporter
+
+    github_svc = _make_github_svc()
+    github_svc.search_open_issues_by_title.side_effect = RuntimeError(
+        "unexpected failure"
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected failure"):
+        bug_reporter.file_operator_actionable_git_issue(
+            op="push",
+            stderr="permission denied",
+            attempt_count=3,
+            github_svc=github_svc,
+        )

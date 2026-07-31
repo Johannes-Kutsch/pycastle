@@ -100,9 +100,10 @@ def _build_bug_report_url(
 def _safe_load_config() -> Config | None:
     try:
         from pycastle.config import load_config
+        from pycastle.errors import ConfigValidationError
 
         return load_config()
-    except Exception:
+    except (ConfigValidationError, ValueError, OSError):
         return None
 
 
@@ -117,7 +118,7 @@ def _safe_resolve_token(cfg: Config | None) -> str | None:
 
         env = load_credential_env()
         return env.get("GH_TOKEN")
-    except Exception:
+    except OSError:
         return None
 
 
@@ -127,7 +128,7 @@ def _try_api_path(
     """Attempt to file an issue via the API. Returns (number, html_url) on
     success, None on any failure."""
     try:
-        from pycastle.services import GithubService
+        from pycastle.services import GithubService, GithubServiceError
 
         svc = GithubService(repo, token, cfg)
         existing = svc.search_open_issues_by_title(title)
@@ -137,7 +138,7 @@ def _try_api_path(
         number = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)
         html_url = f"https://github.com/{repo}/issues/{number}"
         return number, html_url
-    except Exception:
+    except (GithubServiceError, ImportError):
         return None
 
 
@@ -185,7 +186,9 @@ def file_merge_close_failure_issue(
     github_svc: GithubService,
 ) -> int | None:
     """File one deduped issue on the consuming project's tracker when a child
-    issue fails to close after merge. Never files on bug_report_repo. Never raises."""
+    issue fails to close after merge. Never files on bug_report_repo."""
+    from pycastle.services import GithubServiceError
+
     try:
         existing = github_svc.search_open_issues_by_title(
             _MERGE_CLOSE_FAILURE_TITLE_PREFIX
@@ -202,7 +205,7 @@ def file_merge_close_failure_issue(
         )
         print(f"Filed issue #{number} on {github_svc.repo}: {title}")
         return number
-    except Exception:
+    except GithubServiceError:
         return None
 
 
@@ -223,7 +226,9 @@ def file_operator_actionable_git_issue(
     github_svc: GithubService,
 ) -> None:
     """File one deduped issue on the consuming project's origin tracker for an
-    OperatorActionableGitError. Never files on bug_report_repo. Never raises."""
+    OperatorActionableGitError. Never files on bug_report_repo."""
+    from pycastle.services import GithubServiceError
+
     try:
         existing = github_svc.search_open_issues_by_title(
             _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX
@@ -241,7 +246,7 @@ def file_operator_actionable_git_issue(
             _GIT_REMOTE_UNREACHABLE_LABELS,
         )
         print(f"Filed issue #{number} on {github_svc.repo}: {title}")
-    except Exception:
+    except GithubServiceError:
         pass
 
 

@@ -88,7 +88,7 @@ def _apply_config_file_action(defaults_pkg, config_action: ConfigFileAction) -> 
         try:
             config_file.parent.mkdir(parents=True, exist_ok=True)
             config_file.write_bytes((defaults_pkg / "config.py").read_bytes())
-        except Exception as e:
+        except OSError as e:
             click.echo(
                 click.style(f"Error: could not write {config_file} — {e}", fg="red"),
                 err=True,
@@ -98,7 +98,7 @@ def _apply_config_file_action(defaults_pkg, config_action: ConfigFileAction) -> 
     for hint in config_action.hints:
         try:
             _fill_commented_hint(config_file, hint.key, hint.value)
-        except Exception as e:
+        except OSError as e:
             click.echo(
                 click.style(
                     f"Error: could not set {hint.key} in {config_file} — {e}",
@@ -129,7 +129,7 @@ def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> s
         return ""
     try:
         _write_env_key(env_file, key, value)
-    except Exception as e:
+    except OSError as e:
         click.echo(
             click.style(f"Error: could not save {key} — {e}", fg="red"),
             err=True,
@@ -149,7 +149,7 @@ def refresh() -> None:
 
     try:
         report = scaffold.refresh()
-    except Exception as e:
+    except OSError as e:
         click.echo(
             click.style(f"Error: could not refresh pycastle scaffold — {e}", fg="red"),
             err=True,
@@ -263,7 +263,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
 
     try:
         scaffold.refresh()
-    except Exception as e:
+    except OSError as e:
         click.echo(
             click.style(f"Error: could not write pycastle scaffold — {e}", fg="red"),
             err=True,
@@ -303,7 +303,7 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
                         f"{key}=\n" for key in env_plan.planned_env_file.missing_keys
                     )
                 )
-            except Exception as e:
+            except OSError as e:
                 click.echo(
                     click.style(f"Error: could not write {env_file} — {e}", fg="red"),
                     err=True,
