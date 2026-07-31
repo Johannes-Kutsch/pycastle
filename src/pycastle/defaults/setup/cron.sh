@@ -20,4 +20,4 @@ fi
 .venv/bin/python -m pip install --upgrade pycastle \
     || echo "WARNING: pip upgrade pycastle (attempt 2) failed; continuing with installed version" >&2
 
-exec .venv/bin/pycastle cron "$@"
+exec .venv/bin/pycastle run "$@"

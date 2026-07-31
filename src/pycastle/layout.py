@@ -32,7 +32,6 @@ class PycastleLayout:
     local_config_file: Path
     global_env_file: Path
     local_env_file: Path
-    cron_lock_path: Path
     global_run_lock_path: Path
     run_markers_dir: Path
     project_run_marker_path: Path
@@ -89,7 +88,6 @@ def resolve_layout(
         local_config_file=local_config_file,
         global_env_file=resolved_pycastle_home / ".env",
         local_env_file=resolved_pycastle_dir / ".env",
-        cron_lock_path=resolved_pycastle_home / ".cron.lock",
         global_run_lock_path=resolved_pycastle_home / ".run.lock",
         run_markers_dir=run_markers_dir,
         project_run_marker_path=project_run_marker_path,

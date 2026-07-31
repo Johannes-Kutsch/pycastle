@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_resolve_layout_returns_fixed_pycastle_paths_and_cron_lock_path(
+def test_resolve_layout_returns_fixed_pycastle_paths(
     tmp_path: Path,
 ) -> None:
     repo_root = tmp_path / "workspace"
@@ -23,7 +23,6 @@ def test_resolve_layout_returns_fixed_pycastle_paths_and_cron_lock_path(
     assert layout.local_config_file == repo_root / "pycastle" / "config.py"
     assert layout.global_env_file == pycastle_home / ".env"
     assert layout.local_env_file == repo_root / "pycastle" / ".env"
-    assert layout.cron_lock_path == pycastle_home / ".cron.lock"
 
 
 def test_resolve_layout_pycastle_home_precedence_prefers_explicit_over_env(
@@ -39,7 +38,7 @@ def test_resolve_layout_pycastle_home_precedence_prefers_explicit_over_env(
     )
 
     assert layout.pycastle_home == explicit_pycastle_home
-    assert layout.cron_lock_path == explicit_pycastle_home / ".cron.lock"
+    assert layout.global_run_lock_path == explicit_pycastle_home / ".run.lock"
 
 
 def test_resolve_layout_pycastle_home_precedence_falls_back_to_env(
@@ -53,7 +52,7 @@ def test_resolve_layout_pycastle_home_precedence_falls_back_to_env(
     )
 
     assert layout.pycastle_home == env_pycastle_home
-    assert layout.cron_lock_path == env_pycastle_home / ".cron.lock"
+    assert layout.global_run_lock_path == env_pycastle_home / ".run.lock"
 
 
 def test_resolve_layout_pycastle_home_precedence_falls_back_to_platform_default(
@@ -68,7 +67,7 @@ def test_resolve_layout_pycastle_home_precedence_falls_back_to_platform_default(
     layout = resolve_layout(repo_root=tmp_path, env={})
 
     assert layout.pycastle_home == platform_default_pycastle_home
-    assert layout.cron_lock_path == platform_default_pycastle_home / ".cron.lock"
+    assert layout.global_run_lock_path == platform_default_pycastle_home / ".run.lock"
 
 
 def test_layout_describe_config_layers_shortens_pycastle_home_to_tilde(

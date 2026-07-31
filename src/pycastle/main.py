@@ -241,8 +241,7 @@ def _do_run(
     )
 
 
-@main.command("run")
-@click.option(
+_IMPROVE_OPTION = click.option(
     "--improve",
     "improve_mode",
     default=None,
@@ -255,96 +254,67 @@ def _do_run(
         "'endless' keeps generating until Ctrl-C."
     ),
 )
-@click.option(
+_NO_IMPROVE_OPTION = click.option(
     "--no-improve",
     "no_improve",
     is_flag=True,
     default=False,
     help="Disable improve-agent dispatch for this run, overriding any improve_mode in config.",
 )
+
+
+@main.command("run")
+@_IMPROVE_OPTION
+@_NO_IMPROVE_OPTION
 def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
+    from pycastle.commands.init import refresh as _refresh
+    from pycastle.errors import RunAlreadyInProgressError, RunSlotTimeoutError
+    from pycastle.log_maintenance import maintain_logs
+    from pycastle.run_lock import run_slot
+
     if improve_mode is not None and no_improve:
         click.echo(
             "Error: --improve and --no-improve are mutually exclusive.", err=True
         )
         sys.exit(1)
 
-    _print_layer_summary()
-    cfg = _load_config_or_exit()
-    _do_run(cfg, no_improve=no_improve, improve_mode_flag=improve_mode)
-
-
-@main.command("cron")
-@click.option(
-    "--no-improve",
-    "no_improve",
-    is_flag=True,
-    default=False,
-    help="Disable improve-agent dispatch for this run, overriding any improve_mode in config.",
-)
-def cron_cmd(no_improve: bool) -> None:
-    import threading
-    import time as _time
-
-    from pycastle.commands.init import refresh as _refresh
-    from pycastle.log_maintenance import maintain_logs
-
     _check_pycastle_dir_or_exit()
+    _print_layer_summary()
+
     layout = resolve_layout()
-    layout.cron_lock_path.parent.mkdir(parents=True, exist_ok=True)
 
-    _LOCK_TIMEOUT_SECS = 6 * 3600
+    def _on_wait(message: str) -> None:
+        click.echo(message, err=True)
 
-    with open(layout.cron_lock_path, "w") as lock_file:
-        if sys.platform == "win32":
-            import msvcrt
+    cfg: Config | None = None
+    try:
+        with run_slot(layout, on_wait=_on_wait):
+            _refresh()
+            cfg = _load_config_or_exit()
+            _do_run(cfg, no_improve=no_improve, improve_mode_flag=improve_mode)
+    except RunAlreadyInProgressError as exc:
+        click.echo(
+            f"Warning: a run is already in progress for project {exc.project!r}",
+            err=True,
+        )
+        sys.exit(1)
+    except RunSlotTimeoutError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
 
-            deadline = _time.monotonic() + _LOCK_TIMEOUT_SECS
-            while True:
-                try:
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-                    break
-                except OSError:
-                    if _time.monotonic() >= deadline:
-                        click.echo(
-                            "Error: timed out waiting for cron lock after 6 hours",
-                            err=True,
-                        )
-                        sys.exit(1)
-                    _time.sleep(1)
-        else:
-            import fcntl
-            import signal
+    if cfg is not None:
+        maintain_logs(resolve_logs_dir(cfg), max_lines=10000, retention_days=30)
 
-            _in_main_thread = threading.current_thread() is threading.main_thread()
 
-            def _on_alarm(signum: int, frame: object) -> None:
-                raise TimeoutError
-
-            if _in_main_thread:
-                old_handler = signal.signal(signal.SIGALRM, _on_alarm)
-                signal.alarm(_LOCK_TIMEOUT_SECS)
-            try:
-                fcntl.flock(lock_file, fcntl.LOCK_EX)
-                if _in_main_thread:
-                    signal.alarm(0)
-            except TimeoutError:
-                click.echo(
-                    "Error: timed out waiting for cron lock after 6 hours",
-                    err=True,
-                )
-                sys.exit(1)
-            finally:
-                if _in_main_thread:
-                    signal.alarm(0)
-                    signal.signal(signal.SIGALRM, old_handler)
-
-        _print_layer_summary()
-        _refresh()
-        cfg = _load_config_or_exit()
-        _do_run(cfg, no_improve=no_improve, improve_mode_flag=None)
-
-    maintain_logs(resolve_logs_dir(cfg), max_lines=10000, retention_days=30)
+@main.command("cron", hidden=True)
+@_NO_IMPROVE_OPTION
+@click.pass_context
+def cron_cmd(ctx: click.Context, no_improve: bool) -> None:
+    click.echo(
+        "Warning: 'pycastle cron' is deprecated — use 'pycastle run' instead.",
+        err=True,
+    )
+    ctx.invoke(run_cmd, improve_mode=None, no_improve=no_improve)
 
 
 if __name__ == "__main__":
