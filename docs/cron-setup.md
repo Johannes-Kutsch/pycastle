@@ -117,7 +117,7 @@ Have the credentials for the services your repo uses ready before running `pycas
 
 The cron helpers under `pycastle/setup/` manage unattended operation. `pycastle init` and `pycastle init --refresh` keep only the pycastle-managed scaffold in sync: `pycastle/.gitignore` plus `pycastle/setup/cron.sh`, `pycastle/setup/cron-install.sh`, and `pycastle/setup/cron-uninstall.sh` are copied from the managed scaffold allowlist, while `pycastle/config.py.example` is refresh-owned but rendered separately. `config.py`, `.env`, prompt overrides under `pycastle/prompts/`, the optional `pycastle/Dockerfile`, and `.pycastle-session/` runtime state remain user-owned and are not touched by refresh. The managed `.gitignore` ignores local secrets, runtime directories, local `config.py`, `config.py.example`, and `setup/`; refresh never copies files outside the scaffold allowlist, including `__pycache__/` or `*.pyc`. When `logs_dir` comes from global config, pycastle treats it as a parent directory and the effective log directory becomes `<logs_dir>/<sanitised project name>/`. When `logs_dir` comes from local config, pycastle uses the configured path directly.
 
-- **`setup/cron.sh`** — bootstrap-and-run wrapper. Acquires a global flock at `$PYCASTLE_HOME/.cron.lock` (6-hour timeout) so multiple repos on the same host serialize cleanly, asserts `.venv/` exists, upgrades pycastle (the host venv only needs pycastle itself — consuming-project deps are installed inside the agent container per ADR 0001), refreshes the managed scaffold, then starts the normal unattended pycastle pipeline. Through that run path, pycastle verifies or rebuilds the universal agent image as needed, refreshes runtime-only session state when required, and either starts work or exits cleanly when no issue is ready. The wrapper then trims `cron.log` to the last 10000 lines so it cannot grow unbounded.
+- **`setup/cron.sh`** — bootstrap-and-run wrapper. Asserts `.venv/` exists, upgrades pycastle (the host venv only needs pycastle itself — consuming-project deps are installed inside the agent container per ADR 0001), then invokes `pycastle run`. Through that run path, `pycastle run` acquires a **run slot** — a **global run lock** (`$PYCASTLE_HOME/.run.lock`, host-wide queue token held for the whole run) and a **project run marker** (`$PYCASTLE_HOME/.runs/<project>.lock`, per-project exclusive hold whose invariant is *marker held ⇔ a run is active for that project*) — refreshes the managed scaffold, verifies or rebuilds the universal agent image as needed, runs the pipeline, and sweeps logs afterwards (ADR 0053). If this project's run marker is already held when the tick fires, `pycastle run` aborts with a warning and exit 1 rather than waiting; same-project overlap is always a hard abort no flag can override.
 - **`setup/cron-install.sh`** — idempotently installs a daily entry (`0 1 * * *`) into your user crontab, tagged `# pycastle:<absolute-repo-path>` so multiple repos coexist. The crontab line redirects stdout+stderr into the effective project's `cron.log`, resolved from `logs_dir` at install time: `<logs_dir>/<sanitised project name>/cron.log` for global config, or `<logs_dir>/cron.log` for local config. Cron output therefore lands alongside the per-agent logs and is captured from second 0, including bootstrap failures like a missing `.venv/` or pip errors.
 - **`setup/cron-uninstall.sh`** — removes only the line bearing this repo's marker.
 
@@ -133,7 +133,7 @@ The cron helpers under `pycastle/setup/` manage unattended operation. `pycastle 
     ```
     Expected: the installed line is present.
 
-All repos installed via `cron-install.sh` fire at 01:00 and serialize through a global flock at `$PYCASTLE_HOME/.cron.lock` (up to 6 hours wait). No extra setup needed for additional repos — repeat sections 4–6 per repo.
+All repos installed via `cron-install.sh` fire at 01:00. Each tick invokes `pycastle run`, which serializes cross-project runs through the **global run lock** in pycastle home — a lock-respecting run waits up to six hours for its turn before exiting with exit 1. A tick whose project already has a run in flight aborts immediately with a warning rather than waiting; same-project overlap is a hard abort (ADR 0053). No extra setup needed for additional repos — repeat sections 4–6 per repo.
 
 ---
 
@@ -143,7 +143,7 @@ All repos installed via `cron-install.sh` fire at 01:00 and serialize through a 
    ```bash
    bash pycastle/setup/cron.sh
    ```
-    Expected: the managed scaffold refresh completes successfully, the normal run path verifies or rebuilds the universal agent image as needed, runtime-only session state refreshes if required, and the pipeline either starts normally or exits cleanly immediately if the issue tracker has nothing ready.
+    Expected: `pycastle run` acquires a run slot (global run lock and project run marker in pycastle home), the managed scaffold refresh completes successfully, the universal agent image is verified or rebuilt as needed, and the pipeline either starts normally or exits cleanly if the issue tracker has nothing ready.
 
 ---
 
@@ -209,6 +209,8 @@ Run these steps inside each consuming project on the host:
    ```bash
    bash pycastle/setup/cron-install.sh
    ```
+
+   The installed entry invokes `cron.sh`, which upgrades pycastle and then calls `pycastle run`. `pycastle run` manages the run slot (global run lock and project run marker under pycastle home) and sweeps logs; the wrapper no longer handles either of those directly.
 
 6. **Verify**
 

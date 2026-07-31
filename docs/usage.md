@@ -61,16 +61,25 @@ pycastle labels
 
 ### `pycastle run`
 
-Runs the full agent pipeline. Before starting agents, `pycastle run` verifies the universal agent image by invoking the same build path as `pycastle build`; Docker's layer cache keeps the no-op case cheap. The pipeline then iterates up to `max_iterations` times, each time picking up whatever `ready-for-agent` issues remain open. Progress is streamed to your terminal in real time.
+Runs the full agent pipeline. Every run acquires a **run slot** before the pipeline starts — two exclusive holds in pycastle home that are acquired together and released together on any exit path (ADR 0053). The **global run lock** (`$PYCASTLE_HOME/.run.lock`) is a host-wide queue token held for the whole run by every lock-respecting run; it answers only "whose turn is it" and carries no information about which runs are active. The **project run marker** (`$PYCASTLE_HOME/.runs/<project>.lock`) is a per-project guard held for the whole run by *every* run, including queue-jumping runs; its invariant is *marker held ⇔ a run is active for that project*. A second run of the same project always aborts with a warning and exit 1 regardless of any flag.
+
+A run waiting for its run slot reports what it is waiting for and gives up after six hours with exit 1. Before starting the pipeline, every run refreshes the managed scaffold allowlist (`pycastle init --refresh`). After the pipeline finishes, every run sweeps logs, deleting `*.log` files older than 30 days and trimming survivors to the last 10 000 lines.
+
+Before starting agents, `pycastle run` verifies the universal agent image by invoking the same build path as `pycastle build`; Docker's layer cache keeps the no-op case cheap. The pipeline then iterates up to `max_iterations` times, each time picking up whatever `ready-for-agent` issues remain open. Progress is streamed to your terminal in real time.
 
 ```bash
 pycastle run
-pycastle run --improve              # dispatch the improve agent when no issues are ready (defaults to 'until_sleep')
-pycastle run --improve endless      # keep generating improvements until Ctrl-C
-pycastle run --no-improve           # one-off override when improve_mode is enabled in config.py
+pycastle run --ignore-global-lock      # queue-jumping run: skips the global run lock, still takes the project run marker
+pycastle run --improve                 # dispatch the improve agent when no issues are ready (defaults to 'until_sleep')
+pycastle run --improve endless         # keep generating improvements until Ctrl-C
+pycastle run --no-improve              # one-off override when improve_mode is enabled in config.py
 ```
 
+`--ignore-global-lock` produces a **queue-jumping run**: it skips the global run lock so the run can start while another project's run is active, but it still acquires the project run marker. A second run of the same project still aborts with a warning and exit 1 regardless of this flag. `--ignore-global-lock` has no config equivalent — a config value would make every tick on that host bypass serialisation permanently.
+
 Set `improve_mode = "until_sleep"` (or `"endless"`) in `pycastle/config.py` to make this the default for a repo without passing the flag every time. Use `pycastle run --no-improve` to disable that config-driven improve mode for one invocation.
+
+`pycastle cron` is a deprecated hidden alias of `pycastle run` with identical parameters. The bundled cron wrapper (`setup/cron.sh`) now invokes `pycastle run`.
 
 ### `pycastle check`
 
