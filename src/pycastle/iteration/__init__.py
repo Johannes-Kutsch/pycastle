@@ -26,6 +26,8 @@ from pycastle.errors import (
     SetupPhaseError,
     TransientAgentError,
     UsageLimitError,
+    WorktreeError,
+    WorktreeTimeoutError,
 )
 from pycastle.iteration._rows import StatusRow as StatusRow
 from pycastle.iteration._rows import status_row as status_row
@@ -44,7 +46,7 @@ from pycastle.iteration.preflight import PreflightCache as PreflightCache
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_failure_report_scope_args
-from pycastle.services import OperatorActionableGitError
+from pycastle.services import GithubServiceError, OperatorActionableGitError
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -387,7 +389,18 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 )
                 assert routed_result is not None
                 return routed_result
-            except Exception as report_err:
+            except (
+                AgentTimeoutError,
+                TransientAgentError,
+                HardAgentError,
+                UsageLimitError,
+                SetupPhaseError,
+                WorktreeError,
+                WorktreeTimeoutError,
+                ModelNotAvailableError,
+                GithubServiceError,
+                OSError,
+            ) as report_err:
                 deps.status_display.print(
                     "Failure Report",
                     "Failure-Report agent crashed — no issue filed",

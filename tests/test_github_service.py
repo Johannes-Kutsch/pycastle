@@ -561,6 +561,21 @@ def test_request_raises_github_api_error_on_invalid_json():
     assert ei.value.body == "{not-json"
 
 
+def test_request_propagates_non_os_error_from_error_body_read():
+    """exc.read() on HTTPError is narrowed to OSError; non-OSError propagates."""
+    transport = UrllibGithubHttpTransport(token="tkn", timeout=5)
+    http_err = _make_http_error(500, b"body")
+    with (
+        patch(
+            "pycastle.services._github_http_transport.urlopen",
+            side_effect=http_err,
+        ),
+        patch.object(http_err, "read", side_effect=ValueError("codec failure")),
+        pytest.raises(ValueError, match="codec failure"),
+    ):
+        transport.request("GET", "/x")
+
+
 # ── pagination through public methods ────────────────────────────────────────
 
 

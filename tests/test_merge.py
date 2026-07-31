@@ -24,6 +24,8 @@ from pycastle.errors import (
     WorktreeTimeoutError,
 )
 from pycastle.infrastructure.worktree import worktree_identity
+from pycastle.iteration._merge_conflict_recovery import recover_conflicts
+from pycastle.iteration._merge_reporting import MergeProgressReporter
 from pycastle.iteration.merge import MergeResult, merge_phase
 from pycastle.iteration.preflight import PreflightAFK, PreflightHITL, PreflightReady
 from pycastle.prompts.pipeline import PromptTemplate
@@ -31,6 +33,7 @@ from pycastle.services import (
     GitCommandError,
     GithubAPIError,
     GithubService,
+    GithubServiceError,
     GitService,
     GitTimeoutError,
 )
@@ -1097,7 +1100,7 @@ def test_merged_branch_without_active_worktree_is_deleted_without_worktree_remov
 def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
     worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]
-    git_svc.remove_worktree.side_effect = RuntimeError("disk full")
+    git_svc.remove_worktree.side_effect = GitCommandError("git worktree remove failed")
     issues = [{"number": 1, "title": "Fix A"}]
     result = _run(issues, deps)
     git_svc.delete_branch.assert_called()
@@ -1985,7 +1988,7 @@ def test_worktree_removal_warning_routed_to_status_display_not_stderr(
     deps, recording = recording_deps
     wt_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [wt_path]
-    git_svc.remove_worktree.side_effect = RuntimeError("disk full")
+    git_svc.remove_worktree.side_effect = GitCommandError("git worktree remove failed")
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
@@ -2040,7 +2043,7 @@ def test_close_issue_failure_in_conflict_path_does_not_abort(
 ):
     deps, _recording = recording_deps
     git_svc.try_merge.return_value = False
-    github_svc.close_issue_with_parents.side_effect = RuntimeError(
+    github_svc.close_issue_with_parents.side_effect = GithubServiceError(
         "conflict close failed"
     )
     issues = [{"number": 1, "title": "Conflict"}]
@@ -2054,7 +2057,7 @@ def test_conflict_close_failure_does_not_advance_closing_progress(
 ):
     deps, recording = recording_deps
     git_svc.try_merge.return_value = False
-    github_svc.close_issue_with_parents.side_effect = RuntimeError(
+    github_svc.close_issue_with_parents.side_effect = GithubServiceError(
         "conflict close failed"
     )
 
@@ -2629,3 +2632,137 @@ def test_fingerprint_written_to_sandbox_before_agent_runs(tmp_path, github_svc):
     _run([{"number": 1, "title": "Conflict"}], deps)
 
     assert fingerprint_seen == [_merger_fingerprint("sha-abc", 1)]
+
+
+# ── Narrow except handlers: failure propagation ──────────────────────────────
+
+
+def _recover_progress(status_display):
+    return MergeProgressReporter(
+        status_display=status_display, completed_total=1, merge_done=0
+    )
+
+
+def test_recover_conflicts_propagates_non_git_os_error_from_conflict_worktree_teardown(
+    tmp_path, github_svc
+):
+    """teardown_worktree in _delete_conflict_branch is narrowed to (GitCommandError, OSError);
+    a non-OSError, non-GitCommandError propagates from recover_conflicts."""
+    git_svc = functional_git_svc(is_ancestor=True)
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_current_branch.return_value = "main"
+    git_svc.get_head_sha.return_value = "abc123"
+    git_svc.start_merge.return_value = (
+        True  # already-merged fast path — no agent needed
+    )
+
+    issue_worktree = worktree_identity("pycastle/issue-1", tmp_path).path
+
+    def _list_wts(repo):
+        return [issue_worktree]
+
+    git_svc.list_worktrees.side_effect = _list_wts
+
+    deps = _make_deps(
+        tmp_path, FakeAgentRunner([]), git_svc=git_svc, github_svc=github_svc
+    )
+    progress = _recover_progress(deps.status_display)
+
+    with (
+        patch(
+            "pycastle.iteration._merge_conflict_recovery.teardown_worktree",
+            side_effect=ValueError("unexpected teardown failure"),
+        ),
+        pytest.raises(ValueError, match="unexpected teardown failure"),
+    ):
+        asyncio.run(
+            recover_conflicts(
+                conflict_issues=[{"number": 1, "title": "Conflict"}],
+                progress=progress,
+                deps=deps,
+            )
+        )
+
+
+def test_recover_conflicts_propagates_non_github_service_error_from_close_issue(
+    tmp_path, github_svc
+):
+    """_close_conflict_issue is narrowed to GithubServiceError; a non-GithubServiceError
+    propagates from recover_conflicts rather than being routed to file_merge_close_failure_issue."""
+    git_svc = functional_git_svc(is_ancestor=True)
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_current_branch.return_value = "main"
+    git_svc.get_head_sha.return_value = "abc123"
+    git_svc.start_merge.return_value = True  # already-merged fast path
+    git_svc.list_worktrees.side_effect = None
+    git_svc.list_worktrees.return_value = []  # no conflict-branch worktree; skip teardown
+
+    github_svc.close_issue_with_parents.side_effect = RuntimeError(
+        "unexpected close error"
+    )
+
+    deps = _make_deps(
+        tmp_path, FakeAgentRunner([]), git_svc=git_svc, github_svc=github_svc
+    )
+    progress = _recover_progress(deps.status_display)
+
+    with pytest.raises(RuntimeError, match="unexpected close error"):
+        asyncio.run(
+            recover_conflicts(
+                conflict_issues=[{"number": 1, "title": "Conflict"}],
+                progress=progress,
+                deps=deps,
+            )
+        )
+
+
+def test_recover_conflicts_propagates_unexpected_exception_from_merge_block(
+    tmp_path, github_svc
+):
+    """_recover_active_conflict's catch-all is narrowed to known exceptions;
+    an unknown exception type propagates from recover_conflicts instead of
+    being treated as a pending conflict."""
+    git_svc = functional_git_svc(is_ancestor=True)
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_current_branch.return_value = "main"
+    git_svc.get_head_sha.return_value = "abc123"
+    git_svc.start_merge.side_effect = KeyError("missing key")
+    git_svc.list_worktrees.side_effect = None
+    git_svc.list_worktrees.return_value = []
+
+    deps = _make_deps(
+        tmp_path, FakeAgentRunner([]), git_svc=git_svc, github_svc=github_svc
+    )
+    progress = _recover_progress(deps.status_display)
+
+    with pytest.raises(KeyError):
+        asyncio.run(
+            recover_conflicts(
+                conflict_issues=[{"number": 1, "title": "Conflict"}],
+                progress=progress,
+                deps=deps,
+            )
+        )
+
+
+def test_merge_worktree_cleanup_propagates_non_git_os_error(
+    tmp_path, git_svc, github_svc, agent_runner
+):
+    """cleanup_durable_issue_worktree_after_success in _teardown_one is narrowed to
+    (GitCommandError, OSError); a non-OSError/GitCommandError propagates to the outer
+    asyncio.gather handler, which prints a 'teardown of … failed' warning rather than
+    the inner 'could not remove worktree for …' warning."""
+    issues = [{"number": 1, "title": "Issue"}]
+    worktree_path = worktree_identity("pycastle/issue-1", tmp_path).path
+    git_svc.list_worktrees.return_value = [worktree_path]
+
+    deps = _make_deps(tmp_path, agent_runner, git_svc=git_svc, github_svc=github_svc)
+
+    with patch(
+        "pycastle.iteration.merge.cleanup_durable_issue_worktree_after_success",
+        side_effect=RuntimeError("unexpected cleanup failure"),
+    ):
+        _run(issues, deps)
+
+    prints = [(c[1], str(c[2])) for c in deps.status_display.calls if c[0] == "print"]
+    assert any("teardown of" in msg and "pycastle/issue-1" in msg for _, msg in prints)

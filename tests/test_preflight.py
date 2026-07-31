@@ -5,6 +5,7 @@ import hashlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from agent_runtime.errors import AgentCredentialFailureError
 
 from pycastle.agents.output_protocol import AgentRole, CompletionOutput, IssueOutput
 from pycastle.config import Config, StageOverride
@@ -1192,3 +1193,41 @@ def test_divergence_resolver_writes_fingerprint_inside_context_before_agent_runs
         asyncio.run(PreflightCache().get_safe_sha(deps))
 
     assert fingerprint_during_run == [_diverge_fingerprint(sha, branch)]
+
+
+# ── Narrow except handlers: divergence resolver propagation ──────────────────
+
+
+def test_divergence_resolver_non_narrowed_exception_propagates_not_pull_exc(
+    tmp_path, github_svc
+):
+    """The except clause in pull_with_resolution that wraps the divergence-resolver
+    block is narrowed; an exception type outside the narrowed set (AgentCredentialFailureError)
+    propagates directly instead of being replaced by the original GitCommandError."""
+    sha = "abc123"
+    branch = "main"
+    sandbox_path = reusable_sandbox_worktree_identity(
+        SandboxWorktreeIntent.DIVERGENCE, tmp_path
+    ).path
+    sandbox_path.mkdir(parents=True, exist_ok=True)
+
+    pull_err = GitCommandError("git merge origin/main failed due to conflicts")
+    git_svc = _conflict_git_svc(sha, branch)
+    git_svc.pull_with_merge_fallback.side_effect = pull_err
+
+    cred_err = AgentCredentialFailureError(
+        "credentials expired",
+        service_name="claude",
+        classification="operator_actionable_agent_credential_failure",
+    )
+    fake = FakeAgentRunner([cred_err], preflight_responses=[])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    with (
+        patch(
+            "pycastle.iteration.preflight.reusable_sandbox_worktree",
+            return_value=_FixedSandboxWorktree(sandbox_path),
+        ),
+        pytest.raises(AgentCredentialFailureError),
+    ):
+        asyncio.run(PreflightCache().get_safe_sha(deps))
