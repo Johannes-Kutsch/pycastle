@@ -3053,3 +3053,60 @@ def test_refresh_reports_only_overwritten_managed_scaffold_when_prompt_override_
     assert lines == ["overwrote setup/cron.sh"]
     assert "shared/_issue-tracker.md" not in out
     assert prompt_override.read_text() == "user override\n"
+
+
+# ── Issue #2005: BLE001 — narrowed except handlers propagate non-OSError ─────
+
+
+def test_refresh_non_os_error_from_scaffold_propagates(tmp_path, monkeypatch):
+    """Non-OSError from scaffold.refresh() propagates after BLE001 narrowing to OSError."""
+    from pycastle.commands.init import refresh
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "pycastle.scaffold.InitScaffold.refresh",
+        lambda self: (_ for _ in ()).throw(RuntimeError("not an os error")),
+    )
+
+    with pytest.raises(RuntimeError, match="not an os error"):
+        refresh()
+
+
+def test_main_non_os_error_from_scaffold_refresh_propagates(tmp_path, monkeypatch):
+    """Non-OSError from scaffold.refresh() inside main() propagates after BLE001 narrowing."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "pycastle.scaffold.InitScaffold.refresh",
+        lambda self: (_ for _ in ()).throw(RuntimeError("scaffold bang")),
+    )
+
+    with (
+        patch("click.prompt", side_effect=["all", "", "", ""]),
+        patch("click.confirm", return_value=False),
+        pytest.raises(RuntimeError, match="scaffold bang"),
+    ):
+        main(scope="local")
+
+
+def test_main_non_os_error_from_env_write_propagates(tmp_path, monkeypatch):
+    """Non-OSError from env_file.write_text() inside main() propagates after BLE001 narrowing."""
+    from pycastle.commands.init import main
+
+    monkeypatch.chdir(tmp_path)
+    original_write_text = Path.write_text
+
+    def _bang_on_env(self, *args, **kwargs):
+        if self.name == ".env":
+            raise RuntimeError("env write bang")
+        return original_write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", _bang_on_env)
+
+    with (
+        patch("click.prompt", side_effect=["all", "", "", ""]),
+        patch("click.confirm", return_value=False),
+        pytest.raises(RuntimeError, match="env write bang"),
+    ):
+        main(scope="local")
