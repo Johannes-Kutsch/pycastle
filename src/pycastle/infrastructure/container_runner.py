@@ -535,10 +535,7 @@ class ContainerRunner:
     def _default_model(self) -> str:
         if self._service is None:
             return "gpt-5.5"
-        try:
-            valid_models = self._service.valid_models()
-        except Exception:
-            return "gpt-5.5"
+        valid_models = self._service.valid_models()
         for candidate in ("gpt-5.5", "gpt-5.4", "haiku", "opus", "sonnet"):
             if candidate in valid_models:
                 return candidate

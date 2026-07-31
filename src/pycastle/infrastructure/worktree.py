@@ -26,7 +26,12 @@ from pycastle.errors import (
 from pycastle.infrastructure.worktree_lifecycle_debug import (
     log_worktree_lifecycle_event,
 )
-from pycastle.services import GitCommandError, GitService, GitTimeoutError
+from pycastle.services import (
+    GitCommandError,
+    GitService,
+    GitServiceError,
+    GitTimeoutError,
+)
 from pycastle.session import SESSION_DIR_NAME, any_role_dir_present
 
 CONTAINER_PARENT_GIT = "/.pycastle-parent-git"
@@ -326,7 +331,7 @@ def is_worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
         return False
     try:
         current = git_svc.get_current_branch(path)
-    except Exception:
+    except GitServiceError:
         return False
     return current == branch and any_role_dir_present(path)
 
@@ -357,7 +362,7 @@ def _cleanup_stale_named_worktree(
         return
     try:
         registered = svc.list_worktrees(repo_path)
-    except Exception:
+    except GitServiceError:
         registered = []
     if wt_path.exists() or wt_path in registered:
         with suppress(Exception):
@@ -419,12 +424,12 @@ async def managed_worktree(
     finally:
         try:
             dirty = not deps.git_svc.is_working_tree_clean(path)
-        except Exception:
+        except GitServiceError:
             dirty = True
         if not (_preservation_worthy_exc or dirty or any_role_dir_present(path)):
             try:
                 _branch_has_commits = deps.git_svc.has_commits_ahead_of_main(path)
-            except Exception:
+            except GitServiceError:
                 _branch_has_commits = True
             teardown_worktree(deps.git_svc, deps.repo_root, path)
             if _deletes_branch_on_teardown(lifecycle) or not _branch_has_commits:

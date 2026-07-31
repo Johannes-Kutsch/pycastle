@@ -439,10 +439,10 @@ def test_docker_session_exec_simple_prints_stderr_when_no_stdout(capsys):
 
 
 def test_docker_session_exec_simple_reraises_docker_api_exception():
-    """exec_simple re-raises exceptions thrown by the Docker API itself."""
+    """exec_simple re-raises DockerException thrown by the Docker API itself."""
     mock_client = MagicMock()
-    mock_client.containers.run.return_value.exec_run.side_effect = RuntimeError(
-        "API down"
+    mock_client.containers.run.return_value.exec_run.side_effect = (
+        docker.errors.APIError("API down")
     )
     session = DockerSession(
         volumes={},
@@ -453,7 +453,7 @@ def test_docker_session_exec_simple_reraises_docker_api_exception():
     )
     session.__enter__()
 
-    with pytest.raises(RuntimeError, match="API down"):
+    with pytest.raises(docker.errors.APIError, match="API down"):
         session.exec_simple("any command")
 
 
@@ -524,3 +524,73 @@ def test_docker_session_write_file_splits_container_path_as_posix_on_windows_hos
     directory, _ = mock_container.put_archive.call_args[0]
     assert "\\" not in directory
     assert directory == "/home/agent"
+
+
+# ── Issue 2006: narrow blind excepts in docker session teardown ───────────────
+
+
+def _make_started_session() -> tuple[DockerSession, MagicMock]:
+    """Return a DockerSession with a mock container already attached."""
+    mock_container = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=MagicMock(),
+    )
+    session._container = mock_container
+    return session, mock_container
+
+
+def test_docker_session_exit_swallows_docker_exception_from_stop():
+    """DockerException from container.stop() is swallowed during teardown."""
+    session, mock_container = _make_started_session()
+    mock_container.stop.side_effect = docker.errors.DockerException("daemon died")
+
+    session.__exit__(None, None, None)
+
+
+def test_docker_session_exit_propagates_unexpected_exception_from_stop():
+    """RuntimeError from container.stop() propagates out of __exit__."""
+    session, mock_container = _make_started_session()
+    mock_container.stop.side_effect = RuntimeError("unexpected teardown failure")
+
+    with pytest.raises(RuntimeError, match="unexpected teardown failure"):
+        session.__exit__(None, None, None)
+
+
+def test_docker_session_exit_swallows_docker_exception_from_remove():
+    """DockerException from container.remove() is swallowed during teardown."""
+    session, mock_container = _make_started_session()
+    mock_container.remove.side_effect = docker.errors.DockerException("already removed")
+
+    session.__exit__(None, None, None)
+
+
+def test_docker_session_exit_propagates_unexpected_exception_from_remove():
+    """RuntimeError from container.remove() propagates out of __exit__."""
+    session, mock_container = _make_started_session()
+    mock_container.remove.side_effect = RuntimeError("unexpected remove failure")
+
+    with pytest.raises(RuntimeError, match="unexpected remove failure"):
+        session.__exit__(None, None, None)
+
+
+def test_exec_simple_reraises_docker_exception_from_thread():
+    """DockerException from exec_run in the worker thread is re-raised in the caller."""
+    mock_client = MagicMock()
+    session = DockerSession(
+        volumes={},
+        container_env={},
+        image_name="img",
+        cfg=Config(),
+        docker_client=mock_client,
+    )
+    session.__enter__()
+    mock_client.containers.run.return_value.exec_run.side_effect = (
+        docker.errors.DockerException("api error")
+    )
+
+    with pytest.raises(docker.errors.DockerException, match="api error"):
+        session.exec_simple("echo hi")

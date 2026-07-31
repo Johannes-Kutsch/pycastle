@@ -29,6 +29,7 @@ from pycastle.infrastructure.worktree import (
     cleanup_durable_issue_worktree_after_success,
     detached_transient_worktree,
     durable_issue_worktree,
+    is_worktree_reusable,
     managed_worktree,
     patch_gitdir_for_container,
     prune_orphan_worktrees,
@@ -40,7 +41,12 @@ from pycastle.infrastructure.worktree import (
 from pycastle.infrastructure.worktree_lifecycle_debug import (
     log_worktree_lifecycle_event,
 )
-from pycastle.services import GitCommandError, GitService, GitTimeoutError
+from pycastle.services import (
+    GitCommandError,
+    GitService,
+    GitServiceError,
+    GitTimeoutError,
+)
 
 # ── Cycle 23-1: timeout constants ────────────────────────────────────────────
 
@@ -2805,3 +2811,121 @@ def test_replaceable_merge_sandbox_replaces_preserved_failure_state(repo):
 
     assert head_inside == [sha_main]
     assert not (wt_dir / ".pycastle-session" / ".preserved-failure").exists()
+
+
+# ── Issue 2006: narrow blind excepts in infrastructure ────────────────────────
+
+
+def test_is_worktree_reusable_propagates_unexpected_git_exception(tmp_path):
+    """Non-GitServiceError from get_current_branch must propagate, not be swallowed."""
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.get_current_branch.side_effect = RuntimeError(
+        "unexpected internal failure"
+    )
+    path = tmp_path / "wt"
+    path.mkdir()
+
+    with pytest.raises(RuntimeError, match="unexpected internal failure"):
+        is_worktree_reusable(path, "some-branch", mock_svc)
+
+
+def test_is_worktree_reusable_returns_false_on_git_service_error(tmp_path):
+    """GitServiceError from get_current_branch is caught and returns False."""
+    mock_svc = MagicMock(spec=GitService)
+    mock_svc.get_current_branch.side_effect = GitServiceError("git failed")
+    path = tmp_path / "wt"
+    path.mkdir()
+
+    result = is_worktree_reusable(path, "some-branch", mock_svc)
+
+    assert result is False
+
+
+def test_managed_worktree_finally_propagates_unexpected_exception_from_has_commits(
+    branch_deps,
+):
+    """RuntimeError from has_commits_ahead_of_main in finally block must propagate."""
+    branch_deps.git_svc.is_working_tree_clean.return_value = True
+    branch_deps.git_svc.has_commits_ahead_of_main.side_effect = RuntimeError(
+        "unexpected commits check failure"
+    )
+
+    async def _run():
+        async with managed_worktree(
+            "issue-99",
+            branch="pycastle/issue-99",
+            sha="abc123",
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
+            deps=branch_deps,
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="unexpected commits check failure"):
+        asyncio.run(_run())
+
+
+def test_managed_worktree_finally_propagates_unexpected_exception_from_is_clean(
+    branch_deps,
+):
+    """RuntimeError from is_working_tree_clean in finally block must propagate."""
+    branch_deps.git_svc.is_working_tree_clean.side_effect = RuntimeError(
+        "unexpected clean check failure"
+    )
+
+    async def _run():
+        async with managed_worktree(
+            "issue-99",
+            branch="pycastle/issue-99",
+            sha="abc123",
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
+            deps=branch_deps,
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="unexpected clean check failure"):
+        asyncio.run(_run())
+
+
+def test_cleanup_stale_worktree_propagates_unexpected_exception_from_list_worktrees(
+    branch_deps,
+):
+    """RuntimeError from list_worktrees must propagate out of managed_worktree setup."""
+    branch_deps.git_svc.list_worktrees.side_effect = RuntimeError("unexpected")
+
+    async def _run():
+        async with managed_worktree(
+            "issue-99",
+            branch="pycastle/issue-99",
+            sha="abc123",
+            lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
+            deps=branch_deps,
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="unexpected"):
+        asyncio.run(_run())
+
+
+def test_log_worktree_lifecycle_event_swallows_oserror(tmp_path, monkeypatch):
+    """OSError from file I/O inside log_worktree_lifecycle_event is swallowed."""
+    log_path = tmp_path / "lifecycle.log"
+    monkeypatch.setenv("PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG", str(log_path))
+    monkeypatch.setattr(
+        "os.fsync", lambda _fd: (_ for _ in ()).throw(OSError("disk full"))
+    )
+
+    log_worktree_lifecycle_event("worktree_create", tmp_path)
+
+
+def test_log_worktree_lifecycle_event_propagates_unexpected_exception(
+    tmp_path, monkeypatch
+):
+    """Non-OSError from inside the log function must propagate, not be swallowed."""
+    log_path = tmp_path / "lifecycle.log"
+    monkeypatch.setenv("PYCASTLE_WORKTREE_LIFECYCLE_DEBUG_LOG", str(log_path))
+    monkeypatch.setattr(
+        "os.fsync", lambda _fd: (_ for _ in ()).throw(RuntimeError("unexpected fsync"))
+    )
+
+    with pytest.raises(RuntimeError, match="unexpected fsync"):
+        log_worktree_lifecycle_event("worktree_create", tmp_path)

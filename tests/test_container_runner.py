@@ -616,3 +616,25 @@ def test_container_runner_uses_global_logs_dir_from_nested_repo(tmp_path):
 
     expected = project_dir / "shared-logs" / "my-project"
     assert runner.log_path.parent.resolve() == expected.resolve()
+
+
+# ── Issue 2006: narrow blind excepts in container runner ──────────────────────
+
+
+def test_default_model_propagates_exception_from_valid_models(tmp_path):
+    """Exception from service.valid_models() must propagate, not be swallowed."""
+    session = FakeDockerSession()
+    session.set_active_container()
+    runtime = FakeRuntimeClient()
+    runner = ContainerRunner(
+        "agent",
+        cast("DockerSession", session),
+        model="",
+        cfg=Config(logs_dir=tmp_path),
+        service=cast("AgentService", _FakeService("fake")),
+        runtime_client=runtime,
+        mount_path=tmp_path,
+    )
+
+    with pytest.raises(AttributeError):
+        asyncio.run(runner.work(_ROLE, "do something"))
