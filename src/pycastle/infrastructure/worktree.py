@@ -509,7 +509,9 @@ async def _detached_checkout_lifecycle(
 
 
 @asynccontextmanager
-async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps) -> AsyncIterator[Path]:
+async def transient_worktree(
+    name: str, *, sha: str | None, deps: _WorktreeDeps
+) -> AsyncIterator[Path]:
     async with _detached_checkout_lifecycle(
         worktree_path(name, deps.repo_root),
         sha=sha,

@@ -248,7 +248,12 @@ class _DefaultStatusRow:
         )
         return self._row
 
-    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: types.TracebackType | None) -> bool:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: types.TracebackType | None,
+    ) -> bool:
         del tb
         if self._row.closed:
             return False

@@ -722,7 +722,9 @@ async def _execute_runtime_attempt(
     runner: RuntimeExecutionAdapter,
     prompt: str,
     provider_run_session: PreparedProviderRunSession,
-) -> tuple[Any, PreparedProviderRunSession]:  # first element is the generic result of output_adapter.invoke()
+) -> tuple[
+    Any, PreparedProviderRunSession
+]:  # first element is the generic result of output_adapter.invoke()
     reprompt_message = request.output_adapter.protocol_reprompt_message()
     protocol_error_result = request.output_adapter.protocol_error_result()
     protocol_error_types = request.output_adapter.protocol_error_types()
