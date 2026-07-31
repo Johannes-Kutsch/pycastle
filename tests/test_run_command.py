@@ -442,3 +442,109 @@ def test_cron_cmd_without_flags_uses_config_improve_mode(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert captured["improve_mode"] == "until_sleep"
+
+
+# ── Behavior 12: --ignore-global-lock listed in help ─────────────────────────
+
+
+def test_run_cmd_ignore_global_lock_listed_in_help():
+    from pycastle.main import main as cli
+
+    result = CliRunner().invoke(cli, ["run", "--help"])
+
+    assert result.exit_code == 0
+    assert "--ignore-global-lock" in result.output
+
+
+# ── Behavior 13: --ignore-global-lock starts immediately while another project runs ──
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fcntl locking is Unix-only")
+def test_run_cmd_ignore_global_lock_bypasses_wait_for_other_project(
+    tmp_path, monkeypatch
+):
+    import fcntl
+
+    from pycastle.main import main as cli
+
+    home = _setup_project(tmp_path, monkeypatch)
+    home.mkdir(parents=True)
+    runs_dir = home / ".runs"
+    runs_dir.mkdir(parents=True)
+
+    other_marker = runs_dir / "other-project.lock"
+    other_marker.touch()
+
+    holder = open(other_marker, "r+b")
+    fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    cfg = Config(docker_image_name="img")
+    fake_svc = _make_docker_svc()
+
+    try:
+        with _run_patches(cfg, fake_svc):
+            result = CliRunner().invoke(
+                cli, ["run", "--no-improve", "--ignore-global-lock"]
+            )
+    finally:
+        fcntl.flock(holder, fcntl.LOCK_UN)
+        holder.close()
+
+    assert result.exit_code == 0, result.output
+
+
+# ── Behavior 14: --ignore-global-lock still aborts if own project is running ──
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="fcntl locking is Unix-only")
+def test_run_cmd_ignore_global_lock_aborts_if_own_project_running(
+    tmp_path, monkeypatch
+):
+    import fcntl
+    import re
+
+    from pycastle.main import main as cli
+
+    home = _setup_project(tmp_path, monkeypatch)
+    home.mkdir(parents=True)
+    runs_dir = home / ".runs"
+    runs_dir.mkdir(parents=True)
+    sanitized = re.sub(r"[^a-z0-9]+", "-", tmp_path.name.lower()).strip("-")
+    marker = runs_dir / f"{sanitized}.lock"
+    marker.touch()
+
+    holder = open(marker, "r+b")
+    fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    cfg = Config(docker_image_name="img")
+    fake_svc = _make_docker_svc()
+
+    try:
+        with _run_patches(cfg, fake_svc):
+            result = CliRunner().invoke(
+                cli, ["run", "--no-improve", "--ignore-global-lock"]
+            )
+    finally:
+        fcntl.flock(holder, fcntl.LOCK_UN)
+        holder.close()
+
+    assert result.exit_code == 1
+    assert sanitized in result.output
+
+
+# ── Behavior 15: --ignore-global-lock composes with improve flags ─────────────
+
+
+def test_run_cmd_ignore_global_lock_composes_with_no_improve(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    _setup_project(tmp_path, monkeypatch)
+    cfg = Config(docker_image_name="img")
+    fake_svc = _make_docker_svc()
+
+    with _run_patches(cfg, fake_svc):
+        result = CliRunner().invoke(
+            cli, ["run", "--ignore-global-lock", "--no-improve"]
+        )
+
+    assert result.exit_code == 0, result.output

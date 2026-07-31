@@ -263,10 +263,27 @@ _NO_IMPROVE_OPTION = click.option(
 )
 
 
+_IGNORE_GLOBAL_LOCK_OPTION = click.option(
+    "--ignore-global-lock",
+    "ignore_global_lock",
+    is_flag=True,
+    default=False,
+    help=(
+        "Queue-jumping run: skip the host-wide global run lock and start immediately "
+        "even while another project's run is in flight. "
+        "Still acquires this project's run marker, so a second run of the same "
+        "project is rejected as usual."
+    ),
+)
+
+
 @main.command("run")
 @_IMPROVE_OPTION
 @_NO_IMPROVE_OPTION
-def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
+@_IGNORE_GLOBAL_LOCK_OPTION
+def run_cmd(
+    improve_mode: str | None, no_improve: bool, ignore_global_lock: bool
+) -> None:
     from pycastle.commands.init import refresh as _refresh
     from pycastle.errors import RunAlreadyInProgressError, RunSlotTimeoutError
     from pycastle.log_maintenance import maintain_logs
@@ -288,7 +305,7 @@ def run_cmd(improve_mode: str | None, no_improve: bool) -> None:
 
     cfg: Config | None = None
     try:
-        with run_slot(layout, on_wait=_on_wait):
+        with run_slot(layout, ignore_global_lock=ignore_global_lock, on_wait=_on_wait):
             _refresh()
             cfg = _load_config_or_exit()
             _do_run(cfg, no_improve=no_improve, improve_mode_flag=improve_mode)
