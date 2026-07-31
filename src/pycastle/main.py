@@ -100,6 +100,7 @@ class _BugReportingGroup(click.Group):
             from pycastle.bug_reporter import report_and_exit
 
             report_and_exit(exc)
+            raise
 
 
 @click.group(cls=_BugReportingGroup)

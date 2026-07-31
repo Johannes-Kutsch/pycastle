@@ -36,7 +36,7 @@ def _hold_lock_in_thread(layout, **slot_kwargs) -> Iterator[threading.Event]:
             with run_slot(layout, **slot_kwargs):
                 inside.set()
                 release.wait()
-        except Exception as exc:
+        except (RunAlreadyInProgressError, RunSlotTimeoutError) as exc:
             error.append(exc)
             inside.set()
 

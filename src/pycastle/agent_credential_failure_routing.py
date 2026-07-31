@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
+from pycastle.services.github_service import GithubServiceError
+
 if TYPE_CHECKING:
     from pycastle.services import GithubService
 
@@ -196,7 +198,7 @@ def _file_or_reuse_agent_credential_failure_issue(
             f"Filed issue #{number} on {github_svc.repo}: {_AGENT_CREDENTIAL_FAILURE_TITLE}"
         )
         return _CredentialFailureIssueLookupResult(issue_url=url)
-    except Exception:
+    except GithubServiceError:
         return _CredentialFailureIssueLookupResult(issue_url=None)
 
 

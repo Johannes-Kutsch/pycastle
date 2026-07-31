@@ -1639,3 +1639,30 @@ def test_init_cmd_succeeds_without_pycastle_dir(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert fake_init.called
+
+
+# ── Issue 2007: BLE001 — _BugReportingGroup.invoke re-raises after report_and_exit ──
+
+
+def test_bug_reporting_group_reraises_after_report_and_exit_returns(
+    tmp_path, monkeypatch
+):
+    from pycastle.main import main as cli
+
+    (tmp_path / "pycastle").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
+
+    with (
+        patch(
+            "pycastle.main.load_config",
+            side_effect=RuntimeError("unexpected error"),
+        ),
+        patch("pycastle.bug_reporter.report_and_exit") as mock_report,
+    ):
+        mock_report.return_value = None
+        result = CliRunner().invoke(cli, ["run"])
+
+    mock_report.assert_called_once()
+    assert isinstance(result.exception, RuntimeError)
+    assert "unexpected error" in str(result.exception)
