@@ -708,7 +708,7 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
         finally:
             try:
                 session.__exit__(None, None, None)
-            except Exception:
+            except OSError:
                 pass
 
 

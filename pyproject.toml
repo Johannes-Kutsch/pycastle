@@ -125,7 +125,6 @@ ignore = [
     "UP042",    # replace-str-enum (3 findings)
     "UP046",    # non-pep695-generic-class (1 finding)
     # exceptions / try
-    "BLE001",   # blind-exception (38 findings)
     "TRY300",   # try-consider-else (8 findings)
     "TRY301",   # raise-within-try (2 findings)
     "TRY201",   # verbose-raise (1 finding)

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
 import agent_runtime
+import docker.errors
 from agent_runtime import ProviderAuth
 from agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
 from agent_runtime.errors import (
@@ -154,10 +155,7 @@ def _default_effort() -> str:
 
 
 def _default_model(service: AgentService) -> str:
-    try:
-        valid_models = service.valid_models()
-    except Exception:
-        return "gpt-5.5"
+    valid_models = service.valid_models()
     for candidate in ("gpt-5.5", "gpt-5.4", "haiku", "opus", "sonnet"):
         if candidate in valid_models:
             return candidate
@@ -299,7 +297,7 @@ class AgentRunner:
                 docker_client=self._docker_client,
                 auto_overlay=auto_overlay,
             )
-        except Exception as exc:
+        except docker.errors.DockerException as exc:
             return cast(
                 "DockerSession",
                 _UnavailableDockerSession(str(exc)),
@@ -702,7 +700,7 @@ class AgentRunner:
             finally:
                 try:
                     session.__exit__(None, None, None)
-                except Exception:
+                except OSError:
                     pass
 
     async def _invoke_runtime_attempts(
@@ -1045,5 +1043,5 @@ class AgentRunner:
             finally:
                 try:
                     session.__exit__(None, None, None)
-                except Exception:
+                except OSError:
                     pass
