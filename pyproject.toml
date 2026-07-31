@@ -194,7 +194,6 @@ ignore = [
     "PIE810",   # single-starts-ends-with (1 finding)
     "N806",     # non-lowercase-variable-in-function (1 finding)
     "EXE001",   # shebang-not-executable (1 finding)
-    "ERA001",   # commented-out-code (1 finding)
     "S310",     # suspicious-url-open-usage (2 findings)
     "S102",     # use-of-exec (2 findings)
     "S107",     # hardcoded-password-default (1 finding)

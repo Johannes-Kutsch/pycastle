@@ -1255,7 +1255,7 @@ def _prefix_ansi_style(caller: str, message: str) -> str:
 def _prefix_rgb(caller: str) -> tuple[int, int, int]:
     """Parse the truecolor RGB used for the [caller] prefix from rendered output."""
     ansi = _truecolor_print_output(caller, "hello")
-    # For #N callers the prefix literal '[name ' is the first styled span.
+    # For #N callers the prefix literal '[name ' is the first styled span.  # noqa: ERA001
     opening = f"[{caller.split('#', maxsplit=1)[0]}" if "#" in caller else f"[{caller}]"
     idx = ansi.find(opening)
     assert idx >= 0, f"could not find prefix opening in {ansi!r}"
