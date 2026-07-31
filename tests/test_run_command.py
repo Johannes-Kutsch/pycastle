@@ -1,5 +1,3 @@
-"""Tests for the merged pycastle run command (issue #2022)."""
-
 from __future__ import annotations
 
 import contextlib
@@ -421,3 +419,26 @@ def test_cron_cmd_accepts_no_improve_option(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert captured["improve_mode"] is None
+
+
+def test_cron_cmd_without_flags_uses_config_improve_mode(tmp_path, monkeypatch):
+    from pycastle.main import main as cli
+
+    _setup_project(tmp_path, monkeypatch)
+    cfg = Config(docker_image_name="img", improve_mode="until_sleep")
+    fake_svc = _make_docker_svc()
+    captured: dict = {}
+
+    async def _fake_runtime(*args, **kwargs):
+        captured["improve_mode"] = kwargs.get("improve_mode")
+
+    with (
+        patch("pycastle.main.load_config", return_value=cfg),
+        patch("pycastle.commands.init.refresh"),
+        patch("pycastle.commands.build.DockerService", return_value=fake_svc),
+        patch("pycastle.main.agent_runtime.run", _fake_runtime),
+    ):
+        result = CliRunner().invoke(cli, ["cron"])
+
+    assert result.exit_code == 0, result.output
+    assert captured["improve_mode"] == "until_sleep"

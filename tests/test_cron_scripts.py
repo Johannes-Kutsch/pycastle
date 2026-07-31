@@ -328,6 +328,35 @@ def test_cron_sh_does_not_install_consuming_project_deps():
     assert "pip install -r requirements.txt" not in content
 
 
+def test_cron_sh_invokes_pycastle_run():
+    """cron.sh must delegate to 'pycastle run', not the deprecated 'pycastle cron'."""
+    content = (SETUP_DIR / "cron.sh").read_text()
+    assert "pycastle run" in content
+    assert "pycastle cron" not in content
+
+
+def test_cron_sh_does_not_pass_queue_jumping_flag():
+    """cron.sh must not add --ignore-global-lock (queue-jumping flag)."""
+    content = (SETUP_DIR / "cron.sh").read_text()
+    assert "--ignore-global-lock" not in content
+
+
+def test_cron_sh_forwards_args_to_run(cron_sh_env, tmp_path):
+    """Arguments passed to cron.sh must be forwarded to 'pycastle run'."""
+    args_file = tmp_path / "args.txt"
+    cron_sh_env["pycastle_shim"].write_text(
+        f'#!/usr/bin/env bash\necho "$@" >> "{args_file}"\n'
+    )
+    _make_executable(cron_sh_env["pycastle_shim"])
+
+    _run_cron_sh(cron_sh_env, "--no-improve")
+
+    assert args_file.exists(), "pycastle shim was not called"
+    captured = args_file.read_text().strip()
+    assert "run" in captured
+    assert "--no-improve" in captured
+
+
 # ── cron.sh shared fixture ────────────────────────────────────────────────────
 
 
