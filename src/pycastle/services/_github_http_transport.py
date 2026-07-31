@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Protocol
@@ -91,10 +92,8 @@ class UrllibGithubHttpTransport:
                 resp_headers = dict(resp.headers.items())
         except HTTPError as exc:
             err_body = ""
-            try:
+            with contextlib.suppress(OSError):
                 err_body = exc.read().decode("utf-8", errors="replace")
-            except OSError:
-                pass
             status = exc.code
             err_headers = dict(exc.headers.items()) if exc.headers is not None else {}
             if status == 401:

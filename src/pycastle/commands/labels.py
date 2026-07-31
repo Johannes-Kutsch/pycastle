@@ -1,3 +1,4 @@
+import contextlib
 import sys
 
 import click
@@ -73,10 +74,8 @@ def create_labels_interactive(
             except GithubAPIError:
                 existing = []
             for label in existing:
-                try:
+                with contextlib.suppress(GithubAPIError):
                     service.delete_label(label["name"])
-                except GithubAPIError:
-                    pass
 
         counts = {"created": 0, "skipped": 0, "failed": 0}
         failures: list[str] = []

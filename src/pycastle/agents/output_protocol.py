@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 import enum
 import json
@@ -162,10 +163,8 @@ def _parse_behavior_body(body: str) -> BehaviorOutput:
 def _extract_all_behaviors(text: str) -> tuple[BehaviorOutput, ...]:
     results = []
     for m in _BEHAVIOR_TAG_RE.finditer(text):
-        try:
+        with contextlib.suppress(ValueError):
             results.append(_parse_behavior_body(m.group(1)))
-        except ValueError:
-            pass
     return tuple(results)
 
 

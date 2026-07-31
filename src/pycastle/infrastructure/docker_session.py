@@ -1,3 +1,4 @@
+import contextlib
 import io
 import re
 import sys
@@ -139,20 +140,14 @@ class DockerSession:
                 cfg=self._cfg,
             )
         if self._auto_overlay is not None:
-            try:
+            with contextlib.suppress(OSError):
                 self._auto_overlay.unlink(missing_ok=True)
-            except OSError:
-                pass
             self._auto_overlay = None
         if self._container is not None:
-            try:
+            with contextlib.suppress(docker.errors.DockerException, OSError):
                 self._container.stop(timeout=5)
-            except (docker.errors.DockerException, OSError):
-                pass
-            try:
+            with contextlib.suppress(docker.errors.DockerException, OSError):
                 self._container.remove(force=True)
-            except (docker.errors.DockerException, OSError):
-                pass
             self._container = None
 
     def _with_agent_user_console_scripts(self, command: str) -> str:

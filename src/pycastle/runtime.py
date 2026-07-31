@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
@@ -706,10 +707,8 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
                         )
                     non_typed_retry_done = True
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 session.__exit__(None, None, None)
-            except OSError:
-                pass
 
 
 async def _execute_runtime_attempt(

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import dataclasses
 from collections.abc import Callable, Coroutine
 from contextlib import AbstractAsyncContextManager
@@ -698,10 +699,8 @@ class AgentRunner:
                     row.close("finished")
                 return output
             finally:
-                try:
+                with contextlib.suppress(OSError):
                     session.__exit__(None, None, None)
-                except OSError:
-                    pass
 
     async def _invoke_runtime_attempts(
         self,
@@ -1041,7 +1040,5 @@ class AgentRunner:
                     row.close("finished, all tests green")
                 return failures
             finally:
-                try:
+                with contextlib.suppress(OSError):
                     session.__exit__(None, None, None)
-                except OSError:
-                    pass

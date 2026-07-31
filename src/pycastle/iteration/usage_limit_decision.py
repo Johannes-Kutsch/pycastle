@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -146,10 +147,8 @@ def _decide_limit_continuation(
                 if provider_service is not None and not provider_service.is_available(
                     now=now
                 ):
-                    try:
+                    with contextlib.suppress(RuntimeError):
                         exhausted_wake_time = provider_service.next_wake_time()
-                    except RuntimeError:
-                        pass
             if exhausted_wake_time is None:
                 exhausted_wake_time = service_registry.next_wake_time_for(
                     stage_override, now
