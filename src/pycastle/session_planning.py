@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import shutil
 from enum import Enum
@@ -111,11 +112,8 @@ class ProviderSessionDecision:
     ) -> str | None:
         container_state_dir = self.container_state_dir()
         if container_state_dir is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 container_relpath = container_state_dir.relative_to(worktree)
-            except ValueError:
-                pass
-            else:
                 return f"{container_workspace}/{container_relpath.as_posix()}/"
         if self.state_dir_relpath is None:
             return None
@@ -184,11 +182,8 @@ class ProviderRunStatePlan:
         ):
             container_state_dir = self.service_state_dir
         if container_state_dir is not None:
-            try:
+            with contextlib.suppress(ValueError):
                 container_relpath = container_state_dir.relative_to(worktree)
-            except ValueError:
-                pass
-            else:
                 return f"{container_workspace}/{container_relpath.as_posix()}/"
         if self.provider_state_dir_relpath is None:
             return None

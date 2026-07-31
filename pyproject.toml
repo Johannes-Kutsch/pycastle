@@ -117,7 +117,6 @@ ignore = [
     # imports
     "PLC0415",  # import-outside-toplevel (545 findings)
     # simplify / modernise
-    "SIM105",   # suppressible-exception (10 findings)
     "SIM102",   # collapsible-if (5 findings)
     "SIM115",   # open-file-with-context-handler (1 finding)
     # pyupgrade
@@ -128,7 +127,6 @@ ignore = [
     "TRY300",   # try-consider-else (8 findings)
     "TRY301",   # raise-within-try (2 findings)
     "TRY201",   # verbose-raise (1 finding)
-    "S110",     # try-except-pass (8 findings)
     # annotations
     "ANN401",   # dynamically-typed-expression (36 findings)
     "ANN001",   # missing-type-function-argument (24 findings)

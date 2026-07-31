@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import os
 import re
@@ -104,11 +105,9 @@ def _display_pycastle_home_path(
 ) -> str:
     if (os.name if os_name is None else os_name) == "nt":
         if appdata:
-            try:
+            with contextlib.suppress(ValueError):
                 rel = path.relative_to(appdata)
                 return "%APPDATA%\\" + str(rel).replace("/", "\\")
-            except ValueError:
-                pass
     home = Path.home()
     try:
         rel = path.relative_to(home)
