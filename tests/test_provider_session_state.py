@@ -106,13 +106,8 @@ def test_recover_state_dir_provider_session_id_deduplicates_repeated_codex_threa
     rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
     rollout_dir.mkdir(parents=True)
     (rollout_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                '{"type":"thread.started","thread_id":"thread-abc"}',
-                '{"type":"thread.started","thread_id":"thread-abc"}',
-            ]
-        )
-        + "\n",
+        '{"type":"thread.started","thread_id":"thread-abc"}\n'
+        '{"type":"thread.started","thread_id":"thread-abc"}\n',
         encoding="utf-8",
     )
 
@@ -144,13 +139,8 @@ def test_recover_state_dir_provider_session_id_returns_none_for_distinct_thread_
     rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
     rollout_dir.mkdir(parents=True)
     (rollout_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                '{"type":"thread.started","thread_id":"thread-abc"}',
-                '{"type":"thread.started","thread_id":"thread-def"}',
-            ]
-        )
-        + "\n",
+        '{"type":"thread.started","thread_id":"thread-abc"}\n'
+        '{"type":"thread.started","thread_id":"thread-def"}\n',
         encoding="utf-8",
     )
 
@@ -164,16 +154,11 @@ def test_recover_state_dir_provider_session_id_ignores_malformed_and_unreadable_
     rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"
     rollout_dir.mkdir(parents=True)
     (rollout_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                "{not-json",
-                "[]",
-                '{"type":"turn.completed"}',
-                '{"type":"thread.started","thread_id":"   "}',
-                '{"type":"thread.started"}',
-            ]
-        )
-        + "\n",
+        "{not-json\n"
+        "[]\n"
+        '{"type":"turn.completed"}\n'
+        '{"type":"thread.started","thread_id":"   "}\n'
+        '{"type":"thread.started"}\n',
         encoding="utf-8",
     )
     (rollout_dir / "rollout-002.jsonl").mkdir()

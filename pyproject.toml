@@ -137,6 +137,12 @@ ignore = [
     "FBT",     # boolean-trap (test helpers may use positional booleans)
     "S603",    # subprocess-path (subprocess-without-shell-equals-true)
     "S607",    # subprocess-path (start-process-with-partial-path)
+    "S102",    # exec (tests validate generated config by executing it)
+    "S107",    # hardcoded-password-default (test factory sentinel tokens are not real secrets)
+    "PYI034",  # __enter__ return type (test fakes intentionally return narrower types than Self)
+    "SIM115",  # open-file-with-context-handler (open() held for fcntl.flock lifetime; with-block would release lock immediately)
+    "PTH123",  # pathlib-open (same sites as SIM115; Path.open() would close the handle on exit)
+    "ASYNC221", # blocking-process-invocation-in-async-function (sync subprocess.run in async test helpers is intentional; tests avoid real async git plumbing)
 ]
 
 [tool.ruff.lint.flake8-tidy-imports]

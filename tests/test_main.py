@@ -700,7 +700,7 @@ def _run_cmd_capturing_improve_mode(
         patch("pycastle.commands.build.DockerService", return_value=fake_svc),
         patch("pycastle.main.agent_runtime.run", _fake_run),
     ):
-        result = CliRunner().invoke(cli, ["run"] + cli_args)
+        result = CliRunner().invoke(cli, ["run", *cli_args])
 
     assert result.exit_code == 0, result.output
     return captured["improve_mode"]

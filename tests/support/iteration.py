@@ -142,10 +142,11 @@ class FakeAgentRunner:
             response = self._responses.pop(0)
             if isinstance(response, BaseException):
                 raise response
-            return response
         except HardAgentError as err:
             err.caller = request.name
             raise
+        else:
+            return response
 
     async def run_preflight(
         self,

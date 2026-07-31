@@ -1661,7 +1661,7 @@ def test_managed_worktree_cleans_up_on_transient_agent_error(branch_deps):
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
-                raise TransientAgentError()
+                raise TransientAgentError
 
     asyncio.run(_run())
 
@@ -1685,7 +1685,7 @@ def test_managed_worktree_preserves_worktree_on_hard_agent_error(branch_deps):
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
             ):
-                raise HardAgentError()
+                raise HardAgentError
 
     asyncio.run(_run())
 

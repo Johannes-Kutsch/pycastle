@@ -2218,7 +2218,7 @@ def test_run_iteration_success_close_excludes_failed_branches(
 # ── Improve mode: stop semantics matrix ──────────────────────────────────────
 #
 # The matrix tests verify that run_iteration applies the correct stop logic for
-# every combination of improve_mode × slept_once × improve-phase outcome.
+# every combination of improve_mode x slept_once x improve-phase outcome.
 
 
 def _make_improve_deps(
@@ -4352,7 +4352,7 @@ def test_run_iteration_returns_continue_on_transient_agent_error_from_implement_
             return _plan_output(
                 [{"number": 1, "title": "Fix", "labels": ["behavior-slice"]}]
             )
-        raise TransientAgentError()
+        raise TransientAgentError
 
     deps = _make_deps(
         tmp_path, agent_fn, git_svc=git_svc, github_svc=github_svc, logger=logger
@@ -4388,7 +4388,7 @@ def test_run_iteration_returns_continue_on_transient_agent_error_from_plan_agent
 
     async def agent_fn(req: RunRequest):
         if req.name == "Plan Agent":
-            raise TransientAgentError()
+            raise TransientAgentError
         return CompletionOutput()
 
     deps = _make_deps(

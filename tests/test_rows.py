@@ -139,7 +139,7 @@ def test_status_row_agent_usage_limit_paints_interrupted_and_propagates(
         async with status_row(
             d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
         ):
-            raise UsageLimitError()
+            raise UsageLimitError
 
     with pytest.raises(UsageLimitError):
         asyncio.run(run())

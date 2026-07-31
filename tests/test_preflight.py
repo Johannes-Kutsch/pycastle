@@ -734,11 +734,10 @@ def test_get_safe_sha_parallel_callers_run_preflight_once(
     cache = PreflightCache()
 
     async def _run_two():
-        results = await asyncio.gather(
+        return await asyncio.gather(
             cache.get_safe_sha(deps),
             cache.get_safe_sha(deps),
         )
-        return results
 
     results = asyncio.run(_run_two())
 

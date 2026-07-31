@@ -141,8 +141,7 @@ def _conflict_on(issue_numbers: list[int]):
     conflict_set = set(issue_numbers)
 
     def _side_effect(repo_path, branch):
-        result = not any(f"issue-{n}" in branch for n in conflict_set)
-        return result
+        return not any(f"issue-{n}" in branch for n in conflict_set)
 
     return _side_effect
 
@@ -1778,7 +1777,7 @@ def test_merge_phase_preserves_sandbox_and_session_on_usage_limit_error(
         session_dir = sandbox_path / ".pycastle-session" / "merger"
         session_dir.mkdir(parents=True, exist_ok=True)
         (session_dir / "session.json").write_text("{}")
-        raise UsageLimitError()
+        raise UsageLimitError
 
     fake = FakeAgentRunner(side_effect=_raise_after_seed)
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)

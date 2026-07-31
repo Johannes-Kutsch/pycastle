@@ -2683,6 +2683,7 @@ def test_in_flight_only_iteration_planning_runs_preflight_gate_once(tmp_path):
         pull_call_count[0] += 1
         if original_pull is not None:
             return original_pull(repo_path)
+        return None
 
     mock_git.pull_with_merge_fallback.side_effect = _tracking_pull
     mock_github = _make_github_svc(numbers=[1])

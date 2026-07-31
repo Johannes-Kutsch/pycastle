@@ -143,20 +143,16 @@ def test_renderer_renders_global_placeholder(cfg, prompts_dir):
 
 def test_renderer_preserves_all_label_global_placeholders(cfg, prompts_dir):
     (prompts_dir / "work" / "behavior.md").write_text(
-        "\n".join(
-            (
-                "BUG={{BUG_LABEL}}",
-                "READY={{READY_FOR_AGENT_LABEL}}",
-                "HITL={{READY_FOR_HUMAN_LABEL}}",
-                "ENHANCEMENT={{ENHANCEMENT_LABEL}}",
-                "TRIAGE={{NEEDS_TRIAGE_LABEL}}",
-                "INFO={{NEEDS_INFO_LABEL}}",
-                "WONTFIX={{WONTFIX_LABEL}}",
-                "REFACTOR={{REFACTOR_SLICE_LABEL}}",
-                "BEHAVIOR={{BEHAVIOR_SLICE_LABEL}}",
-                "DOCS={{DOCS_SLICE_LABEL}}",
-            )
-        )
+        "BUG={{BUG_LABEL}}\n"
+        "READY={{READY_FOR_AGENT_LABEL}}\n"
+        "HITL={{READY_FOR_HUMAN_LABEL}}\n"
+        "ENHANCEMENT={{ENHANCEMENT_LABEL}}\n"
+        "TRIAGE={{NEEDS_TRIAGE_LABEL}}\n"
+        "INFO={{NEEDS_INFO_LABEL}}\n"
+        "WONTFIX={{WONTFIX_LABEL}}\n"
+        "REFACTOR={{REFACTOR_SLICE_LABEL}}\n"
+        "BEHAVIOR={{BEHAVIOR_SLICE_LABEL}}\n"
+        "DOCS={{DOCS_SLICE_LABEL}}"
     )
     renderer = PromptRenderer(cfg)
 
@@ -175,19 +171,17 @@ def test_renderer_preserves_all_label_global_placeholders(cfg, prompts_dir):
         )
     )
 
-    assert result == "\n".join(
-        (
-            "BUG=bug",
-            "READY=ready-for-agent",
-            "HITL=ready-for-human",
-            "ENHANCEMENT=enhancement",
-            "TRIAGE=needs-triage",
-            "INFO=needs-info",
-            "WONTFIX=wontfix",
-            "REFACTOR=refactor-slice",
-            "BEHAVIOR=behavior-slice",
-            "DOCS=docs-slice",
-        )
+    assert result == (
+        "BUG=bug\n"
+        "READY=ready-for-agent\n"
+        "HITL=ready-for-human\n"
+        "ENHANCEMENT=enhancement\n"
+        "TRIAGE=needs-triage\n"
+        "INFO=needs-info\n"
+        "WONTFIX=wontfix\n"
+        "REFACTOR=refactor-slice\n"
+        "BEHAVIOR=behavior-slice\n"
+        "DOCS=docs-slice"
     )
 
 
@@ -1292,7 +1286,7 @@ def test_symlink_helper_skips_when_windows_symlink_privilege_is_missing(
 ):
     def _raise_winerror(path: Path, target: Path) -> None:
         error = OSError("missing symlink privilege")
-        setattr(error, "winerror", 1314)
+        error.winerror = 1314
         raise error
 
     monkeypatch.setattr(Path, "symlink_to", _raise_winerror)
@@ -1809,19 +1803,15 @@ def test_render_expected_output_shape_keeps_improve_no_candidate_distinct_from_i
         no_candidate_scope_args,
     )
 
-    assert issues_shape.strip() == "\n".join(
-        [
-            "Output each filed issue number as `<issue>N</issue>`.",
-            "",
-            "Then emit `<promise>COMPLETE</promise>`.",
-        ]
+    assert issues_shape.strip() == (
+        "Output each filed issue number as `<issue>N</issue>`.\n"
+        "\n"
+        "Then emit `<promise>COMPLETE</promise>`."
     )
-    assert no_candidate_shape.strip() == "\n".join(
-        [
-            "Output each filed PRD issue number as `<issue>N</issue>`.",
-            "",
-            "Then emit `<promise>COMPLETE</promise>`.",
-        ]
+    assert no_candidate_shape.strip() == (
+        "Output each filed PRD issue number as `<issue>N</issue>`.\n"
+        "\n"
+        "Then emit `<promise>COMPLETE</promise>`."
     )
     assert no_candidate_shape != issues_shape
 

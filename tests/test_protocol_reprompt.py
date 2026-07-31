@@ -179,16 +179,14 @@ def test_plan_protocol_reprompt_returns_planner_specific_message():
     )
 
     assert plan == TemplateSpecificProtocolReprompt(
-        message="\n".join(
-            [
-                "Your last response did not include the required protocol output.",
-                "Please review the task requirements and try again, making sure to include the required output tag.",
-                "The parser reported the following error:",
-                "invalid json",
-                "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).",
-                "Use this Planner output shape exactly:",
-                "<plan>{...}</plan>",
-            ]
+        message=(
+            "Your last response did not include the required protocol output.\n"
+            "Please review the task requirements and try again, making sure to include the required output tag.\n"
+            "The parser reported the following error:\n"
+            "invalid json\n"
+            "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).\n"
+            "Use this Planner output shape exactly:\n"
+            "<plan>{...}</plan>"
         )
     )
 
@@ -220,15 +218,13 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_host_check
     )
 
     assert plan == TemplateSpecificProtocolReprompt(
-        message="\n".join(
-            [
-                "Your last response did not include the required protocol output.",
-                "Please review the task requirements and try again, making sure to include the required output tag.",
-                "The parser reported the following error:",
-                "missing issue tag",
-                "Use this output shape exactly:",
-                "<issue>{...}</issue>",
-            ]
+        message=(
+            "Your last response did not include the required protocol output.\n"
+            "Please review the task requirements and try again, making sure to include the required output tag.\n"
+            "The parser reported the following error:\n"
+            "missing issue tag\n"
+            "Use this output shape exactly:\n"
+            "<issue>{...}</issue>"
         )
     )
 
@@ -359,15 +355,13 @@ def test_plan_protocol_reprompt_returns_improve_specific_message():
     )
 
     assert plan == TemplateSpecificProtocolReprompt(
-        message="\n".join(
-            [
-                "Your last response did not include the required protocol output.",
-                "Please review the task requirements and try again, making sure to include the required output tag.",
-                "The parser reported the following error:",
-                "missing promise tag",
-                "Use this Improve output shape exactly:",
-                "<issue>{...}</issue>",
-            ]
+        message=(
+            "Your last response did not include the required protocol output.\n"
+            "Please review the task requirements and try again, making sure to include the required output tag.\n"
+            "The parser reported the following error:\n"
+            "missing promise tag\n"
+            "Use this Improve output shape exactly:\n"
+            "<issue>{...}</issue>"
         )
     )
 
@@ -439,15 +433,12 @@ def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
     )
 
     assert issues_plan == TemplateSpecificProtocolReprompt(
-        message="\n".join(
-            [
-                "Your last response did not include the required protocol output.",
-                "Please review the task requirements and try again, making sure to include the required output tag.",
-                "The parser reported the following error:",
-                "unexpected <issue>17</issue> before <promise>COMPLETE</promise>",
-                "Use this Improve output shape exactly:",
-                issues_shape,
-            ]
+        message=(
+            "Your last response did not include the required protocol output.\n"
+            "Please review the task requirements and try again, making sure to include the required output tag.\n"
+            "The parser reported the following error:\n"
+            "unexpected <issue>17</issue> before <promise>COMPLETE</promise>\n"
+            f"Use this Improve output shape exactly:\n{issues_shape}"
         )
     )
     assert "Output each filed PRD issue number as `<issue>N</issue>`." in (
@@ -455,15 +446,12 @@ def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
     )
     assert no_candidate_shape != issues_shape
     assert no_candidate_plan == TemplateSpecificProtocolReprompt(
-        message="\n".join(
-            [
-                "Your last response did not include the required protocol output.",
-                "Please review the task requirements and try again, making sure to include the required output tag.",
-                "The parser reported the following error:",
-                "unexpected <issue>17</issue> before <promise>COMPLETE</promise>",
-                "Use this Improve output shape exactly:",
-                no_candidate_shape,
-            ]
+        message=(
+            "Your last response did not include the required protocol output.\n"
+            "Please review the task requirements and try again, making sure to include the required output tag.\n"
+            "The parser reported the following error:\n"
+            "unexpected <issue>17</issue> before <promise>COMPLETE</promise>\n"
+            f"Use this Improve output shape exactly:\n{no_candidate_shape}"
         )
     )
     assert no_candidate_plan != issues_plan

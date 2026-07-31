@@ -155,7 +155,7 @@ def test_click_abort_passes_through_without_url(monkeypatch):
     from pycastle.main import main as cli
 
     def _boom(*_a, **_kw):
-        raise click.Abort()
+        raise click.Abort
 
     monkeypatch.setattr("pycastle.main._load_config_or_exit", _boom)
     result = CliRunner().invoke(cli, ["build"])

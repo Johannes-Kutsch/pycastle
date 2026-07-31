@@ -712,13 +712,8 @@ def test_prepare_provider_session_state_recovers_single_nested_codex_rollout_thr
     )
     rollout_dir.mkdir(parents=True)
     (rollout_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                '{"type":"thread.started","thread_id":"   "}',
-                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
-            ]
-        )
-        + "\n",
+        '{"type":"thread.started","thread_id":"   "}\n'
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
         encoding="utf-8",
     )
 
@@ -1027,14 +1022,9 @@ def test_prepare_agent_session_falls_back_to_fresh_for_codex_without_thread_star
     sessions_dir = state_dir / "sessions" / "2026" / "05" / "30"
     sessions_dir.mkdir(parents=True)
     (sessions_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}',
-                '{"type":"thread.started","thread_id":"   "}',
-                '{"type":"not-thread-started","thread_id":"thread-ignored"}',
-            ]
-        )
-        + "\n",
+        '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}\n'
+        '{"type":"thread.started","thread_id":"   "}\n'
+        '{"type":"not-thread-started","thread_id":"thread-ignored"}\n',
         encoding="utf-8",
     )
     (state_dir / "auth.json").write_text('{"mode":"oauth"}', encoding="utf-8")

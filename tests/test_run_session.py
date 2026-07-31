@@ -908,13 +908,8 @@ def test_codex_provider_session_state_recovers_unique_rollout_and_persists_sidec
     sessions_dir = state_dir / "sessions"
     sessions_dir.mkdir(parents=True)
     (sessions_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
-                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
-            ]
-        )
-        + "\n",
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n'
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
         encoding="utf-8",
     )
 

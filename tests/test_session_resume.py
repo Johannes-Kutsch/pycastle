@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import stat
 import uuid
 from dataclasses import dataclass
@@ -292,7 +291,7 @@ def test_completion_signal_removes_readonly_files(rs):
     pack_dir.mkdir(parents=True)
     pack_file = pack_dir / "pack-abc123.pack"
     pack_file.write_bytes(b"data")
-    os.chmod(pack_file, stat.S_IREAD)
+    pack_file.chmod(stat.S_IREAD)
 
     rs.clear_provider_state_and_signal_completion()
 
@@ -418,13 +417,8 @@ def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thr
     rollout_dir = state_dir / "sessions" / "2026" / "05" / "30" / "nested"
     rollout_dir.mkdir(parents=True)
     (rollout_dir / "rollout-001.jsonl").write_text(
-        "\n".join(
-            [
-                '{"type":"thread.started","thread_id":"   "}',
-                '{"type":"thread.started","thread_id":"thread-from-rollout"}',
-            ]
-        )
-        + "\n",
+        '{"type":"thread.started","thread_id":"   "}\n'
+        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
         encoding="utf-8",
     )
 
@@ -839,13 +833,8 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
     rollout_path = rollout_dir / "rollout-001.jsonl"
 
     rollout_path.write_text(
-        "\n".join(
-            [
-                '{"type":"thread.started","thread_id":"thread-exact"}',
-                '{"type":"thread.started","thread_id":"thread-exact"}',
-            ]
-        )
-        + "\n",
+        '{"type":"thread.started","thread_id":"thread-exact"}\n'
+        '{"type":"thread.started","thread_id":"thread-exact"}\n',
         encoding="utf-8",
     )
     rs.save_service_session_id("codex", "thread-exact")
@@ -860,13 +849,8 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
     )
 
     rollout_path.write_text(
-        "\n".join(
-            [
-                '{"type":"thread.started","thread_id":"thread-exact"}',
-                '{"type":"thread.started","thread_id":"thread-other"}',
-            ]
-        )
-        + "\n",
+        '{"type":"thread.started","thread_id":"thread-exact"}\n'
+        '{"type":"thread.started","thread_id":"thread-other"}\n',
         encoding="utf-8",
     )
 
