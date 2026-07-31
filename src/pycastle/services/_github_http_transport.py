@@ -86,9 +86,9 @@ class UrllibGithubHttpTransport:
         }
         if body is not None:
             headers["Content-Type"] = "application/json"
-        req = Request(url, data=body, headers=headers, method=method)
+        req = Request(url, data=body, headers=headers, method=method)  # noqa: S310  # URL comes from GitHub API config, https only
         try:
-            with urlopen(req, timeout=self._timeout) as resp:
+            with urlopen(req, timeout=self._timeout) as resp:  # noqa: S310  # same URL as above
                 raw = resp.read()
                 resp_headers = dict(resp.headers.items())
         except HTTPError as exc:

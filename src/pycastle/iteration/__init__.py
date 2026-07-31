@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import shutil
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from agent_runtime.errors import (
     AgentCredentialFailureError,
@@ -81,9 +81,10 @@ def _copy_invocation_log_to_evidence_area(
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, destination)
-        return destination
     except OSError:
         return None
+    else:
+        return destination
 
 
 def _route_and_abort_agent_credential_failure(
@@ -183,7 +184,7 @@ class MergeCloseFailure:
     filed_issue_numbers: list[int]
 
 
-IterationOutcome: TypeAlias = (
+type IterationOutcome = (
     Continue
     | Done
     | AbortedHITL
@@ -243,8 +244,10 @@ async def _run_implement_and_merge(
         branch_lines = [f"  {branch_for(i['number'])}" for i in completed]
         row.close(
             "\n".join(
-                [f"Execution complete, {len(completed)} branch(es) with commits:"]
-                + branch_lines
+                [
+                    f"Execution complete, {len(completed)} branch(es) with commits:",
+                    *branch_lines,
+                ]
             )
         )
 
@@ -387,7 +390,7 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 routed_result = _route_and_abort_agent_credential_failure(
                     report_err, deps
                 )
-                assert routed_result is not None
+                assert routed_result is not None  # noqa: S101  # narrowing: credential failure always produces a route result
                 return routed_result
             except (
                 AgentTimeoutError,

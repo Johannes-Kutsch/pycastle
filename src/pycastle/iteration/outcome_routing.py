@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from pycastle.bug_reporter import auto_file_issue, file_operator_actionable_git_issue
 from pycastle.iteration import (
@@ -57,7 +57,7 @@ class BreakLoop:
     pass
 
 
-LoopDirective: TypeAlias = ContinueLoop | SleepThenContinue | BreakLoop | ExitFailure
+type LoopDirective = ContinueLoop | SleepThenContinue | BreakLoop | ExitFailure
 
 
 @dataclasses.dataclass(frozen=True)

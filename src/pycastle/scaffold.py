@@ -158,9 +158,11 @@ class InitScaffold:
             self._copy_default(rel, target)
 
         if include_preserved:
-            for rel in ("config.py", ".env"):
-                if (self.pycastle_dir / rel).exists():
-                    report.append(ScaffoldArtifactReport(status="preserved", path=rel))
+            report.extend(
+                ScaffoldArtifactReport(status="preserved", path=rel)
+                for rel in ("config.py", ".env")
+                if (self.pycastle_dir / rel).exists()
+            )
 
         return report
 
@@ -215,9 +217,12 @@ def _parse_stage_override_services(node: ast.AST) -> tuple[str, ...]:
     service = ""
     fallback_services: tuple[str, ...] = ()
     for keyword in node.keywords:
-        if keyword.arg == "service" and isinstance(keyword.value, ast.Constant):
-            if isinstance(keyword.value.value, str):
-                service = keyword.value.value
+        if (
+            keyword.arg == "service"
+            and isinstance(keyword.value, ast.Constant)
+            and isinstance(keyword.value.value, str)
+        ):
+            service = keyword.value.value
         if keyword.arg == "fallback":
             fallback_services = _parse_stage_override_services(keyword.value)
 

@@ -4,7 +4,7 @@ import asyncio
 import enum
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from pycastle.config import Config
 from pycastle.label_catalog import PROMPT_GLOBAL_LABEL_SPECS
@@ -42,7 +42,7 @@ async def _preprocess(prompt: str, exec_fn: Callable[[str], Awaitable[str]]) -> 
     if not matches:
         return prompt
     results = await asyncio.gather(*[exec_fn(m.group(1)) for m in matches])
-    for match, out in zip(reversed(matches), reversed(list(results))):
+    for match, out in zip(reversed(matches), reversed(list(results)), strict=False):
         prompt = prompt[: match.start()] + out.rstrip("\n") + prompt[match.end() :]
     return prompt
 
@@ -177,7 +177,7 @@ def _format_feedback_commands(checks: Sequence[str]) -> str:
 
 
 class PromptRenderer:
-    _OPTIONAL_SHARED_FILES: dict[str, PromptReference] = {
+    _OPTIONAL_SHARED_FILES: ClassVar[dict[str, PromptReference]] = {
         "DESIGN_STANDARDS": PromptReference(
             "DESIGN_STANDARDS", "shared/standards/_design.md"
         ),
@@ -188,7 +188,7 @@ class PromptRenderer:
             "IMPLEMENT_OUTPUT_RULES", "work/_output-rules.md"
         ),
     }
-    _SHARED_FILES: dict[str, PromptReference] = {
+    _SHARED_FILES: ClassVar[dict[str, PromptReference]] = {
         **_OPTIONAL_SHARED_FILES,
         "ISSUE_TRACKER": PromptReference("ISSUE_TRACKER", "shared/_issue-tracker.md"),
         "WORK_SHARED_INSTRUCTIONS": PromptReference(
@@ -198,7 +198,7 @@ class PromptRenderer:
             "EXPECTED_OUTPUT_SHAPE", "work/_expected-output-shape-implementation.md"
         ),
     }
-    _EXPECTED_OUTPUT_SHAPES: dict[PromptTemplate, PromptReference] = {
+    _EXPECTED_OUTPUT_SHAPES: ClassVar[dict[PromptTemplate, PromptReference]] = {
         PromptTemplate.IMPLEMENT_BEHAVIOR: PromptReference(
             "EXPECTED_OUTPUT_SHAPE", "work/_expected-output-shape-behavior.md"
         ),
@@ -363,7 +363,7 @@ class PromptRenderer:
             allowed_args=resolved_args,
             required=True,
         )
-        assert rendered is not None
+        assert rendered is not None  # noqa: S101  # narrowing: required=True above raises if file missing
         cache[stack_key] = rendered
         return rendered
 

@@ -106,7 +106,7 @@ class DockerService:
             return self._build_streaming(cmd, timeout, on_rebuild_start)
 
         try:
-            result = subprocess.run(cmd, timeout=timeout, check=False)
+            result = subprocess.run(cmd, timeout=timeout, check=False)  # noqa: S603  # cmd is constructed internally from trusted docker arguments
         except FileNotFoundError as exc:
             raise DockerServiceError(
                 "docker not found; ensure it is installed and on PATH"
@@ -129,7 +129,7 @@ class DockerService:
         writer.update(interpreter.initial_progress_text)
 
         try:
-            proc = subprocess.Popen(
+            proc = subprocess.Popen(  # noqa: S603  # cmd is constructed internally from trusted docker arguments
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -142,7 +142,7 @@ class DockerService:
                 "docker not found; ensure it is installed and on PATH"
             ) from exc
 
-        assert proc.stdout is not None
+        assert proc.stdout is not None  # noqa: S101  # stdout=PIPE guarantees non-None
         lines: list[str] = []
 
         for line in proc.stdout:
@@ -175,7 +175,7 @@ class DockerService:
         on_rebuild_start: Callable[[], None] | None = None,
     ) -> BuildOutcome:
         try:
-            proc = subprocess.Popen(
+            proc = subprocess.Popen(  # noqa: S603  # cmd is constructed internally from trusted docker arguments
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -188,7 +188,7 @@ class DockerService:
                 "docker not found; ensure it is installed and on PATH"
             ) from exc
 
-        assert proc.stdout is not None
+        assert proc.stdout is not None  # noqa: S101  # stdout=PIPE guarantees non-None
         interpreter = DockerBuildOutputInterpreter(on_rebuild_start=on_rebuild_start)
         for line in proc.stdout:
             sys.stdout.write(line)

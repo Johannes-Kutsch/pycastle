@@ -4,7 +4,7 @@ import enum
 import json
 import re
 from collections.abc import Iterable
-from typing import Protocol, TypeAlias
+from typing import Protocol
 
 
 class AgentRole(enum.Enum):
@@ -63,7 +63,7 @@ class FailedOutput:
     failure_class: str = ""
 
 
-AgentOutput: TypeAlias = (
+type AgentOutput = (
     PlannerOutput
     | IssueOutput
     | CompletionOutput
@@ -72,7 +72,7 @@ AgentOutput: TypeAlias = (
     | FailedOutput
 )
 
-AgentSuccessOutput: TypeAlias = (
+type AgentSuccessOutput = (
     PlannerOutput
     | IssueOutput
     | CompletionOutput
@@ -179,7 +179,7 @@ def _extract_planner_output(text: str) -> PlannerOutput:
             last_err = exc
     if not saw_block:
         raise PlanParseError("Planner produced no <plan> tag.")
-    assert last_err is not None
+    assert last_err is not None  # noqa: S101  # narrowing: saw_block=True implies at least one PlanParseError was set
     raise last_err
 
 
@@ -238,7 +238,7 @@ def _extract_issue_output(text: str) -> IssueOutput:
             last_err = exc
     if not saw_block:
         raise IssueParseError("Agent produced no <issue>...</issue> tag.")
-    assert last_err is not None
+    assert last_err is not None  # noqa: S101  # narrowing: saw_block=True implies at least one IssueParseError was set
     raise last_err
 
 
@@ -368,7 +368,7 @@ class _ImproveHandler:
         if extract_promise(text, _FAILED) is not None:
             return FailedOutput()
         token = extract_promise_or_raise(text, _COMPLETE_OR_NO_CANDIDATE, tail)
-        if token == "NO-CANDIDATE":
+        if token == "NO-CANDIDATE":  # noqa: S105  # protocol sentinel, not a password
             return NoCandidateOutput()
         return _extract_improve_output(text)
 
@@ -389,7 +389,7 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.DIVERGENCE_RESOLVER: _merger_handler,
 }
 
-assert len(_HANDLERS) == len(AgentRole)
+assert len(_HANDLERS) == len(AgentRole)  # noqa: S101  # module-level completeness invariant
 
 
 def _inject_behaviors(result: AgentOutput, text: str) -> AgentOutput:

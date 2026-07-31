@@ -21,5 +21,5 @@ async def _wait_for_clean_working_tree(deps: _UtilDeps, caller: str) -> None:
         f"Please commit or revert all local changes before the {caller.lower()} phase can proceed.",
         style="error",
     )
-    while not deps.git_svc.is_working_tree_clean(deps.repo_root):
+    while not deps.git_svc.is_working_tree_clean(deps.repo_root):  # noqa: ASYNC110  # polling is necessary; no event source for working-tree clean
         await asyncio.sleep(10)

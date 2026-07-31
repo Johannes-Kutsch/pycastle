@@ -39,7 +39,7 @@ class WorkInvocationLog:
             return
         self._header_record["provider_session_id"] = provider_session_id
         header_bytes = json.dumps(self._header_record).encode() + b"\n"
-        with open(self._log_path, "r+b") as log_file:
+        with self._log_path.open("r+b") as log_file:
             log_file.seek(self._header_start)
             remainder = log_file.read()
             newline_index = remainder.find(b"\n")
@@ -121,11 +121,12 @@ class AgentInvocationLog:
         for suffix in ["", *[f"-{n}" for n in range(2, 10_000)]]:
             path = effective_logs_dir / f"{stem}{suffix}.log"
             try:
-                with open(path, "xb"):
+                with path.open("xb"):
                     pass
-                return path
             except FileExistsError:
                 continue
+            else:
+                return path
         raise RuntimeError(f"could not reserve unique agent log path for {stem}")
 
     def start_logical_session(
@@ -152,7 +153,7 @@ class AgentInvocationLog:
         session_uuid: str | None,
         prompt: str,
     ) -> Iterator[WorkInvocationLog]:
-        with open(log_path, "ab") as log:
+        with log_path.open("ab") as log:
             separator = self._separator_for_next_invocation(log_path)
             if separator:
                 log.write(separator)
@@ -195,7 +196,7 @@ class AgentInvocationLog:
     def _separator_for_next_invocation(self, log_path: Path) -> bytes:
         if not log_path.exists() or log_path.stat().st_size == 0:
             return b""
-        with open(log_path, "rb") as existing_log:
+        with log_path.open("rb") as existing_log:
             existing_log.seek(-1, 2)
             return b"\n\n" if existing_log.read(1) != b"\n" else b"\n"
 

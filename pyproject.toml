@@ -115,68 +115,13 @@ ignore = [
     "CPY001",  # copyright: repository has LICENSE; per-file headers add nothing
     # ── backlog (drain one entry per ticket) ─────────────────────────────────
     # imports
-    "PLC0415",  # import-outside-toplevel (545 findings)
-    # simplify / modernise
-    "SIM102",   # collapsible-if (5 findings)
-    "SIM115",   # open-file-with-context-handler (1 finding)
-    # pyupgrade
-    "UP040",    # non-pep695-type-alias (19 findings)
-    "UP042",    # replace-str-enum (3 findings)
-    "UP046",    # non-pep695-generic-class (1 finding)
-    # exceptions / try
-    "TRY300",   # try-consider-else (8 findings)
-    "TRY301",   # raise-within-try (2 findings)
-    "TRY201",   # verbose-raise (1 finding)
+    "PLC0415",  # import-outside-toplevel (architecture work required)
     # complexity
-    "C901",     # complex-structure (22 findings)
-    # magic values / private access
-    "SLF001",   # private-member-access (19 findings)
-    # subprocess
-    "S603",     # subprocess-without-shell-equals-true (5 findings, src/ only)
-    "S602",     # subprocess-popen-with-shell-equals-true (1 finding)
-    # assert / print
-    "S101",     # assert (17 findings, src/ only)
-    "T201",     # print (26 findings)
-    # strings / f-strings
-    "FLY002",   # static-join-to-fstring (18 findings)
-    "ISC004",   # unnecessary-escaped-quote (15 findings)
-    "RUF005",   # collection-literal-concatenation (5 findings)
-    "RUF003",   # ambiguous-unicode-character-comment (2 findings)
-    # return / control flow
-    "RET504",   # unnecessary-assign (2 findings)
-    "RET503",   # implicit-return (1 finding)
-    # pathlib
-    "PTH123",   # pathlib (10 findings)
-    "PTH101",   # pathlib (2 findings)
-    "PTH108",   # pathlib (1 finding)
-    # async
-    "ASYNC221", # blocking-subprocess-in-async-function (11 findings)
-    "ASYNC240", # blocking-dns-lookup (3 findings)
-    "ASYNC251", # blocking-sleep-in-async-function (1 finding)
-    "ASYNC110", # blocking-busy-wait (1 finding)
-    # ruff-specific
-    "RUF012",   # mutable-class-attributes (3 findings)
-    # loops / builtins
-    "B010",     # do-not-call-setattr-with-constant (3 findings; setattr used intentionally to bypass mypy on untyped attrs)
-    "B905",     # zip-without-explicit-strict (2 findings)
-    "B008",     # function-call-in-default-argument (1 finding)
-    # raise
-    "RSE102",   # unnecessary-paren-on-raise-exception (7 findings)
-    # pep695 / typing
-    "PYI034",   # non-self-return-type (3 findings)
-    # performance
-    "PERF401",  # manual-list-comprehension (2 findings)
-    # futurize
-    "FURB177",  # int-on-slice-len (6 findings)
-    "FURB192",  # sorted-min-max (2 findings)
-    # misc
-    "PIE810",   # single-starts-ends-with (1 finding)
-    "N806",     # non-lowercase-variable-in-function (1 finding)
-    "EXE001",   # shebang-not-executable (1 finding)
-    "S310",     # suspicious-url-open-usage (2 findings)
-    "S102",     # use-of-exec (2 findings)
-    "S107",     # hardcoded-password-default (1 finding)
-    "S105",     # hardcoded-password-string (1 finding, src/ only)
+    "C901",     # complex-structure (architecture work required)
+    # private access
+    "SLF001",   # private-member-access (architecture work required)
+    # print
+    "T201",     # print (architecture work required)
 ]
 
 [tool.ruff.lint.per-file-ignores]

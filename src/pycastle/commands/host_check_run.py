@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from pycastle import _host_check as _host_check_module
 from pycastle._host_check import (
@@ -57,7 +57,7 @@ class HostCheckIssueDeps:
 HostCheckFailedError = _host_check_module.HostCheckFailedError
 HostCheckRunPassed = HostCheckPassedVerdict
 HostCheckRunFailed = HostCheckIssueFiledVerdict
-HostCheckRunOutcome: TypeAlias = HostCheckVerdict
+type HostCheckRunOutcome = HostCheckVerdict
 
 
 def _resolve_github_service(
@@ -154,7 +154,7 @@ def _preserve_host_check_context(
 def run_host_check_subprocess(
     name: str, command: str, cwd: Path
 ) -> HostCheckCommandResult:
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S602  # host-check commands are trusted strings from pycastle config
         command,
         cwd=cwd,
         shell=True,
@@ -299,7 +299,9 @@ async def run_host_check_command(
     run_host_check: HostCheckCommandExecutor | None = None,
     transient_worktree_factory: HostCheckWorktreeFactory | None = None,
 ) -> HostCheckRunOutcome:
-    resolved_repo_root = repo_root or Path().resolve()
+    resolved_repo_root = (
+        repo_root or Path.cwd()
+    )  # asyncio codebase; Path.cwd() is safe here
     resolved_status_display = status_display or PlainStatusDisplay()
     resolved_reporter_override: StageOverride | None = None
     if github_svc is not None and agent_runner is not None:
@@ -343,7 +345,9 @@ async def run_host_check_run(
     run_host_check: HostCheckCommandExecutor | None = None,
     transient_worktree_factory: HostCheckWorktreeFactory | None = None,
 ) -> HostCheckRunOutcome:
-    resolved_repo_root = repo_root or Path().resolve()
+    resolved_repo_root = (
+        repo_root or Path.cwd()
+    )  # asyncio codebase; Path.cwd() is safe here
     execute_host_check = run_host_check or _run_host_check
     create_transient_worktree = cast(
         "HostCheckWorktreeFactory",

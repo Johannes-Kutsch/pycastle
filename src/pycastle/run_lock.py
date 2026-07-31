@@ -25,17 +25,19 @@ def _try_lock(fd: int) -> bool:
 
         try:
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-            return True
         except OSError:
             return False
+        else:
+            return True
     else:
         import fcntl
 
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return True
         except BlockingIOError:
             return False
+        else:
+            return True
 
 
 def _unlock(fd: int) -> None:
@@ -51,7 +53,7 @@ def _unlock(fd: int) -> None:
 
 def _is_exclusively_locked(path: Path) -> bool:
     try:
-        with open(path, "r+b") as fh:
+        with path.open("r+b") as fh:
             if _try_lock(fh.fileno()):
                 _unlock(fh.fileno())
                 return False
@@ -61,11 +63,9 @@ def _is_exclusively_locked(path: Path) -> bool:
 
 
 def _locked_project_names(markers_dir: Path) -> list[str]:
-    names = []
-    for p in sorted(markers_dir.glob("*.lock")):
-        if _is_exclusively_locked(p):
-            names.append(p.stem)
-    return names
+    return [
+        p.stem for p in sorted(markers_dir.glob("*.lock")) if _is_exclusively_locked(p)
+    ]
 
 
 def _ensure_file(path: Path) -> None:
@@ -100,7 +100,7 @@ def run_slot(
 
     if ignore_global_lock:
         # Queue-jumping: take only own project marker.
-        with open(marker_path, "r+b") as marker_fh:
+        with marker_path.open("r+b") as marker_fh:
             if not _try_lock(marker_fh.fileno()):
                 raise RunAlreadyInProgressError(project_name)
             try:
@@ -113,7 +113,7 @@ def run_slot(
     global_lock_path = layout.global_run_lock_path
     _ensure_file(global_lock_path)
 
-    with open(global_lock_path, "r+b") as global_fh:
+    with global_lock_path.open("r+b") as global_fh:
         # Step 1: acquire global run lock.
         if not _try_lock(global_fh.fileno()):
             _notify(on_wait, "Waiting for global run lock (cannot identify holder)")
@@ -150,7 +150,7 @@ def run_slot(
             _notify(on_wait, "All project run markers are free")
 
         # Step 3: take own project marker.
-        with open(marker_path, "r+b") as marker_fh:
+        with marker_path.open("r+b") as marker_fh:
             if not _try_lock(marker_fh.fileno()):
                 raise RunAlreadyInProgressError(project_name)
             try:

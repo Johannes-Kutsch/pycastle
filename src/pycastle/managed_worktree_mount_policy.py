@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 from pycastle.errors import ManagedWorktreeMountPreconditionError
 from pycastle.infrastructure.worktree import PROJECT_LOCAL_PYCASTLE_DIR
@@ -33,7 +33,7 @@ class ManagedWorktreeMountRejected:
     actual_parent: Path
 
 
-ManagedWorktreeMountDecision: TypeAlias = (
+type ManagedWorktreeMountDecision = (
     ManagedWorktreeMountAccepted | ManagedWorktreeMountRejected
 )
 

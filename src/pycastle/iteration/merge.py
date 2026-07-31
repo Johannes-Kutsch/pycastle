@@ -169,9 +169,8 @@ async def _close_issues_parallel(
         *[_close_one(i) for i in issues], return_exceptions=True
     )
     for issue, r in zip(issues, results, strict=True):
-        if isinstance(r, BaseException):
-            if on_error is not None:
-                on_error(issue["number"], r)
+        if isinstance(r, BaseException) and on_error is not None:
+            on_error(issue["number"], r)
 
 
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:

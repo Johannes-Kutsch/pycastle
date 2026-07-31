@@ -103,11 +103,10 @@ def _display_pycastle_home_path(
     appdata: str | None,
     os_name: str | None = None,
 ) -> str:
-    if (os.name if os_name is None else os_name) == "nt":
-        if appdata:
-            with contextlib.suppress(ValueError):
-                rel = path.relative_to(appdata)
-                return "%APPDATA%\\" + str(rel).replace("/", "\\")
+    if (os.name if os_name is None else os_name) == "nt" and appdata:
+        with contextlib.suppress(ValueError):
+            rel = path.relative_to(appdata)
+            return "%APPDATA%\\" + str(rel).replace("/", "\\")
     home = Path.home()
     try:
         rel = path.relative_to(home)

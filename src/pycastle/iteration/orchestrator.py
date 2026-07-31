@@ -50,7 +50,7 @@ class FileLogger:
         entry = f"--- {timestamp} ---\n{tb}\n"
         print(entry, file=sys.stderr)
         self._logs_dir.mkdir(parents=True, exist_ok=True)
-        with open(self._logs_dir / "errors.log", "a", encoding="utf-8") as f:
+        with (self._logs_dir / "errors.log").open("a", encoding="utf-8") as f:
             f.write(entry)
 
     def log_internal_error(
@@ -77,7 +77,7 @@ class FileLogger:
         entry = "\n".join(parts) + "\n"
         print(entry, file=sys.stderr)
         self._logs_dir.mkdir(parents=True, exist_ok=True)
-        with open(self._logs_dir / "errors.log", "a", encoding="utf-8") as f:
+        with (self._logs_dir / "errors.log").open("a", encoding="utf-8") as f:
             f.write(entry)
 
     def log_agent_output(self, agent_name: str, output: str) -> None:
@@ -102,7 +102,7 @@ def ensure_session_excludes(repo_root: Path) -> None:
     existing = exclude_file.read_text(encoding="utf-8") if exclude_file.exists() else ""
     additions = [e for e in _SESSION_EXCLUDES if e not in existing]
     if additions:
-        with open(exclude_file, "a", encoding="utf-8") as f:
+        with exclude_file.open("a", encoding="utf-8") as f:
             f.writelines(f"{entry}\n" for entry in additions)
 
 
@@ -273,7 +273,7 @@ async def run(
                     slept_once_after=slept_after,
                 ):
                     status_display.print("", sleep_msg)  # type: ignore[union-attr]
-                    time.sleep(
+                    time.sleep(  # noqa: ASYNC251  # intentional blocking sleep: caller runs this in asyncio.to_thread
                         max(0.0, (wake_time - _time_module.now_local()).total_seconds())
                     )
                     slept_once = slept_after

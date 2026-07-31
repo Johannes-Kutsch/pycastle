@@ -125,7 +125,7 @@ class _DockerBackedProviderInvocationAdapter:
             error = _provider_invocation.HardAgentError(
                 "Provider subprocess completed without producing output."
             )
-            setattr(error, "provider_session_id", provider_session_id)
+            error.provider_session_id = provider_session_id
             raise error
 
         return ProviderInvocationResult(
@@ -217,11 +217,7 @@ class ContainerRunner:
             del invocation_dir
             transformed: list[str] = ["docker", "exec", "-i"]
             for key, value in env.items():
-                if (
-                    key == "OPENCODE_CONFIG_CONTENT"
-                    or key.endswith("_TOKEN")
-                    or key.endswith("_KEY")
-                ):
+                if key == "OPENCODE_CONFIG_CONTENT" or key.endswith(("_TOKEN", "_KEY")):
                     transformed.extend(["-e", f"{key}={value}"])
             transformed.append(container_id)
             transformed.extend(argv)
@@ -547,7 +543,7 @@ class ContainerRunner:
                 return candidate
         if not valid_models:
             return "gpt-5.5"
-        return sorted(valid_models)[0]
+        return min(valid_models)
 
 
 def _coerce_tool_access(

@@ -5,7 +5,7 @@ from collections.abc import Callable, Coroutine
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, Self, cast
 
 if TYPE_CHECKING:
     from pycastle.services.service_registry import ServiceRegistry
@@ -170,7 +170,7 @@ def _default_model(service: AgentService) -> str:
         if candidate in valid_models:
             return candidate
     if valid_models:
-        return sorted(valid_models)[0]
+        return min(valid_models)
     return "gpt-5.5"
 
 
@@ -178,7 +178,7 @@ class _UnavailableDockerSession:
     def __init__(self, message: str) -> None:
         self._message = message
 
-    def __enter__(self) -> "_UnavailableDockerSession":
+    def __enter__(self) -> Self:
         raise DockerError(self._message)
 
     def __exit__(self, *_args: object) -> None:
@@ -227,12 +227,13 @@ async def translate_run_outcome(
                 service_name=request.service or "claude",
                 session_store=session_store,
             )
-        return output
     except AgentTimeoutError as err:
         if not err.role_value:
             err.role_value = request.role.value
             err.worktree_path = request.mount_path
         raise
+    else:
+        return output
 
 
 class AgentRunnerProtocol(Protocol):

@@ -76,7 +76,7 @@ def log_worktree_lifecycle_event(
             "timestamp": datetime.now(UTC).isoformat(),
         }
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(log_path, "a", encoding="utf-8") as handle:
+        with log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry))
             handle.write("\n")
             handle.flush()

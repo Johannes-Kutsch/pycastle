@@ -348,7 +348,7 @@ async def implement_phase(
     first_usage_limit_error = usage_limit_errors[0] if usage_limit_errors else None
     completed: list[dict] = []
     errors: list[tuple[dict, Exception]] = []
-    for issue, result in zip(issues, results):
+    for issue, result in zip(issues, results, strict=False):
         if isinstance(result, UsageLimitError):
             continue
         if isinstance(result, Exception):

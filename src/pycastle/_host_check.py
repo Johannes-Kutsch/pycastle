@@ -4,7 +4,7 @@ import platform
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol
 
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.iteration._rows import status_row
@@ -53,7 +53,7 @@ class HostCheckIssuePayload:
     output: str
 
 
-HostCheckVerdict: TypeAlias = HostCheckPassedVerdict | HostCheckIssueFiledVerdict
+type HostCheckVerdict = HostCheckPassedVerdict | HostCheckIssueFiledVerdict
 
 
 class HostCheckFailedError(RuntimeError):
@@ -109,13 +109,13 @@ class HostCheckWorktreeFactory(Protocol):
     ) -> AbstractAsyncContextManager[Path]: ...
 
 
-HostCheckIssueFiler: TypeAlias = Callable[[HostCheckIssuePayload, Path], Awaitable[int]]
+type HostCheckIssueFiler = Callable[[HostCheckIssuePayload, Path], Awaitable[int]]
 
 
 def prepare_host_check_loop(
     *, git_svc: HostCheckGitAdapter, repo_root: Path | None = None
 ) -> str:
-    resolved_repo_root = repo_root or Path().resolve()
+    resolved_repo_root = repo_root or Path.cwd()
     git_svc.pull_with_merge_fallback(resolved_repo_root)
     if not git_svc.is_working_tree_clean(resolved_repo_root):
         raise RuntimeError("Working tree must be clean before running host checks.")
@@ -179,7 +179,9 @@ async def run_host_check_loop(
     transient_worktree_factory: HostCheckWorktreeFactory,
     file_issue_for_failure: HostCheckIssueFiler | None = None,
 ) -> HostCheckVerdict:
-    resolved_repo_root = repo_root or Path().resolve()
+    resolved_repo_root = (
+        repo_root or Path.cwd()
+    )  # asyncio codebase; Path.cwd() is safe here
     host_os = platform.system()
     host_platform = platform.platform()
 
@@ -201,7 +203,7 @@ async def run_host_check_loop(
                 failures.append(_failure_from_exception(name, command, exc))
                 continue
             if _is_failed_command_result(command_result):
-                assert command_result is not None
+                assert command_result is not None  # noqa: S101  # narrowing: loop filter already proves non-None
                 failures.append(_failure_from_command_result(command_result))
         if failures and status_display is not None:
             _surface_failed_host_checks(status_display, failures)

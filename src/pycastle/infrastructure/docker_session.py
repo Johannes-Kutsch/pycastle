@@ -6,7 +6,7 @@ import tarfile
 import threading
 from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
-from typing import cast
+from typing import Self, cast
 
 import docker
 import docker.errors
@@ -97,7 +97,7 @@ class DockerSession:
             raise DockerError("Container not started")
         return self._container
 
-    def __enter__(self) -> "DockerSession":
+    def __enter__(self) -> Self:
         try:
             self._container = self._client.containers.run(
                 self._image_name,

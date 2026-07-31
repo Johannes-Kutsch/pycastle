@@ -114,11 +114,11 @@ class GitService(_SubprocessService):
             "git worktree list failed",
             cwd=repo_path,
         )
-        paths: list[Path] = []
-        for line in self._decode(result.stdout).splitlines():
-            if line.startswith("worktree "):
-                paths.append(Path(line[len("worktree ") :]))
-        return paths
+        return [
+            Path(line[len("worktree ") :])
+            for line in self._decode(result.stdout).splitlines()
+            if line.startswith("worktree ")
+        ]
 
     def prune_worktrees(self, repo_path: Path) -> None:
         self._run_or_raise(
@@ -447,10 +447,11 @@ class GitService(_SubprocessService):
                 operation="pull",
                 cwd=repo_path,
             )
-            return
         except GitCommandError as exc:
             if "not possible to fast-forward" not in exc.stderr.lower():
                 raise
+        else:
+            return
         branch = self.get_current_branch(repo_path)
         merged = self.try_merge(repo_path, f"origin/{branch}")
         if not merged:
@@ -502,7 +503,7 @@ class GitService(_SubprocessService):
                 )
                 if isinstance(decision, RecoverPushNonFastForward):
                     if attempt == self._remote_retry_policy.max_attempts:
-                        raise exc
+                        raise
                     logger.warning(
                         "git push rejected non-fast-forward (attempt %d/%d), pulling with merge fallback",
                         attempt,

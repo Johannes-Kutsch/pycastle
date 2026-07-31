@@ -122,9 +122,8 @@ def _prompt_credential_with_overwrite(
 ) -> tuple[str, bool]:
     """Prompt for a credential, asking for overwrite confirmation if already set."""
     current = existing.get(key, "")
-    if current:
-        if not click.confirm(f"Overwrite existing {key}?", default=False):
-            return current, False
+    if current and not click.confirm(f"Overwrite existing {key}?", default=False):
+        return current, False
     return _prompt_and_save_credential(env_file, key, prompt_text), True
 
 
@@ -244,12 +243,11 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     )
     manage_env_file = init_plan.planned_env_file.should_manage
 
-    if init_plan.planned_env_file.should_delete_local_env:
-        if click.confirm(
-            "Delete local .env? (Global will be used instead)", default=False
-        ):
-            local_env_file.unlink()
-            local_env_exists = False
+    if init_plan.planned_env_file.should_delete_local_env and click.confirm(
+        "Delete local .env? (Global will be used instead)", default=False
+    ):
+        local_env_file.unlink()
+        local_env_exists = False
     if init_plan.planned_env_file.should_create_local_env:
         manage_env_file = click.confirm(
             "Create local .env? (Global stays unchanged, local takes priority)",

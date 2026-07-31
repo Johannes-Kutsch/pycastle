@@ -1,4 +1,3 @@
-import os
 import shutil
 import stat
 from collections.abc import Callable
@@ -59,7 +58,7 @@ def _role_session_identity_from_path(
 def _force_remove_readonly(
     func: Callable[..., object], path: str, _exc_info: object
 ) -> None:
-    os.chmod(path, stat.S_IWRITE)
+    Path(path).chmod(stat.S_IWRITE)
     func(path)
 
 

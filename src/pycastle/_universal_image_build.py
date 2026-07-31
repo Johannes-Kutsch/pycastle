@@ -83,8 +83,10 @@ def resolve_universal_image_build_request(
     cfg: Config,
     *,
     project_root: Path,
-    options: UniversalImageBuildOptions = UniversalImageBuildOptions(),
+    options: UniversalImageBuildOptions | None = None,
 ) -> UniversalImageBuildRequest:
+    if options is None:
+        options = UniversalImageBuildOptions()
     pycastle_dir = project_root / "pycastle"
     python_version = options.python_version
     if python_version is None:

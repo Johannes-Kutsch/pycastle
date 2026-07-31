@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import difflib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal
 
 from pycastle.config import Config, StageOverride, parse_credential_list
 from pycastle.config.loader import referenced_services
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from pycastle.services.runtime_services import AgentService
 
 _KNOWN_SERVICES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
-RunImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
+type RunImproveMode = Literal["until_sleep", "endless"] | None
 
 
 @dataclass(frozen=True)

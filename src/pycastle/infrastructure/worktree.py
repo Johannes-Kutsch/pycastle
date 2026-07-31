@@ -7,7 +7,7 @@ import warnings
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
@@ -52,18 +52,18 @@ class WorktreeIdentity:
     path: Path
 
 
-class DurableIssueWorktreeIntent(str, Enum):
+class DurableIssueWorktreeIntent(StrEnum):
     IMPLEMENTER = "implementer"
     REVIEWER = "reviewer"
 
 
-class SandboxWorktreeIntent(str, Enum):
+class SandboxWorktreeIntent(StrEnum):
     IMPROVE = "improve-sandbox"
     DIVERGENCE = "diverge-sandbox"
     PLAN = "plan-sandbox"
 
 
-class BranchWorktreeLifecycle(str, Enum):
+class BranchWorktreeLifecycle(StrEnum):
     DURABLE_ISSUE = "durable-issue"
     REUSABLE_SANDBOX = "reusable-sandbox"
     REPLACEABLE_MERGE_SANDBOX = "replaceable-merge-sandbox"
@@ -216,7 +216,7 @@ def _try_remove_orphan_via_host_container(cfg: Config | None, child: Path) -> bo
         f"/pycastle-worktrees/{child.name}",
     ]
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603  # command is constructed internally from trusted Path objects
             command, capture_output=True, text=True, check=True, timeout=10
         )
     except (
@@ -565,6 +565,6 @@ def patch_gitdir_for_container(worktree_path: Path) -> Path | None:
         os.close(fd)
         Path(tmp).write_text(new_content.rstrip() + "\n", encoding="utf-8")
     except Exception:
-        os.unlink(tmp)
+        Path(tmp).unlink()
         raise
     return Path(tmp)

@@ -5,7 +5,7 @@ import dataclasses
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import RunKind
@@ -446,7 +446,7 @@ class RuntimeInvocationDependencies:
 
 
 @dataclasses.dataclass(frozen=True)
-class RuntimeInvocationRequest(Generic[RuntimeResultT]):
+class RuntimeInvocationRequest[RuntimeResultT]:
     name: str
     mount_path: Path
     role: AgentRole

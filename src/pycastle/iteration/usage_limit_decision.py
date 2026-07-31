@@ -131,7 +131,7 @@ def _decide_limit_continuation(
     if service_registry is None:
         has_available = False
     elif use_stage_scope:
-        assert stage_override is not None
+        assert stage_override is not None  # noqa: S101  # narrowing: use_stage_scope implies both not None
         has_available = service_registry.has_available_for(stage_override, now)
     else:
         has_available = service_registry.has_available(now)
@@ -140,7 +140,7 @@ def _decide_limit_continuation(
         if service_registry is None:
             exhausted_wake_time = None
         elif use_stage_scope:
-            assert stage_override is not None
+            assert stage_override is not None  # noqa: S101  # narrowing: use_stage_scope implies both not None
             exhausted_wake_time = None
             if outcome.provider is not None:
                 provider_service = service_registry[outcome.provider]
@@ -171,7 +171,7 @@ def _decide_limit_continuation(
     if service_registry is None:
         next_wake = None
     elif use_stage_scope:
-        assert stage_override is not None
+        assert stage_override is not None  # noqa: S101  # narrowing: use_stage_scope implies both not None
         next_wake = service_registry.next_wake_time_for(stage_override, now)
     else:
         next_wake = service_registry.next_wake_time(now)
@@ -251,7 +251,7 @@ def decide_model_not_available_continuation(
     if service_registry is None:
         has_available = False
     elif use_stage_scope:
-        assert stage_override is not None
+        assert stage_override is not None  # noqa: S101  # narrowing: use_stage_scope implies both not None
         has_available = service_registry.has_available_for(stage_override, now)
     else:
         has_available = service_registry.has_available(now)
@@ -262,7 +262,7 @@ def decide_model_not_available_continuation(
     if service_registry is None:
         next_wake = None
     elif use_stage_scope:
-        assert stage_override is not None
+        assert stage_override is not None  # noqa: S101  # narrowing: use_stage_scope implies both not None
         next_wake = service_registry.next_wake_time_for(stage_override, now)
     else:
         next_wake = service_registry.next_wake_time(now)

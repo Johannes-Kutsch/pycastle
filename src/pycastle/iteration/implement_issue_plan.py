@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.infrastructure.worktree import issue_branch
@@ -26,10 +26,10 @@ if TYPE_CHECKING:
     from pycastle.services import GitService, ServiceRegistry
 
 
-RoleName: TypeAlias = Literal["implementer", "reviewer"]
-IssueStage: TypeAlias = Literal["pre-implementation", "pre-review"]
-StepOutcome: TypeAlias = Literal["skip", "run", "setup_failure"]
-IssueOutcome: TypeAlias = Literal["complete", "incomplete"]
+type RoleName = Literal["implementer", "reviewer"]
+type IssueStage = Literal["pre-implementation", "pre-review"]
+type StepOutcome = Literal["skip", "run", "setup_failure"]
+type IssueOutcome = Literal["complete", "incomplete"]
 
 
 class ImplementIssuePlanDeps(Protocol):

@@ -137,9 +137,10 @@ def _try_api_path(
             return existing[0], html_url
         number = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)
         html_url = f"https://github.com/{repo}/issues/{number}"
-        return number, html_url
     except (GithubServiceError, ImportError):
         return None
+    else:
+        return number, html_url
 
 
 def auto_file_issue(
@@ -204,9 +205,10 @@ def file_merge_close_failure_issue(
             _MERGE_CLOSE_FAILURE_LABELS,
         )
         print(f"Filed issue #{number} on {github_svc.repo}: {title}")
-        return number
     except GithubServiceError:
         return None
+    else:
+        return number
 
 
 def _build_merge_close_failure_body(*, issue_number: int, exc: BaseException) -> str:

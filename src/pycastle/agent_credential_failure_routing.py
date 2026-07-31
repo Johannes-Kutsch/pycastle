@@ -237,7 +237,7 @@ def _select_remediation(
         if service_name == "opencode":
             return "Update the configured OpenCode API key and rerun pycastle."
 
-    haystacks = tuple(text for _, text in rendered_observations) + (raw,)
+    haystacks = (*tuple(text for _, text in rendered_observations), raw)
     if service_name == "codex":
         if any(_is_codex_refresh_token_reused_signature(text) for text in haystacks):
             return "Run `codex login` on the host to reseed credentials."
@@ -265,7 +265,7 @@ def _interpret_agent_credential_failure(
     observations: tuple,
 ) -> _CredentialFailureInterpretation | None:
     rendered_observations = _render_observations(raw, observations)
-    haystacks = tuple(text for _, text in rendered_observations) + (raw,)
+    haystacks = (*tuple(text for _, text in rendered_observations), raw)
     if classification == _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION:
         return _CredentialFailureInterpretation(
             remediation=_select_remediation(
@@ -324,8 +324,10 @@ def route_agent_credential_failure(
                 ("stderr", '{"code":"refresh_token_reused"}'),
                 (
                     "stderr",
-                    "The access token could not be refreshed because "
-                    "refreshToken=[REDACTED] was already used.",
+                    (
+                        "The access token could not be refreshed because "
+                        "refreshToken=[REDACTED] was already used."
+                    ),
                 ),
                 ("stderr", raw),
             )

@@ -196,7 +196,7 @@ async def _recover_active_conflict(
             if isinstance(
                 mount_decision, ManagedWorktreeMountRejected
             ) and should_reject_managed_worktree_mount(mount_decision):
-                raise SetupPhaseError(
+                raise SetupPhaseError(  # noqa: TRY301  # raise inside try is intentional: exits async-with resource cleanup
                     AgentRole.MERGER.value,
                     describe_managed_worktree_mount_rejection(mount_decision),
                 )

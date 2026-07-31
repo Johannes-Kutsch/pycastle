@@ -1,6 +1,6 @@
 import dataclasses
 from pathlib import Path
-from typing import Literal, Protocol, TypeAlias
+from typing import Literal, Protocol
 
 from pycastle.agents.runner import AgentRunnerProtocol
 from pycastle.config import Config
@@ -8,7 +8,7 @@ from pycastle.display.status_display import StatusDisplay
 from pycastle.iteration.preflight import PreflightCache
 from pycastle.services import GithubService, GitService, ServiceRegistry
 
-ImproveMode: TypeAlias = Literal["until_sleep", "endless"] | None
+type ImproveMode = Literal["until_sleep", "endless"] | None
 
 
 class Logger(Protocol):

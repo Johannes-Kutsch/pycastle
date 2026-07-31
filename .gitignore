@@ -3,6 +3,8 @@
 /pycastle/
 *.pyc
 .tmp*.md
+core
+core.*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

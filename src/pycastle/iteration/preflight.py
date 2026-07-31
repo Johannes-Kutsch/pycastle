@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import hashlib
 from pathlib import Path
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, cast
 
 from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
@@ -90,7 +90,7 @@ class PreflightAFK:
     issue_number: int
 
 
-PreflightResult: TypeAlias = PreflightReady | PreflightHITL | PreflightAFK
+type PreflightResult = PreflightReady | PreflightHITL | PreflightAFK
 
 
 class _PreflightDeps(Protocol):
@@ -185,7 +185,7 @@ class BranchRefreshBoundary:
                     if isinstance(
                         mount_decision, ManagedWorktreeMountRejected
                     ) and should_reject_managed_worktree_mount(mount_decision):
-                        raise SetupPhaseError(
+                        raise SetupPhaseError(  # noqa: TRY301  # raise inside try is intentional: exits async-with resource cleanup
                             AgentRole.DIVERGENCE_RESOLVER.value,
                             describe_managed_worktree_mount_rejection(mount_decision),
                         )
@@ -301,7 +301,7 @@ class PreflightCache:
         )
         if isinstance(validation, DiagnosticIssueReportValidationHITL):
             return PreflightHITL(sha=sha, issue_number=validation.issue_number)
-        assert isinstance(validation, DiagnosticIssueReportValidationAFK)
+        assert isinstance(validation, DiagnosticIssueReportValidationAFK)  # noqa: S101  # exhaustive: only HITL or AFK remain after isinstance check above
         return PreflightAFK(sha=sha, issue_number=validation.issue_number)
 
     @staticmethod
@@ -323,8 +323,10 @@ class PreflightCache:
     ) -> OrdinaryPreflightFailureDecision:
         first_decision = decisions[0]
         if isinstance(first_decision, MissingDeclaredPythonToolDecision):
-            raise PreflightCache._setup_error_for_missing_declared_tool(first_decision)
-        assert isinstance(first_decision, OrdinaryPreflightFailureDecision)
+            raise PreflightCache._setup_error_for_missing_declared_tool(
+                first_decision
+            )  # helper method call in raise is clearer than inner-function abstraction here
+        assert isinstance(first_decision, OrdinaryPreflightFailureDecision)  # noqa: S101  # exhaustive: only MissingDeclaredPythonTool or Ordinary at this point
         return first_decision
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:

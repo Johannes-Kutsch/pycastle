@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: EXE001  # installed as a console_scripts entry point, not executed directly
 import asyncio
 import sys
 from pathlib import Path
@@ -236,7 +237,7 @@ def _do_run(
     asyncio.run(
         agent_runtime.run(
             startup.shared_container_env,
-            Path().resolve(),
+            Path.cwd(),
             service_registry=startup.runtime_registry,
             improve_mode=startup.effective_improve_mode,
         )

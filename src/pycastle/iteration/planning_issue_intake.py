@@ -1,6 +1,6 @@
 import dataclasses
 import re
-from typing import Literal, TypeAlias
+from typing import Literal
 
 from pycastle.agents.output_protocol import PlannerOutput
 from pycastle.config import Config
@@ -90,7 +90,7 @@ def _normalize_blocked_entry(blocked_entry: dict) -> dict:
     return normalized
 
 
-LabelActionIntent: TypeAlias = Literal["add", "remove"]
+type LabelActionIntent = Literal["add", "remove"]
 
 
 @dataclasses.dataclass(frozen=True)

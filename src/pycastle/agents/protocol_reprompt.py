@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.prompts.pipeline import PromptTemplate
@@ -17,7 +17,7 @@ GENERIC_PROTOCOL_REPROMPT_MESSAGE = (
     "include the required output tag."
 )
 
-ExpectedOutputShapeRenderer: TypeAlias = Callable[[], str]
+type ExpectedOutputShapeRenderer = Callable[[], str]
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ class TemplateSpecificProtocolReprompt:
     kind: Literal["template_specific"] = "template_specific"
 
 
-ProtocolRepromptPlan: TypeAlias = (
+type ProtocolRepromptPlan = (
     UnsupportedProtocolReprompt
     | GenericProtocolReprompt
     | TemplateSpecificProtocolReprompt

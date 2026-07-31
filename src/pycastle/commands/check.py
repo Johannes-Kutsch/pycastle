@@ -29,7 +29,7 @@ def main(
     service_registry: ServiceRegistry | None = None,
 ) -> None:
     resolved_cfg = cfg or load_config()
-    repo_root = Path().resolve()
+    repo_root = Path.cwd()
     git_svc = git_service or GitService(resolved_cfg)
     resolved_status_display = status_display or PlainStatusDisplay()
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,7 +36,7 @@ class DiagnosticMountFallbackIssue:
     title: str
 
 
-DiagnosticMountDispatchDecision: TypeAlias = (
+type DiagnosticMountDispatchDecision = (
     ManagedWorktreeMountAccepted | DiagnosticMountFallbackIssue
 )
 

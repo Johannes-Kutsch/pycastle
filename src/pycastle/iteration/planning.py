@@ -224,9 +224,9 @@ async def planning_phase(
             row.close(
                 "\n".join(
                     [
-                        f"Planning complete, implementing {len(resolved.issues)} issue(s):"
+                        f"Planning complete, implementing {len(resolved.issues)} issue(s):",
+                        *issue_lines,
                     ]
-                    + issue_lines
                 )
             )
             return resolved
