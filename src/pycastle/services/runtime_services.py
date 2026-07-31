@@ -26,6 +26,7 @@ from pycastle.services._wake_time import compute_wake_time
 from pycastle.services.credential_pool import CredentialPool
 
 if TYPE_CHECKING:
+    from pycastle.agents.output_protocol import AgentRole
     from pycastle.session.agent import AuthSeedingRequirement, LocalAuthSeedAction
 else:
     AuthSeedingRequirement = object
@@ -63,7 +64,7 @@ class AgentService(Protocol):
 
     def mark_model_restricted(self, model: str) -> None: ...
 
-    def state_dir_relpath(self, role, namespace: str = "") -> str | None: ...
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None: ...
 
     def is_resumable(self, state_dir: Path) -> bool: ...
 
@@ -200,7 +201,7 @@ class ClaudeService:
         if self._pool is not None and self._current_token is not None:
             self._pool.mark_model_restricted(self._current_token, model)
 
-    def state_dir_relpath(self, role, namespace: str = "") -> str | None:
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return provider_state_relpath(
             role,
             self.name,
@@ -305,7 +306,7 @@ class CodexService:
             wake = wake.replace(tzinfo=UTC)
         self._exhausted_until = wake
 
-    def state_dir_relpath(self, role, namespace: str = "") -> str | None:
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return provider_state_relpath(
             role,
             self.name,
@@ -635,7 +636,7 @@ class OpenCodeService:
             return []
         return self._pool.names()
 
-    def state_dir_relpath(self, role, namespace: str = "") -> str | None:
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return provider_state_relpath(
             role,
             self.name,

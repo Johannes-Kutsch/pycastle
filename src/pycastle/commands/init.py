@@ -4,7 +4,10 @@ import re
 import sys
 from importlib.resources import files
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from importlib.resources.abc import Traversable
 
 import click
 
@@ -79,7 +82,7 @@ def _echo_init_plan_warnings(plan: InitPlan) -> None:
         click.echo(f"Warning: {message}")
 
 
-def _apply_config_file_action(defaults_pkg, config_action: ConfigFileAction) -> None:
+def _apply_config_file_action(defaults_pkg: Traversable, config_action: ConfigFileAction) -> None:
     config_file = config_action.path
     if not config_action.should_create:
         if config_action.message is not None:

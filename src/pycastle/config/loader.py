@@ -306,7 +306,7 @@ def _validate_minimum_unknown_reset_duration_hours(cfg: Config) -> None:
 
 def _validate_minimum_unknown_reset_duration_hours_value(
     field_name: str,
-    value: Any,
+    value: Any,  # noqa: ANN401  # validator accepts unknown config field values before type-checking them
 ) -> None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigValidationError(

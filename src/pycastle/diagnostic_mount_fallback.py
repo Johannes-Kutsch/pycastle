@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol, TypeAlias
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountAccepted,
@@ -40,8 +43,8 @@ DiagnosticMountDispatchDecision: TypeAlias = (
 
 def decide_diagnostic_mount_dispatch(
     *,
-    repo_root,
-    mount_path,
+    repo_root: Path,
+    mount_path: Path,
     caller: str,
     diagnostic_role: str,
     role_name: str,

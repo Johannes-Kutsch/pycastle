@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import warnings
+from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
 from enum import Enum
@@ -136,7 +137,7 @@ def worktree_path(name: str, repo_root: Path) -> Path:
 
 
 @contextmanager
-def _wrap_git_errors():
+def _wrap_git_errors() -> Iterator[None]:
     try:
         yield
     except GitTimeoutError as exc:
@@ -381,7 +382,7 @@ async def managed_worktree(
     sha: str | None,
     lifecycle: BranchWorktreeLifecycle,
     deps: _WorktreeDeps,
-):
+) -> AsyncIterator[Path]:
     resolved_identity = identity
     if resolved_identity is None:
         if name is None or branch is None:
@@ -443,7 +444,7 @@ async def durable_issue_worktree(
     intent: DurableIssueWorktreeIntent,
     deps: _WorktreeDeps,
     planner_sha: str | None = None,
-):
+) -> AsyncIterator[Path]:
     identity = worktree_identity(issue_branch(issue_number), deps.repo_root)
     sha = planner_sha if intent is DurableIssueWorktreeIntent.IMPLEMENTER else None
     async with managed_worktree(
@@ -461,7 +462,7 @@ async def reusable_sandbox_worktree(
     *,
     sha: str | None,
     deps: _WorktreeDeps,
-):
+) -> AsyncIterator[Path]:
     identity = reusable_sandbox_worktree_identity(intent, deps.repo_root)
     async with managed_worktree(
         identity=identity,
@@ -478,7 +479,7 @@ async def replaceable_merge_sandbox_worktree(
     *,
     sha: str | None,
     deps: _WorktreeDeps,
-):
+) -> AsyncIterator[Path]:
     identity = merge_sandbox_worktree_identity(issue_number, deps.repo_root)
     async with managed_worktree(
         identity=identity,
@@ -492,7 +493,7 @@ async def replaceable_merge_sandbox_worktree(
 @asynccontextmanager
 async def _detached_checkout_lifecycle(
     path: Path, *, sha: str | None, deps: _WorktreeDeps
-):
+) -> AsyncIterator[Path]:
     if sha is not None:
         deps.git_svc.checkout_detached(deps.repo_root, path, sha)
     _preserve = False
@@ -508,7 +509,7 @@ async def _detached_checkout_lifecycle(
 
 
 @asynccontextmanager
-async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps):
+async def transient_worktree(name: str, *, sha: str | None, deps: _WorktreeDeps) -> AsyncIterator[Path]:
     async with _detached_checkout_lifecycle(
         worktree_path(name, deps.repo_root),
         sha=sha,
@@ -523,7 +524,7 @@ async def detached_transient_worktree(
     *,
     sha: str | None,
     deps: _WorktreeDeps,
-):
+) -> AsyncIterator[Path]:
     async with _detached_checkout_lifecycle(
         detached_transient_worktree_path(intent, deps.repo_root),
         sha=sha,

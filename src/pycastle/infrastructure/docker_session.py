@@ -80,7 +80,7 @@ class DockerSession:
         container_env: dict[str, str],
         image_name: str,
         cfg: Config,
-        docker_client=None,
+        docker_client: docker.DockerClient | None = None,
         auto_overlay: Path | None = None,
     ) -> None:
         self._volumes = volumes
@@ -131,7 +131,7 @@ class DockerSession:
                 return Path(host_path)
         return None
 
-    def __exit__(self, *_) -> None:
+    def __exit__(self, *_: object) -> None:
         workspace = self._workspace_mount()
         if workspace is not None:
             log_worktree_lifecycle_event(

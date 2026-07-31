@@ -5,9 +5,13 @@ from collections.abc import Callable, Coroutine
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
+
+if TYPE_CHECKING:
+    from pycastle.services.service_registry import ServiceRegistry
 
 import agent_runtime
+import docker
 import docker.errors
 from agent_runtime import ProviderAuth
 from agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
@@ -82,7 +86,11 @@ from pycastle.session.agent import (
     RunSessionPlan,
     run_session_plan_from_provider_run_state_plan,
 )
-from pycastle.session.run_dispatch import RunSessionRequest, prepare_run_session
+from pycastle.session.run_dispatch import (
+    PreparedRunSession,
+    RunSessionRequest,
+    prepare_run_session,
+)
 from pycastle.session_planning import ProviderRunStatePlan
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
@@ -235,7 +243,7 @@ class AgentRunnerProtocol(Protocol):
         name: str,
         mount_path: Path,
         stage: str = "",
-        status_display=None,
+        status_display: StatusDisplay | None = None,
         work_body: str = "",
     ) -> list[PreflightCommandFailure]: ...
 
@@ -246,7 +254,7 @@ class AgentRunner:
         env: dict[str, str],
         cfg: Config,
         git_service: GitService,
-        docker_client=None,
+        docker_client: docker.DockerClient | None = None,
         service_registry: dict[str, AgentService] | None = None,
     ) -> None:
         self._env = env
@@ -275,7 +283,7 @@ class AgentRunner:
     def resolve_service(self, service_name: str = "") -> AgentService:
         return self._resolve_service(service_name)
 
-    def _runtime_service_registry(self):
+    def _runtime_service_registry(self) -> "ServiceRegistry":
         from pycastle.services.service_registry import ServiceRegistry
 
         return ServiceRegistry(self._service_registry)
@@ -375,7 +383,7 @@ class AgentRunner:
 
         def _prepare_session(
             run_session_plan: RuntimeRunSession,
-        ):
+        ) -> PreparedRunSession:
             plan_payload = run_session_plan.run_session_plan
             if isinstance(plan_payload, ProviderRunStatePlan):
                 return prepare_run_session(
@@ -419,7 +427,7 @@ class AgentRunner:
 
         def _handle_provider_account_exhaustion(
             service_for_run: AgentService,
-            error,
+            error: UsageLimitError,
         ) -> None:
             self._handle_provider_account_exhaustion(service_for_run, error)
 
@@ -512,7 +520,7 @@ class AgentRunner:
         service: str,
         tool_policy: ServiceToolPolicy = ServiceToolPolicy.FULL,
         token: CancellationToken | None = None,
-        status_display: Any = None,
+        status_display: StatusDisplay | None = None,
         work_body: str = "",
         session_namespace: str = "",
         run_session_plan: RunSessionPlan | None = None,
@@ -708,7 +716,7 @@ class AgentRunner:
         request: RunRequest,
         service: AgentService,
         runner: ContainerRunner,
-        runtime_client: Any,
+        runtime_client: Any,  # noqa: ANN401  # either agent_runtime.RuntimeClient or _DockerlessRuntimeClient; no shared protocol
         role_session: RoleSession,
         provider_state_dir: Path,
         provider_auth: ProviderAuth | None,
@@ -914,7 +922,7 @@ class AgentRunner:
         *,
         request: RunRequest,
         runner: ContainerRunner,
-        runtime_client: Any,
+        runtime_client: Any,  # noqa: ANN401  # either agent_runtime.RuntimeClient or _DockerlessRuntimeClient; no shared protocol
         role_session: RoleSession,
         provider_state_dir: Path,
         provider_auth: ProviderAuth | None,
@@ -922,11 +930,11 @@ class AgentRunner:
         run_kind: RunKind,
         resolved_model: str,
         resolved_effort: str,
-    ) -> Any:
+    ) -> Any:  # noqa: ANN401  # returns agent_runtime.RuntimeOutcome or compatible duck-typed object
         invocation_dir = request.mount_path
         logged_lines = [False]
 
-        def _on_live_output(event: Any) -> None:
+        def _on_live_output(event: agent_runtime.AgentEvent) -> None:
             runner._status_display.reset_idle_timer(runner.name)
             raw_provider_output = getattr(event, "raw_provider_output", "")
             if raw_provider_output and runner._current_work_invocation is not None:
@@ -1005,7 +1013,7 @@ class AgentRunner:
         name: str,
         mount_path: Path,
         stage: str = "",
-        status_display=None,
+        status_display: StatusDisplay | None = None,
         work_body: str = "",
     ) -> list[PreflightCommandFailure]:
         from pycastle.iteration._rows import status_row

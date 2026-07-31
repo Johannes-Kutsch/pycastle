@@ -35,7 +35,7 @@ class _AgentRuntimeAdapter:
         self.render_chain_label = render_chain_label
         self.validation_labels = validation_labels
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401  # dynamic attribute lookup on adapter; type depends on the attribute name
         if name == "run":
             return pycastle_orchestration.run
         raise AttributeError(name)
@@ -91,7 +91,7 @@ class _BugReportingGroup(click.Group):
     error handling and signal semantics are preserved.
     """
 
-    def invoke(self, ctx: click.Context) -> Any:
+    def invoke(self, ctx: click.Context) -> Any:  # noqa: ANN401  # overrides click.Group.invoke which itself returns Any
         try:
             return super().invoke(ctx)
         except (click.ClickException, click.exceptions.Exit, click.Abort):

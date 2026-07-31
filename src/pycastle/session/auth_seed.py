@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from agent_runtime.errors import AgentCredentialFailureError
 
 from pycastle.session_planning import (
@@ -10,7 +12,7 @@ from pycastle.session_planning import (
 
 
 class LocalAuthSeedAction(RuntimeLocalAuthSeedAction):
-    def require_source(self):
+    def require_source(self) -> Path:
         if self.source.exists():
             return self.source
         message = self.missing_source_message

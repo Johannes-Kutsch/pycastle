@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 from pycastle import _host_check as _host_check_module
 from pycastle._host_check import (
@@ -15,6 +15,7 @@ from pycastle._host_check import (
     HostCheckIssuePayload,
     HostCheckPassedVerdict,
     HostCheckVerdict,
+    HostCheckWorktreeDeps,
     HostCheckWorktreeFactory,
     prepare_host_check_loop,
     run_host_check_loop,
@@ -173,9 +174,9 @@ _run_host_check = run_host_check_subprocess
 
 
 def _create_host_check_transient_worktree(
-    name: str, *, sha: str, deps
+    name: str, *, sha: str, deps: HostCheckWorktreeDeps
 ) -> AbstractAsyncContextManager[Path]:
-    return detached_transient_worktree(name, sha=sha, deps=deps)
+    return detached_transient_worktree(name, sha=sha, deps=cast("Any", deps))
 
 
 transient_worktree = _create_host_check_transient_worktree

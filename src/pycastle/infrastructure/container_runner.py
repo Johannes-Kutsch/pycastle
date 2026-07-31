@@ -5,6 +5,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
+import agent_runtime
 import agent_runtime.runtime
 from agent_runtime import _provider_invocation, _session_backed_provider_execution
 from agent_runtime._provider_invocation import (
@@ -27,7 +28,11 @@ from agent_runtime.types import ProviderSelection
 
 from pycastle.agents.output_protocol import AgentOutput, AgentRole, extract_output
 from pycastle.config import Config, resolve_logs_dir
-from pycastle.display.status_display import WORK_PHASE, PlainStatusDisplay
+from pycastle.display.status_display import (
+    WORK_PHASE,
+    PlainStatusDisplay,
+    StatusDisplay,
+)
 from pycastle.errors import (
     AgentTimeoutError,
     DockerError,
@@ -49,7 +54,7 @@ _DEFAULT_PROVIDER_EFFORT = "medium"
 class _DockerBackedProviderInvocationAdapter:
     """Adapter that executes provider invocations through docker session streams."""
 
-    def __init__(self, session: Any) -> None:
+    def __init__(self, session: DockerSession) -> None:
         self._session = session
 
     def execute(
@@ -134,18 +139,18 @@ class _DockerBackedProviderInvocationAdapter:
 class _DockerlessRuntimeClient:
     """Fallback runtime client used when host docker CLI is unavailable."""
 
-    def __init__(self, session: Any) -> None:
+    def __init__(self, session: DockerSession) -> None:
         self._session = session
         self._invocation_adapter = _DockerBackedProviderInvocationAdapter(session)
 
-    async def run_new_session(self, request: NewSessionRunRequest) -> Any:
+    async def run_new_session(self, request: NewSessionRunRequest) -> Any:  # noqa: ANN401  # return type mirrors agent_runtime.RuntimeClient which is opaque
         return _session_backed_provider_execution._run_builtin_new_session(
             request,
             provider_invocation_adapter=self._invocation_adapter,
             on_live_output=request.on_live_output,
         )
 
-    async def run_resumed_session(self, request: ResumedSessionRunRequest) -> Any:
+    async def run_resumed_session(self, request: ResumedSessionRunRequest) -> Any:  # noqa: ANN401  # return type mirrors agent_runtime.RuntimeClient which is opaque
         return _session_backed_provider_execution._run_builtin_resumed_session(
             request,
             provider_invocation_adapter=self._invocation_adapter,
@@ -160,11 +165,11 @@ class ContainerRunner:
         session: DockerSession,
         model: str = "",
         effort: str = "",
-        status_display=None,
+        status_display: StatusDisplay | None = None,
         *,
         cfg: Config,
         service: AgentService | None = None,
-        runtime_client: Any | None = None,
+        runtime_client: Any | None = None,  # noqa: ANN401  # either agent_runtime.RuntimeClient or _DockerlessRuntimeClient; no shared base class
         mount_path: Path | None = None,
     ) -> None:
         self.name = name
@@ -360,7 +365,7 @@ class ContainerRunner:
 
         logged_lines = [False]
 
-        def _on_live_output(event: Any) -> None:
+        def _on_live_output(event: agent_runtime.AgentEvent) -> None:
             self._status_display.reset_idle_timer(self.name)
             display_message = getattr(event, "display_message", "")
             if display_message:
@@ -468,7 +473,7 @@ class ContainerRunner:
         finally:
             self._current_work_invocation = None
 
-    def _get_runtime_client(self) -> Any:
+    def _get_runtime_client(self) -> Any:  # noqa: ANN401  # returns injected client or one of two concrete types; no shared protocol
         if self._runtime_client is not None:
             return self._runtime_client
         if shutil.which("docker") is None:

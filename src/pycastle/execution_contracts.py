@@ -12,7 +12,10 @@ from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import AgentService, ToolPolicy
 
 if TYPE_CHECKING:
+    import types
+
     from pycastle.config.types import StageOverride
+    from pycastle.errors import UsageLimitError
 
 RuntimeResultT = TypeVar("RuntimeResultT")
 
@@ -62,7 +65,7 @@ class PromptRunRequest:
         return self.session.namespace
 
     @property
-    def run_session_plan(self) -> Any:
+    def run_session_plan(self) -> Any:  # noqa: ANN401  # plan field is intentionally untyped; callers use isinstance to dispatch
         return self.session.plan
 
 
@@ -245,7 +248,7 @@ class _DefaultStatusRow:
         )
         return self._row
 
-    async def __aexit__(self, exc_type, exc, tb) -> bool:
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: types.TracebackType | None) -> bool:
         del tb
         if self._row.closed:
             return False
@@ -330,7 +333,7 @@ MountPreconditionValidator = Callable[[str, Path, AgentRole], None]
 
 def _default_provider_account_exhaustion_handler(
     service: AgentService,
-    error: Any,
+    error: UsageLimitError,
 ) -> None:
     service.mark_exhausted(error.reset_time)
 
@@ -364,14 +367,14 @@ class RuntimeExecutionAdapter(Protocol):
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
         on_provider_session_id: Callable[[str], None] | None = None,
-    ) -> Any: ...
+    ) -> Any: ...  # noqa: ANN401  # protocol return type depends on the concrete runtime adapter
 
     async def work_text(
         self,
         prompt: str,
         *,
         role: AgentRole = AgentRole.IMPLEMENTER,
-        tool_policy: Any = ToolPolicy.FULL,
+        tool_policy: Any = ToolPolicy.FULL,  # noqa: ANN401  # accepts ServiceToolPolicy or ToolPolicy interchangeably
         run_kind: RunKind = RunKind.FRESH,
         session_uuid: str | None = None,
         on_provider_session_id: Callable[[str], None] | None = None,

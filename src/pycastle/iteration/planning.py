@@ -19,7 +19,7 @@ from pycastle.infrastructure.worktree import (
 )
 from pycastle.iteration import planning_issue_intake
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
-from pycastle.iteration._rows import status_row
+from pycastle.iteration._rows import StatusRow, status_row
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.planning_issue_intake import PlanReady, PreparedPlanningIssueSet
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
@@ -240,7 +240,7 @@ def _format_blocked_issue_line(blocked_issue: dict) -> str:
 
 
 def _close_all_blocked_row(
-    row, issue_set: PreparedPlanningIssueSet, blocked: list[dict]
+    row: StatusRow, issue_set: PreparedPlanningIssueSet, blocked: list[dict]
 ) -> None:
     blocker_summary = planning_issue_intake.planning_blocker_summary(
         issue_set.blocker_summary_inputs

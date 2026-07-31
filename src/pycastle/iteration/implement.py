@@ -4,11 +4,15 @@ import dataclasses
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from agent_runtime.errors import HardAgentError
 
-from pycastle.agents.output_protocol import AgentRole, CommitMessageOutput
+from pycastle.agents.output_protocol import (
+    AgentRole,
+    AgentSuccessOutput,
+    CommitMessageOutput,
+)
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
 from pycastle.config import Config
@@ -143,7 +147,7 @@ async def run_issue(
     _implement_started = False
     _review_started = False
 
-    async def _bounded_run_agent(request: RunRequest) -> Any:
+    async def _bounded_run_agent(request: RunRequest) -> AgentSuccessOutput:
         nonlocal _implement_started, _review_started
         async with semaphore or contextlib.nullcontext():
             if on_started is not None:

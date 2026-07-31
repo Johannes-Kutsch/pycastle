@@ -58,7 +58,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name == "DockerService":
         from pycastle.services.docker_service import DockerService
 

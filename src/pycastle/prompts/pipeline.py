@@ -11,7 +11,7 @@ from pycastle.label_catalog import PROMPT_GLOBAL_LABEL_SPECS
 from pycastle.prompts.source import EffectivePromptFile, PromptReference, PromptSource
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Awaitable, Callable, Sequence
 
 PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 SHELL_EXPR = re.compile(r"!`([^`]+)`")
@@ -37,7 +37,7 @@ def _render(template: str, args: dict[str, str]) -> str:
     return PLACEHOLDER.sub(lambda m: args[m.group(1)], template)
 
 
-async def _preprocess(prompt: str, exec_fn) -> str:
+async def _preprocess(prompt: str, exec_fn: Callable[[str], Awaitable[str]]) -> str:
     matches = list(SHELL_EXPR.finditer(prompt))
     if not matches:
         return prompt
@@ -436,7 +436,7 @@ class PromptRenderer:
         self,
         template: PromptTemplate,
         scope_args: dict[str, str],
-        exec_fn,
+        exec_fn: Callable[[str], Awaitable[str]],
     ) -> str:
         from pycastle.prompts.scope_args import validated_scope_args_for_template
 

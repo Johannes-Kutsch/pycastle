@@ -9,16 +9,23 @@ underlying socket file has already been closed, producing a benign but ugly
 specific event at process scope is the honest fix.
 """
 
+from __future__ import annotations
+
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from sys import UnraisableHookArgs
 
 
-def install_urllib3_shutdown_hook():
+def install_urllib3_shutdown_hook() -> Callable[[UnraisableHookArgs], object]:
     """Install the suppression hook and return the previously installed hook."""
     import urllib3.response
 
     prior = sys.unraisablehook
 
-    def _hook(unraisable) -> None:
+    def _hook(unraisable: UnraisableHookArgs) -> None:
         exc_type = unraisable.exc_type
         exc_value = unraisable.exc_value
         obj = unraisable.object

@@ -13,7 +13,7 @@ from pycastle.agents.output_protocol import (
     IssueOutput,
 )
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
-from pycastle.config import Config
+from pycastle.config import Config, StageOverride
 from pycastle.diagnostic_issue_report_validation import (
     DiagnosticIssueReportValidationAFK,
     DiagnosticIssueReportValidationHITL,
@@ -238,7 +238,7 @@ class PreflightCache:
         self._lock: asyncio.Lock = asyncio.Lock()
         self._branch_refresh = BranchRefreshBoundary()
 
-    def _resolved_preflight_issue_override(self, deps: _PreflightDeps):
+    def _resolved_preflight_issue_override(self, deps: _PreflightDeps) -> StageOverride:
         registry = cast(
             "ServiceRegistry | None", getattr(deps, "service_registry", None)
         )

@@ -14,9 +14,11 @@ from pycastle.execution_contracts import (
     PromptRunRequest,
     PromptRunSession,
     PromptRuntimeExecutionAdapter,
+    RuntimeExecutionAdapter,
     RuntimeInvocationRequest,
     RuntimeModelDisplayMetadata,
     RuntimeRunSession,
+    RuntimeStatusRow,
     TextOutputAdapter,
     WorktreeMount,
 )
@@ -26,6 +28,7 @@ from pycastle.services.service_registry import ServiceRegistry
 from pycastle.stage_priority_chain import iter_stage_chain
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from pathlib import Path
 
     from pycastle.config.types import StageOverride
@@ -105,7 +108,7 @@ class ResidentRunRequest:
     token: CancellationToken | None = None
 
     @property
-    def mount_path(self) -> Any:
+    def mount_path(self) -> Path:
         return self.worktree.host_path
 
 
@@ -179,7 +182,7 @@ def _selected_service_path(
 def _require_execution_adapter_method(
     adapter: PromptRuntimeExecutionAdapter,
     method_name: str,
-) -> Any:
+) -> Any:  # noqa: ANN401  # returns a callable method looked up by name; return type depends on method_name
     method = getattr(adapter, method_name, None)
     if callable(method):
         return method
@@ -227,7 +230,7 @@ class _OneShotOutputAdapter:
         self,
         *,
         run_kind: RunKind,
-        container_exec: Any,
+        container_exec: Callable[[str], Awaitable[str]],
     ) -> str:
         del run_kind, container_exec
         return self._prompt
@@ -235,13 +238,13 @@ class _OneShotOutputAdapter:
     async def invoke(
         self,
         *,
-        runner: Any,
+        runner: RuntimeExecutionAdapter,
         role: AgentRole,
         prompt: str,
         run_kind: RunKind,
         session_uuid: str | None,
-        on_provider_session_id: Any,
-    ) -> Any:
+        on_provider_session_id: Callable[[str], None],
+    ) -> Any:  # noqa: ANN401  # returns whatever runner.work() produces; type depends on the concrete adapter
         provider_session_id: str | None = None
 
         def _record_provider_session_id(value: str) -> None:
@@ -263,17 +266,17 @@ class _OneShotOutputAdapter:
         )
         return raw_output
 
-    def is_successful_result(self, result: Any) -> bool:
+    def is_successful_result(self, result: Any) -> bool:  # noqa: ANN401  # protocol method; result type matches what invoke() returned
         del result
         return True
 
     def protocol_reprompt_message(self) -> str | None:
         return None
 
-    def protocol_error_result(self) -> Any | None:
+    def protocol_error_result(self) -> Any | None:  # noqa: ANN401  # protocol adapter returns None here; concrete type is None
         return None
 
-    def non_typed_failure_result(self) -> Any | None:
+    def non_typed_failure_result(self) -> Any | None:  # noqa: ANN401  # protocol adapter returns None here; concrete type is None
         return None
 
     def protocol_error_types(self) -> tuple[type[BaseException], ...]:
@@ -281,14 +284,14 @@ class _OneShotOutputAdapter:
 
     def finalize_result(
         self,
-        result: Any,
+        result: Any,  # noqa: ANN401  # protocol method; matches whatever invoke() returned
         *,
         role: AgentRole,
-        mount_path: Any,
+        mount_path: Path,
         session_namespace: str,
         service_name: str,
         invocation_log_path: Path | str | None = None,
-    ) -> Any:
+    ) -> Any:  # noqa: ANN401  # protocol method; returns the same type as result
         del role, mount_path, session_namespace, service_name, invocation_log_path
         return result
 
@@ -554,7 +557,7 @@ async def run_resident_prompt(
     )
 
 
-async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> Any:
+async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> Any:  # noqa: ANN401  # return type matches request.output_adapter.finalize_result() which is generic
     status_display = request.status_display
     if status_display is None:
         status_display = request.dependencies.status_display_factory()
@@ -714,12 +717,12 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
 async def _execute_runtime_attempt(
     *,
     request: RuntimeInvocationRequest[Any],
-    row: Any,
+    row: RuntimeStatusRow,
     prepared_session: PreparedRunSessionState,
-    runner: Any,
+    runner: RuntimeExecutionAdapter,
     prompt: str,
     provider_run_session: PreparedProviderRunSession,
-) -> tuple[Any, PreparedProviderRunSession]:
+) -> tuple[Any, PreparedProviderRunSession]:  # first element is the generic result of output_adapter.invoke()
     reprompt_message = request.output_adapter.protocol_reprompt_message()
     protocol_error_result = request.output_adapter.protocol_error_result()
     protocol_error_types = request.output_adapter.protocol_error_types()

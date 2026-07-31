@@ -127,13 +127,6 @@ ignore = [
     "TRY300",   # try-consider-else (8 findings)
     "TRY301",   # raise-within-try (2 findings)
     "TRY201",   # verbose-raise (1 finding)
-    # annotations
-    "ANN401",   # dynamically-typed-expression (36 findings)
-    "ANN001",   # missing-type-function-argument (24 findings)
-    "ANN201",   # missing-return-type-public-function (8 findings)
-    "ANN202",   # missing-return-type-private-function (7 findings)
-    "ANN204",   # missing-return-type-special-method (1 finding)
-    "ANN002",   # missing-type-args (1 finding)
     # booleans
     "FBT001",   # boolean-typed-positional-argument (23 findings)
     "FBT002",   # boolean-default-positional-argument (8 findings)

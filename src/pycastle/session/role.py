@@ -1,6 +1,7 @@
 import os
 import shutil
 import stat
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -55,7 +56,7 @@ def _role_session_identity_from_path(
     return worktree, role, namespace
 
 
-def _force_remove_readonly(func, path, _exc_info):
+def _force_remove_readonly(func: Callable[..., object], path: str, _exc_info: object) -> None:
     os.chmod(path, stat.S_IWRITE)
     func(path)
 

@@ -8,6 +8,7 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Literal, overload
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from importlib.resources.abc import Traversable
     from pathlib import Path
 
@@ -45,7 +46,7 @@ class ScaffoldArtifactReport:
 class ScaffoldRefreshReport:
     artifacts: tuple[ScaffoldArtifactReport, ...]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[ScaffoldArtifactReport]:
         return iter(self.artifacts)
 
     def __len__(self) -> int:

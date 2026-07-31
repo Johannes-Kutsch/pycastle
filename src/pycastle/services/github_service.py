@@ -398,7 +398,7 @@ class GithubService:
         return issues
 
     @staticmethod
-    def _normalize_open_issue_item(item: Any) -> dict[str, Any] | None:
+    def _normalize_open_issue_item(item: Any) -> dict[str, Any] | None:  # noqa: ANN401  # raw JSON payload from GitHub API; type checked via isinstance before access
         if not isinstance(item, dict) or "pull_request" in item or "number" not in item:
             return None
         return {
