@@ -189,6 +189,7 @@ ignore = [
     "DTZ",     # naive-datetime
     "ARG",     # unused-argument
     "PLR2004", # magic-value
+    "FBT",     # boolean-trap (test helpers may use positional booleans)
     "S603",    # subprocess-path (subprocess-without-shell-equals-true)
     "S607",    # subprocess-path (start-process-with-partial-path)
 ]
