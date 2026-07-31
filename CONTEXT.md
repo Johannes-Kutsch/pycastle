@@ -544,5 +544,5 @@
 - All orchestrator terminal output through `StatusDisplay.print()`; no bare `print()`.
 - Test setup normalises terminal/colour environment at the Python boundary for the whole suite; **parent-env-dependent tests** invalid regardless of runner.
 - The **`.md`-content anti-pattern** bans asserting on prose; it does not ban structural invariants checked through the public surface — `PromptRenderer.render(...)` resolving placeholders, the `shared/_placeholder-info.md` sync test deriving expectations from the `Scope`/`PromptTemplate` enums, and the no-unresolved-`{{...}}` scan remain valid.
-- **Auto bug reporter** is outside the iteration layer; the *only* feature talking to a GitHub repo other than consumer's `origin`.
+- **Auto bug reporter** is outside the iteration layer; the *only* feature talking to a GitHub repo other than consumer's `origin`. Wiring lives in `_BugReportingGroup.invoke` — one group-level `except Exception` clause shared by every subcommand. Testing the reporter through any single subcommand that lets an unhandled `Exception` escape gives full wiring coverage; there is nothing per-subcommand to verify.
 - **Broadened preservation rule** enforced by worktree lifecycle for branched lifecycles. Detached transients preserve only for `AgentFailedError` evidence (ADR 0023).

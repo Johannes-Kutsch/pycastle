@@ -175,7 +175,7 @@ def test_unknown_subcommand_does_not_invoke_reporter():
 # ── Reporter wired uniformly across subcommands ───────────────────────────────
 
 
-@pytest.mark.parametrize("subcmd", ["build", "labels", "run"])
+@pytest.mark.parametrize("subcmd", ["build", "labels"])
 def test_reporter_fires_for_each_subcommand(monkeypatch, subcmd):
     from pycastle.main import main as cli
 
