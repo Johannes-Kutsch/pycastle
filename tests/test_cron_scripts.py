@@ -87,6 +87,7 @@ def _run(script: Path, env: dict) -> subprocess.CompletedProcess:
         env=env,
         capture_output=True,
         text=True,
+        check=False,
     )
 
 
@@ -181,6 +182,7 @@ def test_install_local_logs_dir_entry_runs_through_effective_logs_dir_with_space
         env=env,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, result.stderr
@@ -193,6 +195,7 @@ def test_install_local_logs_dir_entry_runs_through_effective_logs_dir_with_space
         env=env,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     expected_log = project_dir / "custom logs" / "cron.log"
@@ -414,6 +417,7 @@ def _run_cron_sh(cron_sh_env, *args) -> subprocess.CompletedProcess:
         env=cron_sh_env["env"],
         capture_output=True,
         text=True,
+        check=False,
     )
 
 

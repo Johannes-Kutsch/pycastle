@@ -244,12 +244,16 @@ class ClaudeService:
         if token is None and self._pool is not None:
             try:
                 _, self._current_token = self._pool.pick()
-            except RuntimeError:
+            except RuntimeError as pick_exc:
                 try:
                     wake_time = self._pool.earliest_wake_time()
-                except RuntimeError:
-                    raise UsageLimitError(is_permanent=True, provider="claude")
-                raise UsageLimitError(reset_time=wake_time, provider="claude")
+                except RuntimeError as wake_exc:
+                    raise UsageLimitError(
+                        is_permanent=True, provider="claude"
+                    ) from wake_exc
+                raise UsageLimitError(
+                    reset_time=wake_time, provider="claude"
+                ) from pick_exc
             token = self._current_token
         elif token is not None:
             self._current_token = token

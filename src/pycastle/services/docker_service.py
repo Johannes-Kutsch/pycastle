@@ -106,7 +106,7 @@ class DockerService:
             return self._build_streaming(cmd, timeout, on_rebuild_start)
 
         try:
-            result = subprocess.run(cmd, timeout=timeout)
+            result = subprocess.run(cmd, timeout=timeout, check=False)
         except FileNotFoundError as exc:
             raise DockerServiceError(
                 "docker not found; ensure it is installed and on PATH"

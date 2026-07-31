@@ -290,7 +290,7 @@ class PreflightCache:
             )
         )
         if not isinstance(agent_result, IssueOutput):
-            raise RuntimeError(
+            raise RuntimeError(  # noqa: TRY004  # domain failure, not a type error — see ADR 0052
                 f"Preflight-issue agent returned unexpected output type: {type(agent_result).__name__}"
             )
         validation = validate_diagnostic_issue_report(

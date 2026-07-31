@@ -314,6 +314,7 @@ def test_managed_worktree_creates_new_branch_in_repo(real_branch_deps):
                 ],
                 capture_output=True,
                 text=True,
+                check=False,
             ).stdout
             assert "pycastle/issue-42" in branches
 
@@ -349,6 +350,7 @@ def test_managed_worktree_preserves_when_stage_done_sentinel_present(real_branch
         ],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     assert "pycastle/issue-stage-done" in branches
 
@@ -492,6 +494,7 @@ def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branc
         ],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     assert "pycastle/issue-clean" not in branches
 
@@ -523,6 +526,7 @@ def test_durable_issue_worktree_tears_down_empty_issue_branch_on_clean_exit(
         ],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     assert "pycastle/issue-42" not in branches
 
@@ -558,6 +562,7 @@ def test_managed_worktree_preserves_when_resumable_session_present(real_branch_d
         ],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     assert "pycastle/issue-resumable" in branches
 
@@ -595,6 +600,7 @@ def test_managed_worktree_preserves_clean_worktree_on_unexpected_agent_failure(
         ],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     assert "pycastle/issue-unexpected-failure" in branches
 
@@ -2148,6 +2154,7 @@ def _branch_exists(repo: Path, branch: str) -> bool:
         ["git", "-C", str(repo), "branch", "--list", branch],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     return branch in out
 
@@ -2262,6 +2269,7 @@ def test_managed_worktree_preserves_branch_with_commits_for_durable_issue_lifecy
         ],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     assert "pycastle/issue-wip" in branches
 
@@ -2300,6 +2308,7 @@ def test_durable_issue_worktree_preserves_issue_branch_with_commits_ahead_of_mai
         ],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     assert "pycastle/issue-42" in branches
 
@@ -2336,6 +2345,7 @@ def test_managed_worktree_deletes_empty_branch_for_durable_issue_lifecycle(
         ],
         capture_output=True,
         text=True,
+        check=False,
     ).stdout
     assert "pycastle/issue-empty" not in branches
 

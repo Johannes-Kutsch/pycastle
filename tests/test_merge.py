@@ -280,6 +280,7 @@ def test_conflict_starts_merge_before_invoking_merger(
                 ["git", "rev-parse", "--verify", "MERGE_HEAD"],
                 cwd=request.mount_path,
                 capture_output=True,
+                check=False,
             )
             seen_merge_head.append(merge_head.returncode == 0)
         return CompletionOutput()

@@ -127,10 +127,8 @@ ignore = [
     # exceptions / try
     "BLE001",   # blind-exception (38 findings)
     "TRY300",   # try-consider-else (8 findings)
-    "TRY004",   # type-check-without-type-error (4 findings)
     "TRY301",   # raise-within-try (2 findings)
     "TRY201",   # verbose-raise (1 finding)
-    "B904",     # raise-without-from-inside-except (3 findings)
     "S110",     # try-except-pass (8 findings)
     # annotations
     "ANN401",   # dynamically-typed-expression (36 findings)
@@ -149,7 +147,6 @@ ignore = [
     "PLR2004",  # magic-value-comparison (20 findings, src/ only)
     "SLF001",   # private-member-access (19 findings)
     # subprocess
-    "PLW1510",  # subprocess-run-without-check (18 findings)
     "S603",     # subprocess-without-shell-equals-true (5 findings, src/ only)
     "S602",     # subprocess-popen-with-shell-equals-true (1 finding)
     # assert / print

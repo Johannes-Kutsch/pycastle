@@ -121,7 +121,7 @@ class GithubService:
                     ) from exc
                 delay = self._retry_delay_for_api_error(exc, attempt)
                 if attempt >= _READ_RETRY_MAX_ATTEMPTS:
-                    raise AssertionError("unreachable")
+                    raise AssertionError("unreachable") from exc
                 time.sleep(delay)
             except GithubNetworkError as exc:
                 if attempt >= _READ_RETRY_MAX_ATTEMPTS:

@@ -62,7 +62,7 @@ def _role_session_session_uuid(role_session: object) -> str:
 def _role_session_identity(role_session: object) -> tuple[Path, AgentRole, str]:
     role_session_path = getattr(role_session, "path", None)
     if not isinstance(role_session_path, Path):
-        raise AssertionError("RoleSession path is unavailable")
+        raise AssertionError("RoleSession path is unavailable")  # noqa: TRY004  # internal test guard, not a caller type error
     parts = role_session_path.resolve().parts
     try:
         session_root_index = (

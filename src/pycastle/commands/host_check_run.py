@@ -159,6 +159,7 @@ def run_host_check_subprocess(
         shell=True,
         text=True,
         capture_output=True,
+        check=False,
     )
     return HostCheckCommandResult(
         name=name,
@@ -236,7 +237,7 @@ async def _file_host_check_issue(
         )
     )
     if not isinstance(agent_result, IssueOutput):
-        raise RuntimeError(
+        raise RuntimeError(  # noqa: TRY004  # domain failure, not a type error — see ADR 0052
             "Host-Check Reporter returned non-issue output: "
             f"{type(agent_result).__name__}"
         )

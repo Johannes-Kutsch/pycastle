@@ -16,7 +16,7 @@ class _SubprocessService:
     ) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
         kwargs.setdefault("timeout", self.timeout)
         try:
-            return subprocess.run(cmd, cwd=cwd, **kwargs)  # type: ignore[call-overload]
+            return subprocess.run(cmd, cwd=cwd, check=False, **kwargs)  # type: ignore[call-overload]
         except subprocess.TimeoutExpired as exc:
             raise self._timeout_error_class(
                 f"command timed out after {exc.timeout}s: {exc.cmd}"
