@@ -25,7 +25,10 @@ from pycastle.managed_worktree_mount_policy import (
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GitService, ServiceRegistry
 from pycastle.session import RoleSession, RunKind
-from pycastle.session.service_session_store import save_service_session_metadata
+from pycastle.session.service_session_store import (
+    save_service_session_id,
+    save_service_session_metadata,
+)
 from tests.support import FakeAgentRunner, _make_deps
 
 
@@ -74,7 +77,7 @@ def _seed_prior_role_session_with_service(
         "opaque-continuation",
         encoding="utf-8",
     )
-    role_session.save_service_session_id(service_name, session_id)
+    save_service_session_id(role_session.path, service_name, session_id)
     save_service_session_metadata(role_session.path, service_name, session_id)
     state_dir = worktree / f".pycastle-session/{role.value}/{service_name}"
     state_dir.mkdir(parents=True, exist_ok=True)

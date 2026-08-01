@@ -34,8 +34,13 @@ from pycastle.session import (
 )
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import (
+    has_exact_provider_transcript_for_selected_service,
+    load_exact_transcript_service_name,
     load_service_session_id,
+    load_service_session_metadata,
+    save_service_session_id,
     save_service_session_metadata,
+    service_session_id_path,
     service_session_metadata_path,
     store_for_role_session,
 )
@@ -332,9 +337,9 @@ def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):
     planner_b = RoleSession(tmp_path / "worktree-b", AgentRole.PLANNER)
     reviewer_a = RoleSession(tmp_path / "worktree-a", AgentRole.REVIEWER)
 
-    planner_a.save_service_session_id("opencode", "sess-a")
-    planner_b.save_service_session_id("opencode", "sess-b")
-    reviewer_a.save_service_session_id("opencode", "sess-review")
+    save_service_session_id(planner_a.path, "opencode", "sess-a")
+    save_service_session_id(planner_b.path, "opencode", "sess-b")
+    save_service_session_id(reviewer_a.path, "opencode", "sess-review")
 
     assert _role_session_service_session_id(planner_a, "opencode") == "sess-a"
     assert _role_session_service_session_id(planner_b, "opencode") == "sess-b"
@@ -344,9 +349,9 @@ def test_service_session_ids_are_isolated_by_role_and_worktree(tmp_path):
 def test_service_session_ids_use_service_specific_sidecars(worktree):
     rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
 
-    rs.save_service_session_id("codex", "thread-123")
-    rs.save_service_session_id("opencode", "sess-123")
-    rs.save_service_session_id("unknown-service", "default-123")
+    save_service_session_id(rs.path, "codex", "thread-123")
+    save_service_session_id(rs.path, "opencode", "sess-123")
+    save_service_session_id(rs.path, "unknown-service", "default-123")
 
     assert _role_session_service_session_id(rs, "codex") == "thread-123"
     assert _role_session_service_session_id(rs, "opencode") == "sess-123"
@@ -358,20 +363,20 @@ def test_service_session_id_sidecars_follow_role_session_provider_state_layout(
 ):
     rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
 
-    rs.save_service_session_id("codex", "thread-123")
-    rs.save_service_session_id("opencode", "sess-123")
-    rs.save_service_session_id("unknown-service", "default-123")
+    save_service_session_id(rs.path, "codex", "thread-123")
+    save_service_session_id(rs.path, "opencode", "sess-123")
+    save_service_session_id(rs.path, "unknown-service", "default-123")
 
     assert (
-        rs.service_session_id_path("codex")
+        service_session_id_path(rs.path, "codex")
         == rs.provider_state_dir("codex") / "thread_id"
     )
     assert (
-        rs.service_session_id_path("opencode")
+        service_session_id_path(rs.path, "opencode")
         == rs.provider_state_dir("opencode") / "session_id"
     )
     assert (
-        rs.service_session_id_path("unknown-service")
+        service_session_id_path(rs.path, "unknown-service")
         == rs.provider_state_dir("unknown-service") / "thread_id"
     )
     assert (
@@ -531,7 +536,7 @@ def test_provider_run_state_for_codex_service_prefers_saved_thread_id_without_se
     service = CodexService()
     provider_state_dir = worktree / ".pycastle-session" / "implementer" / "codex"
     provider_state_dir.mkdir(parents=True)
-    rs.save_service_session_id("codex", "thread-from-sidecar")
+    save_service_session_id(rs.path, "codex", "thread-from-sidecar")
 
     provider_run_state = _provider_run_state_for_service(rs, service)
 
@@ -579,7 +584,7 @@ def test_provider_run_state_for_sidecar_backed_service_resumes_with_saved_servic
         "sess-opencode-123\n",
         encoding="utf-8",
     )
-    rs.save_service_session_id("opencode", "sess-opencode-123")
+    save_service_session_id(rs.path, "opencode", "sess-opencode-123")
 
     provider_run_state = _provider_run_state_for_service(rs, service)
 
@@ -639,11 +644,11 @@ def test_completion_signal_preserves_service_session_metadata_without_counting_a
 ):
     rs.start_fresh()
     save_service_session_metadata(rs.path, "codex", "thread-from-run")
-    rs.save_service_session_id("codex", "thread-from-run")
+    save_service_session_id(rs.path, "codex", "thread-from-run")
 
     rs.clear_provider_state_and_signal_completion()
 
-    assert rs.service_session_metadata("codex") == {
+    assert load_service_session_metadata(rs.path, "codex") == {
         "service": "codex",
         "provider_session_id": "thread-from-run",
     }
@@ -656,8 +661,8 @@ def test_malformed_service_session_metadata_is_ignored(rs):
     rs.start_fresh()
     service_session_metadata_path(rs.path).write_text("{not-json", encoding="utf-8")
 
-    assert rs.service_session_metadata("claude") is None
-    assert rs.exact_transcript_service_name() is None
+    assert load_service_session_metadata(rs.path, "claude") is None
+    assert load_exact_transcript_service_name(rs.path) is None
     assert rs.is_resumable() is False
     assert rs.run_kind() == RunKind.FRESH
 
@@ -667,7 +672,7 @@ def test_exact_transcript_service_name_is_ambiguous_with_multiple_services(rs):
     save_service_session_metadata(rs.path, "claude", "thread-claude")
     save_service_session_metadata(rs.path, "opencode", "sess-opencode")
 
-    assert rs.exact_transcript_service_name() is None
+    assert load_exact_transcript_service_name(rs.path) is None
 
 
 def test_role_session_reports_exact_provider_transcript_available_for_selected_opencode_service(
@@ -685,19 +690,28 @@ def test_role_session_reports_exact_provider_transcript_available_for_selected_o
         "sess-opencode-123\n",
         encoding="utf-8",
     )
-    rs.save_service_session_id("opencode", "sess-opencode-123")
+    save_service_session_id(rs.path, "opencode", "sess-opencode-123")
     save_service_session_metadata(rs.path, "opencode", "sess-opencode-123")
     registry = ServiceRegistry({"opencode": cast("AgentService", service)})
 
     assert (
-        rs.has_exact_provider_transcript_for_selected_service(
-            registry,
-            "opencode",
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.REVIEWER,
+            namespace="main",
+            registry=registry,
+            service_name="opencode",
         )
         is True
     )
     assert (
-        rs.has_exact_transcript_handoff_for_selected_service(registry, "opencode")
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.REVIEWER,
+            namespace="main",
+            registry=registry,
+            service_name="opencode",
+        )
         is True
     )
 
@@ -731,21 +745,27 @@ def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_
         '{"type":"thread.started","thread_id":"thread-exact"}\n',
         encoding="utf-8",
     )
-    rs.save_service_session_id("codex", "thread-exact")
+    save_service_session_id(rs.path, "codex", "thread-exact")
     save_service_session_metadata(rs.path, "codex", "thread-exact")
     registry = ServiceRegistry(cast("dict[str, AgentService]", registry_services))
 
     assert (
-        rs.has_exact_provider_transcript_for_selected_service(
-            registry,
-            selected_service_name,
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            registry=registry,
+            service_name=selected_service_name,
         )
         is False
     )
     assert (
-        rs.has_exact_transcript_handoff_for_selected_service(
-            registry,
-            selected_service_name,
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            registry=registry,
+            service_name=selected_service_name,
         )
         is False
     )
@@ -768,16 +788,29 @@ def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous
         '{"type":"thread.started","thread_id":"thread-new"}\n',
         encoding="utf-8",
     )
-    rs.save_service_session_id("codex", "thread-old")
+    save_service_session_id(rs.path, "codex", "thread-old")
     save_service_session_metadata(rs.path, "codex", "thread-old")
     registry = ServiceRegistry({"codex": CodexService()})
 
     assert (
-        rs.has_exact_provider_transcript_for_selected_service(registry, "codex")
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            registry=registry,
+            service_name="codex",
+        )
         is False
     )
     assert (
-        rs.has_exact_transcript_handoff_for_selected_service(registry, "codex") is False
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            registry=registry,
+            service_name="codex",
+        )
+        is False
     )
 
 
@@ -809,14 +842,17 @@ def test_role_session_reports_exact_provider_transcript_unavailable_without_exac
         encoding="utf-8",
     )
     if sidecar_value is not None:
-        rs.save_service_session_id("opencode", sidecar_value)
+        save_service_session_id(rs.path, "opencode", sidecar_value)
     if metadata_value is not None:
         save_service_session_metadata(rs.path, "opencode", metadata_value)
 
     assert (
-        rs.has_exact_provider_transcript_for_selected_service(
-            ServiceRegistry({service.name: cast("AgentService", service)}),
-            service.name,
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.REVIEWER,
+            namespace="main",
+            registry=ServiceRegistry({service.name: cast("AgentService", service)}),
+            service_name=service.name,
         )
         is False
     )
@@ -837,13 +873,16 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
         '{"type":"thread.started","thread_id":"thread-exact"}\n',
         encoding="utf-8",
     )
-    rs.save_service_session_id("codex", "thread-exact")
+    save_service_session_id(rs.path, "codex", "thread-exact")
     save_service_session_metadata(rs.path, "codex", "thread-exact")
 
     assert (
-        rs.has_exact_provider_transcript_for_selected_service(
-            ServiceRegistry({service.name: service}),
-            service.name,
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            registry=ServiceRegistry({service.name: service}),
+            service_name=service.name,
         )
         is True
     )
@@ -855,9 +894,12 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
     )
 
     assert (
-        rs.has_exact_provider_transcript_for_selected_service(
-            ServiceRegistry({service.name: service}),
-            service.name,
+        has_exact_provider_transcript_for_selected_service(
+            worktree=worktree,
+            role=AgentRole.IMPROVE,
+            namespace="main",
+            registry=ServiceRegistry({service.name: service}),
+            service_name=service.name,
         )
         is False
     )

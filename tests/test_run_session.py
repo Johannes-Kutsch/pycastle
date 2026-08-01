@@ -40,6 +40,8 @@ from pycastle.session.run_session import (
 )
 from pycastle.session.service_session_store import (
     load_service_session_id,
+    load_service_session_metadata,
+    save_service_session_id,
     save_service_session_metadata,
     store_for_role_session,
 )
@@ -572,7 +574,7 @@ def test_claude_provider_session_state_uses_preferred_session_id_from_request_co
 
     decision = service.provider_session_state(
         ProviderSessionStateRequest(
-            role_session=role_session,
+            role_session=store_for_role_session(role_session),
             provider_state_dir=state_dir,
             has_resumable_provider_state=True,
             state_dir_relpath=".pycastle-session/implementer/claude/",
@@ -662,7 +664,7 @@ def test_has_exact_transcript_match_accepts_sidecar_backed_opencode_handoff_with
     state_dir = tmp_path / "custom" / "opencode-state"
     state_dir.mkdir(parents=True)
     (state_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
-    role_session.save_service_session_id("opencode", "sess-opencode-123")
+    save_service_session_id(role_session.path, "opencode", "sess-opencode-123")
     save_service_session_metadata(role_session.path, "opencode", "sess-opencode-123")
 
     assert (
@@ -877,11 +879,11 @@ def test_codex_provider_session_state_returns_resume_decision_for_saved_sidecar(
         '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
         encoding="utf-8",
     )
-    role_session.save_service_session_id("codex", "thread-from-sidecar")
+    save_service_session_id(role_session.path, "codex", "thread-from-sidecar")
 
     decision = service.provider_session_state(
         ProviderSessionStateRequest(
-            role_session=role_session,
+            role_session=store_for_role_session(role_session),
             provider_state_dir=state_dir,
             has_resumable_provider_state=True,
             state_dir_relpath=".pycastle-session/implementer/codex/",
@@ -915,7 +917,7 @@ def test_codex_provider_session_state_recovers_unique_rollout_and_persists_sidec
 
     decision = service.provider_session_state(
         ProviderSessionStateRequest(
-            role_session=role_session,
+            role_session=store_for_role_session(role_session),
             provider_state_dir=state_dir,
             has_resumable_provider_state=True,
             state_dir_relpath=".pycastle-session/implementer/codex/",
@@ -983,7 +985,7 @@ def test_codex_provider_session_state_returns_fresh_for_ambiguous_rollouts(
 
     decision = service.provider_session_state(
         ProviderSessionStateRequest(
-            role_session=role_session,
+            role_session=store_for_role_session(role_session),
             provider_state_dir=state_dir,
             has_resumable_provider_state=True,
             state_dir_relpath=".pycastle-session/implementer/codex/",
@@ -1006,7 +1008,9 @@ def test_codex_provider_session_state_exposes_auth_seed_action_for_fresh_executi
 
     decision = service.provider_session_state(
         ProviderSessionStateRequest(
-            role_session=RoleSession(tmp_path, AgentRole.IMPLEMENTER),
+            role_session=store_for_role_session(
+                RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+            ),
             provider_state_dir=state_dir,
             has_resumable_provider_state=False,
             state_dir_relpath=".pycastle-session/implementer/codex/",
@@ -1128,8 +1132,9 @@ def test_run_session_plan_records_service_session_metadata_on_success(
 
     plan.record_successful_run(expected_session_id)
 
-    assert RoleSession(tmp_path, role, namespace).service_session_metadata(
-        service.name
+    assert load_service_session_metadata(
+        RoleSession(tmp_path, role, namespace).path,
+        service.name,
     ) == {
         "service": service.name,
         "provider_session_id": expected_session_id,
@@ -1164,7 +1169,7 @@ def test_run_session_plan_records_runtime_provider_session_id_in_sidecar_and_met
         _role_session_service_session_id(role_session, service.name)
         == runtime_session_id
     )
-    assert role_session.service_session_metadata(service.name) == {
+    assert load_service_session_metadata(role_session.path, service.name) == {
         "service": service.name,
         "provider_session_id": runtime_session_id,
     }
@@ -1186,7 +1191,7 @@ def test_run_session_plan_captures_codex_provider_session_id_for_same_plan_reuse
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     assert plan.provider_session_id == "thread-codex-456"
     assert _role_session_service_session_id(role_session, "codex") == "thread-codex-456"
-    assert role_session.service_session_metadata("codex") == {
+    assert load_service_session_metadata(role_session.path, "codex") == {
         "service": "codex",
         "provider_session_id": "thread-codex-456",
     }
@@ -1268,7 +1273,7 @@ def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_re
         _role_session_service_session_id(role_session, "opencode")
         == "sess-opencode-456"
     )
-    assert role_session.service_session_metadata("opencode") == {
+    assert load_service_session_metadata(role_session.path, "opencode") == {
         "service": "opencode",
         "provider_session_id": "sess-opencode-456",
     }
@@ -1294,7 +1299,7 @@ def test_run_session_plan_captures_generic_provider_session_id_for_same_plan_reu
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     assert plan.provider_session_id == "thread-fake-456"
     assert _role_session_service_session_id(role_session, "fake") == "thread-fake-456"
-    assert role_session.service_session_metadata("fake") == {
+    assert load_service_session_metadata(role_session.path, "fake") == {
         "service": "fake",
         "provider_session_id": "thread-fake-456",
     }
@@ -1604,4 +1609,4 @@ def test_run_session_plan_capture_without_record_persists_session_id_but_not_met
 
     role_session = RoleSession(tmp_path, AgentRole.PLANNER)
     assert _role_session_service_session_id(role_session, "opencode") == "sess-captured"
-    assert role_session.service_session_metadata("opencode") is None
+    assert load_service_session_metadata(role_session.path, "opencode") is None
