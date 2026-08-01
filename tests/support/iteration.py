@@ -198,6 +198,7 @@ def _wire_worktrees(git_svc: Any) -> None:
     ) -> None:
         path.mkdir(parents=True, exist_ok=True)
         (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        (path / "sentinel.txt").write_text("")
         registered.append(path)
 
     def _fake_remove_worktree(repo: Path, path: Path) -> None:

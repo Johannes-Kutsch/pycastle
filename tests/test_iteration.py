@@ -3217,14 +3217,14 @@ def test_run_iteration_returns_aborted_agent_failure_when_planner_agent_fails(
         calls.append(req)
         if req.role == AgentRole.FAILURE_REPORT:
             assert req.mount_path == expected_path
-            assert (req.mount_path / "pyproject.toml").exists()
+            assert (req.mount_path / "sentinel.txt").exists()
         return response_queue.pop(0)
 
     def checkout_detached(repo: Path, path: Path, sha: str) -> None:
         assert repo == tmp_path
         assert sha == "abc123"
         path.mkdir(parents=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        (path / "sentinel.txt").write_text("")
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
@@ -3285,7 +3285,7 @@ def test_run_iteration_failure_report_dispatches_after_opencode_planner_failure(
         assert repo == tmp_path
         assert sha == "abc123"
         path.mkdir(parents=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        (path / "sentinel.txt").write_text("")
 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = [
@@ -3533,7 +3533,7 @@ def test_run_iteration_preserves_agent_failed_worktree_after_run_ends(
         assert repo == tmp_path
         assert sha == "abc123"
         path.mkdir(parents=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
+        (path / "sentinel.txt").write_text("")
 
     git_svc.checkout_detached.side_effect = checkout_detached
 
@@ -4053,7 +4053,7 @@ def test_run_iteration_merge_time_preflight_issue_agent_failure_aborts_normally(
             if call_count == 1:
                 return PreflightReady(sha="plan-sha")
             preflight_path.mkdir(parents=True, exist_ok=True)
-            (preflight_path / "pyproject.toml").write_text("[project]\nname='t'\n")
+            (preflight_path / "sentinel.txt").write_text("")
             raise _make_agent_failed_error(AgentRole.PREFLIGHT_ISSUE, preflight_path)
 
     github_svc = MagicMock(spec=GithubService)
@@ -4878,6 +4878,7 @@ def test_planning_phase_fingerprint_gate_preserves_session_on_match(tmp_path):
     def _fake_create_wt(repo, wt, branch, sha=None):
         wt.mkdir(parents=True, exist_ok=True)
         (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
+        (wt / "sentinel.txt").write_text("")
 
     git_svc.create_worktree.side_effect = _fake_create_wt
 
