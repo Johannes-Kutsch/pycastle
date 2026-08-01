@@ -238,7 +238,7 @@ async def _file_host_check_issue(
         )
     )
     if not isinstance(agent_result, IssueOutput):
-        raise RuntimeError(  # noqa: TRY004  # domain failure, not a type error — see ADR 0052
+        raise RuntimeError(
             "Host-Check Reporter returned non-issue output: "
             f"{type(agent_result).__name__}"
         )

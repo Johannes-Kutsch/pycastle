@@ -44,7 +44,7 @@ class FileLogger:
     def __init__(self, logs_dir: Path) -> None:
         self._logs_dir = logs_dir
 
-    def log_error(self, issue: dict, error: Exception) -> None:  # noqa: ARG002  # issue required by Logger protocol
+    def log_error(self, issue: dict, error: Exception) -> None:  # issue required by Logger protocol
         tb = "".join(
             traceback.format_exception(type(error), error, error.__traceback__)
         )
