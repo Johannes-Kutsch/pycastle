@@ -579,15 +579,23 @@ def test_prepare_run_startup_returns_structured_stage_override_validation_failur
     assert [failure.render() for failure in startup.validation_failures] == [
         "  stage='plan': service is required",
         "  stage='plan': effort is required",
-        "  stage='implement': service='codez' is not a known service"
-        " (known: ['claude', 'codex', 'opencode'])",
-        "  stage='review': effort='max' is invalid for service='codex'"
-        " (valid: ['high', 'low', 'medium', 'xhigh'])",
-        "  stage='merge': model='gpt-5.4-min' is invalid for service='codex'."
-        ' Did you mean "gpt-5.4-mini"?',
-        "  stage='preflight_issue fallback': model='gpt-5.4' is invalid"
-        f" for service='opencode'. (valid: "
-        f"{sorted(OpenCodeService().valid_models())!r})",
+        (
+            "  stage='implement': service='codez' is not a known service"
+            " (known: ['claude', 'codex', 'opencode'])"
+        ),
+        (
+            "  stage='review': effort='max' is invalid for service='codex'"
+            " (valid: ['high', 'low', 'medium', 'xhigh'])"
+        ),
+        (
+            "  stage='merge': model='gpt-5.4-min' is invalid for service='codex'."
+            ' Did you mean "gpt-5.4-mini"?'
+        ),
+        (
+            "  stage='preflight_issue fallback': model='gpt-5.4' is invalid"
+            f" for service='opencode'. (valid: "
+            f"{sorted(OpenCodeService().valid_models())!r})"
+        ),
     ]
 
 
@@ -624,8 +632,10 @@ def test_prepare_run_startup_reports_missing_configured_provider_adapter_in_prio
     )
 
     assert [failure.render() for failure in startup.validation_failures] == [
-        "  stage='implement': no locally configured service in priority chain "
-        "'claude -> opencode'"
+        (
+            "  stage='implement': no locally configured service in priority chain "
+            "'claude -> opencode'"
+        ),
     ]
     assert startup.effective_improve_mode == "endless"
 
@@ -774,8 +784,10 @@ def test_prepare_run_startup_returns_structured_provider_model_mismatch_failure(
         "plan fallback"
     ]
     assert [failure.render() for failure in startup.validation_failures] == [
-        "  stage='plan fallback': model='gpt-5.4-mini' is invalid for "
-        "service='codex'. Did you mean \"gpt-5.4\"?"
+        (
+            "  stage='plan fallback': model='gpt-5.4-mini' is invalid for "
+            "service='codex'. Did you mean \"gpt-5.4\"?"
+        ),
     ]
 
 
@@ -832,10 +844,14 @@ def test_prepare_run_startup_reports_local_configured_chain_failures_alongside_p
         "no_configured_service",
     ]
     assert [failure.render() for failure in startup.validation_failures] == [
-        "  stage='plan': model='gpt-5.4-mini' is invalid for service='codex'."
-        ' Did you mean "gpt-5.4"?',
-        "  stage='implement': no locally configured service in priority chain "
-        "'claude -> opencode'",
+        (
+            "  stage='plan': model='gpt-5.4-mini' is invalid for service='codex'."
+            ' Did you mean "gpt-5.4"?'
+        ),
+        (
+            "  stage='implement': no locally configured service in priority chain "
+            "'claude -> opencode'"
+        ),
     ]
 
 
@@ -894,6 +910,8 @@ def test_prepare_run_startup_preserves_full_priority_chain_label_for_repeated_se
     )
 
     assert [failure.render() for failure in startup.validation_failures] == [
-        "  stage='plan': no locally configured service in priority chain "
-        "'claude -> opencode -> claude'"
+        (
+            "  stage='plan': no locally configured service in priority chain "
+            "'claude -> opencode -> claude'"
+        ),
     ]

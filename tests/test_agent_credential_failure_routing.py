@@ -61,9 +61,11 @@ def test_route_agent_credential_failure_interprets_codex_auth_lineage_exhaustion
     err.source_observations = (
         (
             "json_event.error",
-            'Error: API request failed: 401 Unauthorized: {"type":"error",'
-            '"code":"refresh_token_reused","message":"This refresh token has already '
-            'been used."}',
+            (
+                'Error: API request failed: 401 Unauthorized: {"type":"error",'
+                '"code":"refresh_token_reused","message":"This refresh token has already '
+                'been used."}'
+            ),
         ),
     )
     err.caller = "Implementer"

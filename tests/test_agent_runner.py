@@ -1103,14 +1103,16 @@ def test_agent_runner_retries_malformed_planner_output_with_planner_specific_pro
     assert result == PlannerOutput(issues=[], blocked=[])
     assert runtime_client.prompts == [
         "initial planner prompt",
-        "Your last response did not include the required protocol output.\n"
-        "Please review the task requirements and try again, making sure to include the required output tag.\n"
-        "The parser reported the following error:\n"
-        "Plan JSON must be an object, got str.\n"
-        'Output tail: \'<plan>"{\\\\"issues\\\\": []}"</plan>\'\n'
-        "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).\n"
-        "Use this Planner output shape exactly:\n"
-        "<plan>{...}</plan>",
+        (
+            "Your last response did not include the required protocol output.\n"
+            "Please review the task requirements and try again, making sure to include the required output tag.\n"
+            "The parser reported the following error:\n"
+            "Plan JSON must be an object, got str.\n"
+            'Output tail: \'<plan>"{\\\\"issues\\\\": []}"</plan>\'\n'
+            "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).\n"
+            "Use this Planner output shape exactly:\n"
+            "<plan>{...}</plan>"
+        ),
     ]
 
 
