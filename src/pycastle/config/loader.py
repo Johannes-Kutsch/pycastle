@@ -191,7 +191,7 @@ class Config:
     repo_root: Path = dataclasses.field(
         default_factory=Path.cwd, init=False, repr=False, compare=False
     )
-    _global_logs_dir_parent: bool = dataclasses.field(
+    global_logs_dir_parent: bool = dataclasses.field(
         default=False, init=False, repr=False, compare=False
     )
 
@@ -223,7 +223,7 @@ def resolve_logs_dir(cfg: Config) -> Path:
     logs_dir = cfg.logs_dir
     if not logs_dir.is_absolute():
         logs_dir = (cfg.repo_root / logs_dir).resolve()
-    if cfg._global_logs_dir_parent:
+    if cfg.global_logs_dir_parent:
         return logs_dir / derive_docker_image_name(cfg.repo_root.name)
     return logs_dir
 
@@ -232,8 +232,8 @@ def replace_config_runtime_fields(cfg: Config, updated: Config) -> Config:
     object.__setattr__(updated, "repo_root", cfg.repo_root)
     object.__setattr__(
         updated,
-        "_global_logs_dir_parent",
-        cfg._global_logs_dir_parent and updated.logs_dir == cfg.logs_dir,
+        "global_logs_dir_parent",
+        cfg.global_logs_dir_parent and updated.logs_dir == cfg.logs_dir,
     )
     return updated
 
@@ -289,7 +289,7 @@ def load_config(
     object.__setattr__(cfg, "repo_root", layout.repo_root)
     object.__setattr__(
         cfg,
-        "_global_logs_dir_parent",
+        "global_logs_dir_parent",
         global_logs_dir_set
         and not local_logs_dir_set
         and "logs_dir" not in (overrides or {}),
