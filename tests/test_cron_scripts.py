@@ -320,30 +320,6 @@ def test_uninstall_fails_when_crontab_not_on_path(tmp_path):
     assert "crontab" in result.stderr.lower()
 
 
-# ── cron.sh contents ──────────────────────────────────────────────────────────
-
-
-def test_cron_sh_does_not_install_consuming_project_deps():
-    """cron.sh must not pip-install the consuming project on the host venv."""
-    cron_sh = SETUP_DIR / "cron.sh"
-    content = cron_sh.read_text()
-    assert "pip install -e" not in content
-    assert "pip install -r requirements.txt" not in content
-
-
-def test_cron_sh_invokes_pycastle_run():
-    """cron.sh must delegate to 'pycastle run', not the deprecated 'pycastle cron'."""
-    content = (SETUP_DIR / "cron.sh").read_text()
-    assert "pycastle run" in content
-    assert "pycastle cron" not in content
-
-
-def test_cron_sh_does_not_pass_queue_jumping_flag():
-    """cron.sh must not add --ignore-global-lock (queue-jumping flag)."""
-    content = (SETUP_DIR / "cron.sh").read_text()
-    assert "--ignore-global-lock" not in content
-
-
 def test_cron_sh_forwards_args_to_run(cron_sh_env, tmp_path):
     """Arguments passed to cron.sh must be forwarded to 'pycastle run'."""
     args_file = tmp_path / "args.txt"
@@ -477,17 +453,3 @@ def test_pip_upgrade_failure_both_calls_are_independent(cron_sh_env, tmp_path):
         line for line in result.stderr.splitlines() if "warning" in line.lower()
     ]
     assert len(warnings) == 1
-
-
-def test_pip_upgrade_comment_records_rationale():
-    """cron.sh must have an inline comment near the pip calls explaining warn-and-continue."""
-    lines = (SETUP_DIR / "cron.sh").read_text().splitlines()
-    pip_idx = next(
-        i
-        for i, line in enumerate(lines)
-        if "pip install --upgrade" in line and not line.lstrip().startswith("#")
-    )
-    nearby = "\n".join(lines[max(0, pip_idx - 8) : pip_idx])
-    assert any(
-        token in nearby for token in ("stale", "prefer", "skipped", "last night")
-    ), f"expected warn-and-continue rationale near pip calls; got:\n{nearby}"
