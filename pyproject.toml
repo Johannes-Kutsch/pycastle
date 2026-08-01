@@ -115,8 +115,6 @@ ignore = [
     "PLR09",   # numeric-thresholds: arbitrary; C901 is the better-calibrated alternative
     "CPY001",  # copyright: repository has LICENSE; per-file headers add nothing
     # ── backlog (drain one entry per ticket) ─────────────────────────────────
-    # imports
-    "PLC0415",  # import-outside-toplevel (architecture work required)
     # complexity
     "C901",     # complex-structure (architecture work required)
     # private access
@@ -124,7 +122,25 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# PLC0415 — deferred imports justified by circular cycles or startup-performance / robustness
+"src/pycastle/bug_reporter.py" = ["PLC0415"]                      # try/except deferred imports for robustness
+"src/pycastle/main.py" = ["PLC0415"]                              # lazy CLI submodule loading
+"src/pycastle/orchestration.py" = ["PLC0415"]                     # thin entry-point; defers heavy orchestrator load
+"src/pycastle/run_lock.py" = ["PLC0415"]                          # platform-conditional (msvcrt / fcntl)
+"src/pycastle/runtime_session.py" = ["PLC0415"]                   # cycle: session.service_session_store → runtime_session
+"src/pycastle/session_planning.py" = ["PLC0415"]                  # robustness: agent_runtime may not be installed
+"src/pycastle/commands/host_check_run.py" = ["PLC0415"]           # lazy imports required for test-mock patchability at pycastle.agents.runner
+"src/pycastle/commands/init.py" = ["PLC0415"]                     # lazy CLI submodule loading
+"src/pycastle/infrastructure/shutdown_hook.py" = ["PLC0415"]      # deferred urllib3 import for startup performance
+"src/pycastle/iteration/__init__.py" = ["PLC0415"]                # cycle: hard_agent_error_report → iteration
+"src/pycastle/iteration/preflight.py" = ["PLC0415"]              # lazy import required for test-mock patchability at pycastle.infrastructure.worktree
+"src/pycastle/prompts/pipeline.py" = ["PLC0415"]                  # cycle: scope_args → pipeline
+"src/pycastle/prompts/scope_args.py" = ["PLC0415"]               # cycle: dispatch → scope_args → implement → ... → agents.runner → dispatch
+"src/pycastle/services/__init__.py" = ["PLC0415"]                 # __getattr__ lazy-load pattern for startup performance
+"src/pycastle/services/runtime_services.py" = ["PLC0415"]         # cycle: session.agent → session_planning → runtime_services
+"src/pycastle/session/service_session_store.py" = ["PLC0415"]     # cycle: session.role → service_session_store
 "tests/**" = [
+    "PLC0415", # import-outside-toplevel (test fixtures and lazy test helpers use local imports intentionally)
     "S101",    # assert
     "ANN",     # annotation
     "S108",    # hardcoded-temp-path

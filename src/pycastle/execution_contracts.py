@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import AgentService, ToolPolicy
 
@@ -16,7 +17,6 @@ if TYPE_CHECKING:
     import types
 
     from pycastle.config.types import StageOverride
-    from pycastle.errors import UsageLimitError
 
 RuntimeResultT = TypeVar("RuntimeResultT")
 
@@ -265,8 +265,6 @@ class _DefaultStatusRow:
                 self._row.close()
             return False
         if exc_type is not None:
-            from pycastle.errors import AgentTimeoutError, UsageLimitError
-
             if isinstance(exc, UsageLimitError):
                 self._row.close("usage limit reached", shutdown_style="interrupted")
                 return False
