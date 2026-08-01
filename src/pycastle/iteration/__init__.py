@@ -390,7 +390,10 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
                 routed_result = _route_and_abort_agent_credential_failure(
                     report_err, deps
                 )
-                assert routed_result is not None  # noqa: S101  # narrowing: credential failure always produces a route result
+                if routed_result is None:
+                    raise RuntimeError(
+                        "narrowing: credential failure always produces a route result"
+                    ) from None
                 return routed_result
             except (
                 AgentTimeoutError,

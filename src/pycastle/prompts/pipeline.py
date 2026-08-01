@@ -363,7 +363,8 @@ class PromptRenderer:
             allowed_args=resolved_args,
             required=True,
         )
-        assert rendered is not None  # noqa: S101  # narrowing: required=True above raises if file missing
+        if rendered is None:
+            raise RuntimeError("narrowing: required=True above raises if file missing")
         cache[stack_key] = rendered
         return rendered
 

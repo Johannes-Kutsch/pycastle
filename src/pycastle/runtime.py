@@ -576,7 +576,10 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
         validate_mount_preconditions(request.name, request.mount_path, request.role)
 
     run_session = request.run_session
-    assert run_session is not None  # noqa: S101  # narrowing: callers must populate run_session before invoking
+    if run_session is None:
+        raise RuntimeError(
+            "narrowing: callers must populate run_session before invoking"
+        )
     prepared_session = request.dependencies.prepare_session(run_session)
     non_typed_retry_done = False
     initial_attempt = True
@@ -760,7 +763,10 @@ async def _execute_runtime_attempt(
         else:
             return result, work_run_session
     row.close("failed", shutdown_style="error")
-    assert protocol_error_result is not None  # noqa: S101  # narrowing: loop only reaches here when protocol_error_result was set in except
+    if protocol_error_result is None:
+        raise RuntimeError(
+            "narrowing: loop only reaches here when protocol_error_result was set in except"
+        )
     return protocol_error_result, work_run_session
 
 

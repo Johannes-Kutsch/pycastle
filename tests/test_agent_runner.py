@@ -28,6 +28,7 @@ from pycastle.agents.output_protocol import (
     AgentRole,
     CommitMessageOutput,
     PlannerOutput,
+    _HANDLERS,
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest
@@ -392,6 +393,10 @@ def _run_agent_with_live_event(tmp_path, monkeypatch, event: object):
         )
     )
     return result, status_display
+
+
+def test_handlers_covers_all_roles():
+    assert len(_HANDLERS) == len(AgentRole)
 
 
 def test_agent_runner_captures_raw_provider_output_for_all_live_events_in_log(

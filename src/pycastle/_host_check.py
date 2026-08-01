@@ -203,7 +203,8 @@ async def run_host_check_loop(
                 failures.append(_failure_from_exception(name, command, exc))
                 continue
             if _is_failed_command_result(command_result):
-                assert command_result is not None  # noqa: S101  # narrowing: loop filter already proves non-None
+                if command_result is None:
+                    raise RuntimeError("narrowing: loop filter already proves non-None")
                 failures.append(_failure_from_command_result(command_result))
         if failures and status_display is not None:
             _surface_failed_host_checks(status_display, failures)

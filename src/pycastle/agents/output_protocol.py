@@ -179,7 +179,10 @@ def _extract_planner_output(text: str) -> PlannerOutput:
             last_err = exc
     if not saw_block:
         raise PlanParseError("Planner produced no <plan> tag.")
-    assert last_err is not None  # noqa: S101  # narrowing: saw_block=True implies at least one PlanParseError was set
+    if last_err is None:
+        raise RuntimeError(
+            "narrowing: saw_block=True implies at least one PlanParseError was set"
+        )
     raise last_err
 
 
@@ -238,7 +241,10 @@ def _extract_issue_output(text: str) -> IssueOutput:
             last_err = exc
     if not saw_block:
         raise IssueParseError("Agent produced no <issue>...</issue> tag.")
-    assert last_err is not None  # noqa: S101  # narrowing: saw_block=True implies at least one IssueParseError was set
+    if last_err is None:
+        raise RuntimeError(
+            "narrowing: saw_block=True implies at least one IssueParseError was set"
+        )
     raise last_err
 
 
@@ -388,8 +394,6 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.MERGER: _commit_message_handler,
     AgentRole.DIVERGENCE_RESOLVER: _merger_handler,
 }
-
-assert len(_HANDLERS) == len(AgentRole)  # noqa: S101  # module-level completeness invariant
 
 
 def _inject_behaviors(result: AgentOutput, text: str) -> AgentOutput:
