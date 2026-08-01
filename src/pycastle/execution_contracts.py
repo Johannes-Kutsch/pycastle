@@ -517,7 +517,9 @@ class TextOutputAdapter:
             on_provider_session_id=on_provider_session_id,
         )
 
-    def is_successful_result(self, result: str) -> bool:  # required by RuntimeOutputAdapter protocol
+    def is_successful_result(
+        self, result: str
+    ) -> bool:  # required by RuntimeOutputAdapter protocol
         return True
 
     def protocol_reprompt_message(self) -> str | None:

@@ -54,7 +54,8 @@ class PlainStatusDisplay:
         work_body: str = "",  # required by StatusDisplay protocol
         initial_phase: str = "Setup",  # required by StatusDisplay protocol
         color_key: int | None = None,  # required by StatusDisplay protocol
-        model_display: ModelDisplayMetadata | None = None,  # required by StatusDisplay protocol
+        model_display: ModelDisplayMetadata
+        | None = None,  # required by StatusDisplay protocol
     ) -> None:
         self._sequencer.register_caller(caller, kind)
         self.print(caller, startup_message)
@@ -77,7 +78,9 @@ class PlainStatusDisplay:
         self.print(caller, shutdown_message)
         self._sequencer.remove_caller(caller, preserve_last_output_kind=True)
 
-    def print(self, caller: str, message: object, style: str | None = None) -> None:  # required by StatusDisplay protocol
+    def print(
+        self, caller: str, message: object, style: str | None = None
+    ) -> None:  # required by StatusDisplay protocol
         rendered = str(message)
         lines = rendered.split("\n")
         if self._sequencer.record_output_event(
