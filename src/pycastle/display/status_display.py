@@ -19,6 +19,22 @@ class ModelDisplayMetadata:
 
 
 @runtime_checkable
+class SimpleStatusDisplay(Protocol):
+    def register(
+        self,
+        caller: str,
+        kind: Kind,
+        startup_message: str = "started",
+    ) -> None: ...
+    def remove(
+        self,
+        caller: str,
+        shutdown_message: str = "finished",
+    ) -> None: ...
+    def print(self, caller: str, message: object) -> None: ...
+
+
+@runtime_checkable
 class StatusDisplay(Protocol):
     def register(
         self,
@@ -51,11 +67,12 @@ class PlainStatusDisplay:
         caller: str,
         kind: Kind,
         startup_message: str = "started",
-        work_body: str = "",  # noqa: ARG002  # required by StatusDisplay protocol
-        initial_phase: str = "Setup",  # noqa: ARG002  # required by StatusDisplay protocol
-        color_key: int | None = None,  # noqa: ARG002  # required by StatusDisplay protocol
-        model_display: ModelDisplayMetadata | None = None,  # noqa: ARG002  # required by StatusDisplay protocol
+        work_body: str = "",
+        initial_phase: str = "Setup",
+        color_key: int | None = None,
+        model_display: ModelDisplayMetadata | None = None,
     ) -> None:
+        del work_body, initial_phase, color_key, model_display
         self._sequencer.register_caller(caller, kind)
         self.print(caller, startup_message)
 
@@ -72,12 +89,14 @@ class PlainStatusDisplay:
         self,
         caller: str,
         shutdown_message: str = "finished",
-        shutdown_style: str = "success",  # noqa: ARG002  # required by StatusDisplay protocol
+        shutdown_style: str = "success",
     ) -> None:
+        del shutdown_style
         self.print(caller, shutdown_message)
         self._sequencer.remove_caller(caller, preserve_last_output_kind=True)
 
-    def print(self, caller: str, message: object, style: str | None = None) -> None:  # noqa: ARG002  # required by StatusDisplay protocol
+    def print(self, caller: str, message: object, style: str | None = None) -> None:
+        del style
         rendered = str(message)
         lines = rendered.split("\n")
         if self._sequencer.record_output_event(

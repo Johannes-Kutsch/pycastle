@@ -1,10 +1,10 @@
 import pytest
 
-from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
+from pycastle.display.status_display import PlainStatusDisplay, SimpleStatusDisplay
 
 
 def test_plain_status_display_satisfies_protocol() -> None:
-    assert isinstance(PlainStatusDisplay(), StatusDisplay)
+    assert isinstance(PlainStatusDisplay(), SimpleStatusDisplay)
 
 
 def test_print_anonymous_caller_no_brackets(capsys: pytest.CaptureFixture[str]) -> None:
