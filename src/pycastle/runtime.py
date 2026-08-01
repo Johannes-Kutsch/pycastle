@@ -5,8 +5,16 @@ import contextlib
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
+from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
+
 from pycastle import _time as _time_module
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.errors import (
+    AgentTimeoutError,
+    RuntimeConfigurationError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from pycastle.execution_contracts import (
     CancellationToken,
     PreparedProviderRunSession,
@@ -186,8 +194,6 @@ def _require_execution_adapter_method(
     method = getattr(adapter, method_name, None)
     if callable(method):
         return method
-    from pycastle.errors import RuntimeConfigurationError
-
     raise RuntimeConfigurationError(
         f"Prompt runtime requires an execution adapter with callable `{method_name}()`."
     )
@@ -396,8 +402,6 @@ async def run_one_shot(
     service_registry: ServiceRegistry,
     request: OneShotRunRequest,
 ) -> OneShotRunResult:
-    from pycastle.errors import RuntimeConfigurationError, UsageLimitError
-
     if not service_registry.has_configured_candidate(request.override):
         raise RuntimeConfigurationError(
             "One-shot runtime requires at least one configured service candidate."
@@ -564,8 +568,6 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
 
     token = request.token if request.token is not None else CancellationToken()
     if token.is_cancelled:
-        from pycastle.errors import UsageLimitError
-
         raise UsageLimitError(
             reset_time=None,
             stage_key=request.dependencies.stage_key_for_role(request.role),
@@ -643,17 +645,6 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
                         invocation_log_path=getattr(runner, "log_path", None),
                     )
                 except Exception as err:
-                    from agent_runtime.errors import (
-                        AgentCredentialFailureError,
-                        HardAgentError,
-                    )
-
-                    from pycastle.errors import (
-                        AgentTimeoutError,
-                        TransientAgentError,
-                        UsageLimitError,
-                    )
-
                     if isinstance(err, AgentTimeoutError):
                         if not err.role_value:
                             err.role_value = request.role.value

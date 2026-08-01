@@ -5,10 +5,7 @@ from collections.abc import Callable, Coroutine
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, Self, cast
-
-if TYPE_CHECKING:
-    from pycastle.services.service_registry import ServiceRegistry
+from typing import Any, Literal, Protocol, Self, cast
 
 import agent_runtime
 import docker
@@ -47,6 +44,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.config import Config, StageOverride, image_name_for
+from pycastle.display.rows import status_row
 from pycastle.display.status_display import (
     WORK_PHASE,
     ModelDisplayMetadata,
@@ -63,9 +61,12 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.execution_contracts import (
+    PromptRunRequest,
+    PromptRunSession,
     RuntimeInvocationDependencies,
     RuntimeModelDisplayMetadata,
     RuntimeRunSession,
+    WorktreeMount,
 )
 from pycastle.infrastructure.container_runner import ContainerRunner
 from pycastle.infrastructure.docker_session import DockerSession, build_volume_spec
@@ -76,11 +77,13 @@ from pycastle.managed_worktree_mount_policy import enforce_managed_worktree_moun
 from pycastle.prompts.dispatch import PromptInvocation, render_prompt_invocation
 from pycastle.prompts.pipeline import PromptRenderer
 from pycastle.prompts.scope_args import build_interrupted_work_clause
+from pycastle.runtime import run_prompt as run_runtime_prompt
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services import GitService
 from pycastle.services._wake_time import compute_wake_time
 from pycastle.services.runtime_services import AgentService, ClaudeService
 from pycastle.services.runtime_services import ToolPolicy as ServiceToolPolicy
+from pycastle.services.service_registry import ServiceRegistry
 from pycastle.session import RoleSession, RunKind
 from pycastle.session.agent import (
     RunSessionPlan,
@@ -288,9 +291,7 @@ class AgentRunner:
     def resolve_service(self, service_name: str = "") -> AgentService:
         return self._resolve_service(service_name)
 
-    def _runtime_service_registry(self) -> "ServiceRegistry":
-        from pycastle.services.service_registry import ServiceRegistry
-
+    def _runtime_service_registry(self) -> ServiceRegistry:
         return ServiceRegistry(self._service_registry)
 
     def _build_session(
@@ -363,8 +364,6 @@ class AgentRunner:
             startup_message: str = "started",
             model_display: ModelDisplayMetadata | None = None,
         ) -> AbstractAsyncContextManager[Any]:
-            from pycastle.iteration._rows import status_row
-
             pycastle_model_display = (
                 None
                 if model_display is None
@@ -530,18 +529,6 @@ class AgentRunner:
         session_namespace: str = "",
         run_session_plan: RunSessionPlan | None = None,
     ) -> str:
-        from pycastle.runtime import (
-            PromptRunRequest,
-            PromptRunSession,
-            WorktreeMount,
-        )
-        from pycastle.runtime import (
-            ToolPolicy as RuntimeToolPolicy,
-        )
-        from pycastle.runtime import (
-            run_prompt as run_runtime_prompt,
-        )
-
         self._enforce_role_mount_precondition(
             name=name,
             mount_path=mount_path,
@@ -555,7 +542,7 @@ class AgentRunner:
                 prompt=prompt,
                 worktree=WorktreeMount(mount_path),
                 override=StageOverride(service=service, model=model, effort=effort),
-                tool_policy=RuntimeToolPolicy(tool_policy.value),
+                tool_policy=tool_policy,
                 status_display=status_display,
                 work_body=work_body,
                 token=token,
@@ -608,8 +595,6 @@ class AgentRunner:
         ],
         color_key: int | None,
     ) -> AgentOutput:
-        from pycastle.iteration._rows import status_row
-
         token = request.token if request.token is not None else CancellationToken()
         if token.is_cancelled or not service.is_available():
             raise UsageLimitError(
@@ -1020,8 +1005,6 @@ class AgentRunner:
         status_display: StatusDisplay | None = None,
         work_body: str = "",
     ) -> list[PreflightCommandFailure]:
-        from pycastle.iteration._rows import status_row
-
         if status_display is None:
             status_display = PlainStatusDisplay()
 
