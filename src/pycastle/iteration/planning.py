@@ -197,7 +197,7 @@ async def planning_phase(
                 raise RuntimeError(str(exc)) from exc
 
             if not isinstance(output, PlannerOutput):
-                raise RuntimeError(  # noqa: TRY004  # domain failure, not a type error — see ADR 0052
+                raise RuntimeError(
                     f"Planner returned unexpected output type: {type(output).__name__}"
                 )
             if not output.issues:

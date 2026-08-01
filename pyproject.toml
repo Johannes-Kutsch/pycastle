@@ -109,6 +109,7 @@ ignore = [
     "COM",     # trailing comma: fights ruff format (ruff docs say so explicitly)
     "E501",    # line length: ruff format owns line width; re-reports formatter decisions
     "TRY003",  # exception-message: pushes toward custom exception per message; contradicts ADR 0048
+    "TRY004",  # type-check-error: domain failures use RuntimeError not TypeError — see ADR 0052
     "EM101",   # string-in-exception: same pressure as TRY003, rejected with it
     "EM102",   # f-string-in-exception: same pressure as TRY003, rejected with it
     "PLR09",   # numeric-thresholds: arbitrary; C901 is the better-calibrated alternative

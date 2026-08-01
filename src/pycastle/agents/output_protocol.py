@@ -373,8 +373,8 @@ class _ImproveHandler:
     def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         if extract_promise(text, _FAILED) is not None:
             return FailedOutput()
-        token = extract_promise_or_raise(text, _COMPLETE_OR_NO_CANDIDATE, tail)
-        if token == "NO-CANDIDATE":  # noqa: S105  # protocol sentinel, not a password
+        sentinel = extract_promise_or_raise(text, _COMPLETE_OR_NO_CANDIDATE, tail)
+        if sentinel == "NO-CANDIDATE":
             return NoCandidateOutput()
         return _extract_improve_output(text)
 
