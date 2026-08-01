@@ -51,7 +51,7 @@ def _make_err(
     err = HardAgentError(message=message, service_name=service_name)
     err.caller = caller
     if status_code is not None:
-        err.status_code = status_code
+        setattr(err, "status_code", status_code)  # noqa: B010
     return err
 
 

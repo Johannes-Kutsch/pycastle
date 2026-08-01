@@ -1286,7 +1286,7 @@ def test_symlink_helper_skips_when_windows_symlink_privilege_is_missing(
 ):
     def _raise_winerror(path: Path, target: Path) -> None:
         error = OSError("missing symlink privilege")
-        error.winerror = 1314
+        setattr(error, "winerror", 1314)  # noqa: B010
         raise error
 
     monkeypatch.setattr(Path, "symlink_to", _raise_winerror)
