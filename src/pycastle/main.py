@@ -326,16 +326,5 @@ def run_cmd(
         maintain_logs(resolve_logs_dir(cfg), max_lines=10000, retention_days=30)
 
 
-@main.command("cron", hidden=True)
-@_NO_IMPROVE_OPTION
-@click.pass_context
-def cron_cmd(ctx: click.Context, *, no_improve: bool) -> None:
-    click.echo(
-        "Warning: 'pycastle cron' is deprecated — use 'pycastle run' instead.",
-        err=True,
-    )
-    ctx.invoke(run_cmd, improve_mode=None, no_improve=no_improve)
-
-
 if __name__ == "__main__":
     main()
