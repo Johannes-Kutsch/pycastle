@@ -25,10 +25,10 @@ from agent_runtime.runtime import (
 from agent_runtime.types import ResolvedProvider
 
 from pycastle.agents.output_protocol import (
+    _HANDLERS,
     AgentRole,
     CommitMessageOutput,
     PlannerOutput,
-    _HANDLERS,
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest
