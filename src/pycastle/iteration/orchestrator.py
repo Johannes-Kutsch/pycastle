@@ -5,6 +5,8 @@ import traceback
 from pathlib import Path
 from typing import cast
 
+import click
+
 from pycastle import _time as _time_module
 from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol
 from pycastle.config import load_config, replace_config_runtime_fields, resolve_logs_dir
@@ -48,7 +50,7 @@ class FileLogger:
         )
         timestamp = _time_module.now_local().isoformat()
         entry = f"--- {timestamp} ---\n{tb}\n"
-        print(entry, file=sys.stderr)
+        sys.stderr.write(entry)
         self._logs_dir.mkdir(parents=True, exist_ok=True)
         with (self._logs_dir / "errors.log").open("a", encoding="utf-8") as f:
             f.write(entry)
@@ -75,7 +77,7 @@ class FileLogger:
         )
         parts.append("")
         entry = "\n".join(parts) + "\n"
-        print(entry, file=sys.stderr)
+        sys.stderr.write(entry)
         self._logs_dir.mkdir(parents=True, exist_ok=True)
         with (self._logs_dir / "errors.log").open("a", encoding="utf-8") as f:
             f.write(entry)
@@ -130,44 +132,33 @@ async def run(
     try:
         git_svc.get_user_name(cwd=repo_root)
         git_svc.get_user_email(cwd=repo_root)
-    except GitCommandError:
-        print(
+    except GitCommandError as exc:
+        raise click.UsageError(
             "Git user not configured. Run:\n"
             "git config --global user.name 'Your Name' && "
-            "git config --global user.email 'you@example.com'",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+            "git config --global user.email 'you@example.com'"
+        ) from exc
 
     if github_service is None:
         token = env.get("GH_TOKEN", "").strip()
         if not token:
-            print(
-                "GH_TOKEN is not set. Add it to pycastle/.env or your environment.",
-                file=sys.stderr,
+            raise click.UsageError(
+                "GH_TOKEN is not set. Add it to pycastle/.env or your environment."
             )
-            sys.exit(1)
         remote = git_svc.get_github_remote_repo(cwd=repo_root)
         if remote is None:
-            print(
-                "Could not determine GitHub repo from origin remote.",
-                file=sys.stderr,
+            raise click.UsageError(
+                "Could not determine GitHub repo from origin remote."
             )
-            sys.exit(1)
         owner, repo = remote
         github_service = GithubService(f"{owner}/{repo}", token, cfg)
 
     try:
         login = github_service.check_auth()
     except GithubAuthError as exc:
-        print(
-            f"GitHub authentication failed: {exc.body}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise click.UsageError(f"GitHub authentication failed: {exc.body}") from exc
     except OperatorActionableGithubError as exc:
-        print(_github_retry_exhaustion_message(exc), file=sys.stderr)
-        sys.exit(1)
+        raise click.UsageError(_github_retry_exhaustion_message(exc)) from exc
 
     status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 

@@ -120,8 +120,6 @@ ignore = [
     "C901",     # complex-structure (architecture work required)
     # private access
     "SLF001",   # private-member-access (architecture work required)
-    # print
-    "T201",     # print (architecture work required)
 ]
 
 [tool.ruff.lint.per-file-ignores]

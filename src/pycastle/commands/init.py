@@ -161,7 +161,7 @@ def refresh() -> None:
         sys.exit(1)
 
     for line in report.display_lines():
-        print(line)
+        click.echo(line)
 
 
 def main(scope: Literal["global", "local"] | None = None) -> None:

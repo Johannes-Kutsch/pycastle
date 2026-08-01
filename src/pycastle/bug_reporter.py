@@ -165,11 +165,11 @@ def auto_file_issue(
         result = _try_api_path(title, full_body, repo, token, cfg)
         if result is not None:
             number, html_url = result
-            print(f"Filed issue #{number}: {html_url}")
+            click.echo(f"Filed issue #{number}: {html_url}")
             return html_url
 
     url = _build_bug_report_url(title, body, labels, repo)
-    print(url)
+    click.echo(url)
     return url
 
 
@@ -204,7 +204,7 @@ def file_merge_close_failure_issue(
             body,
             _MERGE_CLOSE_FAILURE_LABELS,
         )
-        print(f"Filed issue #{number} on {github_svc.repo}: {title}")
+        click.echo(f"Filed issue #{number} on {github_svc.repo}: {title}")
     except GithubServiceError:
         return None
     else:
@@ -247,7 +247,7 @@ def file_operator_actionable_git_issue(
             body,
             _GIT_REMOTE_UNREACHABLE_LABELS,
         )
-        print(f"Filed issue #{number} on {github_svc.repo}: {title}")
+        click.echo(f"Filed issue #{number} on {github_svc.repo}: {title}")
     except GithubServiceError:
         pass
 

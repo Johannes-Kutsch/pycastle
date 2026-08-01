@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+import click
+
 from pycastle.errors import ConfigValidationError
 from pycastle.services._docker_build_output import BuildOutcome
 
@@ -110,10 +112,10 @@ def build_universal_image(
 ) -> BuildOutcome | None:
     if not request.image_tag:
         raise ConfigValidationError(_MISSING_DOCKER_IMAGE_NAME_MESSAGE)
-    print(f"Building {request.image_tag}...")
+    click.echo(f"Building {request.image_tag}...")
     outcome = adapter.build(request)
     if not request.options.stream:
-        print("Build complete.")
+        click.echo("Build complete.")
     elif outcome == BuildOutcome.FULL_CACHE_HIT and not request.options.terse:
-        print("Image up to date.")
+        click.echo("Image up to date.")
     return outcome

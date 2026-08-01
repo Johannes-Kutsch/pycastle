@@ -188,7 +188,7 @@ class DockerSession:
                 f"Command failed (exit {result.exit_code}): {stderr.strip() or stdout.strip()}"
             )
         if stderr and not stdout:
-            print(f"  [exec stderr] {stderr.strip()}", file=sys.stderr)
+            sys.stderr.write(f"  [exec stderr] {stderr.strip()}\n")
         return stdout
 
     def exec_stream(self, command: str) -> Iterator[bytes]:

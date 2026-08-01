@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
+import click
 import pytest
 
 from pycastle.agents.output_protocol import (
@@ -2041,22 +2042,20 @@ def test_run_prints_github_authenticated_login_at_startup(tmp_path):
     assert auth_prints[0][2] == "GitHub auth: authenticated as @octocat"
 
 
-def test_run_exits_when_github_auth_error(tmp_path, capsys):
-    """run() must exit 1 and print the auth error body when check_auth fails."""
+def test_run_exits_when_github_auth_error(tmp_path):
+    """run() must raise UsageError with the auth error body when check_auth fails."""
     mock_github = _make_github_svc()
     mock_github.check_auth.side_effect = GithubAuthError(
         "auth failed", status=401, body="Bad credentials"
     )
 
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(click.UsageError) as exc_info:
         _run(tmp_path, github_service=mock_github)
-    assert exc_info.value.code == 1
-    err = capsys.readouterr().err
-    assert "Bad credentials" in err
+    assert "Bad credentials" in exc_info.value.format_message()
 
 
-def test_run_exits_when_github_auth_retry_exhausts(tmp_path, capsys):
-    """Startup GitHub retry exhaustion must print a terminal error and exit 1."""
+def test_run_exits_when_github_auth_retry_exhausts(tmp_path):
+    """Startup GitHub retry exhaustion must raise UsageError with a terminal error message."""
     mock_github = _make_github_svc()
     mock_github.check_auth.side_effect = OperatorActionableGithubError(
         "GitHub API GET /user failed after 4 attempts: "
@@ -2073,18 +2072,17 @@ def test_run_exits_when_github_auth_retry_exhausts(tmp_path, capsys):
         ),
     )
 
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(click.UsageError) as exc_info:
         _run(tmp_path, github_service=mock_github)
 
-    assert exc_info.value.code == 1
-    err = capsys.readouterr().err
-    assert "GitHub request retry limit reached:" in err
-    assert "GET /user failed after 4 attempts" in err
+    msg = exc_info.value.format_message()
+    assert "GitHub request retry limit reached:" in msg
+    assert "GET /user failed after 4 attempts" in msg
 
 
-def test_run_exits_when_gh_token_missing(tmp_path, capsys):
-    """run() without an injected github_service must exit 1 when GH_TOKEN is missing."""
-    with pytest.raises(SystemExit) as exc_info:
+def test_run_exits_when_gh_token_missing(tmp_path):
+    """run() without an injected github_service must raise UsageError when GH_TOKEN is missing."""
+    with pytest.raises(click.UsageError) as exc_info:
         asyncio.run(
             run(
                 {},
@@ -2092,9 +2090,7 @@ def test_run_exits_when_gh_token_missing(tmp_path, capsys):
                 git_service=_make_git_svc(),
             )
         )
-    assert exc_info.value.code == 1
-    err = capsys.readouterr().err
-    assert "GH_TOKEN" in err
+    assert "GH_TOKEN" in exc_info.value.format_message()
 
 
 def test_run_with_empty_repo_root_completes(tmp_path):
@@ -2131,40 +2127,36 @@ def _make_git_svc_no_user_email():
 
 
 def test_run_exits_with_code_1_when_git_user_name_not_configured(tmp_path):
-    """run() must exit 1 when git user.name is not set."""
-    with pytest.raises(SystemExit) as exc_info:
+    """run() must raise UsageError when git user.name is not set."""
+    with pytest.raises(click.UsageError):
         _run(
             tmp_path,
             git_service=_make_git_svc_no_user_name(),
             github_service=_make_github_svc(),
         )
-    assert exc_info.value.code == 1
 
 
 def test_run_exits_with_code_1_when_git_user_email_not_configured(tmp_path):
-    """run() must exit 1 when git user.email is not set."""
-    with pytest.raises(SystemExit) as exc_info:
+    """run() must raise UsageError when git user.email is not set."""
+    with pytest.raises(click.UsageError):
         _run(
             tmp_path,
             git_service=_make_git_svc_no_user_email(),
             github_service=_make_github_svc(),
         )
-    assert exc_info.value.code == 1
 
 
-def test_run_prints_git_config_instruction_when_identity_not_configured(
-    tmp_path, capsys
-):
-    """run() must print both git config commands to stderr when user identity is missing."""
-    with pytest.raises(SystemExit):
+def test_run_prints_git_config_instruction_when_identity_not_configured(tmp_path):
+    """run() must include both git config commands in UsageError when user identity is missing."""
+    with pytest.raises(click.UsageError) as exc_info:
         _run(
             tmp_path,
             git_service=_make_git_svc_no_user_name(),
             github_service=_make_github_svc(),
         )
-    err = capsys.readouterr().err
-    assert "git config --global user.name" in err
-    assert "git config --global user.email" in err
+    msg = exc_info.value.format_message()
+    assert "git config --global user.name" in msg
+    assert "git config --global user.email" in msg
 
 
 def test_run_no_agents_start_when_git_identity_not_configured(tmp_path):
@@ -2175,7 +2167,7 @@ def test_run_no_agents_start_when_git_identity_not_configured(tmp_path):
         agents_started.append(request.name)
         return CompletionOutput()
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(click.UsageError):
         _run(
             tmp_path,
             _fake_run_agent,
@@ -2456,7 +2448,7 @@ def test_startup_does_not_use_pycastle_caller_on_git_identity_failure(tmp_path):
     """run() must not emit any 'pycastle' register or remove calls when git identity check fails."""
     recording = RecordingStatusDisplay()
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(click.UsageError):
         _run(
             tmp_path,
             git_service=_make_git_svc_no_user_name(),
@@ -2474,7 +2466,7 @@ def test_startup_does_not_use_pycastle_caller_on_credentials_failure(tmp_path):
     """run() must not emit any 'pycastle' register or remove calls when GH_TOKEN is missing."""
     recording = RecordingStatusDisplay()
 
-    with pytest.raises(SystemExit):
+    with pytest.raises(click.UsageError):
         asyncio.run(
             run(
                 {},

@@ -1,4 +1,4 @@
-import builtins
+import sys
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -83,9 +83,9 @@ class PlainStatusDisplay:
         if self._sequencer.record_output_event(
             OutputEvent(caller=caller, text=rendered)
         ):
-            builtins.print()
+            sys.stdout.write("\n")
         for line in lines:
             if caller:
-                builtins.print(f"[{caller}] {line}")
+                sys.stdout.write(f"[{caller}] {line}\n")
             else:
-                builtins.print(line)
+                sys.stdout.write(f"{line}\n")

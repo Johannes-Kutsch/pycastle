@@ -372,7 +372,6 @@ def test_run_cmd_prints_layer_summary_in_output(tmp_path, monkeypatch):
     assert "Config:" in result.output
 
 
-
 # ── Behavior 12: --ignore-global-lock listed in help ─────────────────────────
 
 

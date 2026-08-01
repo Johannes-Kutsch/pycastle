@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import platform
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import click
 
 from pycastle.commands import host_check_run as _host_check_run
 from pycastle.commands.host_check_run import HostCheckRunPassed, run_host_check_command
@@ -47,14 +48,12 @@ def main(
             return outcome
 
         joined = ", ".join(f"#{number}" for number in outcome.issue_numbers)
-        print(f"Host checks filed or updated issues: {joined}")
-        sys.stdout.flush()
+        click.echo(f"Host checks filed or updated issues: {joined}")
         return outcome
 
     outcome = asyncio.run(_run_checks())
     if isinstance(outcome, HostCheckRunPassed):
-        print(
+        click.echo(
             "Host checks passed on "
             f"{platform.system()} ({platform.platform()}) at {outcome.checked_sha}."
         )
-        sys.stdout.flush()

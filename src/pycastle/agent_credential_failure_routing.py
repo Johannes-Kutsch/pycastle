@@ -7,6 +7,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
+import click
 from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
 from pycastle.services.github_service import GithubServiceError
@@ -194,7 +195,7 @@ def _file_or_reuse_agent_credential_failure_issue(
             _AGENT_CREDENTIAL_FAILURE_LABELS,
         )
         url = f"https://github.com/{github_svc.repo}/issues/{number}"
-        print(
+        click.echo(
             f"Filed issue #{number} on {github_svc.repo}: {_AGENT_CREDENTIAL_FAILURE_TITLE}"
         )
         return _CredentialFailureIssueLookupResult(issue_url=url)

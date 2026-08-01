@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import sys
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
@@ -175,14 +176,14 @@ class _PlainStatusDisplay:
         del style
         lines = str(message).split("\n")
         if self._blank_before(caller):
-            print()
+            sys.stdout.write("\n")
         self._last_caller = caller
         self._last_kind = self._kinds.get(caller)
         for line in lines:
             if caller:
-                print(f"[{caller}] {line}")
+                sys.stdout.write(f"[{caller}] {line}\n")
             else:
-                print(line)
+                sys.stdout.write(f"{line}\n")
 
 
 class _StatusRowHandle:
