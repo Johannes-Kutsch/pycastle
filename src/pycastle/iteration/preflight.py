@@ -301,7 +301,10 @@ class PreflightCache:
         )
         if isinstance(validation, DiagnosticIssueReportValidationHITL):
             return PreflightHITL(sha=sha, issue_number=validation.issue_number)
-        assert isinstance(validation, DiagnosticIssueReportValidationAFK)  # noqa: S101  # exhaustive: only HITL or AFK remain after isinstance check above
+        if not isinstance(validation, DiagnosticIssueReportValidationAFK):
+            raise TypeError(
+                "exhaustive: only HITL or AFK remain after isinstance check above"
+            )
         return PreflightAFK(sha=sha, issue_number=validation.issue_number)
 
     @staticmethod
@@ -326,7 +329,10 @@ class PreflightCache:
             raise PreflightCache._setup_error_for_missing_declared_tool(
                 first_decision
             )  # helper method call in raise is clearer than inner-function abstraction here
-        assert isinstance(first_decision, OrdinaryPreflightFailureDecision)  # noqa: S101  # exhaustive: only MissingDeclaredPythonTool or Ordinary at this point
+        if not isinstance(first_decision, OrdinaryPreflightFailureDecision):
+            raise TypeError(
+                "exhaustive: only MissingDeclaredPythonTool or Ordinary at this point"
+            )
         return first_decision
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:

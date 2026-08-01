@@ -142,7 +142,8 @@ class DockerService:
                 "docker not found; ensure it is installed and on PATH"
             ) from exc
 
-        assert proc.stdout is not None  # noqa: S101  # stdout=PIPE guarantees non-None
+        if proc.stdout is None:
+            raise RuntimeError("stdout=PIPE guarantees non-None")
         lines: list[str] = []
 
         for line in proc.stdout:
@@ -188,7 +189,8 @@ class DockerService:
                 "docker not found; ensure it is installed and on PATH"
             ) from exc
 
-        assert proc.stdout is not None  # noqa: S101  # stdout=PIPE guarantees non-None
+        if proc.stdout is None:
+            raise RuntimeError("stdout=PIPE guarantees non-None")
         interpreter = DockerBuildOutputInterpreter(on_rebuild_start=on_rebuild_start)
         for line in proc.stdout:
             sys.stdout.write(line)
