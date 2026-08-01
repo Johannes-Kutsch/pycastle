@@ -2126,7 +2126,7 @@ def _make_git_svc_no_user_email():
     return svc
 
 
-def test_run_exits_with_code_1_when_git_user_name_not_configured(tmp_path):
+def test_run_raises_usage_error_when_git_user_name_not_configured(tmp_path):
     """run() must raise UsageError when git user.name is not set."""
     with pytest.raises(click.UsageError):
         _run(
@@ -2136,7 +2136,7 @@ def test_run_exits_with_code_1_when_git_user_name_not_configured(tmp_path):
         )
 
 
-def test_run_exits_with_code_1_when_git_user_email_not_configured(tmp_path):
+def test_run_raises_usage_error_when_git_user_email_not_configured(tmp_path):
     """run() must raise UsageError when git user.email is not set."""
     with pytest.raises(click.UsageError):
         _run(
