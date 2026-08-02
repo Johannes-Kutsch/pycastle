@@ -1,7 +1,8 @@
 import asyncio
+import contextlib
 import shlex
 import shutil
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -87,53 +88,60 @@ class _DockerBackedProviderInvocationAdapter:
             if not isinstance(chunk, bytes):
                 continue
             for line in chunk.decode("utf-8", errors="replace").splitlines():
-                _provider_invocation._consume_new_stdout_lines(  # private API of third-party package
+                _provider_invocation._consume_new_stdout_lines(  # noqa: SLF001  # private API of third-party package
                     request.output_hooks.reduce_output,
                     [line],
                 )
                 stdout_lines.append(line)
 
-        try:
-            output, usage = request.output_hooks.reduce_output(stdout_lines)
-        except Exception as exc:
-            if isinstance(
-                exc,
-                (
-                    _provider_invocation.UsageLimitError,
-                    _provider_invocation.ProviderUnavailableError,
-                ),
-            ):
-                provider_session_id: str | None = None
-                if request.output_hooks.extract_provider_session_id is not None:
-                    provider_session_id = (
-                        request.output_hooks.extract_provider_session_id(stdout_lines)
-                    )
-                return _provider_invocation._provider_invocation_failure_from_error(  # private API of third-party package
-                    exc,
-                    stdout_lines=tuple(stdout_lines),
-                    provider_session_id=provider_session_id,
+        return _process_execution_output(request, stdout_lines)
+
+
+def _process_execution_output(
+    request: ProviderInvocationRequest,
+    stdout_lines: list[str],
+) -> ProviderInvocationResult | ProviderInvocationFailure:
+    try:
+        output, usage = request.output_hooks.reduce_output(stdout_lines)
+    except Exception as exc:
+        if isinstance(
+            exc,
+            (
+                _provider_invocation.UsageLimitError,
+                _provider_invocation.ProviderUnavailableError,
+            ),
+        ):
+            provider_session_id: str | None = None
+            if request.output_hooks.extract_provider_session_id is not None:
+                provider_session_id = request.output_hooks.extract_provider_session_id(
+                    stdout_lines
                 )
-            raise
-
-        provider_session_id = None
-        if request.output_hooks.extract_provider_session_id is not None:
-            provider_session_id = request.output_hooks.extract_provider_session_id(
-                stdout_lines
+            return _provider_invocation._provider_invocation_failure_from_error(  # noqa: SLF001  # private API of third-party package
+                exc,
+                stdout_lines=tuple(stdout_lines),
+                provider_session_id=provider_session_id,
             )
+        raise
 
-        if not output.strip():
-            error = _provider_invocation.HardAgentError(
-                "Provider subprocess completed without producing output."
-            )
-            error.provider_session_id = provider_session_id
-            raise error
-
-        return ProviderInvocationResult(
-            output=output,
-            usage=usage,
-            stdout_lines=tuple(stdout_lines),
-            provider_session_id=provider_session_id,
+    provider_session_id = None
+    if request.output_hooks.extract_provider_session_id is not None:
+        provider_session_id = request.output_hooks.extract_provider_session_id(
+            stdout_lines
         )
+
+    if not output.strip():
+        error = _provider_invocation.HardAgentError(
+            "Provider subprocess completed without producing output."
+        )
+        error.provider_session_id = provider_session_id
+        raise error
+
+    return ProviderInvocationResult(
+        output=output,
+        usage=usage,
+        stdout_lines=tuple(stdout_lines),
+        provider_session_id=provider_session_id,
+    )
 
 
 class _DockerlessRuntimeClient:
@@ -144,14 +152,14 @@ class _DockerlessRuntimeClient:
         self._invocation_adapter = _DockerBackedProviderInvocationAdapter(session)
 
     async def run_new_session(self, request: NewSessionRunRequest) -> Any:  # noqa: ANN401  # return type mirrors agent_runtime.RuntimeClient which is opaque
-        return _session_backed_provider_execution._run_builtin_new_session(  # private API of third-party package
+        return _session_backed_provider_execution._run_builtin_new_session(  # noqa: SLF001  # private API of third-party package
             request,
             provider_invocation_adapter=self._invocation_adapter,
             on_live_output=request.on_live_output,
         )
 
     async def run_resumed_session(self, request: ResumedSessionRunRequest) -> Any:  # noqa: ANN401  # return type mirrors agent_runtime.RuntimeClient which is opaque
-        return _session_backed_provider_execution._run_builtin_resumed_session(  # private API of third-party package
+        return _session_backed_provider_execution._run_builtin_resumed_session(  # noqa: SLF001  # private API of third-party package
             request,
             provider_invocation_adapter=self._invocation_adapter,
             on_live_output=request.on_live_output,
@@ -224,6 +232,55 @@ class ContainerRunner:
             return tuple(transformed)
 
         return _transform
+
+    def get_runtime_client(self) -> Any:  # noqa: ANN401  # same rationale as _get_runtime_client
+        return self._get_runtime_client()
+
+    def exec_command(self, command: str) -> str:
+        return self._session.exec_simple(command)
+
+    def on_live_output(self, event: agent_runtime.AgentEvent) -> bool:
+        """Dispatch a live output event; returns True if a provider chunk was appended."""
+        self._status_display.reset_idle_timer(self.name)
+        raw_provider_output = getattr(event, "raw_provider_output", "")
+        logged = False
+        if raw_provider_output and self._current_work_invocation is not None:
+            chunk = raw_provider_output
+            if not chunk.endswith("\n"):
+                chunk += "\n"
+            self._current_work_invocation.append_provider_chunk(chunk.encode())
+            logged = True
+        if getattr(event, "type", None) == "agent_message":
+            display_message = getattr(event, "display_message", "")
+            if display_message:
+                self._status_display.print(self.name, display_message)
+        return logged
+
+    @contextlib.contextmanager
+    def open_work_invocation(
+        self,
+        *,
+        role: AgentRole,
+        run_kind: RunKind,
+        session_uuid: str | None,
+        prompt: str,
+    ) -> Iterator[Any]:  # yields whatever _logical_session.open_work_invocation yields
+        with self._logical_session.open_work_invocation(
+            role=role,
+            run_kind=run_kind,
+            session_uuid=session_uuid,
+            prompt=prompt,
+        ) as work_invocation:
+            self._current_work_invocation = work_invocation
+            try:
+                yield work_invocation
+            finally:
+                self._current_work_invocation = None
+
+    def append_chunk(self, chunk: str) -> None:
+        if self._current_work_invocation is not None:
+            encoded = chunk if chunk.endswith("\n") else f"{chunk}\n"
+            self._current_work_invocation.append_provider_chunk(encoded.encode())
 
     async def setup(self, git_name: str, git_email: str) -> None:
         self._logs_dir.mkdir(parents=True, exist_ok=True)
@@ -367,12 +424,9 @@ class ContainerRunner:
             display_message = getattr(event, "display_message", "")
             if display_message:
                 on_turn(display_message)
-            raw_provider_output = getattr(event, "raw_provider_output", "")
-            if raw_provider_output and self._current_work_invocation is not None:
-                chunk = raw_provider_output
-                if not chunk.endswith("\n"):
-                    chunk += "\n"
-                self._current_work_invocation.append_provider_chunk(chunk.encode())
+            raw = getattr(event, "raw_provider_output", "")
+            if raw and self._current_work_invocation is not None:
+                self.append_chunk(raw)
                 logged_lines[0] = True
 
         runtime_request = self._build_runtime_request(
@@ -384,91 +438,112 @@ class ContainerRunner:
         )
         runtime = self._get_runtime_client()
 
-        with self._logical_session.open_work_invocation(
+        with self.open_work_invocation(
             role=role,
             run_kind=run_kind,
             session_uuid=session_uuid,
             prompt=prompt,
-        ) as work_invocation:
-            self._current_work_invocation = work_invocation
+        ):
             if run_kind is RunKind.FRESH:
                 outcome = await runtime.run_new_session(runtime_request)
             else:
                 outcome = await runtime.run_resumed_session(runtime_request)
             if not logged_lines[0] and outcome.result.output:
-                work_invocation_output = (
-                    outcome.result.output
-                    if outcome.result.output.endswith("\n")
-                    else f"{outcome.result.output}\n"
-                )
-                work_invocation.append_provider_chunk(work_invocation_output.encode())
-            self._current_work_invocation = None
+                self.append_chunk(outcome.result.output)
 
-        try:
-            outcome_kind = outcome.kind
-            if isinstance(outcome_kind, Completed):
-                if outcome.result.continuation is not None:
-                    continuation_session_id = (
-                        outcome.result.continuation.provider_session_id
-                        if hasattr(outcome.result.continuation, "provider_session_id")
-                        else None
-                    )
-                    if continuation_session_id is None:
-                        continuation_session_id = getattr(
-                            outcome.result.continuation,
-                            "serialized",
-                            None,
-                        )
-                    if continuation_session_id is not None:
-                        observed_provider_session_id[0] = continuation_session_id
-                        _record_provider_session_id(continuation_session_id)
-                self._logical_session.record_provider_session_id(
-                    observed_provider_session_id[0]
-                )
-                usage = outcome.result.usage
-                if usage is not None:
-                    tokens = (
-                        (usage.input_tokens or 0)
-                        + (usage.cache_creation_input_tokens or 0)
-                        + (usage.cache_read_input_tokens or 0)
-                    )
-                    if tokens:
-                        on_tokens and on_tokens(tokens)
-                if text_parsing:
-                    return outcome.result.output
-                return extract_output(outcome.result.output, role)
-            if isinstance(outcome_kind, UsageLimited):
-                self._logical_session.record_provider_session_id(
-                    observed_provider_session_id[0]
-                )
-                raise UsageLimitError(
-                    reset_time=outcome_kind.reset_time,
-                    provider=outcome.result.selected.service,
-                )
-            if isinstance(outcome_kind, ProviderUnavailable):
-                self._logical_session.record_provider_session_id(
-                    observed_provider_session_id[0]
-                )
-                if outcome_kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
-                    raise TransientAgentError(message=outcome_kind.detail)
-                raise UsageLimitError(
-                    provider=service.name,
-                    raw_message=outcome_kind.detail,
-                )
-            if isinstance(outcome_kind, TimedOut):
-                self._logical_session.record_provider_session_id(
-                    observed_provider_session_id[0]
-                )
-                raise AgentTimeoutError(
-                    "Provider timed out",
-                    role_value=role.value,
-                )
-            self._logical_session.record_provider_session_id(
-                observed_provider_session_id[0]
+        return self._process_runtime_outcome(
+            outcome,
+            role=role,
+            service=service,
+            on_tokens=on_tokens,
+            text_parsing=text_parsing,
+            observed_provider_session_id=observed_provider_session_id,
+            record_provider_session_id=_record_provider_session_id,
+        )
+
+    def _process_runtime_outcome(
+        self,
+        outcome: Any,  # noqa: ANN401  # opaque agent_runtime outcome; no shared protocol
+        *,
+        role: AgentRole,
+        service: Any,  # noqa: ANN401  # AgentService; avoid circular import
+        on_tokens: Callable[[int], None] | None,
+        text_parsing: bool,
+        observed_provider_session_id: list[str | None],
+        record_provider_session_id: Callable[[str], None],
+    ) -> AgentOutput | str:
+        outcome_kind = outcome.kind
+        if isinstance(outcome_kind, Completed):
+            return self._handle_completed_outcome(
+                outcome,
+                role=role,
+                on_tokens=on_tokens,
+                text_parsing=text_parsing,
+                observed_provider_session_id=observed_provider_session_id,
+                record_provider_session_id=record_provider_session_id,
             )
-            raise RuntimeError("Unexpected runtime outcome kind")
-        finally:
-            self._current_work_invocation = None
+        self._logical_session.record_provider_session_id(
+            observed_provider_session_id[0]
+        )
+        if isinstance(outcome_kind, UsageLimited):
+            raise UsageLimitError(
+                reset_time=outcome_kind.reset_time,
+                provider=outcome.result.selected.service,
+            )
+        if isinstance(outcome_kind, ProviderUnavailable):
+            if outcome_kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
+                raise TransientAgentError(message=outcome_kind.detail)
+            raise UsageLimitError(
+                provider=service.name,
+                raw_message=outcome_kind.detail,
+            )
+        if isinstance(outcome_kind, TimedOut):
+            raise AgentTimeoutError(
+                "Provider timed out",
+                role_value=role.value,
+            )
+        raise RuntimeError("Unexpected runtime outcome kind")
+
+    def _handle_completed_outcome(
+        self,
+        outcome: Any,  # noqa: ANN401  # opaque agent_runtime outcome
+        *,
+        role: AgentRole,
+        on_tokens: Callable[[int], None] | None,
+        text_parsing: bool,
+        observed_provider_session_id: list[str | None],
+        record_provider_session_id: Callable[[str], None],
+    ) -> AgentOutput | str:
+        if outcome.result.continuation is not None:
+            continuation_session_id = (
+                outcome.result.continuation.provider_session_id
+                if hasattr(outcome.result.continuation, "provider_session_id")
+                else None
+            )
+            if continuation_session_id is None:
+                continuation_session_id = getattr(
+                    outcome.result.continuation,
+                    "serialized",
+                    None,
+                )
+            if continuation_session_id is not None:
+                observed_provider_session_id[0] = continuation_session_id
+                record_provider_session_id(continuation_session_id)
+        self._logical_session.record_provider_session_id(
+            observed_provider_session_id[0]
+        )
+        usage = outcome.result.usage
+        if usage is not None:
+            tokens = (
+                (usage.input_tokens or 0)
+                + (usage.cache_creation_input_tokens or 0)
+                + (usage.cache_read_input_tokens or 0)
+            )
+            if tokens:
+                on_tokens and on_tokens(tokens)
+        if text_parsing:
+            return outcome.result.output
+        return extract_output(outcome.result.output, role)
 
     def _get_runtime_client(self) -> Any:  # noqa: ANN401  # returns injected client or one of two concrete types; no shared protocol
         if self._runtime_client is not None:

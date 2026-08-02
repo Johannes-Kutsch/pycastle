@@ -117,8 +117,6 @@ ignore = [
     # ── backlog (drain one entry per ticket) ─────────────────────────────────
     # complexity
     "C901",     # complex-structure (architecture work required)
-    # private access
-    "SLF001",   # private-member-access (architecture work required)
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -158,6 +156,7 @@ ignore = [
     "SIM115",  # open-file-with-context-handler (open() held for fcntl.flock lifetime; with-block would release lock immediately)
     "PTH123",  # pathlib-open (same sites as SIM115; Path.open() would close the handle on exit)
     "ASYNC221", # blocking-process-invocation-in-async-function (sync subprocess.run in async test helpers is intentional; tests avoid real async git plumbing)
+    "SLF001",   # private-member-access (test fixtures inject private state to simulate container lifecycle)
 ]
 
 [tool.ruff.lint.flake8-tidy-imports]

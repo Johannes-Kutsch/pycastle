@@ -561,6 +561,10 @@ async def run_resident_prompt(
     )
 
 
+_RETRY_TIMEOUT = object()
+_RETRY_NON_TYPED = object()
+
+
 async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> Any:  # noqa: ANN401  # return type matches request.output_adapter.finalize_result() which is generic
     status_display = request.status_display
     if status_display is None:
@@ -583,8 +587,6 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
             "narrowing: callers must populate run_session before invoking"
         )
     prepared_session = request.dependencies.prepare_session(run_session)
-    non_typed_retry_done = False
-    initial_attempt = True
 
     async with request.dependencies.status_row_factory(
         status_display,
@@ -612,100 +614,186 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
             async def container_exec(cmd: str) -> str:
                 return await loop.run_in_executor(None, session.exec_simple, cmd)
 
-            retries_left = request.dependencies.timeout_retries
-            while True:
-                provider_run_session = (
-                    prepared_session.initial_provider_run_session()
-                    if initial_attempt
-                    else prepared_session.resumable_provider_run_session()
-                )
-                try:
-                    prompt = await request.output_adapter.build_prompt(
-                        run_kind=provider_run_session.run_kind,
-                        container_exec=container_exec,
-                    )
-                    result, successful_run_session = await _execute_runtime_attempt(
-                        request=request,
-                        row=row,
-                        prepared_session=prepared_session,
-                        runner=runner,
-                        prompt=prompt,
-                        provider_run_session=provider_run_session,
-                    )
-                    if request.output_adapter.is_successful_result(result):
-                        successful_run_session.record_successful_run()
-                    else:
-                        row.close("failed", shutdown_style="error")
-                    return request.output_adapter.finalize_result(
-                        result,
-                        role=request.role,
-                        mount_path=request.mount_path,
-                        session_namespace=request.session_namespace,
-                        service_name=request.service.name,
-                        invocation_log_path=getattr(runner, "log_path", None),
-                    )
-                except Exception as err:
-                    if isinstance(err, AgentTimeoutError):
-                        if not err.role_value:
-                            err.role_value = request.role.value
-                            err.worktree_path = request.mount_path
-                        if retries_left <= 0:
-                            raise
-                        retries_left -= 1
-                        initial_attempt = False
-                        continue
-                    if isinstance(err, UsageLimitError):
-                        if err.stage_key is None:
-                            err.stage_key = request.dependencies.stage_key_for_role(
-                                request.role
-                            )
-                        request.dependencies.handle_provider_account_exhaustion(
-                            request.service,
-                            err,
-                        )
-                        token.cancel()
-                        raise
-                    if isinstance(err, TransientAgentError):
-                        token.cancel()
-                        if request.dependencies.transient_status_message is not None:
-                            status_display.print(
-                                request.name,
-                                request.dependencies.transient_status_message(err),
-                            )
-                        raise
-                    if isinstance(err, AgentCredentialFailureError):
-                        token.cancel()
-                        err.caller = request.name
-                        if not err.service_name:
-                            err.service_name = request.service.name
-                        raise
-                    if isinstance(err, HardAgentError):
-                        token.cancel()
-                        err.caller = request.name
-                        err.service_name = request.service.name
-                        raise
-                    if (
-                        not request.allow_non_typed_resume_retry
-                        or provider_run_session.run_kind != RunKind.RESUME
-                    ):
-                        raise
-                    failure_result = request.output_adapter.non_typed_failure_result()
-                    if failure_result is None:
-                        raise
-                    if non_typed_retry_done:
-                        row.close("failed", shutdown_style="error")
-                        return request.output_adapter.finalize_result(
-                            failure_result,
-                            role=request.role,
-                            mount_path=request.mount_path,
-                            session_namespace=request.session_namespace,
-                            service_name=request.service.name,
-                            invocation_log_path=getattr(runner, "log_path", None),
-                        )
-                    non_typed_retry_done = True
+            return await _run_attempt_loop(
+                request=request,
+                token=token,
+                status_display=status_display,
+                prepared_session=prepared_session,
+                runner=runner,
+                row=row,
+                container_exec=container_exec,
+            )
         finally:
             with contextlib.suppress(OSError):
                 session.__exit__(None, None, None)
+
+
+async def _run_attempt_loop(
+    *,
+    request: RuntimeInvocationRequest[Any],
+    token: CancellationToken,
+    status_display: Any,  # noqa: ANN401  # StatusDisplay or compatible
+    prepared_session: PreparedRunSessionState,
+    runner: Any,  # noqa: ANN401  # RuntimeExecutionAdapter
+    row: RuntimeStatusRow,
+    container_exec: Any,  # noqa: ANN401  # async callable (cmd: str) -> str
+) -> Any:  # noqa: ANN401  # return type matches request.output_adapter.finalize_result()
+    retries_left = request.dependencies.timeout_retries
+    initial_attempt = True
+    non_typed_retry_done = False
+
+    while True:
+        provider_run_session = (
+            prepared_session.initial_provider_run_session()
+            if initial_attempt
+            else prepared_session.resumable_provider_run_session()
+        )
+        try:
+            prompt = await request.output_adapter.build_prompt(
+                run_kind=provider_run_session.run_kind,
+                container_exec=container_exec,
+            )
+            result, successful_run_session = await _execute_runtime_attempt(
+                request=request,
+                row=row,
+                prepared_session=prepared_session,
+                runner=runner,
+                prompt=prompt,
+                provider_run_session=provider_run_session,
+            )
+            if request.output_adapter.is_successful_result(result):
+                successful_run_session.record_successful_run()
+            else:
+                row.close("failed", shutdown_style="error")
+            return request.output_adapter.finalize_result(
+                result,
+                role=request.role,
+                mount_path=request.mount_path,
+                session_namespace=request.session_namespace,
+                service_name=request.service.name,
+                invocation_log_path=getattr(runner, "log_path", None),
+            )
+        except Exception as err:  # noqa: BLE001  # multi-type dispatch; all branches raise, return, or signal retry
+            action = _handle_attempt_error(
+                err,
+                request=request,
+                token=token,
+                status_display=status_display,
+                retries_left=retries_left,
+                non_typed_retry_done=non_typed_retry_done,
+                provider_run_session=provider_run_session,
+                row=row,
+                runner=runner,
+            )
+            if action is _RETRY_TIMEOUT:
+                retries_left -= 1
+                initial_attempt = False
+                continue
+            if action is _RETRY_NON_TYPED:
+                non_typed_retry_done = True
+                continue
+            return action
+
+
+def _handle_attempt_error(
+    err: Exception,
+    *,
+    request: RuntimeInvocationRequest[Any],
+    token: CancellationToken,
+    status_display: Any,  # noqa: ANN401  # StatusDisplay or compatible; no shared protocol here
+    retries_left: int,
+    non_typed_retry_done: bool,
+    provider_run_session: PreparedProviderRunSession,
+    row: RuntimeStatusRow,
+    runner: Any,  # noqa: ANN401  # RuntimeExecutionAdapter; avoid circular
+) -> Any:  # noqa: ANN401  # _RETRY_TIMEOUT | _RETRY_NON_TYPED | finalized-result; raises otherwise
+    timeout_action = _handle_timeout_error(
+        err, request=request, retries_left=retries_left
+    )
+    if timeout_action is not None:
+        return timeout_action
+    if isinstance(err, UsageLimitError):
+        if err.stage_key is None:
+            err.stage_key = request.dependencies.stage_key_for_role(request.role)
+        request.dependencies.handle_provider_account_exhaustion(request.service, err)
+        token.cancel()
+        raise err
+    if isinstance(err, TransientAgentError):
+        token.cancel()
+        if request.dependencies.transient_status_message is not None:
+            status_display.print(
+                request.name,
+                request.dependencies.transient_status_message(err),
+            )
+        raise err
+    if isinstance(err, AgentCredentialFailureError):
+        token.cancel()
+        err.caller = request.name
+        if not err.service_name:
+            err.service_name = request.service.name
+        raise err
+    if isinstance(err, HardAgentError):
+        token.cancel()
+        err.caller = request.name
+        err.service_name = request.service.name
+        raise err
+    non_typed_action = _handle_non_typed_resume_error(
+        err,
+        request=request,
+        non_typed_retry_done=non_typed_retry_done,
+        provider_run_session=provider_run_session,
+        row=row,
+        runner=runner,
+    )
+    if non_typed_action is not None:
+        return non_typed_action
+    raise err
+
+
+def _handle_timeout_error(
+    err: Exception,
+    *,
+    request: RuntimeInvocationRequest[Any],
+    retries_left: int,
+) -> Any:  # noqa: ANN401  # _RETRY_TIMEOUT if retryable; None if not AgentTimeoutError; raises otherwise
+    if not isinstance(err, AgentTimeoutError):
+        return None
+    if not err.role_value:
+        err.role_value = request.role.value
+        err.worktree_path = request.mount_path
+    if retries_left <= 0:
+        raise err
+    return _RETRY_TIMEOUT
+
+
+def _handle_non_typed_resume_error(
+    err: Exception,
+    *,
+    request: RuntimeInvocationRequest[Any],
+    non_typed_retry_done: bool,
+    provider_run_session: PreparedProviderRunSession,
+    row: RuntimeStatusRow,
+    runner: Any,  # noqa: ANN401  # RuntimeExecutionAdapter
+) -> Any:  # noqa: ANN401  # _RETRY_NON_TYPED | finalized-result | None (not applicable); raises otherwise
+    if (
+        not request.allow_non_typed_resume_retry
+        or provider_run_session.run_kind != RunKind.RESUME
+    ):
+        return None
+    failure_result = request.output_adapter.non_typed_failure_result()
+    if failure_result is None:
+        raise err
+    if non_typed_retry_done:
+        row.close("failed", shutdown_style="error")
+        return request.output_adapter.finalize_result(
+            failure_result,
+            role=request.role,
+            mount_path=request.mount_path,
+            session_namespace=request.session_namespace,
+            service_name=request.service.name,
+            invocation_log_path=getattr(runner, "log_path", None),
+        )
+    return _RETRY_NON_TYPED
 
 
 async def _execute_runtime_attempt(

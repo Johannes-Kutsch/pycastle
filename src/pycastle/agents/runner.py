@@ -104,6 +104,15 @@ _CONTAINER_WORKSPACE = "/home/agent/workspace"
 _MAX_PROTOCOL_RETRIES = 2
 
 
+@dataclasses.dataclass
+class _RetrySignal:
+    """Signals that _invoke_runtime_attempts should continue with a new attempt."""
+
+    prompt: str
+    run_kind: RunKind
+    retries_left: int
+
+
 def format_transient_status_message(err: TransientAgentError) -> str:
     detail = str(err)
     return f"transient API error: {detail}" if detail else "transient API error"
@@ -656,7 +665,7 @@ class AgentRunner:
             service=service,
             mount_path=request.mount_path,
         )
-        runtime_client = runner._get_runtime_client()
+        runtime_client = runner.get_runtime_client()
         model_display = ModelDisplayMetadata(
             service=service.name,
             model=resolved_model,
@@ -763,98 +772,171 @@ class AgentRunner:
                 current_run_kind = RunKind.FRESH
                 continue
 
-            if not hasattr(outcome, "kind") and hasattr(outcome, "output"):
-                outcome = agent_runtime.RuntimeOutcome(
-                    kind=Completed(),
-                    result=outcome,
-                )
-            continuation = outcome.result.continuation
-            if continuation is not None and continuation.serialized is not None:
-                role_session.write_continuation(continuation.serialized)
-            if isinstance(outcome.kind, Cancelled):
-                return CompletionOutput()
-            if isinstance(outcome.kind, Completed):
-                try:
-                    parsed = extract_output(outcome.result.output, request.role)
-                except AgentOutputProtocolError as exc:
-                    if attempt == _MAX_PROTOCOL_RETRIES:
-                        raise AgentFailedError(
-                            role_value=request.role.value,
-                            worktree_path=request.mount_path,
-                            namespace=request.session_namespace,
-                            failure_class="protocol_error",
-                            service_name=service.name,
-                            session_store=role_session.path,
-                            agent_invocation_log_path=getattr(runner, "log_path", None),
-                        ) from exc
-                    reprompt = protocol_reprompt_plan(str(exc))
-                    current_prompt = (
-                        protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
-                        if isinstance(
-                            reprompt,
-                            protocol_reprompt.UnsupportedProtocolReprompt,
-                        )
-                        else reprompt.message
-                    )
-                    current_run_kind = RunKind.RESUME
-                    continue
-                if not request.preserve_session_on_completion:
-                    role_session.clear_provider_state_and_signal_completion()
-                return parsed
-            if isinstance(outcome.kind, UsageLimited):
-                error = UsageLimitError(
-                    reset_time=outcome.kind.reset_time,
-                    provider=outcome.result.selected.service,
-                    is_permanent=outcome.kind.is_permanent,
-                )
-                self._handle_provider_account_exhaustion(service, error)
-                raise error
-            if isinstance(outcome.kind, ProviderUnavailable):
-                if outcome.kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
-                    status_display.print(
-                        request.name,
-                        format_transient_status_message(
-                            TransientAgentError(message=outcome.kind.detail)
-                        ),
-                    )
-                    raise TransientAgentError(message=outcome.kind.detail)
-                error = UsageLimitError(
-                    provider=outcome.result.selected.service,
-                    raw_message=outcome.kind.detail,
-                )
-                self._handle_provider_account_exhaustion(service, error)
-                raise error
-            if isinstance(outcome.kind, TimedOut):
-                if retries_left <= 0:
-                    raise AgentTimeoutError(
-                        "Provider timed out",
-                        role_value=request.role.value,
-                    )
-                restart_num = self._cfg.timeout_retries - retries_left + 1
-                status_display.print(
-                    request.name,
-                    "Timeout — restarting"
-                    f" (attempt {restart_num}/{self._cfg.timeout_retries})",
-                )
-                retries_left -= 1
-                current_run_kind = RunKind.RESUME
-                current_prompt = await self._render_runtime_prompt(
-                    request=request,
-                    runner=runner,
-                    run_kind=current_run_kind,
-                )
+            action = await self._handle_attempt_outcome(
+                outcome,
+                attempt=attempt,
+                request=request,
+                service=service,
+                runner=runner,
+                role_session=role_session,
+                status_display=status_display,
+                retries_left=retries_left,
+                protocol_reprompt_plan=protocol_reprompt_plan,
+            )
+            if isinstance(action, _RetrySignal):
+                current_prompt = action.prompt
+                current_run_kind = action.run_kind
+                retries_left = action.retries_left
                 continue
-            if isinstance(outcome.kind, ModelNotAvailable):
-                model = outcome.result.selected.model
-                service.mark_model_restricted(model)
-                raise ModelNotAvailableError(
-                    service=outcome.result.selected.service,
-                    model=model,
-                    stage_key=_stage_key_for_role(request.role),
-                )
-            raise RuntimeError("Unexpected runtime outcome kind")
+            return action
 
         raise RuntimeError("Runtime reprompt loop exhausted unexpectedly")
+
+    async def _handle_attempt_outcome(
+        self,
+        outcome: Any,  # noqa: ANN401  # agent_runtime.RuntimeOutcome or duck-typed
+        *,
+        attempt: int,
+        request: RunRequest,
+        service: AgentService,
+        runner: ContainerRunner,
+        role_session: RoleSession,
+        status_display: StatusDisplay,
+        retries_left: int,
+        protocol_reprompt_plan: Callable[
+            [str | None], protocol_reprompt.ProtocolRepromptPlan
+        ],
+    ) -> AgentOutput | _RetrySignal:
+        if not hasattr(outcome, "kind") and hasattr(outcome, "output"):
+            outcome = agent_runtime.RuntimeOutcome(
+                kind=Completed(),
+                result=outcome,
+            )
+        continuation = outcome.result.continuation
+        if continuation is not None and continuation.serialized is not None:
+            role_session.write_continuation(continuation.serialized)
+        if isinstance(outcome.kind, Cancelled):
+            return CompletionOutput()
+        if isinstance(outcome.kind, Completed):
+            return self._handle_completed_outcome(
+                outcome,
+                attempt=attempt,
+                request=request,
+                service=service,
+                runner=runner,
+                role_session=role_session,
+                protocol_reprompt_plan=protocol_reprompt_plan,
+            )
+        if isinstance(outcome.kind, UsageLimited):
+            error = UsageLimitError(
+                reset_time=outcome.kind.reset_time,
+                provider=outcome.result.selected.service,
+                is_permanent=outcome.kind.is_permanent,
+            )
+            self._handle_provider_account_exhaustion(service, error)
+            raise error
+        if isinstance(outcome.kind, ProviderUnavailable):
+            if outcome.kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
+                status_display.print(
+                    request.name,
+                    format_transient_status_message(
+                        TransientAgentError(message=outcome.kind.detail)
+                    ),
+                )
+                raise TransientAgentError(message=outcome.kind.detail)
+            error = UsageLimitError(
+                provider=outcome.result.selected.service,
+                raw_message=outcome.kind.detail,
+            )
+            self._handle_provider_account_exhaustion(service, error)
+            raise error
+        if isinstance(outcome.kind, TimedOut):
+            return await self._handle_timed_out(
+                request=request,
+                runner=runner,
+                status_display=status_display,
+                retries_left=retries_left,
+            )
+        if isinstance(outcome.kind, ModelNotAvailable):
+            model = outcome.result.selected.model
+            service.mark_model_restricted(model)
+            raise ModelNotAvailableError(
+                service=outcome.result.selected.service,
+                model=model,
+                stage_key=_stage_key_for_role(request.role),
+            )
+        raise RuntimeError("Unexpected runtime outcome kind")
+
+    def _handle_completed_outcome(
+        self,
+        outcome: Any,  # noqa: ANN401  # agent_runtime.RuntimeOutcome
+        *,
+        attempt: int,
+        request: RunRequest,
+        service: AgentService,
+        runner: ContainerRunner,
+        role_session: RoleSession,
+        protocol_reprompt_plan: Callable[
+            [str | None], protocol_reprompt.ProtocolRepromptPlan
+        ],
+    ) -> AgentOutput | _RetrySignal:
+        try:
+            parsed = extract_output(outcome.result.output, request.role)
+        except AgentOutputProtocolError as exc:
+            if attempt == _MAX_PROTOCOL_RETRIES:
+                raise AgentFailedError(
+                    role_value=request.role.value,
+                    worktree_path=request.mount_path,
+                    namespace=request.session_namespace,
+                    failure_class="protocol_error",
+                    service_name=service.name,
+                    session_store=role_session.path,
+                    agent_invocation_log_path=getattr(runner, "log_path", None),
+                ) from exc
+            reprompt = protocol_reprompt_plan(str(exc))
+            reprompt_message = (
+                protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
+                if isinstance(reprompt, protocol_reprompt.UnsupportedProtocolReprompt)
+                else reprompt.message
+            )
+            return _RetrySignal(
+                prompt=reprompt_message,
+                run_kind=RunKind.RESUME,
+                retries_left=0,
+            )
+        if not request.preserve_session_on_completion:
+            role_session.clear_provider_state_and_signal_completion()
+        return parsed
+
+    async def _handle_timed_out(
+        self,
+        *,
+        request: RunRequest,
+        runner: ContainerRunner,
+        status_display: StatusDisplay,
+        retries_left: int,
+    ) -> _RetrySignal:
+        if retries_left <= 0:
+            raise AgentTimeoutError(
+                "Provider timed out",
+                role_value=request.role.value,
+            )
+        restart_num = self._cfg.timeout_retries - retries_left + 1
+        status_display.print(
+            request.name,
+            f"Timeout — restarting (attempt {restart_num}/{self._cfg.timeout_retries})",
+        )
+        new_run_kind = RunKind.RESUME
+        new_prompt = await self._render_runtime_prompt(
+            request=request,
+            runner=runner,
+            run_kind=new_run_kind,
+        )
+        return _RetrySignal(
+            prompt=new_prompt,
+            run_kind=new_run_kind,
+            retries_left=retries_left - 1,
+        )
 
     async def _recover_stale_continuation(
         self,
@@ -896,7 +978,7 @@ class AgentRunner:
         async def _container_exec(command: str) -> str:
             return await loop.run_in_executor(
                 None,
-                runner._session.exec_simple,
+                runner.exec_command,
                 command,
             )
 
@@ -925,76 +1007,55 @@ class AgentRunner:
         logged_lines = [False]
 
         def _on_live_output(event: agent_runtime.AgentEvent) -> None:
-            runner._status_display.reset_idle_timer(runner.name)
-            raw_provider_output = getattr(event, "raw_provider_output", "")
-            if raw_provider_output and runner._current_work_invocation is not None:
-                chunk = raw_provider_output
-                if not chunk.endswith("\n"):
-                    chunk += "\n"
-                runner._current_work_invocation.append_provider_chunk(chunk.encode())
+            if runner.on_live_output(event):
                 logged_lines[0] = True
-            if getattr(event, "type", None) == "agent_message":
-                display_message = getattr(event, "display_message", "")
-                if display_message:
-                    runner._status_display.print(runner.name, display_message)
 
-        with runner._logical_session.open_work_invocation(
+        with runner.open_work_invocation(
             role=request.role,
             run_kind=run_kind,
             session_uuid=None,
             prompt=prompt,
-        ) as work_invocation:
-            runner._current_work_invocation = work_invocation
-            try:
-                if run_kind is RunKind.RESUME and role_session.is_resumable():
-                    outcome = await runtime_client.run_resumed_session(
-                        ResumedSessionRunRequest(
-                            prompt=prompt,
-                            invocation_dir=invocation_dir,
-                            continuation=agent_runtime.Continuation(
-                                serialized=role_session.read_continuation()
-                            ),
-                            provider_auth=provider_auth,
-                            session_store=provider_state_dir,
-                            timeout_seconds=self._cfg.idle_timeout,
-                            on_live_output=_on_live_output,
-                            token=cast("Any", request.token),
-                            argv_transform=runner.provider_argv_transform(),
-                        )
+        ):
+            if run_kind is RunKind.RESUME and role_session.is_resumable():
+                outcome = await runtime_client.run_resumed_session(
+                    ResumedSessionRunRequest(
+                        prompt=prompt,
+                        invocation_dir=invocation_dir,
+                        continuation=agent_runtime.Continuation(
+                            serialized=role_session.read_continuation()
+                        ),
+                        provider_auth=provider_auth,
+                        session_store=provider_state_dir,
+                        timeout_seconds=self._cfg.idle_timeout,
+                        on_live_output=_on_live_output,
+                        token=cast("Any", request.token),
+                        argv_transform=runner.provider_argv_transform(),
                     )
-                else:
-                    outcome = await runtime_client.run_new_session(
-                        NewSessionRunRequest(
-                            prompt=prompt,
-                            invocation_dir=invocation_dir,
-                            provider_selection=agent_runtime.ProviderSelection(
-                                service=request.service,
-                                model=resolved_model,
-                                effort=resolved_effort,
-                                auth=provider_auth,
-                            ),
-                            tool_policy=_runtime_tool_policy_for_role(request.role),
-                            session_store=provider_state_dir,
-                            timeout_seconds=self._cfg.idle_timeout,
-                            name=request.name,
-                            status_display=request.status_display,
-                            work_body=request.work_body,
-                            token=cast("Any", request.token),
-                            on_live_output=_on_live_output,
-                            argv_transform=runner.provider_argv_transform(),
-                        )
+                )
+            else:
+                outcome = await runtime_client.run_new_session(
+                    NewSessionRunRequest(
+                        prompt=prompt,
+                        invocation_dir=invocation_dir,
+                        provider_selection=agent_runtime.ProviderSelection(
+                            service=request.service,
+                            model=resolved_model,
+                            effort=resolved_effort,
+                            auth=provider_auth,
+                        ),
+                        tool_policy=_runtime_tool_policy_for_role(request.role),
+                        session_store=provider_state_dir,
+                        timeout_seconds=self._cfg.idle_timeout,
+                        name=request.name,
+                        status_display=request.status_display,
+                        work_body=request.work_body,
+                        token=cast("Any", request.token),
+                        on_live_output=_on_live_output,
+                        argv_transform=runner.provider_argv_transform(),
                     )
-                if not logged_lines[0] and outcome.result.output:
-                    work_invocation_output = (
-                        outcome.result.output
-                        if outcome.result.output.endswith("\n")
-                        else f"{outcome.result.output}\n"
-                    )
-                    work_invocation.append_provider_chunk(
-                        work_invocation_output.encode()
-                    )
-            finally:
-                runner._current_work_invocation = None
+                )
+            if not logged_lines[0] and outcome.result.output:
+                runner.append_chunk(outcome.result.output)
         return outcome
 
     async def run_preflight(
