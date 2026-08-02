@@ -377,9 +377,7 @@ class RuntimeExecutionAdapter(Protocol):
         *,
         role: AgentRole = AgentRole.IMPLEMENTER,
         tool_policy: Any = ToolPolicy.FULL,  # noqa: ANN401  # accepts ServiceToolPolicy or ToolPolicy interchangeably
-        run_kind: RunKind = RunKind.FRESH,
-        session_uuid: str | None = None,
-        on_provider_session_id: Callable[[str], None] | None = None,
+        session: WorkSessionState | None = None,
     ) -> str: ...
 
 
@@ -397,9 +395,7 @@ class RuntimeOutputAdapter(Protocol[RuntimeResultT]):
         runner: RuntimeExecutionAdapter,
         role: AgentRole,
         prompt: str,
-        run_kind: RunKind,
-        session_uuid: str | None,
-        on_provider_session_id: Callable[[str], None],
+        run_session: PreparedProviderRunSession,
     ) -> RuntimeResultT: ...
 
     def is_successful_result(self, result: RuntimeResultT) -> bool: ...
@@ -415,12 +411,7 @@ class RuntimeOutputAdapter(Protocol[RuntimeResultT]):
     def finalize_result(
         self,
         result: RuntimeResultT,
-        *,
-        role: AgentRole,
-        mount_path: Path,
-        session_namespace: str,
-        service_name: str,
-        invocation_log_path: Path | str | None = None,
+        ctx: FinalizeContext,
     ) -> RuntimeResultT: ...
 
 
@@ -482,6 +473,22 @@ class RuntimeInvocationRequest[RuntimeResultT]:
         object.__setattr__(self, "run_session_plan", run_session.run_session_plan)
 
 
+@dataclasses.dataclass
+class WorkSessionState:
+    run_kind: RunKind = RunKind.FRESH
+    session_uuid: str | None = None
+    on_provider_session_id: Callable[[str], None] | None = None
+
+
+@dataclasses.dataclass
+class FinalizeContext:
+    role: AgentRole
+    mount_path: Path
+    session_namespace: str
+    service_name: str
+    invocation_log_path: Path | str | None = None
+
+
 @dataclasses.dataclass(frozen=True)
 class TextOutputAdapter:
     prompt: str
@@ -502,17 +509,17 @@ class TextOutputAdapter:
         runner: RuntimeExecutionAdapter,
         role: AgentRole,
         prompt: str,
-        run_kind: RunKind,
-        session_uuid: str | None,
-        on_provider_session_id: Callable[[str], None],
+        run_session: PreparedProviderRunSession,
     ) -> str:
         return await runner.work_text(
             prompt,
             role=role,
             tool_policy=self.tool_policy,
-            run_kind=run_kind,
-            session_uuid=session_uuid,
-            on_provider_session_id=on_provider_session_id,
+            session=WorkSessionState(
+                run_kind=run_session.run_kind,
+                session_uuid=run_session.provider_session_id,
+                on_provider_session_id=run_session.record_provider_session_id,
+            ),
         )
 
     def is_successful_result(self, _result: str) -> bool:
@@ -533,20 +540,15 @@ class TextOutputAdapter:
     def finalize_result(
         self,
         result: str,
-        *,
-        role: AgentRole,
-        mount_path: Path,
-        session_namespace: str,
-        service_name: str,
-        invocation_log_path: Path | str | None = None,
+        ctx: FinalizeContext,
     ) -> str:
-        del role, mount_path, session_namespace, service_name
-        del invocation_log_path
+        del ctx
         return result
 
 
 __all__ = [
     "CancellationToken",
+    "FinalizeContext",
     "PreparedProviderRunSession",
     "PreparedRunSessionState",
     "PromptRunRequest",
@@ -567,5 +569,6 @@ __all__ = [
     "StatusDisplayFactory",
     "StatusRowFactory",
     "TextOutputAdapter",
+    "WorkSessionState",
     "WorktreeMount",
 ]

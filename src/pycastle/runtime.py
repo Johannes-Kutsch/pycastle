@@ -17,6 +17,7 @@ from pycastle.errors import (
 )
 from pycastle.execution_contracts import (
     CancellationToken,
+    FinalizeContext,
     PreparedProviderRunSession,
     PreparedRunSessionState,
     PromptRunRequest,
@@ -247,27 +248,25 @@ class _OneShotOutputAdapter:
         runner: RuntimeExecutionAdapter,
         role: AgentRole,
         prompt: str,
-        run_kind: RunKind,
-        session_uuid: str | None,
-        on_provider_session_id: Callable[[str], None],
+        run_session: PreparedProviderRunSession,
     ) -> Any:  # noqa: ANN401  # returns whatever runner.work() produces; type depends on the concrete adapter
         provider_session_id: str | None = None
 
         def _record_provider_session_id(value: str) -> None:
             nonlocal provider_session_id
             provider_session_id = value
-            on_provider_session_id(value)
+            run_session.record_provider_session_id(value)
 
         raw_output = await runner.work(
             role,
             prompt,
-            run_kind=run_kind,
-            session_uuid=session_uuid,
+            run_kind=run_session.run_kind,
+            session_uuid=run_session.provider_session_id,
             on_provider_session_id=_record_provider_session_id,
         )
         self.runtime_metadata = OneShotRuntimeMetadata(
-            provider_session_id=provider_session_id or session_uuid,
-            run_kind=run_kind,
+            provider_session_id=provider_session_id or run_session.provider_session_id,
+            run_kind=run_session.run_kind,
             session_namespace=self._session_namespace,
         )
         return raw_output
@@ -291,14 +290,9 @@ class _OneShotOutputAdapter:
     def finalize_result(
         self,
         result: Any,  # noqa: ANN401  # protocol method; matches whatever invoke() returned
-        *,
-        role: AgentRole,
-        mount_path: Path,
-        session_namespace: str,
-        service_name: str,
-        invocation_log_path: Path | str | None = None,
+        ctx: FinalizeContext,
     ) -> Any:  # noqa: ANN401  # protocol method; returns the same type as result
-        del role, mount_path, session_namespace, service_name, invocation_log_path
+        del ctx
         return result
 
 
@@ -565,6 +559,17 @@ _RETRY_TIMEOUT = object()
 _RETRY_NON_TYPED = object()
 
 
+@dataclasses.dataclass
+class _AttemptLoopContext:
+    request: RuntimeInvocationRequest[Any]
+    token: CancellationToken
+    status_display: Any  # StatusDisplay or compatible
+    prepared_session: PreparedRunSessionState
+    runner: Any  # RuntimeExecutionAdapter
+    row: RuntimeStatusRow
+    container_exec: Any  # async callable (cmd: str) -> str
+
+
 async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> Any:  # noqa: ANN401  # return type matches request.output_adapter.finalize_result() which is generic
     status_display = request.status_display
     if status_display is None:
@@ -614,7 +619,7 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
             async def container_exec(cmd: str) -> str:
                 return await loop.run_in_executor(None, session.exec_simple, cmd)
 
-            return await _run_attempt_loop(
+            ctx = _AttemptLoopContext(
                 request=request,
                 token=token,
                 status_display=status_display,
@@ -623,67 +628,54 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
                 row=row,
                 container_exec=container_exec,
             )
+            return await _run_attempt_loop(ctx)
         finally:
             with contextlib.suppress(OSError):
                 session.__exit__(None, None, None)
 
 
-async def _run_attempt_loop(
-    *,
-    request: RuntimeInvocationRequest[Any],
-    token: CancellationToken,
-    status_display: Any,  # noqa: ANN401  # StatusDisplay or compatible
-    prepared_session: PreparedRunSessionState,
-    runner: Any,  # noqa: ANN401  # RuntimeExecutionAdapter
-    row: RuntimeStatusRow,
-    container_exec: Any,  # noqa: ANN401  # async callable (cmd: str) -> str
-) -> Any:  # noqa: ANN401  # return type matches request.output_adapter.finalize_result()
-    retries_left = request.dependencies.timeout_retries
+async def _run_attempt_loop(ctx: _AttemptLoopContext) -> Any:  # noqa: ANN401
+    retries_left = ctx.request.dependencies.timeout_retries
     initial_attempt = True
     non_typed_retry_done = False
 
     while True:
         provider_run_session = (
-            prepared_session.initial_provider_run_session()
+            ctx.prepared_session.initial_provider_run_session()
             if initial_attempt
-            else prepared_session.resumable_provider_run_session()
+            else ctx.prepared_session.resumable_provider_run_session()
         )
         try:
-            prompt = await request.output_adapter.build_prompt(
+            prompt = await ctx.request.output_adapter.build_prompt(
                 run_kind=provider_run_session.run_kind,
-                container_exec=container_exec,
+                container_exec=ctx.container_exec,
             )
             result, successful_run_session = await _execute_runtime_attempt(
-                request=request,
-                row=row,
-                prepared_session=prepared_session,
-                runner=runner,
+                ctx,
                 prompt=prompt,
                 provider_run_session=provider_run_session,
             )
-            if request.output_adapter.is_successful_result(result):
+            if ctx.request.output_adapter.is_successful_result(result):
                 successful_run_session.record_successful_run()
             else:
-                row.close("failed", shutdown_style="error")
-            return request.output_adapter.finalize_result(
+                ctx.row.close("failed", shutdown_style="error")
+            return ctx.request.output_adapter.finalize_result(
                 result,
-                role=request.role,
-                mount_path=request.mount_path,
-                session_namespace=request.session_namespace,
-                service_name=request.service.name,
-                invocation_log_path=getattr(runner, "log_path", None),
+                FinalizeContext(
+                    role=ctx.request.role,
+                    mount_path=ctx.request.mount_path,
+                    session_namespace=ctx.request.session_namespace,
+                    service_name=ctx.request.service.name,
+                    invocation_log_path=getattr(ctx.runner, "log_path", None),
+                ),
             )
         except Exception as err:  # noqa: BLE001  # multi-type dispatch; all branches raise, return, or signal retry
             action = _handle_attempt_error(
                 err,
-                request=request,
-                token=token,
-                status_display=status_display,
+                ctx=ctx,
                 retries_left=retries_left,
                 non_typed_retry_done=non_typed_retry_done,
                 provider_run_session=provider_run_session,
-                row=row,
-                runner=runner,
             )
             if action is _RETRY_TIMEOUT:
                 retries_left -= 1
@@ -697,53 +689,51 @@ async def _run_attempt_loop(
 
 def _handle_attempt_error(
     err: Exception,
+    ctx: _AttemptLoopContext,
     *,
-    request: RuntimeInvocationRequest[Any],
-    token: CancellationToken,
-    status_display: Any,  # noqa: ANN401  # StatusDisplay or compatible; no shared protocol here
     retries_left: int,
     non_typed_retry_done: bool,
     provider_run_session: PreparedProviderRunSession,
-    row: RuntimeStatusRow,
-    runner: Any,  # noqa: ANN401  # RuntimeExecutionAdapter; avoid circular
 ) -> Any:  # noqa: ANN401  # _RETRY_TIMEOUT | _RETRY_NON_TYPED | finalized-result; raises otherwise
     timeout_action = _handle_timeout_error(
-        err, request=request, retries_left=retries_left
+        err, request=ctx.request, retries_left=retries_left
     )
     if timeout_action is not None:
         return timeout_action
     if isinstance(err, UsageLimitError):
         if err.stage_key is None:
-            err.stage_key = request.dependencies.stage_key_for_role(request.role)
-        request.dependencies.handle_provider_account_exhaustion(request.service, err)
-        token.cancel()
+            err.stage_key = ctx.request.dependencies.stage_key_for_role(
+                ctx.request.role
+            )
+        ctx.request.dependencies.handle_provider_account_exhaustion(
+            ctx.request.service, err
+        )
+        ctx.token.cancel()
         raise err
     if isinstance(err, TransientAgentError):
-        token.cancel()
-        if request.dependencies.transient_status_message is not None:
-            status_display.print(
-                request.name,
-                request.dependencies.transient_status_message(err),
+        ctx.token.cancel()
+        if ctx.request.dependencies.transient_status_message is not None:
+            ctx.status_display.print(
+                ctx.request.name,
+                ctx.request.dependencies.transient_status_message(err),
             )
         raise err
     if isinstance(err, AgentCredentialFailureError):
-        token.cancel()
-        err.caller = request.name
+        ctx.token.cancel()
+        err.caller = ctx.request.name
         if not err.service_name:
-            err.service_name = request.service.name
+            err.service_name = ctx.request.service.name
         raise err
     if isinstance(err, HardAgentError):
-        token.cancel()
-        err.caller = request.name
-        err.service_name = request.service.name
+        ctx.token.cancel()
+        err.caller = ctx.request.name
+        err.service_name = ctx.request.service.name
         raise err
     non_typed_action = _handle_non_typed_resume_error(
         err,
-        request=request,
+        ctx=ctx,
         non_typed_retry_done=non_typed_retry_done,
         provider_run_session=provider_run_session,
-        row=row,
-        runner=runner,
     )
     if non_typed_action is not None:
         return non_typed_action
@@ -768,45 +758,46 @@ def _handle_timeout_error(
 
 def _handle_non_typed_resume_error(
     err: Exception,
+    ctx: _AttemptLoopContext,
     *,
-    request: RuntimeInvocationRequest[Any],
     non_typed_retry_done: bool,
     provider_run_session: PreparedProviderRunSession,
-    row: RuntimeStatusRow,
-    runner: Any,  # noqa: ANN401  # RuntimeExecutionAdapter
 ) -> Any:  # noqa: ANN401  # _RETRY_NON_TYPED | finalized-result | None (not applicable); raises otherwise
     if (
-        not request.allow_non_typed_resume_retry
+        not ctx.request.allow_non_typed_resume_retry
         or provider_run_session.run_kind != RunKind.RESUME
     ):
         return None
-    failure_result = request.output_adapter.non_typed_failure_result()
+    failure_result = ctx.request.output_adapter.non_typed_failure_result()
     if failure_result is None:
         raise err
     if non_typed_retry_done:
-        row.close("failed", shutdown_style="error")
-        return request.output_adapter.finalize_result(
+        ctx.row.close("failed", shutdown_style="error")
+        return ctx.request.output_adapter.finalize_result(
             failure_result,
-            role=request.role,
-            mount_path=request.mount_path,
-            session_namespace=request.session_namespace,
-            service_name=request.service.name,
-            invocation_log_path=getattr(runner, "log_path", None),
+            FinalizeContext(
+                role=ctx.request.role,
+                mount_path=ctx.request.mount_path,
+                session_namespace=ctx.request.session_namespace,
+                service_name=ctx.request.service.name,
+                invocation_log_path=getattr(ctx.runner, "log_path", None),
+            ),
         )
     return _RETRY_NON_TYPED
 
 
 async def _execute_runtime_attempt(
+    ctx: _AttemptLoopContext,
     *,
-    request: RuntimeInvocationRequest[Any],
-    row: RuntimeStatusRow,
-    prepared_session: PreparedRunSessionState,
-    runner: RuntimeExecutionAdapter,
     prompt: str,
     provider_run_session: PreparedProviderRunSession,
 ) -> tuple[
     Any, PreparedProviderRunSession
 ]:  # first element is the generic result of output_adapter.invoke()
+    request = ctx.request
+    row = ctx.row
+    prepared_session = ctx.prepared_session
+    runner = ctx.runner
     reprompt_message = request.output_adapter.protocol_reprompt_message()
     protocol_error_result = request.output_adapter.protocol_error_result()
     protocol_error_types = request.output_adapter.protocol_error_types()
@@ -821,9 +812,7 @@ async def _execute_runtime_attempt(
                 runner=runner,
                 role=request.role,
                 prompt=work_prompt,
-                run_kind=work_run_session.run_kind,
-                session_uuid=work_run_session.provider_session_id,
-                on_provider_session_id=work_run_session.record_provider_session_id,
+                run_session=work_run_session,
             )
         except Exception as exc:
             if not protocol_error_types or not isinstance(exc, protocol_error_types):

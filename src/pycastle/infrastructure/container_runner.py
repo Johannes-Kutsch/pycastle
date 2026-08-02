@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import dataclasses
 import shlex
 import shutil
 from collections.abc import Callable, Iterator, Mapping
@@ -40,6 +41,7 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from pycastle.execution_contracts import WorkSessionState
 from pycastle.infrastructure.agent_invocation_log import AgentInvocationLog
 from pycastle.infrastructure.docker_session import DockerSession
 from pycastle.infrastructure.preflight_failure_interpreter import (
@@ -50,6 +52,29 @@ from pycastle.services.runtime_services import ToolPolicy as ServiceToolPolicy
 from pycastle.session import RunKind
 
 _DEFAULT_PROVIDER_EFFORT = "medium"
+
+
+@dataclasses.dataclass
+class _RunWithRuntimeRequest:
+    role: AgentRole
+    prompt: str
+    tool_policy: ServiceToolPolicy
+    on_turn: Callable[[str], None]
+    on_tokens: Callable[[int], None] | None
+    run_kind: RunKind
+    session_uuid: str | None
+    on_provider_session_id: Callable[[str], None] | None
+    text_parsing: bool
+
+
+@dataclasses.dataclass
+class _OutcomeProcessingContext:
+    role: AgentRole
+    service: Any  # AgentService; avoid circular import
+    on_tokens: Callable[[int], None] | None
+    text_parsing: bool
+    observed_provider_session_id: list[str | None]
+    record_provider_session_id: Callable[[str], None]
 
 
 class _DockerBackedProviderInvocationAdapter:
@@ -166,36 +191,44 @@ class _DockerlessRuntimeClient:
         )
 
 
+@dataclasses.dataclass
+class _ContainerRunnerConfig:
+    cfg: Config
+    model: str = ""
+    effort: str = ""
+    status_display: StatusDisplay | None = None
+    service: AgentService | None = None
+    runtime_client: Any | None = (
+        None  # agent_runtime.RuntimeClient or _DockerlessRuntimeClient
+    )
+    mount_path: Path | None = None
+
+
 class ContainerRunner:
     def __init__(
         self,
         name: str,
         session: DockerSession,
-        model: str = "",
-        effort: str = "",
-        status_display: StatusDisplay | None = None,
-        *,
-        cfg: Config,
-        service: AgentService | None = None,
-        runtime_client: Any | None = None,  # noqa: ANN401  # either agent_runtime.RuntimeClient or _DockerlessRuntimeClient; no shared base class
-        mount_path: Path | None = None,
+        config: _ContainerRunnerConfig,
     ) -> None:
         self.name = name
         self._session = session
-        self.model = model
-        self.effort = effort
-        self._cfg = cfg
-        self._logs_dir = resolve_logs_dir(cfg)
-        self._service = service
-        self._runtime_client = runtime_client
-        self._mount_path = mount_path
+        self.model = config.model
+        self.effort = config.effort
+        self._cfg = config.cfg
+        self._logs_dir = resolve_logs_dir(config.cfg)
+        self._service = config.service
+        self._runtime_client = config.runtime_client
+        self._mount_path = config.mount_path
         self._invocation_log = AgentInvocationLog()
         self._logical_session = self._invocation_log.start_logical_session(
             agent_name=name,
             effective_logs_dir=self._logs_dir,
         )
         self._status_display = (
-            status_display if status_display is not None else PlainStatusDisplay()
+            config.status_display
+            if config.status_display is not None
+            else PlainStatusDisplay()
         )
         self._current_work_invocation: Any | None = None
 
@@ -344,19 +377,20 @@ class ContainerRunner:
         def on_tokens(tokens: int) -> None:
             self._status_display.update_tokens(self.name, tokens)
 
+        request = _RunWithRuntimeRequest(
+            role=role,
+            prompt=prompt,
+            tool_policy=ServiceToolPolicy.FULL,
+            on_turn=on_turn,
+            on_tokens=on_tokens,
+            run_kind=run_kind,
+            session_uuid=session_uuid,
+            on_provider_session_id=on_provider_session_id,
+            text_parsing=False,
+        )
         return cast(
             "AgentOutput",
-            await self._run_with_runtime(
-                role=role,
-                prompt=prompt,
-                tool_policy=ServiceToolPolicy.FULL,
-                on_turn=on_turn,
-                on_tokens=on_tokens,
-                run_kind=run_kind,
-                session_uuid=session_uuid,
-                on_provider_session_id=on_provider_session_id,
-                text_parsing=False,
-            ),
+            await self._run_with_runtime(request),
         )
 
     async def work_text(
@@ -365,10 +399,9 @@ class ContainerRunner:
         *,
         role: AgentRole = AgentRole.IMPLEMENTER,
         tool_policy: ServiceToolPolicy = ServiceToolPolicy.FULL,
-        run_kind: RunKind = RunKind.FRESH,
-        session_uuid: str | None = None,
-        on_provider_session_id: Callable[[str], None] | None = None,
+        session: WorkSessionState | None = None,
     ) -> str:
+        _session = session or WorkSessionState()
         self._status_display.update_phase(self.name, WORK_PHASE)
         if self._service is None:
             raise RuntimeError("ContainerRunner.work_text requires an agent service")
@@ -382,40 +415,32 @@ class ContainerRunner:
         return cast(
             "str",
             await self._run_with_runtime(
-                role=role,
-                prompt=prompt,
-                tool_policy=tool_policy,
-                on_turn=on_turn,
-                on_tokens=on_tokens,
-                run_kind=run_kind,
-                session_uuid=session_uuid,
-                on_provider_session_id=on_provider_session_id,
-                text_parsing=True,
+                _RunWithRuntimeRequest(
+                    role=role,
+                    prompt=prompt,
+                    tool_policy=tool_policy,
+                    on_turn=on_turn,
+                    on_tokens=on_tokens,
+                    run_kind=_session.run_kind,
+                    session_uuid=_session.session_uuid,
+                    on_provider_session_id=_session.on_provider_session_id,
+                    text_parsing=True,
+                )
             ),
         )
 
     async def _run_with_runtime(
-        self,
-        role: AgentRole,
-        prompt: str,
-        tool_policy: ServiceToolPolicy,
-        on_turn: Callable[[str], None],
-        on_tokens: Callable[[int], None] | None = None,
-        run_kind: RunKind = RunKind.FRESH,
-        session_uuid: str | None = None,
-        on_provider_session_id: Callable[[str], None] | None = None,
-        *,
-        text_parsing: bool = False,
+        self, request: _RunWithRuntimeRequest
     ) -> AgentOutput | str:
         service = self._service
         if service is None:
             raise RuntimeError("ContainerRunner requires an agent service")
-        observed_provider_session_id: list[str | None] = [session_uuid]
+        observed_provider_session_id: list[str | None] = [request.session_uuid]
 
         def _record_provider_session_id(provider_session_id: str) -> None:
             observed_provider_session_id[0] = provider_session_id
-            if on_provider_session_id is not None:
-                on_provider_session_id(provider_session_id)
+            if request.on_provider_session_id is not None:
+                request.on_provider_session_id(provider_session_id)
 
         logged_lines = [False]
 
@@ -423,67 +448,54 @@ class ContainerRunner:
             self._status_display.reset_idle_timer(self.name)
             display_message = getattr(event, "display_message", "")
             if display_message:
-                on_turn(display_message)
+                request.on_turn(display_message)
             raw = getattr(event, "raw_provider_output", "")
             if raw and self._current_work_invocation is not None:
                 self.append_chunk(raw)
                 logged_lines[0] = True
 
         runtime_request = self._build_runtime_request(
-            prompt=prompt,
-            run_kind=run_kind,
-            session_uuid=session_uuid,
-            tool_policy=tool_policy,
+            prompt=request.prompt,
+            run_kind=request.run_kind,
+            session_uuid=request.session_uuid,
+            tool_policy=request.tool_policy,
             on_live_output=_on_live_output,
         )
         runtime = self._get_runtime_client()
 
         with self.open_work_invocation(
-            role=role,
-            run_kind=run_kind,
-            session_uuid=session_uuid,
-            prompt=prompt,
+            role=request.role,
+            run_kind=request.run_kind,
+            session_uuid=request.session_uuid,
+            prompt=request.prompt,
         ):
-            if run_kind is RunKind.FRESH:
+            if request.run_kind is RunKind.FRESH:
                 outcome = await runtime.run_new_session(runtime_request)
             else:
                 outcome = await runtime.run_resumed_session(runtime_request)
             if not logged_lines[0] and outcome.result.output:
                 self.append_chunk(outcome.result.output)
 
-        return self._process_runtime_outcome(
-            outcome,
-            role=role,
+        ctx = _OutcomeProcessingContext(
+            role=request.role,
             service=service,
-            on_tokens=on_tokens,
-            text_parsing=text_parsing,
+            on_tokens=request.on_tokens,
+            text_parsing=request.text_parsing,
             observed_provider_session_id=observed_provider_session_id,
             record_provider_session_id=_record_provider_session_id,
         )
+        return self._process_runtime_outcome(outcome, ctx)
 
     def _process_runtime_outcome(
         self,
         outcome: Any,  # noqa: ANN401  # opaque agent_runtime outcome; no shared protocol
-        *,
-        role: AgentRole,
-        service: Any,  # noqa: ANN401  # AgentService; avoid circular import
-        on_tokens: Callable[[int], None] | None,
-        text_parsing: bool,
-        observed_provider_session_id: list[str | None],
-        record_provider_session_id: Callable[[str], None],
+        ctx: _OutcomeProcessingContext,
     ) -> AgentOutput | str:
         outcome_kind = outcome.kind
         if isinstance(outcome_kind, Completed):
-            return self._handle_completed_outcome(
-                outcome,
-                role=role,
-                on_tokens=on_tokens,
-                text_parsing=text_parsing,
-                observed_provider_session_id=observed_provider_session_id,
-                record_provider_session_id=record_provider_session_id,
-            )
+            return self._handle_completed_outcome(outcome, ctx)
         self._logical_session.record_provider_session_id(
-            observed_provider_session_id[0]
+            ctx.observed_provider_session_id[0]
         )
         if isinstance(outcome_kind, UsageLimited):
             raise UsageLimitError(
@@ -494,25 +506,20 @@ class ContainerRunner:
             if outcome_kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
                 raise TransientAgentError(message=outcome_kind.detail)
             raise UsageLimitError(
-                provider=service.name,
+                provider=ctx.service.name,
                 raw_message=outcome_kind.detail,
             )
         if isinstance(outcome_kind, TimedOut):
             raise AgentTimeoutError(
                 "Provider timed out",
-                role_value=role.value,
+                role_value=ctx.role.value,
             )
         raise RuntimeError("Unexpected runtime outcome kind")
 
     def _handle_completed_outcome(
         self,
         outcome: Any,  # noqa: ANN401  # opaque agent_runtime outcome
-        *,
-        role: AgentRole,
-        on_tokens: Callable[[int], None] | None,
-        text_parsing: bool,
-        observed_provider_session_id: list[str | None],
-        record_provider_session_id: Callable[[str], None],
+        ctx: _OutcomeProcessingContext,
     ) -> AgentOutput | str:
         if outcome.result.continuation is not None:
             continuation_session_id = (
@@ -527,10 +534,10 @@ class ContainerRunner:
                     None,
                 )
             if continuation_session_id is not None:
-                observed_provider_session_id[0] = continuation_session_id
-                record_provider_session_id(continuation_session_id)
+                ctx.observed_provider_session_id[0] = continuation_session_id
+                ctx.record_provider_session_id(continuation_session_id)
         self._logical_session.record_provider_session_id(
-            observed_provider_session_id[0]
+            ctx.observed_provider_session_id[0]
         )
         usage = outcome.result.usage
         if usage is not None:
@@ -540,10 +547,10 @@ class ContainerRunner:
                 + (usage.cache_read_input_tokens or 0)
             )
             if tokens:
-                on_tokens and on_tokens(tokens)
-        if text_parsing:
+                ctx.on_tokens and ctx.on_tokens(tokens)
+        if ctx.text_parsing:
             return outcome.result.output
-        return extract_output(outcome.result.output, role)
+        return extract_output(outcome.result.output, ctx.role)
 
     def _get_runtime_client(self) -> Any:  # noqa: ANN401  # returns injected client or one of two concrete types; no shared protocol
         if self._runtime_client is not None:

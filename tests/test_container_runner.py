@@ -28,7 +28,10 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
-from pycastle.infrastructure.container_runner import ContainerRunner
+from pycastle.infrastructure.container_runner import (
+    ContainerRunner,
+    _ContainerRunnerConfig,
+)
 from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
@@ -190,13 +193,15 @@ def _make_runner(
     runner = ContainerRunner(
         name,
         cast("DockerSession", session),
-        model=model,
-        effort=effort,
-        status_display=status_display,
-        cfg=cfg,
-        service=cast("AgentService", _FakeService("claude")),
-        runtime_client=runtime_client,
-        mount_path=mount_path,
+        _ContainerRunnerConfig(
+            cfg=cfg,
+            model=model,
+            effort=effort,
+            status_display=status_display,
+            service=cast("AgentService", _FakeService("claude")),
+            runtime_client=runtime_client,
+            mount_path=mount_path,
+        ),
     )
     return runner, session
 
@@ -209,8 +214,10 @@ def test_container_runner_constructor_takes_session(tmp_path):
     runner = ContainerRunner(
         "agent",
         cast("DockerSession", session),
-        cfg=Config(logs_dir=tmp_path),
-        service=_FakeService("claude"),
+        _ContainerRunnerConfig(
+            cfg=Config(logs_dir=tmp_path),
+            service=_FakeService("claude"),
+        ),
     )
     assert runner.name == "agent"
     assert runner.log_path.parent == tmp_path
@@ -629,11 +636,13 @@ def test_default_model_propagates_exception_from_valid_models(tmp_path):
     runner = ContainerRunner(
         "agent",
         cast("DockerSession", session),
-        model="",
-        cfg=Config(logs_dir=tmp_path),
-        service=cast("AgentService", _FakeService("fake")),
-        runtime_client=runtime,
-        mount_path=tmp_path,
+        _ContainerRunnerConfig(
+            cfg=Config(logs_dir=tmp_path),
+            model="",
+            service=cast("AgentService", _FakeService("fake")),
+            runtime_client=runtime,
+            mount_path=tmp_path,
+        ),
     )
 
     with pytest.raises(AttributeError):
