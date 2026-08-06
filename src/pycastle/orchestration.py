@@ -16,11 +16,11 @@ async def run(
     service_registry: ServiceRegistry,
     improve_mode: ImproveMode,
 ) -> None:
+    from pycastle.iteration.orchestrator import RunOptions
     from pycastle.iteration.orchestrator import run as run_orchestrator
 
     await run_orchestrator(
         env,
         repo_root,
-        service_registry=service_registry,
-        improve_mode=improve_mode,
+        RunOptions(service_registry=service_registry, improve_mode=improve_mode),
     )

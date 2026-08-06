@@ -19,12 +19,14 @@ from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.iteration.implement import (
     ImplementResult,
+    _RunIssueContext,
     branch_for,
     implement_phase,
     run_issue,
 )
 from pycastle.iteration.implement_issue_plan import (
     CommitFallbackSubject,
+    IssueExecutionContext,
     IssueExecutionPlan,
     IssueRoleStepPlan,
     plan_issue_execution,
@@ -125,13 +127,15 @@ def test_plan_issue_execution_sets_implementer_fallback_commit_subject():
     deps = _make_deps(Path.cwd(), fake)
 
     plan = plan_issue_execution(
-        issue=issue,
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=Path("/tmp/implement"),
-        review_mount_path=Path("/tmp/review"),
-        implement_done=False,
-        review_done=False,
+        IssueExecutionContext(
+            issue=issue,
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=Path("/tmp/implement"),
+            review_mount_path=Path("/tmp/review"),
+            implement_done=False,
+            review_done=False,
+        )
     )
 
     assert plan.implementer_step.commit_fallback_subject == CommitFallbackSubject(
@@ -1186,8 +1190,8 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
 
     async def _two_concurrent():
         return await asyncio.gather(
-            run_issue(issue, deps, "sha-abc", branch_locks=branch_locks),
-            run_issue(issue, deps, "sha-abc", branch_locks=branch_locks),
+            run_issue(issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)),
+            run_issue(issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)),
             return_exceptions=True,
         )
 
@@ -1214,7 +1218,7 @@ def test_run_issue_rejects_missing_slice_mode_before_creating_branch_lock(tmp_pa
             r"slice-mode selection\."
         ),
     ):
-        asyncio.run(run_issue(issue, deps, "sha-abc", branch_locks=branch_locks))
+        asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)))
 
     assert branch_locks == {}
     assert not worktree_identity(branch_for(25), tmp_path).path.exists()
@@ -1387,7 +1391,7 @@ def test_run_issue_releases_lock_on_unexpected_exception(tmp_path):
     }
 
     with pytest.raises(RuntimeError):
-        asyncio.run(run_issue(issue, deps, "sha-abc", branch_locks=branch_locks))
+        asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)))
 
     assert not branch_locks["pycastle/issue-25"].locked()
 
@@ -1689,7 +1693,7 @@ def test_run_issue_calls_on_started_for_implement_and_review(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=fired.append))
+    asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append)))
 
     assert fired == ["implement", "review"]
 
@@ -1708,7 +1712,7 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=fired.append))
+    asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append)))
 
     assert fired == []
 
@@ -2033,7 +2037,7 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", on_started=fired.append))
+    asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append)))
 
     assert fired == ["review"]
 

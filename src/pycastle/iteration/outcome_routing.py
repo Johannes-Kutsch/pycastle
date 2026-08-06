@@ -87,7 +87,75 @@ def _continuation_to_directive(
     return BreakLoop()
 
 
-def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
+def _route_usage_limit(outcome: AbortedUsageLimit, deps: RouterDeps) -> LoopDirective:
+    return _continuation_to_directive(
+        decide_usage_limit_continuation(
+            outcome, deps.cfg, deps.service_registry, deps.now
+        ),
+        deps,
+    )
+
+
+def _route_model_not_available(
+    outcome: AbortedModelNotAvailable, deps: RouterDeps
+) -> LoopDirective:
+    return _continuation_to_directive(
+        decide_model_not_available_continuation(
+            outcome, deps.cfg, deps.service_registry, deps.now
+        ),
+        deps,
+    )
+
+
+def _route_agent_failure(
+    outcome: AbortedAgentFailure, deps: RouterDeps
+) -> LoopDirective:
+    msg = f"Agent '{outcome.failed_role}' failed irrecoverably."
+    if outcome.issue_number is not None:
+        msg += f" Filed issue #{outcome.issue_number} for triage."
+    deps.status_display.print("", msg)
+    return ExitFailure(code=1)
+
+
+def _route_operator_actionable(
+    outcome: AbortedOperatorActionable, deps: RouterDeps
+) -> LoopDirective:
+    deps.status_display.print(
+        "",
+        f"git {outcome.op} failed after {outcome.attempt_count} attempt(s) — remote unreachable. "
+        "Check SSH/network and retry.",
+    )
+    file_operator_actionable_git_issue(
+        op=outcome.op,
+        stderr=outcome.stderr,
+        attempt_count=outcome.attempt_count,
+        github_svc=deps.github_svc,
+    )
+    return ExitFailure(code=1)
+
+
+def _route_merge_close_failure(
+    outcome: MergeCloseFailure, deps: RouterDeps
+) -> LoopDirective:
+    numbers_str = ", ".join(f"#{n}" for n in outcome.filed_issue_numbers)
+    deps.status_display.print(
+        "",
+        f"Merge close failure: issue close failed. Filed {numbers_str} for triage.",
+    )
+    return BreakLoop()
+
+
+def _route_timeout(outcome: AbortedTimeout, deps: RouterDeps) -> LoopDirective:
+    deps.status_display.print(
+        "",
+        f"Agent '{outcome.failed_role}' timed out. Resuming next iteration.",
+    )
+    return ContinueLoop()
+
+
+def _route_terminal(
+    outcome: IterationOutcome, deps: RouterDeps
+) -> LoopDirective | None:
     match outcome:
         case Done(improve_cap_reached=True):
             deps.status_display.print(
@@ -110,67 +178,34 @@ def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
                 "Improve agent reported no improvement candidate.",
             )
             return BreakLoop()
-        case AbortedHITL():
-            return ExitFailure(code=1)
-        case AbortedAgentCredentialFailure():
-            return ExitFailure(code=1)
-        case AbortedHardApiError():
-            return ExitFailure(code=1)
-        case AbortedUsageLimit():
-            return _continuation_to_directive(
-                decide_usage_limit_continuation(
-                    outcome,
-                    deps.cfg,
-                    deps.service_registry,
-                    deps.now,
-                ),
-                deps,
-            )
-        case AbortedModelNotAvailable():
-            return _continuation_to_directive(
-                decide_model_not_available_continuation(
-                    outcome,
-                    deps.cfg,
-                    deps.service_registry,
-                    deps.now,
-                ),
-                deps,
-            )
-        case AbortedAgentFailure(failed_role=role, issue_number=issue_num):
-            msg = f"Agent '{role}' failed irrecoverably."
-            if issue_num is not None:
-                msg += f" Filed issue #{issue_num} for triage."
-            deps.status_display.print("", msg)
-            return ExitFailure(code=1)
-        case AbortedTimeout(failed_role=role):
-            deps.status_display.print(
-                "",
-                f"Agent '{role}' timed out. Resuming next iteration.",
-            )
+        case Continue():
             return ContinueLoop()
-        case AbortedOperatorActionable(op=op, stderr=stderr, attempt_count=cnt):
-            deps.status_display.print(
-                "",
-                f"git {op} failed after {cnt} attempt(s) — remote unreachable. "
-                "Check SSH/network and retry.",
-            )
-            file_operator_actionable_git_issue(
-                op=op,
-                stderr=stderr,
-                attempt_count=cnt,
-                github_svc=deps.github_svc,
-            )
+        case _:
+            return None
+
+
+def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
+    terminal = _route_terminal(outcome, deps)
+    if terminal is not None:
+        return terminal
+    match outcome:
+        case AbortedHITL() | AbortedAgentCredentialFailure() | AbortedHardApiError():
             return ExitFailure(code=1)
-        case MergeCloseFailure(filed_issue_numbers=issue_numbers):
-            numbers_str = ", ".join(f"#{n}" for n in issue_numbers)
-            deps.status_display.print(
-                "",
-                f"Merge close failure: issue close failed. Filed {numbers_str} for triage.",
-            )
-            return BreakLoop()
+        case AbortedTimeout():
+            return _route_timeout(outcome, deps)
+        case AbortedUsageLimit():
+            return _route_usage_limit(outcome, deps)
+        case AbortedModelNotAvailable():
+            return _route_model_not_available(outcome, deps)
+        case AbortedAgentFailure():
+            return _route_agent_failure(outcome, deps)
+        case AbortedOperatorActionable():
+            return _route_operator_actionable(outcome, deps)
+        case MergeCloseFailure():
+            return _route_merge_close_failure(outcome, deps)
         case AbortedSetup():
             return translate_aborted_setup_to_directive(
                 outcome, deps.cfg, deps.status_display, auto_file_issue
             )
-        case Continue():
-            return ContinueLoop()
+        case _:
+            raise TypeError(f"Unhandled outcome type: {type(outcome)}")

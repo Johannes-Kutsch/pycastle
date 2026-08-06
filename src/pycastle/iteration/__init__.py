@@ -40,7 +40,10 @@ from pycastle.iteration.merge import merge_phase
 from pycastle.iteration.planning import AllBlocked as AllBlocked
 from pycastle.iteration.planning import PlanReady as PlanReady
 from pycastle.iteration.planning import planning_phase
-from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
+from pycastle.iteration.planning_issue_intake import (
+    PreparedPlanningIssueSet,
+    prepare_planning_issue_set,
+)
 from pycastle.iteration.preflight import PreflightAFK, PreflightHITL
 from pycastle.iteration.preflight import PreflightCache as PreflightCache
 from pycastle.prompts.dispatch import build_prompt_invocation
@@ -51,6 +54,7 @@ from pycastle.services import GithubServiceError, OperatorActionableGitError
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from pycastle.config import Config
     from pycastle.iteration._deps import Deps
 
 _FILED_USAGE_LIMIT_RAW_MESSAGES: set[str] = set()
@@ -274,171 +278,186 @@ async def _handle_preflight_outcome(
     return await _run_implement_and_merge([afk_issue], deps, result.sha)
 
 
-async def run_iteration(deps: Deps) -> IterationOutcome:
-    try:
-        # ── Fetch issues ─────────────────────────────────────────────────────
+async def _run_improve_phase(deps: Deps) -> IterationOutcome | None:
+    """Runs the improve phase when idle. Returns None to continue to planning."""
+    if deps.improve_mode is None:
+        return Done()
+    if deps.improve_mode == "until_sleep" and deps.slept_once:
+        return Done()
+    if (
+        deps.cfg.improve_max is not None
+        and deps.improve_dispatched_count >= deps.cfg.improve_max
+    ):
+        return Done(improve_cap_reached=True)
+    improve_result = await improve_phase(deps)
+    if isinstance(improve_result, ImproveContinue):
+        deps.improve_dispatched_count += 1
+    if isinstance(improve_result, ImproveNoCandidate):
+        return NoCandidate()
+    if isinstance(improve_result, (PreflightHITL, PreflightAFK)):
+        return await _handle_preflight_outcome(improve_result, deps)
+    return None
+
+
+async def _run_plan_and_implement(
+    deps: Deps,
+    open_issues: list[dict],
+    prepared_issue_set: PreparedPlanningIssueSet,
+    all_open_issues: list[dict],
+    in_flight: list[dict],
+) -> IterationOutcome:
+    plan_result = await planning_phase(
+        deps,
+        open_issues,
+        all_open_issues,
+        prepared_issue_set=prepared_issue_set,
+        in_flight=in_flight,
+    )
+    if isinstance(plan_result, AllBlocked):
+        return Done()
+    if isinstance(plan_result, (PreflightHITL, PreflightAFK)):
+        return await _handle_preflight_outcome(plan_result, deps)
+    return await _run_implement_and_merge(plan_result.issues, deps, plan_result.sha)
+
+
+async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
+    open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
+    prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
+    prepared_open_issues = list(prepared_issue_set.prepared_issues)
+    all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
+    in_flight = select_in_flight_issues(
+        prepared_open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+    )
+
+    if not open_issues and not in_flight:
+        outcome = await _run_improve_phase(deps)
+        if outcome is not None:
+            return outcome
         open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
         prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
         prepared_open_issues = list(prepared_issue_set.prepared_issues)
         all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
-
+        if not open_issues:
+            return Continue()
         in_flight = select_in_flight_issues(
             prepared_open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
         )
 
-        # ── (Improve) — runs when idle: no open issues, no in-flight ────────
-        if not open_issues and not in_flight:
-            if (
-                deps.improve_mode is not None
-                and not (deps.improve_mode == "until_sleep" and deps.slept_once)
-                and not (
-                    deps.cfg.improve_max is not None
-                    and deps.improve_dispatched_count >= deps.cfg.improve_max
+    return await _run_plan_and_implement(
+        deps, open_issues, prepared_issue_set, all_open_issues, in_flight
+    )
+
+
+async def _handle_agent_failed_error(
+    err: AgentFailedError, deps: Deps
+) -> AbortedAgentFailure | AbortedAgentCredentialFailure:
+    issue_number: int | None = None
+    if deps.cfg.diagnose_on_failure:
+        try:
+            mount_decision = decide_diagnostic_mount_dispatch(
+                repo_root=deps.repo_root,
+                mount_path=err.worktree_path,
+                caller="Failure Report Agent",
+                diagnostic_role=AgentRole.FAILURE_REPORT.value,
+                role_name=err.role_value,
+                original_failure_summary=(
+                    f"Agent role {err.role_value!r} failed in worktree "
+                    f"{err.worktree_path}."
+                ),
+                github_svc=deps.github_svc,
+            )
+            if isinstance(mount_decision, DiagnosticMountFallbackIssue):
+                issue_number = mount_decision.issue_number
+                return AbortedAgentFailure(
+                    failed_role=err.role_value, issue_number=issue_number
                 )
-            ):
-                improve_result = await improve_phase(deps)
-                if isinstance(improve_result, ImproveContinue):
-                    deps.improve_dispatched_count += 1
-                if isinstance(improve_result, ImproveNoCandidate):
-                    return NoCandidate()
-                if isinstance(improve_result, (PreflightHITL, PreflightAFK)):
-                    return await _handle_preflight_outcome(improve_result, deps)
-                # ImproveContinue: re-fetch issues after improve filed new ones
-                open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
-                prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
-                prepared_open_issues = list(prepared_issue_set.prepared_issues)
-                all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
-                if not open_issues:
-                    return Continue()
-                in_flight = select_in_flight_issues(
-                    prepared_open_issues,
-                    repo_root=deps.repo_root,
-                    git_svc=deps.git_svc,
-                )
+            raw_evidence_path = getattr(err, "agent_invocation_log_path", None)
+            copied_evidence = _copy_invocation_log_to_evidence_area(
+                worktree_path=err.worktree_path,
+                source=raw_evidence_path,
+            )
+            if copied_evidence is not None:
+                err.agent_invocation_log_path = _evidence_relative_path()
             else:
-                cap_hit = (
-                    deps.cfg.improve_max is not None
-                    and deps.improve_dispatched_count >= deps.cfg.improve_max
-                    and deps.improve_mode is not None
-                )
-                return Done(improve_cap_reached=cap_hit)
-
-        # ── Plan ─────────────────────────────────────────────────────────────
-        plan_result = await planning_phase(
-            deps,
-            open_issues,
-            all_open_issues,
-            prepared_issue_set=prepared_issue_set,
-            in_flight=in_flight,
-        )
-        if isinstance(plan_result, AllBlocked):
-            return Done()
-        if isinstance(plan_result, (PreflightHITL, PreflightAFK)):
-            return await _handle_preflight_outcome(plan_result, deps)
-
-        # ── Implement ────────────────────────────────────────────────────────
-        return await _run_implement_and_merge(plan_result.issues, deps, plan_result.sha)
-
-    except AgentFailedError as err:
-        issue_number: int | None = None
-        if deps.cfg.diagnose_on_failure:
-            try:
-                mount_decision = decide_diagnostic_mount_dispatch(
-                    repo_root=deps.repo_root,
-                    mount_path=err.worktree_path,
-                    caller="Failure Report Agent",
-                    diagnostic_role=AgentRole.FAILURE_REPORT.value,
-                    role_name=err.role_value,
-                    original_failure_summary=(
-                        f"Agent role {err.role_value!r} failed in worktree "
-                        f"{err.worktree_path}."
+                err.agent_invocation_log_path = ""
+            result = await deps.agent_runner.run(
+                RunRequest(
+                    name="Failure Report Agent",
+                    prompt=build_prompt_invocation(
+                        PromptTemplate.FAILURE_REPORT,
+                        build_failure_report_scope_args(err),
                     ),
-                    github_svc=deps.github_svc,
+                    mount_path=err.worktree_path,
+                    role=AgentRole.FAILURE_REPORT,
+                    service=deps.cfg.preflight_issue_override.service,
+                    status_display=deps.status_display,
                 )
-                if isinstance(mount_decision, DiagnosticMountFallbackIssue):
-                    issue_number = mount_decision.issue_number
-                    return AbortedAgentFailure(
-                        failed_role=err.role_value, issue_number=issue_number
-                    )
+            )
+            if isinstance(result, IssueOutput):
+                issue_number = result.number
+        except AgentCredentialFailureError as report_err:
+            routed_result = _route_and_abort_agent_credential_failure(report_err, deps)
+            if routed_result is None:
+                raise RuntimeError(
+                    "narrowing: credential failure always produces a route result"
+                ) from None
+            return routed_result
+        except (
+            AgentTimeoutError,
+            TransientAgentError,
+            HardAgentError,
+            UsageLimitError,
+            SetupPhaseError,
+            WorktreeError,
+            WorktreeTimeoutError,
+            ModelNotAvailableError,
+            GithubServiceError,
+            OSError,
+        ) as report_err:
+            deps.status_display.print(
+                "Failure Report",
+                "Failure-Report agent crashed — no issue filed",
+                "warning",
+            )
+            deps.logger.log_internal_error(
+                f"Failure-Report agent crashed (original failure: role={err.role_value})",
+                report_err,
+                cause=err,
+            )
+    return AbortedAgentFailure(failed_role=err.role_value, issue_number=issue_number)
 
-                raw_evidence_path = getattr(err, "agent_invocation_log_path", None)
-                copied_evidence = _copy_invocation_log_to_evidence_area(
-                    worktree_path=err.worktree_path,
-                    source=raw_evidence_path,
-                )
-                if copied_evidence is not None:
-                    err.agent_invocation_log_path = _evidence_relative_path()
-                else:
-                    err.agent_invocation_log_path = ""
 
-                result = await deps.agent_runner.run(
-                    RunRequest(
-                        name="Failure Report Agent",
-                        prompt=build_prompt_invocation(
-                            PromptTemplate.FAILURE_REPORT,
-                            build_failure_report_scope_args(err),
-                        ),
-                        mount_path=err.worktree_path,
-                        role=AgentRole.FAILURE_REPORT,
-                        service=deps.cfg.preflight_issue_override.service,
-                        status_display=deps.status_display,
-                    )
-                )
-                if isinstance(result, IssueOutput):
-                    issue_number = result.number
-            except AgentCredentialFailureError as report_err:
-                routed_result = _route_and_abort_agent_credential_failure(
-                    report_err, deps
-                )
-                if routed_result is None:
-                    raise RuntimeError(
-                        "narrowing: credential failure always produces a route result"
-                    ) from None
-                return routed_result
-            except (
-                AgentTimeoutError,
-                TransientAgentError,
-                HardAgentError,
-                UsageLimitError,
-                SetupPhaseError,
-                WorktreeError,
-                WorktreeTimeoutError,
-                ModelNotAvailableError,
-                GithubServiceError,
-                OSError,
-            ) as report_err:
-                deps.status_display.print(
-                    "Failure Report",
-                    "Failure-Report agent crashed — no issue filed",
-                    "warning",
-                )
-                deps.logger.log_internal_error(
-                    f"Failure-Report agent crashed (original failure: role={err.role_value})",
-                    report_err,
-                    cause=err,
-                )
-        return AbortedAgentFailure(
-            failed_role=err.role_value, issue_number=issue_number
+def _handle_usage_limit_error(err: UsageLimitError, cfg: Config) -> AbortedUsageLimit:
+    if (
+        err.raw_message is not None
+        and not err.is_permanent
+        and err.raw_message not in _FILED_USAGE_LIMIT_RAW_MESSAGES
+    ):
+        _FILED_USAGE_LIMIT_RAW_MESSAGES.add(err.raw_message)
+        provider = err.provider or "claude"
+        title = f"[pycastle] failed to parse usage-limit reset time ({provider})"
+        body = (
+            f"## Failed message\n\n```\n{err.raw_message}\n```\n\n"
+            f"Provider: {provider}; failure: usage-limit reset time parse failure\n"
         )
+        auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=cfg)
+    return AbortedUsageLimit(
+        reset_time=err.reset_time,
+        provider=err.provider,
+        raw_message=err.raw_message,
+        account_label=err.account_label,
+        is_permanent=err.is_permanent,
+        stage_key=err.stage_key,
+    )
+
+
+async def run_iteration(deps: Deps) -> IterationOutcome:
+    try:
+        return await _run_iteration_inner(deps)
+    except AgentFailedError as err:
+        return await _handle_agent_failed_error(err, deps)
     except UsageLimitError as err:
-        if (
-            err.raw_message is not None
-            and not err.is_permanent
-            and err.raw_message not in _FILED_USAGE_LIMIT_RAW_MESSAGES
-        ):
-            _FILED_USAGE_LIMIT_RAW_MESSAGES.add(err.raw_message)
-            provider = err.provider or "claude"
-            title = f"[pycastle] failed to parse usage-limit reset time ({provider})"
-            body = f"## Failed message\n\n```\n{err.raw_message}\n```\n\nProvider: {provider}; failure: usage-limit reset time parse failure\n"
-            auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
-        return AbortedUsageLimit(
-            reset_time=err.reset_time,
-            provider=err.provider,
-            raw_message=err.raw_message,
-            account_label=err.account_label,
-            is_permanent=err.is_permanent,
-            stage_key=err.stage_key,
-        )
+        return _handle_usage_limit_error(err, deps.cfg)
     except ModelNotAvailableError as err:
         return AbortedModelNotAvailable(
             service=err.service,

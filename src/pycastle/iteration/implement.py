@@ -129,59 +129,88 @@ def _planned_commit_subject(
     return f"{fallback.commit_prefix}{message}"
 
 
+async def _acquire_branch_lock(
+    branch_locks: dict[str, asyncio.Lock] | None,
+    branch: str,
+) -> asyncio.Lock | None:
+    if branch_locks is None:
+        return None
+    if branch not in branch_locks:
+        branch_locks[branch] = asyncio.Lock()
+    lock = branch_locks[branch]
+    if lock.locked():
+        raise BranchCollisionError(f"Branch {branch!r} already has an agent running")
+    await lock.acquire()
+    return lock
+
+
+def _check_setup_failure(step: IssueRoleStepPlan) -> None:
+    if step.mount_setup_failure is not None:
+        raise SetupPhaseError(
+            step.mount_setup_failure.role_value,
+            step.mount_setup_failure.error_message,
+        )
+
+
+@dataclasses.dataclass
+class _BoundedAgentRunner:
+    semaphore: asyncio.Semaphore | None
+    agent_runner: AgentRunnerProtocol
+    on_started: Callable[[str], None] | None
+    _implement_started: bool = dataclasses.field(default=False, init=False)
+    _review_started: bool = dataclasses.field(default=False, init=False)
+
+    async def run(self, request: RunRequest) -> AgentSuccessOutput:
+        async with self.semaphore or contextlib.nullcontext():
+            if self.on_started is not None:
+                if (
+                    request.role == AgentRole.IMPLEMENTER
+                    and not self._implement_started
+                ):
+                    self.on_started("implement")
+                    self._implement_started = True
+                elif request.role == AgentRole.REVIEWER and not self._review_started:
+                    self.on_started("review")
+                    self._review_started = True
+            return await self.agent_runner.run(request)
+
+
+@dataclasses.dataclass
+class _RunIssueContext:
+    semaphore: asyncio.Semaphore | None = None
+    worktree_semaphore: asyncio.Semaphore | None = None
+    token: CancellationToken | None = None
+    branch_locks: dict[str, asyncio.Lock] | None = None
+    on_started: Callable[[str], None] | None = None
+
+
 async def run_issue(
     issue: dict,
     deps: _ImplementDeps,
     sha: str | None,
-    semaphore: asyncio.Semaphore | None = None,
-    *,
-    worktree_semaphore: asyncio.Semaphore | None = None,
-    token: CancellationToken | None = None,
-    branch_locks: dict[str, asyncio.Lock] | None = None,
-    on_started: Callable[[str], None] | None = None,
+    ctx: _RunIssueContext | None = None,
 ) -> dict:
+    _ctx = ctx or _RunIssueContext()
+    worktree_semaphore = _ctx.worktree_semaphore
     _branch = branch_for(issue["number"])
-    _token = token if token is not None else CancellationToken()
+    _token = _ctx.token if _ctx.token is not None else CancellationToken()
     _resolve_slice(issue, deps.cfg)
 
-    _implement_started = False
-    _review_started = False
+    _runner = _BoundedAgentRunner(
+        semaphore=_ctx.semaphore,
+        agent_runner=deps.agent_runner,
+        on_started=_ctx.on_started,
+    )
 
-    async def _bounded_run_agent(request: RunRequest) -> AgentSuccessOutput:
-        nonlocal _implement_started, _review_started
-        async with semaphore or contextlib.nullcontext():
-            if on_started is not None:
-                if request.role == AgentRole.IMPLEMENTER and not _implement_started:
-                    on_started("implement")
-                    _implement_started = True
-                elif request.role == AgentRole.REVIEWER and not _review_started:
-                    on_started("review")
-                    _review_started = True
-            return await deps.agent_runner.run(request)
-
-    lock: asyncio.Lock | None = None
-    if branch_locks is not None:
-        if _branch not in branch_locks:
-            branch_locks[_branch] = asyncio.Lock()
-        lock = branch_locks[_branch]
-        if lock.locked():
-            raise BranchCollisionError(
-                f"Branch {_branch!r} already has an agent running"
-            )
-        await lock.acquire()
-
+    lock = await _acquire_branch_lock(_ctx.branch_locks, _branch)
     try:
-        _worktree = worktree_identity(_branch, deps.repo_root)
-        _wt_name = _worktree.name
-        _wt_path = _worktree.path
+        _wt_path = worktree_identity(_branch, deps.repo_root).path
 
         issue_plan = plan_issue_execution_from_worktree(
             issue=issue,
             deps=deps,
             sha=sha,
             worktree_path=_wt_path,
-            implement_mount_path=_wt_path,
-            review_mount_path=_wt_path,
         )
 
         if issue_plan.issue_outcome == "complete":
@@ -201,12 +230,8 @@ async def run_issue(
                 ) as impl_mount_path,
             ):
                 implementer_step = planned_steps["implementer"]
-                if implementer_step.mount_setup_failure is not None:
-                    raise SetupPhaseError(
-                        implementer_step.mount_setup_failure.role_value,
-                        implementer_step.mount_setup_failure.error_message,
-                    )
-                result = await _bounded_run_agent(
+                _check_setup_failure(implementer_step)
+                result = await _runner.run(
                     _build_run_request(
                         issue=issue,
                         step=implementer_step,
@@ -237,12 +262,8 @@ async def run_issue(
                 ) as review_mount_path,
             ):
                 reviewer_step = planned_steps["reviewer"]
-                if reviewer_step.mount_setup_failure is not None:
-                    raise SetupPhaseError(
-                        reviewer_step.mount_setup_failure.role_value,
-                        reviewer_step.mount_setup_failure.error_message,
-                    )
-                review_result = await _bounded_run_agent(
+                _check_setup_failure(reviewer_step)
+                review_result = await _runner.run(
                     _build_run_request(
                         issue=issue,
                         step=reviewer_step,
@@ -267,6 +288,55 @@ async def run_issue(
             lock.release()
 
     return issue
+
+
+def _raise_fatal_errors(results: list) -> None:
+    for result in results:
+        if isinstance(result, AgentFailedError):
+            raise result
+    for result in results:
+        if isinstance(result, HardAgentError):
+            raise result
+    for result in results:
+        if isinstance(result, TransientAgentError):
+            raise result
+    for result in results:
+        if isinstance(result, ModelNotAvailableError):
+            raise result
+
+
+def _build_implement_result(
+    issues: list[dict],
+    results: list,
+    deps: _ImplementDeps,
+    usage_limit_errors: list[UsageLimitError],
+) -> ImplementResult:
+    usage_limit_hit = bool(usage_limit_errors)
+    usage_limit_reset_time = next(
+        (e.reset_time for e in usage_limit_errors if e.reset_time is not None),
+        None,
+    )
+    first = usage_limit_errors[0] if usage_limit_errors else None
+    completed: list[dict] = []
+    errors: list[tuple[dict, Exception]] = []
+    for issue, result in zip(issues, results, strict=False):
+        if isinstance(result, UsageLimitError):
+            continue
+        if isinstance(result, Exception):
+            deps.logger.log_error(issue, result)
+            errors.append((issue, result))
+        elif isinstance(result, dict):
+            completed.append(issue)
+    return ImplementResult(
+        completed=completed,
+        errors=errors,
+        usage_limit_hit=usage_limit_hit,
+        usage_limit_reset_time=usage_limit_reset_time,
+        usage_limit_provider=first.provider if first else None,
+        usage_limit_raw_message=first.raw_message if first else None,
+        usage_limit_account_label=first.account_label if first else None,
+        usage_limit_is_permanent=first.is_permanent if first else False,
+    )
 
 
 async def implement_phase(
@@ -317,60 +387,18 @@ async def implement_phase(
                 issue,
                 deps,
                 sha,
-                semaphore,
-                worktree_semaphore=worktree_semaphore,
-                token=_token,
-                branch_locks=branch_locks,
-                on_started=_on_started,
+                _RunIssueContext(
+                    semaphore=semaphore,
+                    worktree_semaphore=worktree_semaphore,
+                    token=_token,
+                    branch_locks=branch_locks,
+                    on_started=_on_started,
+                ),
             )
             for issue in issues
         ],
         return_exceptions=True,
     )
-    for result in results:
-        if isinstance(result, AgentFailedError):
-            raise result
-    for result in results:
-        if isinstance(result, HardAgentError):
-            raise result
-    for result in results:
-        if isinstance(result, TransientAgentError):
-            raise result
-    for result in results:
-        if isinstance(result, ModelNotAvailableError):
-            raise result
+    _raise_fatal_errors(results)
     usage_limit_errors = [r for r in results if isinstance(r, UsageLimitError)]
-    usage_limit_hit = bool(usage_limit_errors)
-    usage_limit_reset_time = next(
-        (e.reset_time for e in usage_limit_errors if e.reset_time is not None),
-        None,
-    )
-    first_usage_limit_error = usage_limit_errors[0] if usage_limit_errors else None
-    completed: list[dict] = []
-    errors: list[tuple[dict, Exception]] = []
-    for issue, result in zip(issues, results, strict=False):
-        if isinstance(result, UsageLimitError):
-            continue
-        if isinstance(result, Exception):
-            deps.logger.log_error(issue, result)
-            errors.append((issue, result))
-        elif isinstance(result, dict):
-            completed.append(issue)
-    return ImplementResult(
-        completed=completed,
-        errors=errors,
-        usage_limit_hit=usage_limit_hit,
-        usage_limit_reset_time=usage_limit_reset_time,
-        usage_limit_provider=(
-            first_usage_limit_error.provider if first_usage_limit_error else None
-        ),
-        usage_limit_raw_message=(
-            first_usage_limit_error.raw_message if first_usage_limit_error else None
-        ),
-        usage_limit_account_label=(
-            first_usage_limit_error.account_label if first_usage_limit_error else None
-        ),
-        usage_limit_is_permanent=(
-            first_usage_limit_error.is_permanent if first_usage_limit_error else False
-        ),
-    )
+    return _build_implement_result(issues, results, deps, usage_limit_errors)

@@ -2,6 +2,7 @@ import dataclasses
 import sys
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -9,11 +10,16 @@ import click
 
 from pycastle import _time as _time_module
 from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol
-from pycastle.config import load_config, replace_config_runtime_fields, resolve_logs_dir
+from pycastle.config import (
+    Config,
+    load_config,
+    replace_config_runtime_fields,
+    resolve_logs_dir,
+)
 from pycastle.display.rich_status_display import RichStatusDisplay
 from pycastle.display.status_display import StatusDisplay
 from pycastle.infrastructure.worktree import prune_orphan_worktrees
-from pycastle.iteration import run_iteration
+from pycastle.iteration import IterationOutcome, run_iteration
 from pycastle.iteration._deps import Deps as IterationDeps
 from pycastle.iteration._deps import ImproveMode
 from pycastle.iteration._service_summary import render_service_summary_line
@@ -89,6 +95,16 @@ class FileLogger:
 _SESSION_EXCLUDES = (f"{SESSION_DIR_NAME}/", ".claude/")
 
 
+@dataclasses.dataclass
+class RunOptions:
+    agent_runner: AgentRunnerProtocol | None = None
+    git_service: GitService | None = None
+    github_service: GithubService | None = None
+    status_display: StatusDisplay | None = None
+    service_registry: ServiceRegistry | None = None
+    improve_mode: ImproveMode = None
+
+
 def _github_retry_exhaustion_message(exc: OperatorActionableGithubError) -> str:
     return (
         "GitHub request retry limit reached: "
@@ -108,26 +124,132 @@ def ensure_session_excludes(repo_root: Path) -> None:
             f.writelines(f"{entry}\n" for entry in additions)
 
 
+def _init_display(
+    status_display: StatusDisplay | None,
+) -> tuple[RichStatusDisplay | None, StatusDisplay]:
+    if status_display is None:
+        owned = RichStatusDisplay()
+        return owned, owned  # type: ignore[return-value]
+    return None, status_display
+
+
+def _create_github_service(
+    env: dict[str, str],
+    repo_root: Path,
+    cfg: Config,
+    git_svc: GitService,
+) -> GithubService:
+    token = env.get("GH_TOKEN", "").strip()
+    if not token:
+        raise click.UsageError(
+            "GH_TOKEN is not set. Add it to pycastle/.env or your environment."
+        )
+    remote = git_svc.get_github_remote_repo(cwd=repo_root)
+    if remote is None:
+        raise click.UsageError("Could not determine GitHub repo from origin remote.")
+    owner, repo = remote
+    return GithubService(f"{owner}/{repo}", token, cfg)
+
+
+def _resolve_github_service(
+    env: dict[str, str],
+    repo_root: Path,
+    cfg: Config,
+    git_svc: GitService,
+    github_service: GithubService | None,
+) -> GithubService:
+    if github_service is not None:
+        return github_service
+    return _create_github_service(env, repo_root, cfg, git_svc)
+
+
+def _check_github_auth(github_service: GithubService) -> str:
+    try:
+        return github_service.check_auth()
+    except GithubAuthError as exc:
+        raise click.UsageError(f"GitHub authentication failed: {exc.body}") from exc
+    except OperatorActionableGithubError as exc:
+        raise click.UsageError(_github_retry_exhaustion_message(exc)) from exc
+
+
+def _print_service_registry_summary(
+    service_registry: ServiceRegistry | None,
+    status_display: StatusDisplay,
+) -> None:
+    if service_registry:
+        for line in service_registry.summary_lines(render_service_summary_line):
+            status_display.print("", line)  # type: ignore[union-attr]
+
+
+def _resolve_iter_cfg(
+    cfg: Config,
+    service_registry: ServiceRegistry | None,
+    now: datetime,
+) -> Config:
+    if service_registry is None:
+        return cfg
+    return replace_config_runtime_fields(
+        cfg,
+        dataclasses.replace(
+            cfg,
+            plan_override=service_registry.resolve(cfg.plan_override, now),
+            implement_override=service_registry.resolve(cfg.implement_override, now),
+            review_override=service_registry.resolve(cfg.review_override, now),
+            merge_override=service_registry.resolve(cfg.merge_override, now),
+            improve_override=service_registry.resolve(cfg.improve_override, now),
+        ),
+    )
+
+
+def _build_agent_runner(
+    fixed_runner: AgentRunnerProtocol | None,
+    env: dict[str, str],
+    cfg: Config,
+    git_svc: GitService,
+    service_registry: ServiceRegistry | None,
+) -> AgentRunnerProtocol:
+    if fixed_runner is not None:
+        return fixed_runner
+    return AgentRunner(
+        env=env,
+        cfg=cfg,
+        git_service=git_svc,
+        service_registry=(
+            cast("dict[str, AgentService]", service_registry.services)
+            if service_registry is not None
+            else None
+        ),
+    )
+
+
+async def _run_one_iteration(
+    deps: IterationDeps, status_display: StatusDisplay
+) -> IterationOutcome:
+    try:
+        return await run_iteration(deps)
+    except GithubAPIError as exc:
+        status_display.print("", f"GitHub repository access failed: {exc}")  # type: ignore[union-attr]
+        sys.exit(1)
+    except OperatorActionableGithubError as exc:
+        status_display.print("", _github_retry_exhaustion_message(exc))  # type: ignore[union-attr]
+        sys.exit(1)
+
+
+def _stop_display(owned_display: RichStatusDisplay | None) -> None:
+    if owned_display is not None:
+        owned_display.stop()
+
+
 async def run(
     env: dict[str, str],
     repo_root: Path,
-    *,
-    agent_runner: AgentRunnerProtocol | None = None,
-    git_service: GitService | None = None,
-    github_service: GithubService | None = None,
-    status_display: StatusDisplay | None = None,
-    service_registry: ServiceRegistry | None = None,
-    improve_mode: ImproveMode = None,
+    opts: RunOptions | None = None,
 ) -> None:
+    _opts = opts or RunOptions()
     cfg = load_config(repo_root=repo_root)
     prune_orphan_worktrees(repo_root, cfg=cfg)
     ensure_session_excludes(repo_root)
-    git_svc = git_service or GitService(cfg)
-
-    _owned_display: RichStatusDisplay | None = None
-    if status_display is None:
-        _owned_display = RichStatusDisplay()
-        status_display = _owned_display  # type: ignore[assignment]
+    git_svc = _opts.git_service or GitService(cfg)
 
     try:
         git_svc.get_user_name(cwd=repo_root)
@@ -139,32 +261,15 @@ async def run(
             "git config --global user.email 'you@example.com'"
         ) from exc
 
-    if github_service is None:
-        token = env.get("GH_TOKEN", "").strip()
-        if not token:
-            raise click.UsageError(
-                "GH_TOKEN is not set. Add it to pycastle/.env or your environment."
-            )
-        remote = git_svc.get_github_remote_repo(cwd=repo_root)
-        if remote is None:
-            raise click.UsageError(
-                "Could not determine GitHub repo from origin remote."
-            )
-        owner, repo = remote
-        github_service = GithubService(f"{owner}/{repo}", token, cfg)
-
-    try:
-        login = github_service.check_auth()
-    except GithubAuthError as exc:
-        raise click.UsageError(f"GitHub authentication failed: {exc.body}") from exc
-    except OperatorActionableGithubError as exc:
-        raise click.UsageError(_github_retry_exhaustion_message(exc)) from exc
-
+    github_service = _resolve_github_service(
+        env, repo_root, cfg, git_svc, _opts.github_service
+    )
+    _owned_display, status_display = _init_display(_opts.status_display)
+    login = _check_github_auth(github_service)
     status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 
-    if service_registry:
-        for line in service_registry.summary_lines(render_service_summary_line):
-            status_display.print("", line)  # type: ignore[union-attr]
+    service_registry = _opts.service_registry
+    _print_service_registry_summary(service_registry, status_display)  # type: ignore[arg-type]
 
     slept_once = False
     improve_dispatched_count = 0
@@ -176,46 +281,11 @@ async def run(
                 "",
                 f"=== Iteration {iteration}/{cfg.max_iterations} ===",
             )
-
             _now = _time_module.now_local()
-            _iter_cfg = (
-                replace_config_runtime_fields(
-                    cfg,
-                    dataclasses.replace(
-                        cfg,
-                        plan_override=service_registry.resolve(cfg.plan_override, _now),
-                        implement_override=service_registry.resolve(
-                            cfg.implement_override, _now
-                        ),
-                        review_override=service_registry.resolve(
-                            cfg.review_override, _now
-                        ),
-                        merge_override=service_registry.resolve(
-                            cfg.merge_override, _now
-                        ),
-                        improve_override=service_registry.resolve(
-                            cfg.improve_override, _now
-                        ),
-                    ),
-                )
-                if service_registry
-                else cfg
+            _iter_cfg = _resolve_iter_cfg(cfg, service_registry, _now)
+            _agent_runner = _build_agent_runner(
+                _opts.agent_runner, env, _iter_cfg, git_svc, service_registry
             )
-
-            if agent_runner is not None:
-                _agent_runner: AgentRunnerProtocol = agent_runner
-            else:
-                _agent_runner = AgentRunner(
-                    env=env,
-                    cfg=_iter_cfg,
-                    git_service=git_svc,
-                    service_registry=(
-                        cast("dict[str, AgentService]", service_registry.services)
-                        if service_registry is not None
-                        else None
-                    ),
-                )
-
             deps = IterationDeps(
                 repo_root=repo_root,
                 git_svc=git_svc,
@@ -225,25 +295,12 @@ async def run(
                 logger=FileLogger(resolve_logs_dir(_iter_cfg)),
                 status_display=status_display,  # type: ignore[arg-type]
                 service_registry=service_registry,
-                improve_mode=improve_mode,
+                improve_mode=_opts.improve_mode,
                 slept_once=slept_once,
                 improve_dispatched_count=improve_dispatched_count,
                 preflight_cache=preflight_cache,
             )
-            try:
-                outcome = await run_iteration(deps)
-            except GithubAPIError as exc:
-                status_display.print(  # type: ignore[union-attr]
-                    "",
-                    f"GitHub repository access failed: {exc}",
-                )
-                sys.exit(1)
-            except OperatorActionableGithubError as exc:
-                status_display.print(  # type: ignore[union-attr]
-                    "",
-                    _github_retry_exhaustion_message(exc),
-                )
-                sys.exit(1)
+            outcome = await _run_one_iteration(deps, status_display)  # type: ignore[arg-type]
             improve_dispatched_count = deps.improve_dispatched_count
 
             _post_iteration_now = _time_module.now_local()
@@ -277,5 +334,4 @@ async def run(
         status_display.print("", "All done.")  # type: ignore[union-attr]
     finally:
         maintain_logs(resolve_logs_dir(cfg), 10_000, 30)
-        if _owned_display is not None:
-            _owned_display.stop()
+        _stop_display(_owned_display)

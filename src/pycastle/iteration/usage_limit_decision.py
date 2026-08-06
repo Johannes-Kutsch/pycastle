@@ -118,6 +118,55 @@ def _minimum_unknown_reset_duration_for_provider(
     return timedelta(0)
 
 
+def _registry_has_available(
+    service_registry: ServiceRegistry | None,
+    stage_override: StageOverride | None,
+    now: datetime,
+) -> bool:
+    if service_registry is None:
+        return False
+    if stage_override is not None:
+        return service_registry.has_available_for(stage_override, now)
+    return service_registry.has_available(now)
+
+
+def _registry_next_wake_time(
+    service_registry: ServiceRegistry | None,
+    stage_override: StageOverride | None,
+    now: datetime,
+) -> datetime | None:
+    if service_registry is None:
+        return None
+    if stage_override is not None:
+        return service_registry.next_wake_time_for(stage_override, now)
+    return service_registry.next_wake_time(now)
+
+
+def _compute_exhausted_wake_time(
+    outcome: _TemporaryUsageLimit | _PermanentlyExhausted,
+    service_registry: ServiceRegistry | None,
+    stage_override: StageOverride | None,
+    now: datetime,
+) -> datetime | None:
+    if service_registry is None:
+        return None
+    if stage_override is not None:
+        exhausted_wake_time: datetime | None = None
+        if outcome.provider is not None:
+            provider_service = service_registry[outcome.provider]
+            if provider_service is not None and not provider_service.is_available(
+                now=now
+            ):
+                with contextlib.suppress(RuntimeError):
+                    exhausted_wake_time = provider_service.next_wake_time()
+        if exhausted_wake_time is None:
+            exhausted_wake_time = service_registry.next_wake_time_for(
+                stage_override, now
+            )
+        return exhausted_wake_time
+    return service_registry.next_wake_time(now)
+
+
 def _decide_limit_continuation(
     outcome: _TemporaryUsageLimit | _PermanentlyExhausted,
     *,
@@ -126,38 +175,11 @@ def _decide_limit_continuation(
     now: datetime,
     compute_wake_time_fn: _WakeTimeComputer,
 ) -> ContinueNow | SleepUntil | Stop:
-    use_stage_scope = service_registry is not None and stage_override is not None
-
-    if service_registry is None:
-        has_available = False
-    elif use_stage_scope:
-        if stage_override is None:
-            raise RuntimeError("narrowing: use_stage_scope implies both not None")
-        has_available = service_registry.has_available_for(stage_override, now)
-    else:
-        has_available = service_registry.has_available(now)
-
-    if has_available:
-        if service_registry is None:
-            exhausted_wake_time = None
-        elif use_stage_scope:
-            if stage_override is None:
-                raise RuntimeError("narrowing: use_stage_scope implies both not None")
-            exhausted_wake_time = None
-            if outcome.provider is not None:
-                provider_service = service_registry[outcome.provider]
-                if provider_service is not None and not provider_service.is_available(
-                    now=now
-                ):
-                    with contextlib.suppress(RuntimeError):
-                        exhausted_wake_time = provider_service.next_wake_time()
-            if exhausted_wake_time is None:
-                exhausted_wake_time = service_registry.next_wake_time_for(
-                    stage_override, now
-                )
-        else:
-            exhausted_wake_time = service_registry.next_wake_time(now)
-        message = None
+    if _registry_has_available(service_registry, stage_override, now):
+        exhausted_wake_time = _compute_exhausted_wake_time(
+            outcome, service_registry, stage_override, now
+        )
+        message: str | None = None
         if isinstance(outcome, _PermanentlyExhausted):
             message = _permanent_exhaustion_message(outcome)
         elif exhausted_wake_time is not None:
@@ -165,20 +187,9 @@ def _decide_limit_continuation(
                 f"Account exhausted until {_fmt_wake(exhausted_wake_time, now)}, "
                 "switching to next available."
             )
-        return ContinueNow(
-            message=message,
-            exhausted_wake_time=exhausted_wake_time,
-        )
+        return ContinueNow(message=message, exhausted_wake_time=exhausted_wake_time)
 
-    if service_registry is None:
-        next_wake = None
-    elif use_stage_scope:
-        if stage_override is None:
-            raise RuntimeError("narrowing: use_stage_scope implies both not None")
-        next_wake = service_registry.next_wake_time_for(stage_override, now)
-    else:
-        next_wake = service_registry.next_wake_time(now)
-
+    next_wake = _registry_next_wake_time(service_registry, stage_override, now)
     if next_wake is not None:
         return SleepUntil(
             wake_time=next_wake,
@@ -249,29 +260,10 @@ def decide_model_not_available_continuation(
     now: datetime,
 ) -> ContinueNow | SleepUntil | Stop:
     stage_override = _override_for_stage_key(cfg, outcome.stage_key)
-    use_stage_scope = service_registry is not None and stage_override is not None
-
-    if service_registry is None:
-        has_available = False
-    elif use_stage_scope:
-        if stage_override is None:
-            raise RuntimeError("narrowing: use_stage_scope implies both not None")
-        has_available = service_registry.has_available_for(stage_override, now)
-    else:
-        has_available = service_registry.has_available(now)
-
-    if has_available:
+    if _registry_has_available(service_registry, stage_override, now):
         return ContinueNow()
 
-    if service_registry is None:
-        next_wake = None
-    elif use_stage_scope:
-        if stage_override is None:
-            raise RuntimeError("narrowing: use_stage_scope implies both not None")
-        next_wake = service_registry.next_wake_time_for(stage_override, now)
-    else:
-        next_wake = service_registry.next_wake_time(now)
-
+    next_wake = _registry_next_wake_time(service_registry, stage_override, now)
     service_label = outcome.service or "unknown"
     model_label = outcome.model or "unknown"
     if next_wake is not None:

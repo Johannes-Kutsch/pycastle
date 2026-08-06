@@ -99,6 +99,30 @@ class ReadyIssueSlicePlan:
     review_work_body: str
 
 
+@dataclasses.dataclass(frozen=True)
+class IssueExecutionContext:
+    issue: dict
+    deps: ImplementIssuePlanDeps
+    sha: str | None
+    implement_mount_path: Path
+    review_mount_path: Path
+    implement_done: bool
+    review_done: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class _StepContext:
+    issue: dict
+    deps: ImplementIssuePlanDeps
+    branch: str
+    role: AgentRole
+    stage: IssueStage
+    prompt_template: PromptTemplate
+    work_body: str
+    mount_path: Path
+    skip_reason: str | None
+
+
 def plan_ready_issue_slice(issue: dict, cfg: Config) -> ReadyIssueSlicePlan:
     ready = require_ready_slice_outcome_for_issue(issue, cfg)
     issue_title = issue["title"]
@@ -110,16 +134,12 @@ def plan_ready_issue_slice(issue: dict, cfg: Config) -> ReadyIssueSlicePlan:
     )
 
 
-def plan_issue_execution(
-    *,
-    issue: dict,
-    deps: ImplementIssuePlanDeps,
-    sha: str | None,
-    implement_mount_path: Path,
-    review_mount_path: Path,
-    implement_done: bool,
-    review_done: bool,
-) -> IssueExecutionPlan:
+def plan_issue_execution(ctx: IssueExecutionContext) -> IssueExecutionPlan:
+    issue = ctx.issue
+    deps = ctx.deps
+    sha = ctx.sha
+    implement_done = ctx.implement_done
+    review_done = ctx.review_done
     ready_slice = plan_ready_issue_slice(issue, deps.cfg)
     branch = issue_branch(issue["number"])
     return IssueExecutionPlan(
@@ -130,32 +150,36 @@ def plan_issue_execution(
         slice_mode_display_name=ready_slice.display_name,
         issue_outcome="complete" if review_done else "incomplete",
         implementer_step=_plan_step(
-            issue=issue,
-            deps=deps,
-            branch=branch,
-            role=AgentRole.IMPLEMENTER,
-            stage="pre-implementation",
-            prompt_template=ready_slice.implement_prompt_template,
-            work_body=ready_slice.implement_work_body,
-            mount_path=implement_mount_path,
-            skip_reason=(
-                "review stage already complete"
-                if review_done
-                else "implement stage already complete"
-                if implement_done
-                else None
-            ),
+            _StepContext(
+                issue=issue,
+                deps=deps,
+                branch=branch,
+                role=AgentRole.IMPLEMENTER,
+                stage="pre-implementation",
+                prompt_template=ready_slice.implement_prompt_template,
+                work_body=ready_slice.implement_work_body,
+                mount_path=ctx.implement_mount_path,
+                skip_reason=(
+                    "review stage already complete"
+                    if review_done
+                    else "implement stage already complete"
+                    if implement_done
+                    else None
+                ),
+            )
         ),
         reviewer_step=_plan_step(
-            issue=issue,
-            deps=deps,
-            branch=branch,
-            role=AgentRole.REVIEWER,
-            stage="pre-review",
-            prompt_template=PromptTemplate.REVIEW,
-            work_body=ready_slice.review_work_body,
-            mount_path=review_mount_path,
-            skip_reason="review stage already complete" if review_done else None,
+            _StepContext(
+                issue=issue,
+                deps=deps,
+                branch=branch,
+                role=AgentRole.REVIEWER,
+                stage="pre-review",
+                prompt_template=PromptTemplate.REVIEW,
+                work_body=ready_slice.review_work_body,
+                mount_path=ctx.review_mount_path,
+                skip_reason="review stage already complete" if review_done else None,
+            )
         ),
     )
 
@@ -166,32 +190,30 @@ def plan_issue_execution_from_worktree(
     deps: ImplementIssuePlanDeps,
     sha: str | None,
     worktree_path: Path,
-    implement_mount_path: Path,
-    review_mount_path: Path,
 ) -> IssueExecutionPlan:
     return plan_issue_execution(
-        issue=issue,
-        deps=deps,
-        sha=sha,
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=is_stage_done_for(worktree_path, AgentRole.IMPLEMENTER),
-        review_done=is_stage_done_for(worktree_path, AgentRole.REVIEWER),
+        IssueExecutionContext(
+            issue=issue,
+            deps=deps,
+            sha=sha,
+            implement_mount_path=worktree_path,
+            review_mount_path=worktree_path,
+            implement_done=is_stage_done_for(worktree_path, AgentRole.IMPLEMENTER),
+            review_done=is_stage_done_for(worktree_path, AgentRole.REVIEWER),
+        )
     )
 
 
-def _plan_step(
-    *,
-    issue: dict,
-    deps: ImplementIssuePlanDeps,
-    branch: str,
-    role: AgentRole,
-    stage: IssueStage,
-    prompt_template: PromptTemplate,
-    work_body: str,
-    mount_path: Path,
-    skip_reason: str | None,
-) -> IssueRoleStepPlan:
+def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
+    issue = ctx.issue
+    deps = ctx.deps
+    role = ctx.role
+    stage = ctx.stage
+    prompt_template = ctx.prompt_template
+    work_body = ctx.work_body
+    mount_path = ctx.mount_path
+    skip_reason = ctx.skip_reason
+    branch = ctx.branch
     role_name = _role_name(role)
     commit_fallback_subject = CommitFallbackSubject(
         commit_prefix=f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} #{issue['number']} - ",

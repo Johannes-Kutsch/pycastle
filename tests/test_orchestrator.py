@@ -26,6 +26,7 @@ from pycastle.infrastructure.preflight_failure_interpreter import (
 )
 from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration.orchestrator import (
+    RunOptions,
     ensure_session_excludes,
     run,
 )
@@ -292,12 +293,14 @@ def _run(
         run(
             {},
             tmp_path,
-            agent_runner=agent_runner,
-            git_service=git_service if git_service is not None else _make_git_svc(),
-            github_service=github_service,
-            status_display=status_display,
-            service_registry=service_registry,
-            improve_mode=improve_mode,
+            RunOptions(
+                agent_runner=agent_runner,
+                git_service=git_service if git_service is not None else _make_git_svc(),
+                github_service=github_service,
+                status_display=status_display,
+                service_registry=service_registry,
+                improve_mode=improve_mode,
+            ),
         )
     )
 
@@ -1371,9 +1374,11 @@ def test_failed_agent_uses_effective_global_logs_dir_for_errors_log(
         run(
             {},
             project_dir,
-            agent_runner=FakeAgentRunner(side_effect=_fake_run_agent),
-            git_service=_make_git_svc(),
-            github_service=_make_github_svc(),
+            RunOptions(
+                agent_runner=FakeAgentRunner(side_effect=_fake_run_agent),
+                git_service=_make_git_svc(),
+                github_service=_make_github_svc(),
+            ),
         )
     )
 
@@ -1403,10 +1408,12 @@ def test_failed_agent_with_service_registry_uses_effective_global_logs_dir_for_e
         run(
             {},
             project_dir,
-            agent_runner=FakeAgentRunner(side_effect=_fake_run_agent),
-            git_service=_make_git_svc(),
-            github_service=_make_github_svc(),
-            service_registry=ServiceRegistry({"claude": _FakeService()}),
+            RunOptions(
+                agent_runner=FakeAgentRunner(side_effect=_fake_run_agent),
+                git_service=_make_git_svc(),
+                github_service=_make_github_svc(),
+                service_registry=ServiceRegistry({"claude": _FakeService()}),
+            ),
         )
     )
 
@@ -2087,7 +2094,7 @@ def test_run_exits_when_gh_token_missing(tmp_path):
             run(
                 {},
                 tmp_path,
-                git_service=_make_git_svc(),
+                RunOptions(git_service=_make_git_svc()),
             )
         )
     assert "GH_TOKEN" in exc_info.value.format_message()
@@ -2345,8 +2352,10 @@ def test_run_full_iteration_cold_path(git_repo):
         run(
             {},
             git_repo,
-            agent_runner=FakeAgentRunner(side_effect=_fake_run_agent),
-            github_service=mock_github,
+            RunOptions(
+                agent_runner=FakeAgentRunner(side_effect=_fake_run_agent),
+                github_service=mock_github,
+            ),
         )
     )
 
@@ -2471,8 +2480,10 @@ def test_startup_does_not_use_pycastle_caller_on_credentials_failure(tmp_path):
             run(
                 {},
                 tmp_path,
-                git_service=_make_git_svc(),
-                status_display=recording,
+                RunOptions(
+                    git_service=_make_git_svc(),
+                    status_display=recording,
+                ),
             )
         )
 

@@ -173,6 +173,70 @@ async def _close_issues_parallel(
             on_error(issue["number"], r)
 
 
+@dataclasses.dataclass
+class _CloseErrorTracker:
+    github_svc: GithubService
+    filed_numbers: list[int] = dataclasses.field(default_factory=list)
+
+    def on_error(self, issue_number: int, exc: BaseException) -> None:
+        filed_number = file_merge_close_failure_issue(
+            issue_number=issue_number,
+            exc=exc,
+            github_svc=self.github_svc,
+        )
+        if filed_number is not None:
+            self.filed_numbers.append(filed_number)
+
+
+async def _delete_branches_with_progress(
+    branches: list[str],
+    deps: _MergeDeps,
+    progress: MergeProgressReporter,
+) -> list[str]:
+    batch_start = progress.remove_done or 0
+
+    def _on_teardown_progress(done: int, _total: int) -> None:
+        progress.update_remove_done(batch_start + done)
+
+    deleted = await _delete_merged_branches(branches, deps, _on_teardown_progress)
+    progress.update_remove_done(None)
+    return deleted
+
+
+@dataclasses.dataclass(frozen=True)
+class _PreflightBlockedCtx:
+    clean_issues: list[dict]
+    conflict_issues: list[dict]
+    clean_deleted: list[str]
+    close_failure_issue_numbers: list[int]
+    close_merge_row: Callable[[str], None]
+
+
+async def _handle_preflight_blocked_conflicts(
+    verdict: PreflightHITL | PreflightAFK,
+    deps: _MergeDeps,
+    ctx: _PreflightBlockedCtx,
+) -> MergeResult:
+    deps.status_display.print(
+        "Merge",
+        "Merge-time preflight failed; skipping conflict branch merge. "
+        "Conflict issues remain open for recovery in the next iteration.",
+    )
+    ctx.close_merge_row(build_merge_close_message(ctx.clean_deleted))
+    if deps.cfg.auto_push and ctx.clean_issues:
+        await deps.git_svc.push(
+            deps.repo_root,
+            resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
+        )
+    return _build_merge_result(
+        clean_issues=ctx.clean_issues,
+        conflict_issues=ctx.conflict_issues,
+        recovery_result={"pending_conflicts": ctx.conflict_issues},
+        preflight_blocker=verdict,
+        close_failure_issue_numbers=ctx.close_failure_issue_numbers,
+    )
+
+
 async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     async with status_row(
         deps.status_display,
@@ -192,16 +256,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         )
         progress.render()
 
-        close_failure_issue_numbers: list[int] = []
-
-        def _on_close_error(issue_number: int, exc: BaseException) -> None:
-            filed_number = file_merge_close_failure_issue(
-                issue_number=issue_number,
-                exc=exc,
-                github_svc=deps.github_svc,
-            )
-            if filed_number is not None:
-                close_failure_issue_numbers.append(filed_number)
+        close_tracker = _CloseErrorTracker(github_svc=deps.github_svc)
 
         def _close_merge_row(summary: str) -> None:
             row.close("finished")
@@ -214,77 +269,65 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
                 progress.update_close_done(batch_start + done)
 
             await _close_issues_parallel(
-                issues, deps.github_svc, _on_progress, _on_close_error
+                issues, deps.github_svc, _on_progress, close_tracker.on_error
             )
-
-        async def _delete_branches(branches: list[str]) -> list[str]:
-            batch_start = progress.remove_done or 0
-
-            def _on_teardown_progress(done: int, _total: int) -> None:
-                progress.update_remove_done(batch_start + done)
-
-            deleted = await _delete_merged_branches(
-                branches, deps, _on_teardown_progress
-            )
-            progress.update_remove_done(None)
-            return deleted
 
         if clean_issues:
             await _close_issues(clean_issues)
 
-        clean_deleted = await _delete_branches(
-            [branch_for(i["number"]) for i in clean_issues]
+        clean_deleted = await _delete_branches_with_progress(
+            [branch_for(i["number"]) for i in clean_issues], deps, progress
         )
 
         if not conflict_issues:
             _close_merge_row(build_merge_close_message(clean_deleted))
-        else:
-            verdict = await deps.preflight_cache.get_safe_sha(deps)
-            if isinstance(verdict, (PreflightHITL, PreflightAFK)):
-                deps.status_display.print(
-                    "Merge",
-                    "Merge-time preflight failed; skipping conflict branch merge. "
-                    "Conflict issues remain open for recovery in the next iteration.",
+            if _should_auto_push(
+                auto_push=deps.cfg.auto_push,
+                clean_issues=clean_issues,
+                conflict_issues=[],
+                pending_conflicts=[],
+            ):
+                await deps.git_svc.push(
+                    deps.repo_root,
+                    resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
                 )
-                _close_merge_row(build_merge_close_message(clean_deleted))
-                if deps.cfg.auto_push and clean_issues:
-                    await deps.git_svc.push(
-                        deps.repo_root,
-                        resolver=lambda: deps.preflight_cache.pull_with_resolution(
-                            deps
-                        ),
-                    )
-                return _build_merge_result(
+            return _build_merge_result(
+                clean_issues=clean_issues,
+                conflict_issues=[],
+                recovery_result={"pending_conflicts": []},
+                close_failure_issue_numbers=close_tracker.filed_numbers,
+            )
+
+        verdict = await deps.preflight_cache.get_safe_sha(deps)
+        if isinstance(verdict, (PreflightHITL, PreflightAFK)):
+            return await _handle_preflight_blocked_conflicts(
+                verdict,
+                deps,
+                _PreflightBlockedCtx(
                     clean_issues=clean_issues,
                     conflict_issues=conflict_issues,
-                    recovery_result={"pending_conflicts": conflict_issues},
-                    preflight_blocker=verdict,
-                    close_failure_issue_numbers=close_failure_issue_numbers,
-                )
-
-            recovery = await recover_conflicts(
-                conflict_issues=conflict_issues,
-                progress=progress,
-                deps=deps,
-            )
-            _close_merge_row(
-                build_merge_close_message(
-                    clean_deleted + recovery.deleted_conflict_branches,
-                    **recovery.close_message_kwargs(),
-                )
+                    clean_deleted=clean_deleted,
+                    close_failure_issue_numbers=close_tracker.filed_numbers,
+                    close_merge_row=_close_merge_row,
+                ),
             )
 
-        recovery_result = (
-            recovery.merge_result_kwargs()
-            if conflict_issues
-            else {"pending_conflicts": []}
+        recovery = await recover_conflicts(
+            conflict_issues=conflict_issues,
+            progress=progress,
+            deps=deps,
         )
+        _close_merge_row(
+            build_merge_close_message(
+                clean_deleted + recovery.deleted_conflict_branches,
+                **recovery.close_message_kwargs(),
+            )
+        )
+
+        recovery_result = recovery.merge_result_kwargs()
         pending_conflicts = recovery_result["pending_conflicts"]
-        recovery_close_failures = (
-            recovery.close_failure_issue_numbers if conflict_issues else []
-        )
         all_close_failure_issue_numbers = (
-            close_failure_issue_numbers + recovery_close_failures
+            close_tracker.filed_numbers + recovery.close_failure_issue_numbers
         )
         if _should_auto_push(
             auto_push=deps.cfg.auto_push,

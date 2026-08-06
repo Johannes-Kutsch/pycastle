@@ -52,6 +52,65 @@ class AllBlocked:
     blocked: list[dict]
 
 
+def _sync_labels(deps: _PlanningDeps, issue_set: PreparedPlanningIssueSet) -> None:
+    for action in issue_set.label_sync_actions:
+        if action.intent == "add":
+            deps.github_svc.add_label_to_issue(action.issue_number, action.label_name)
+            if action.comment_body is not None:
+                deps.github_svc.post_comment(action.issue_number, action.comment_body)
+            continue
+        deps.github_svc.remove_label_from_issue(action.issue_number, action.label_name)
+
+
+async def _run_planner_agent(
+    deps: _PlanningDeps,
+    wt: Path,
+    well_formed: list[dict],
+    all_open_issues: list[dict],
+) -> PlannerOutput:
+    mount_decision = decide_managed_worktree_mount(
+        repo_root=deps.repo_root,
+        mount_path=wt,
+        caller="Plan Agent",
+        role=AgentRole.PLANNER.value,
+    )
+    if isinstance(
+        mount_decision, ManagedWorktreeMountRejected
+    ) and should_reject_managed_worktree_mount(mount_decision):
+        raise SetupPhaseError(
+            AgentRole.PLANNER.value,
+            describe_managed_worktree_mount_rejection(mount_decision),
+        )
+    try:
+        output = await deps.agent_runner.run(
+            RunRequest(
+                name="Plan Agent",
+                prompt=build_prompt_invocation(
+                    PromptTemplate.PLAN,
+                    build_plan_scope_args(
+                        all_open_issues=all_open_issues,
+                        ready_for_agent_issues=well_formed,
+                    ),
+                ),
+                mount_path=wt,
+                role=AgentRole.PLANNER,
+                model=deps.cfg.plan_override.model,
+                effort=deps.cfg.plan_override.effort,
+                service=deps.cfg.plan_override.service,
+                stage="plan-sandbox",
+                status_display=deps.status_display,
+                work_body=f"Creating Plan from {len(well_formed)} issues",
+            )
+        )
+    except AgentOutputProtocolError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if not isinstance(output, PlannerOutput):
+        raise RuntimeError(
+            f"Planner returned unexpected output type: {type(output).__name__}"
+        )
+    return output
+
+
 async def planning_phase(
     deps: _PlanningDeps,
     open_issues: list[dict],
@@ -97,19 +156,7 @@ async def planning_phase(
             return verdict
         sha = verdict.sha
 
-        for action in issue_set.label_sync_actions:
-            if action.intent == "add":
-                deps.github_svc.add_label_to_issue(
-                    action.issue_number, action.label_name
-                )
-                if action.comment_body is not None:
-                    deps.github_svc.post_comment(
-                        action.issue_number, action.comment_body
-                    )
-                continue
-            deps.github_svc.remove_label_from_issue(
-                action.issue_number, action.label_name
-            )
+        _sync_labels(deps, issue_set)
 
         well_formed = list(issue_set.ready_candidates)
         readiness_by_number = dict(issue_set.ready_readiness_by_number)
@@ -159,47 +206,8 @@ async def planning_phase(
             deps=deps,
         ) as wt:
             _plan_sandbox_session.write_fingerprint(fingerprint)
-            mount_decision = decide_managed_worktree_mount(
-                repo_root=deps.repo_root,
-                mount_path=wt,
-                caller="Plan Agent",
-                role=AgentRole.PLANNER.value,
-            )
-            if isinstance(
-                mount_decision, ManagedWorktreeMountRejected
-            ) and should_reject_managed_worktree_mount(mount_decision):
-                raise SetupPhaseError(
-                    AgentRole.PLANNER.value,
-                    describe_managed_worktree_mount_rejection(mount_decision),
-                )
-            try:
-                output = await deps.agent_runner.run(
-                    RunRequest(
-                        name="Plan Agent",
-                        prompt=build_prompt_invocation(
-                            PromptTemplate.PLAN,
-                            build_plan_scope_args(
-                                all_open_issues=all_open_issues,
-                                ready_for_agent_issues=well_formed,
-                            ),
-                        ),
-                        mount_path=wt,
-                        role=AgentRole.PLANNER,
-                        model=deps.cfg.plan_override.model,
-                        effort=deps.cfg.plan_override.effort,
-                        service=deps.cfg.plan_override.service,
-                        stage="plan-sandbox",
-                        status_display=deps.status_display,
-                        work_body=f"Creating Plan from {len(well_formed)} issues",
-                    )
-                )
-            except AgentOutputProtocolError as exc:
-                raise RuntimeError(str(exc)) from exc
+            output = await _run_planner_agent(deps, wt, well_formed, all_open_issues)
 
-            if not isinstance(output, PlannerOutput):
-                raise RuntimeError(
-                    f"Planner returned unexpected output type: {type(output).__name__}"
-                )
             if not output.issues:
                 blocked = planning_issue_intake.resolve_planner_all_blocked_intake(
                     output, issue_set

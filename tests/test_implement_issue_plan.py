@@ -14,6 +14,7 @@ from pycastle.issue_readiness import (
     WellFormedBody,
 )
 from pycastle.iteration.implement_issue_plan import (
+    IssueExecutionContext,
     plan_issue_execution,
     plan_issue_execution_from_worktree,
     plan_ready_issue_slice,
@@ -90,13 +91,15 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
 
     plan = plan_issue_execution(
-        issue=_issue(),
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=False,
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
     )
 
     assert plan.issue_number == 1909
@@ -235,13 +238,15 @@ def test_plan_issue_execution_skips_both_steps_when_review_stage_done_signal_exi
     review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
 
     plan = plan_issue_execution(
-        issue=_issue(),
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=True,
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=True,
+        )
     )
 
     assert plan.implementer_step.outcome == "skip"
@@ -258,13 +263,15 @@ def test_plan_issue_execution_marks_issue_complete_when_review_stage_done_signal
     review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
 
     plan = plan_issue_execution(
-        issue=_issue(),
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=True,
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=True,
+        )
     )
 
     assert plan.issue_outcome == "complete"
@@ -279,16 +286,11 @@ def test_plan_issue_execution_from_worktree_skips_implementer_when_only_implemen
     RoleSession(
         issue_worktree, AgentRole.IMPLEMENTER
     ).clear_provider_state_and_signal_completion()
-    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
-    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
-
     plan = plan_issue_execution_from_worktree(
         issue=_issue(),
         deps=deps,
         sha="sha-abc",
         worktree_path=issue_worktree,
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
     )
 
     assert plan.issue_outcome == "incomplete"
@@ -306,16 +308,11 @@ def test_plan_issue_execution_from_worktree_marks_issue_complete_when_review_sta
     RoleSession(
         issue_worktree, AgentRole.REVIEWER
     ).clear_provider_state_and_signal_completion()
-    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
-    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
-
     plan = plan_issue_execution_from_worktree(
         issue=_issue(),
         deps=deps,
         sha="sha-abc",
         worktree_path=issue_worktree,
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
     )
 
     assert plan.issue_outcome == "complete"
@@ -329,16 +326,13 @@ def test_plan_issue_execution_from_worktree_orders_run_steps_when_no_stage_done_
 ):
     deps = _make_deps(tmp_path, FakeAgentRunner([]))
     issue_worktree = _issue_worktree(tmp_path, 1909)
-    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
-    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+    issue_worktree.mkdir(parents=True, exist_ok=True)
 
     plan = plan_issue_execution_from_worktree(
         issue=_issue(),
         deps=deps,
         sha="sha-abc",
         worktree_path=issue_worktree,
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
     )
 
     assert plan.issue_outcome == "incomplete"
@@ -356,16 +350,12 @@ def test_plan_issue_execution_from_worktree_keeps_provider_state_without_done_ru
     provider_dir = issue_worktree / ".pycastle-session" / "implementer" / "codex"
     provider_dir.mkdir(parents=True, exist_ok=True)
     (provider_dir / "auth.json").write_text("{}", encoding="utf-8")
-    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
-    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
 
     plan = plan_issue_execution_from_worktree(
         issue=_issue(),
         deps=deps,
         sha="sha-abc",
         worktree_path=issue_worktree,
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
     )
 
     assert [step.role_name for step in plan.run_steps] == [
@@ -386,16 +376,12 @@ def test_plan_issue_execution_from_worktree_keeps_reviewer_provider_state_withou
     provider_dir = issue_worktree / ".pycastle-session" / "reviewer" / "codex"
     provider_dir.mkdir(parents=True, exist_ok=True)
     (provider_dir / "auth.json").write_text("{}", encoding="utf-8")
-    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
-    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
 
     plan = plan_issue_execution_from_worktree(
         issue=_issue(),
         deps=deps,
         sha="sha-abc",
         worktree_path=issue_worktree,
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
     )
 
     assert plan.issue_outcome == "incomplete"
@@ -412,13 +398,15 @@ def test_plan_issue_execution_reports_mount_setup_failure_for_invalid_managed_wo
     review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
 
     plan = plan_issue_execution(
-        issue=_issue(),
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=False,
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
     )
 
     rejection = decide_managed_worktree_mount(
@@ -479,13 +467,15 @@ def test_plan_issue_execution_reports_actionable_managed_worktree_mount_rejectio
         review_mount_path = target_mount_path
 
     plan = plan_issue_execution(
-        issue=_issue(),
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=False,
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
     )
 
     step = (
@@ -532,13 +522,15 @@ def test_plan_issue_execution_raises_not_implement_ready_before_mount_checks_for
         ),
     ):
         plan_issue_execution(
-            issue=issue,
-            deps=deps,
-            sha="sha-abc",
-            implement_mount_path=implement_mount_path,
-            review_mount_path=review_mount_path,
-            implement_done=False,
-            review_done=False,
+            IssueExecutionContext(
+                issue=issue,
+                deps=deps,
+                sha="sha-abc",
+                implement_mount_path=implement_mount_path,
+                review_mount_path=review_mount_path,
+                implement_done=False,
+                review_done=False,
+            )
         )
 
 
@@ -564,13 +556,15 @@ def test_plan_issue_execution_raises_not_implement_ready_before_mount_checks_for
         ),
     ):
         plan_issue_execution(
-            issue=issue,
-            deps=deps,
-            sha="sha-abc",
-            implement_mount_path=implement_mount_path,
-            review_mount_path=review_mount_path,
-            implement_done=False,
-            review_done=False,
+            IssueExecutionContext(
+                issue=issue,
+                deps=deps,
+                sha="sha-abc",
+                implement_mount_path=implement_mount_path,
+                review_mount_path=review_mount_path,
+                implement_done=False,
+                review_done=False,
+            )
         )
 
 
@@ -604,13 +598,15 @@ def test_plan_issue_execution_marks_interrupted_work_for_cross_service_dirty_rol
     (implement_mount_path / "dirty.txt").write_text("dirty", encoding="utf-8")
 
     plan = plan_issue_execution(
-        issue=_issue(),
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=False,
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
     )
 
     assert (
@@ -658,13 +654,15 @@ def test_plan_issue_execution_uses_resume_run_kind_for_exact_selected_service_ha
     )
 
     plan = plan_issue_execution(
-        issue=_issue(),
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=False,
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
     )
 
     step = (
@@ -732,13 +730,15 @@ def test_plan_issue_execution_uses_fresh_run_kind_for_transcript_mismatch_and_on
         (target_mount_path / "dirty.txt").write_text("dirty", encoding="utf-8")
 
     plan = plan_issue_execution(
-        issue=_issue(),
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=False,
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
     )
 
     step = (
@@ -775,13 +775,15 @@ def test_plan_issue_execution_uses_carried_ready_slice_outcome_for_template_and_
     }
 
     plan = plan_issue_execution(
-        issue=issue,
-        deps=deps,
-        sha="sha-abc",
-        implement_mount_path=implement_mount_path,
-        review_mount_path=review_mount_path,
-        implement_done=False,
-        review_done=False,
+        IssueExecutionContext(
+            issue=issue,
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
     )
 
     assert plan.slice_mode_display_name == "docs"
