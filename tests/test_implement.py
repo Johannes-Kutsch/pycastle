@@ -1190,8 +1190,12 @@ def test_run_issue_raises_branch_collision_for_concurrent_same_issue(tmp_path):
 
     async def _two_concurrent():
         return await asyncio.gather(
-            run_issue(issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)),
-            run_issue(issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)),
+            run_issue(
+                issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)
+            ),
+            run_issue(
+                issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)
+            ),
             return_exceptions=True,
         )
 
@@ -1218,7 +1222,11 @@ def test_run_issue_rejects_missing_slice_mode_before_creating_branch_lock(tmp_pa
             r"slice-mode selection\."
         ),
     ):
-        asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)))
+        asyncio.run(
+            run_issue(
+                issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)
+            )
+        )
 
     assert branch_locks == {}
     assert not worktree_identity(branch_for(25), tmp_path).path.exists()
@@ -1391,7 +1399,11 @@ def test_run_issue_releases_lock_on_unexpected_exception(tmp_path):
     }
 
     with pytest.raises(RuntimeError):
-        asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)))
+        asyncio.run(
+            run_issue(
+                issue, deps, "sha-abc", _RunIssueContext(branch_locks=branch_locks)
+            )
+        )
 
     assert not branch_locks["pycastle/issue-25"].locked()
 
@@ -1693,7 +1705,9 @@ def test_run_issue_calls_on_started_for_implement_and_review(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append)))
+    asyncio.run(
+        run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append))
+    )
 
     assert fired == ["implement", "review"]
 
@@ -1712,7 +1726,9 @@ def test_run_issue_on_started_not_called_when_review_already_done(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append)))
+    asyncio.run(
+        run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append))
+    )
 
     assert fired == []
 
@@ -2037,7 +2053,9 @@ def test_run_issue_on_started_fires_when_only_reviewer_runs(tmp_path):
         "comments": [],
         "labels": ["behavior-slice"],
     }
-    asyncio.run(run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append)))
+    asyncio.run(
+        run_issue(issue, deps, "sha-abc", _RunIssueContext(on_started=fired.append))
+    )
 
     assert fired == ["review"]
 
