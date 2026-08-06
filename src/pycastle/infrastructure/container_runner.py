@@ -113,7 +113,7 @@ class _DockerBackedProviderInvocationAdapter:
             if not isinstance(chunk, bytes):
                 continue
             for line in chunk.decode("utf-8", errors="replace").splitlines():
-                _provider_invocation._consume_new_stdout_lines(  # noqa: SLF001  # private API of third-party package
+                _provider_invocation._consume_new_stdout_lines(
                     request.output_hooks.reduce_output,
                     [line],
                 )
@@ -141,7 +141,7 @@ def _process_execution_output(
                 provider_session_id = request.output_hooks.extract_provider_session_id(
                     stdout_lines
                 )
-            return _provider_invocation._provider_invocation_failure_from_error(  # noqa: SLF001  # private API of third-party package
+            return _provider_invocation._provider_invocation_failure_from_error(
                 exc,
                 stdout_lines=tuple(stdout_lines),
                 provider_session_id=provider_session_id,
@@ -177,14 +177,14 @@ class _DockerlessRuntimeClient:
         self._invocation_adapter = _DockerBackedProviderInvocationAdapter(session)
 
     async def run_new_session(self, request: NewSessionRunRequest) -> Any:  # noqa: ANN401  # return type mirrors agent_runtime.RuntimeClient which is opaque
-        return _session_backed_provider_execution._run_builtin_new_session(  # noqa: SLF001  # private API of third-party package
+        return _session_backed_provider_execution._run_builtin_new_session(
             request,
             provider_invocation_adapter=self._invocation_adapter,
             on_live_output=request.on_live_output,
         )
 
     async def run_resumed_session(self, request: ResumedSessionRunRequest) -> Any:  # noqa: ANN401  # return type mirrors agent_runtime.RuntimeClient which is opaque
-        return _session_backed_provider_execution._run_builtin_resumed_session(  # noqa: SLF001  # private API of third-party package
+        return _session_backed_provider_execution._run_builtin_resumed_session(
             request,
             provider_invocation_adapter=self._invocation_adapter,
             on_live_output=request.on_live_output,
