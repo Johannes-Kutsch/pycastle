@@ -144,22 +144,28 @@ class InitPlan:
         return tuple(warning.message for warning in self.warnings)
 
 
+@dataclass(frozen=True)
+class InitEnvContext:
+    manage_env_file: bool = False
+    prompted_env_values: dict[str, str] | None = None
+    existing_env_keys: tuple[str, ...] = ()
+    existing_env_values: dict[str, str] | None = None
+    target_env_exists: bool | None = None
+    local_env_exists: bool | None = None
+    global_env_exists: bool | None = None
+
+
 def build_init_plan_for_scope(
     *,
     selected_services: tuple[str, ...],
     scope_choice: InitWizardScopeChoice,
     pycastle_dir: Path,
     pycastle_home: Path,
-    manage_env_file: bool = False,
-    prompted_env_values: dict[str, str] | None = None,
-    existing_env_keys: tuple[str, ...] = (),
-    existing_env_values: dict[str, str] | None = None,
-    target_env_exists: bool | None = None,
-    local_env_exists: bool | None = None,
-    global_env_exists: bool | None = None,
+    env_ctx: InitEnvContext | None = None,
     host_auth: HostAuthFacts | None = None,
     scaffold_stage_chains: ScaffoldStageChainFacts | None = None,
 ) -> InitPlan:
+    ctx = env_ctx or InitEnvContext()
     scoped_dir = pycastle_home if scope_choice == "global" else pycastle_dir
     return build_init_plan(
         InitWizardPlanningInputs(
@@ -173,17 +179,17 @@ def build_init_plan_for_scope(
                 local_env_file=pycastle_dir / ".env",
                 global_env_file=pycastle_home / ".env",
             ),
-            manage_env_file=manage_env_file,
+            manage_env_file=ctx.manage_env_file,
             prompted_env_values=(
-                {} if prompted_env_values is None else prompted_env_values
+                {} if ctx.prompted_env_values is None else ctx.prompted_env_values
             ),
-            existing_env_keys=existing_env_keys,
+            existing_env_keys=ctx.existing_env_keys,
             existing_env_values=(
-                {} if existing_env_values is None else existing_env_values
+                {} if ctx.existing_env_values is None else ctx.existing_env_values
             ),
-            target_env_exists=target_env_exists,
-            local_env_exists=local_env_exists,
-            global_env_exists=global_env_exists,
+            target_env_exists=ctx.target_env_exists,
+            local_env_exists=ctx.local_env_exists,
+            global_env_exists=ctx.global_env_exists,
             host_auth=host_auth or HostAuthFacts(has_host_codex_auth=False),
             scaffold_stage_chains=(scaffold_stage_chains or ScaffoldStageChainFacts()),
         )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pycastle.errors import DockerBuildError, DockerServiceError
@@ -15,6 +16,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from pycastle._universal_image_build import UniversalImageBuildRequest
+
+
+@dataclass(frozen=True)
+class BuildConfig:
+    no_cache: bool = False
+    python_version: str | None = None
+
 
 _PROGRESS_PREFIX = "Building Docker Image · "
 
@@ -68,12 +76,13 @@ class DockerService:
             request.image_tag,
             request.dockerfile_path,
             request.context_dir,
-            no_cache=request.options.no_cache,
-            python_version=request.options.python_version,
+            build_config=BuildConfig(
+                no_cache=request.options.no_cache,
+                python_version=request.options.python_version,
+            ),
             timeout=self._timeout,
             stream=request.options.stream,
             terse=request.options.terse,
-            on_rebuild_start=self._on_rebuild_start,
         )
 
     def build_image(
@@ -82,28 +91,27 @@ class DockerService:
         dockerfile_path: Path | str,
         context_dir: Path | str,
         *,
-        no_cache: bool = False,
-        python_version: str | None = None,
+        build_config: BuildConfig | None = None,
         timeout: float | None = None,
         stream: bool = False,
         terse: bool = False,
-        on_rebuild_start: Callable[[], None] | None = None,
     ) -> BuildOutcome | None:
+        _cfg = build_config or BuildConfig()
         if not image_name:
             raise ValueError("image_name must not be empty")
         cmd = ["docker", "build"]
-        if no_cache:
+        if _cfg.no_cache:
             cmd.append("--no-cache")
         cmd += ["-t", image_name, "-f", str(dockerfile_path)]
-        if python_version is not None:
-            cmd += ["--build-arg", f"PYTHON_VERSION={python_version}"]
+        if _cfg.python_version is not None:
+            cmd += ["--build-arg", f"PYTHON_VERSION={_cfg.python_version}"]
         cmd.append(str(context_dir))
 
         if stream and terse:
             return self._build_terse(cmd, timeout)
 
         if stream:
-            return self._build_streaming(cmd, timeout, on_rebuild_start)
+            return self._build_streaming(cmd, timeout, self._on_rebuild_start)
 
         try:
             result = subprocess.run(cmd, timeout=timeout, check=False)  # noqa: S603  # cmd is constructed internally from trusted docker arguments

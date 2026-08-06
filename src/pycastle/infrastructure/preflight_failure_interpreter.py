@@ -102,40 +102,54 @@ PreflightFailureDecision = (
 )
 
 
+def _collect_pyproject_packages(
+    project_root: Path, package_sources: dict[str, str]
+) -> None:
+    pyproject_path = project_root / "pyproject.toml"
+    if not pyproject_path.exists():
+        return
+    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return
+    requirements: list[str] = []
+    dependencies = project.get("dependencies")
+    if isinstance(dependencies, list):
+        requirements.extend(req for req in dependencies if isinstance(req, str))
+
+    optional_dependencies = project.get("optional-dependencies")
+    if isinstance(optional_dependencies, dict):
+        for extra_requirements in optional_dependencies.values():
+            if isinstance(extra_requirements, list):
+                requirements.extend(
+                    req for req in extra_requirements if isinstance(req, str)
+                )
+
+    for requirement in requirements:
+        name = _requirement_name(requirement)
+        if name is not None:
+            package_sources[name] = pyproject_path.name
+
+
+def _collect_requirements_packages(
+    project_root: Path, package_sources: dict[str, str]
+) -> None:
+    requirements_path = project_root / "requirements.txt"
+    if not requirements_path.exists():
+        return
+    for line in requirements_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.split("#", 1)[0].strip()
+        if not stripped:
+            continue
+        name = _requirement_name(stripped)
+        if name is not None:
+            package_sources.setdefault(name, requirements_path.name)
+
+
 def load_python_dependency_metadata(project_root: Path) -> PythonDependencyMetadata:
     package_sources: dict[str, str] = {}
-    pyproject_path = project_root / "pyproject.toml"
-    if pyproject_path.exists():
-        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-        project = data.get("project")
-        if isinstance(project, dict):
-            requirements: list[str] = []
-            dependencies = project.get("dependencies")
-            if isinstance(dependencies, list):
-                requirements.extend(req for req in dependencies if isinstance(req, str))
-
-            optional_dependencies = project.get("optional-dependencies")
-            if isinstance(optional_dependencies, dict):
-                for extra_requirements in optional_dependencies.values():
-                    if isinstance(extra_requirements, list):
-                        requirements.extend(
-                            req for req in extra_requirements if isinstance(req, str)
-                        )
-
-            for requirement in requirements:
-                name = _requirement_name(requirement)
-                if name is not None:
-                    package_sources[name] = pyproject_path.name
-
-    requirements_path = project_root / "requirements.txt"
-    if requirements_path.exists():
-        for line in requirements_path.read_text(encoding="utf-8").splitlines():
-            stripped = line.split("#", 1)[0].strip()
-            if not stripped:
-                continue
-            name = _requirement_name(stripped)
-            if name is not None:
-                package_sources.setdefault(name, requirements_path.name)
+    _collect_pyproject_packages(project_root, package_sources)
+    _collect_requirements_packages(project_root, package_sources)
 
     if not package_sources:
         return PythonDependencyMetadata(declared_packages=frozenset())

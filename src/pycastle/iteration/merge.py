@@ -17,7 +17,7 @@ from pycastle.iteration._merge_reporting import (
     MergeProgressReporter,
     build_merge_close_message,
 )
-from pycastle.iteration._rows import status_row
+from pycastle.iteration._rows import StatusRowConfig, status_row
 from pycastle.iteration._utils import _wait_for_clean_working_tree
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
@@ -243,7 +243,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         "Merge",
         kind="phase",
         must_close=True,
-        initial_phase="Merging",
+        config=StatusRowConfig(initial_phase="Merging"),
     ) as row:
         await _wait_for_clean_working_tree(deps, "Merge")
         completed_total = len(completed)

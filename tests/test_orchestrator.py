@@ -281,9 +281,9 @@ def _run(
     agent_runner=None,
     status_display=None,
     service_registry=None,
-    improve_mode=None,
     **config_kwargs,
 ):
+    improve_mode = config_kwargs.pop("improve_mode", None)
     config_kwargs.setdefault("max_parallel", 4)
     config_kwargs.setdefault("max_iterations", 1)
     _write_config(tmp_path, **config_kwargs)

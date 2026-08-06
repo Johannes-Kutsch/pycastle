@@ -11,7 +11,9 @@ import pytest
 from pycastle._host_check import HostCheckCommandResult
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.commands.host_check_run import (
+    HostCheckRunContext,
     HostCheckRunPassed,
+    HostCheckServiceOverrides,
     prepare_host_check_run,
 )
 from pycastle.config import StageOverride
@@ -252,13 +254,12 @@ def test_run_host_check_command_normalizes_in_memory_failed_command_outcome_thro
             cfg=cfg,
             git_svc=git_svc,
             repo_root=tmp_path,
-            run_host_check=lambda name, command, cwd: host_check_command_result(
-                name,
-                command,
-                returncode=1,
-                output="stdout line\nstderr line",
+            overrides=HostCheckServiceOverrides(
+                run_host_check=lambda name, command, cwd: host_check_command_result(
+                    name, command, returncode=1, output="stdout line\nstderr line"
+                ),
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
             ),
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
         )
     )
 
@@ -330,10 +331,12 @@ def test_run_host_check_command_uses_service_registry_for_reporter_override(
             cfg=cfg,
             git_svc=git_svc,
             repo_root=tmp_path,
-            github_svc=github_svc,
-            agent_runner=agent_runner,
-            status_display=status_display,
-            service_registry=provided_service_registry,
+            overrides=HostCheckServiceOverrides(
+                github_svc=github_svc,
+                agent_runner=agent_runner,
+                status_display=status_display,
+                service_registry=provided_service_registry,
+            ),
         )
     )
 
@@ -388,17 +391,19 @@ def test_run_host_check_run_files_fallback_issue_when_reporter_mount_is_invalid(
 
     result = asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(("pytest-host", "pytest tests/host"),),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            cfg=Config(),
-            github_svc=github_svc,
-            agent_runner=agent_runner,
-            status_display=MagicMock(),
-            run_host_check=fake_run_host_check,
-            transient_worktree_factory=lambda *args, **kwargs: (
-                _InvalidTransientWorktree()
-            ),
+            HostCheckRunContext(
+                host_checks=(("pytest-host", "pytest tests/host"),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                cfg=Config(),
+                github_svc=github_svc,
+                agent_runner=agent_runner,
+                status_display=MagicMock(),
+                run_host_check=fake_run_host_check,
+                transient_worktree_factory=lambda *args, **kwargs: (
+                    _InvalidTransientWorktree()
+                ),
+            )
         )
     )
 
@@ -559,13 +564,12 @@ def test_run_host_check_command_preserves_raw_failed_command_diagnostic_payload(
             cfg=cfg,
             git_svc=git_svc,
             repo_root=tmp_path,
-            run_host_check=lambda name, command, cwd: host_check_command_result(
-                name,
-                command,
-                returncode=1,
-                output=raw_output,
+            overrides=HostCheckServiceOverrides(
+                run_host_check=lambda name, command, cwd: host_check_command_result(
+                    name, command, returncode=1, output=raw_output
+                ),
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
             ),
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
         )
     )
 
@@ -648,16 +652,15 @@ def test_run_host_check_command_uses_in_memory_reporter_adapters_with_exact_host
             cfg=cfg,
             git_svc=git_svc,
             repo_root=tmp_path,
-            github_svc=github_svc,
-            agent_runner=agent_runner,
-            status_display=status_display,
-            run_host_check=lambda name, command, cwd: host_check_command_result(
-                name,
-                command,
-                returncode=1,
-                output=raw_output,
+            overrides=HostCheckServiceOverrides(
+                github_svc=github_svc,
+                agent_runner=agent_runner,
+                status_display=status_display,
+                run_host_check=lambda name, command, cwd: host_check_command_result(
+                    name, command, returncode=1, output=raw_output
+                ),
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
             ),
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
         )
     )
 
@@ -718,13 +721,13 @@ def test_run_host_check_command_executes_configured_passing_check_through_module
             cfg=cfg,
             git_svc=git_svc,
             repo_root=tmp_path,
-            status_display=run_mod.PlainStatusDisplay(),
-            run_host_check=lambda name, command, cwd: host_check_command_result(
-                name,
-                command,
-                output="passing stdout\npassing stderr",
+            overrides=HostCheckServiceOverrides(
+                status_display=run_mod.PlainStatusDisplay(),
+                run_host_check=lambda name, command, cwd: host_check_command_result(
+                    name, command, output="passing stdout\npassing stderr"
+                ),
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
             ),
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
         )
     )
 
@@ -757,8 +760,10 @@ def test_run_host_check_command_returns_passed_verdict_when_passing_adapter_only
             cfg=cfg,
             git_svc=git_svc,
             repo_root=tmp_path,
-            run_host_check=lambda name, command, cwd: None,
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            overrides=HostCheckServiceOverrides(
+                run_host_check=lambda name, command, cwd: None,
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            ),
         )
     )
 
@@ -784,12 +789,14 @@ def test_run_host_check_run_does_not_resolve_host_check_issue_deps_when_checks_p
 
     result = asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(("configured", "python -c configured"),),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            issue_deps_factory=issue_deps_factory,
-            run_host_check=lambda name, command, cwd: None,
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            HostCheckRunContext(
+                host_checks=(("configured", "python -c configured"),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                issue_deps_factory=issue_deps_factory,
+                run_host_check=lambda name, command, cwd: None,
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            )
         )
     )
 
@@ -841,10 +848,12 @@ def test_run_host_check_run_executes_passing_checks_in_checked_sha_worktree_and_
 
     result = asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(("freshness", command),),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            on_check_start=surfaced.append,
+            HostCheckRunContext(
+                host_checks=(("freshness", command),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                on_check_start=surfaced.append,
+            )
         )
     )
 
@@ -891,10 +900,12 @@ def test_run_host_check_run_routes_default_host_check_worktree_factory_through_d
 
     result = asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(("configured", "python -c configured"),),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            run_host_check=lambda name, command, cwd: None,
+            HostCheckRunContext(
+                host_checks=(("configured", "python -c configured"),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                run_host_check=lambda name, command, cwd: None,
+            )
         )
     )
 
@@ -938,15 +949,17 @@ def test_run_host_check_run_surfaces_host_check_phase_row_before_worktree_steps(
 
     result = asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(("tests", "python -c tests"),),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            status_display=display,
-            run_host_check=lambda name, command, cwd: (
-                events.append(("host-check", name, command, cwd))
-                or host_check_command_result(name, command)
-            ),
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            HostCheckRunContext(
+                host_checks=(("tests", "python -c tests"),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                status_display=display,
+                run_host_check=lambda name, command, cwd: (
+                    events.append(("host-check", name, command, cwd))
+                    or host_check_command_result(name, command)
+                ),
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            )
         )
     )
 
@@ -986,17 +999,16 @@ def test_run_host_check_run_names_current_host_check_through_status_surface(tmp_
 
     asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(
-                ("lint", "python -c lint"),
-                ("tests", "python -c tests"),
-            ),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            status_display=display,
-            run_host_check=lambda name, command, cwd: host_check_command_result(
-                name, command
-            ),
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            HostCheckRunContext(
+                host_checks=(("lint", "python -c lint"), ("tests", "python -c tests")),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                status_display=display,
+                run_host_check=lambda name, command, cwd: host_check_command_result(
+                    name, command
+                ),
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            )
         )
     )
 
@@ -1030,11 +1042,13 @@ def test_run_host_check_run_surfaces_current_host_check_without_streaming_passin
 
     asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(("noisy", command),),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            status_display=run_mod.PlainStatusDisplay(),
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            HostCheckRunContext(
+                host_checks=(("noisy", command),),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                status_display=run_mod.PlainStatusDisplay(),
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            )
         )
     )
 
@@ -1054,9 +1068,11 @@ def test_run_host_check_run_keeps_clean_tree_abort_behavior_with_phase_row(capsy
     ):
         asyncio.run(
             run_mod.run_host_check_run(
-                host_checks=(("tests", "python -c tests"),),
-                git_svc=git_svc,
-                status_display=run_mod.PlainStatusDisplay(),
+                HostCheckRunContext(
+                    host_checks=(("tests", "python -c tests"),),
+                    git_svc=git_svc,
+                    status_display=run_mod.PlainStatusDisplay(),
+                )
             )
         )
 
@@ -1105,15 +1121,17 @@ def test_run_host_check_run_collects_structured_failed_checks_without_leaking_co
 
     result = asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(
-                ("lint", multi_line_command),
-                ("format", "python -c format"),
-                ("tests", "python -c tests"),
-            ),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            run_host_check=fake_run_host_check,
-            transient_worktree_factory=fake_transient_worktree,
+            HostCheckRunContext(
+                host_checks=(
+                    ("lint", multi_line_command),
+                    ("format", "python -c format"),
+                    ("tests", "python -c tests"),
+                ),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                run_host_check=fake_run_host_check,
+                transient_worktree_factory=fake_transient_worktree,
+            )
         )
     )
 
@@ -1194,19 +1212,21 @@ def test_run_host_check_run_surfaces_each_failed_host_check_before_host_check_re
 
     result = asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(
-                ("lint", "python -c lint"),
-                ("tests", "python -c tests"),
-                ("format", "python -c format"),
-            ),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            cfg=Config(),
-            github_svc=github_svc,
-            agent_runner=runner,
-            status_display=run_mod.PlainStatusDisplay(),
-            run_host_check=fake_run_host_check,
-            transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            HostCheckRunContext(
+                host_checks=(
+                    ("lint", "python -c lint"),
+                    ("tests", "python -c tests"),
+                    ("format", "python -c format"),
+                ),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                cfg=Config(),
+                github_svc=github_svc,
+                agent_runner=runner,
+                status_display=run_mod.PlainStatusDisplay(),
+                run_host_check=fake_run_host_check,
+                transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
+            )
         )
     )
 
@@ -1295,19 +1315,21 @@ def test_run_host_check_run_files_and_validates_one_issue_per_failed_check_in_or
 
     result = asyncio.run(
         run_mod.run_host_check_run(
-            host_checks=(
-                ("lint", "python -c lint"),
-                ("format", "python -c format"),
-                ("tests", "python -c tests"),
-            ),
-            git_svc=git_svc,
-            repo_root=tmp_path,
-            cfg=Config(),
-            github_svc=github_svc,
-            agent_runner=agent_runner,
-            status_display=status_display,
-            run_host_check=fake_run_host_check,
-            transient_worktree_factory=fake_transient_worktree,
+            HostCheckRunContext(
+                host_checks=(
+                    ("lint", "python -c lint"),
+                    ("format", "python -c format"),
+                    ("tests", "python -c tests"),
+                ),
+                git_svc=git_svc,
+                repo_root=tmp_path,
+                cfg=Config(),
+                github_svc=github_svc,
+                agent_runner=agent_runner,
+                status_display=status_display,
+                run_host_check=fake_run_host_check,
+                transient_worktree_factory=fake_transient_worktree,
+            )
         )
     )
 
@@ -1376,14 +1398,18 @@ def test_run_host_check_run_raises_clear_error_when_reporter_output_is_not_issue
     ):
         asyncio.run(
             run_mod.run_host_check_run(
-                host_checks=(("lint", "python -c lint"),),
-                git_svc=git_svc,
-                repo_root=tmp_path,
-                cfg=Config(),
-                github_svc=MagicMock(),
-                agent_runner=_BadAgentRunner(),
-                status_display=MagicMock(),
-                run_host_check=fake_run_host_check,
-                transient_worktree_factory=lambda *args, **kwargs: _TransientWorktree(),
+                HostCheckRunContext(
+                    host_checks=(("lint", "python -c lint"),),
+                    git_svc=git_svc,
+                    repo_root=tmp_path,
+                    cfg=Config(),
+                    github_svc=MagicMock(),
+                    agent_runner=_BadAgentRunner(),
+                    status_display=MagicMock(),
+                    run_host_check=fake_run_host_check,
+                    transient_worktree_factory=lambda *args, **kwargs: (
+                        _TransientWorktree()
+                    ),
+                )
             )
         )

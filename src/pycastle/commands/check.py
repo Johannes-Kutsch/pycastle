@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING
 import click
 
 from pycastle.commands import host_check_run as _host_check_run
-from pycastle.commands.host_check_run import HostCheckRunPassed, run_host_check_command
+from pycastle.commands.host_check_run import (
+    HostCheckRunPassed,
+    HostCheckServiceOverrides,
+    run_host_check_command,
+)
 from pycastle.config import Config, load_config
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.services import GithubService, GitService, ServiceRegistry
@@ -39,10 +43,12 @@ def main(
             cfg=resolved_cfg,
             git_svc=git_svc,
             repo_root=repo_root,
-            github_svc=github_service,
-            agent_runner=agent_runner,
-            status_display=resolved_status_display,
-            service_registry=service_registry,
+            overrides=HostCheckServiceOverrides(
+                github_svc=github_service,
+                agent_runner=agent_runner,
+                status_display=resolved_status_display,
+                service_registry=service_registry,
+            ),
         )
         if isinstance(outcome, HostCheckRunPassed):
             return outcome

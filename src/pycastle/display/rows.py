@@ -1,9 +1,19 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Literal
 
 from pycastle.display.status_display import ModelDisplayMetadata, StatusDisplay
 from pycastle.errors import AgentTimeoutError, UsageLimitError
+
+
+@dataclass(frozen=True)
+class StatusRowConfig:
+    color_key: int | None = None
+    work_body: str = ""
+    initial_phase: str = "Setup"
+    startup_message: str = "started"
+    model_display: ModelDisplayMetadata | None = None
 
 
 class StatusRow:
@@ -30,20 +40,17 @@ async def status_row(
     *,
     kind: Literal["phase", "agent"],
     must_close: bool,
-    color_key: int | None = None,
-    work_body: str = "",
-    initial_phase: str = "Setup",
-    startup_message: str = "started",
-    model_display: ModelDisplayMetadata | None = None,
+    config: StatusRowConfig | None = None,
 ) -> AsyncGenerator[StatusRow, None]:
+    _cfg = config or StatusRowConfig()
     status_display.register(
         caller,
         kind,
-        startup_message=startup_message,
-        work_body=work_body,
-        initial_phase=initial_phase,
-        color_key=color_key,
-        model_display=model_display,
+        startup_message=_cfg.startup_message,
+        work_body=_cfg.work_body,
+        initial_phase=_cfg.initial_phase,
+        color_key=_cfg.color_key,
+        model_display=_cfg.model_display,
     )
     row = StatusRow(status_display, caller)
     try:

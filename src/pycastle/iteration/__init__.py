@@ -30,6 +30,7 @@ from pycastle.errors import (
     WorktreeTimeoutError,
 )
 from pycastle.iteration._rows import StatusRow as StatusRow
+from pycastle.iteration._rows import StatusRowConfig as StatusRowConfig
 from pycastle.iteration._rows import status_row as status_row
 from pycastle.iteration.implement import branch_for, implement_phase
 from pycastle.iteration.improve import ImproveContinue as ImproveContinue
@@ -216,7 +217,7 @@ async def _run_implement_and_merge(
         "Implement",
         kind="phase",
         must_close=True,
-        initial_phase="Running",
+        config=StatusRowConfig(initial_phase="Running"),
     ) as row:
         impl_result = await implement_phase(issues, deps, sha, token=token)
 

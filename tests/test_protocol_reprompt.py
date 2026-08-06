@@ -39,74 +39,70 @@ def _renderer() -> PromptRenderer:
     )
 
 
+_ISSUE_SCOPE_ARGS: dict[str, str] = {
+    "ISSUE_NUMBER": "1928",
+    "ISSUE_TITLE": "Title",
+    "ISSUE_BODY": "Body",
+    "ISSUE_COMMENTS": "",
+    "BRANCH": "pycastle/issue-1928",
+    "INTERRUPTED_WORK": "",
+}
+
+_IMPROVE_PRD_SCOPE_ARGS: dict[str, str] = {
+    "IMPROVE_SHORT_SID": "abc123",
+    "RECENT_IMPROVE_PRDS": "[]",
+}
+
+_SCOPE_ARGS_BY_TEMPLATE: dict[PromptTemplate, dict[str, str]] = {
+    PromptTemplate.IMPLEMENT_BEHAVIOR: _ISSUE_SCOPE_ARGS,
+    PromptTemplate.IMPLEMENT_REFACTOR: _ISSUE_SCOPE_ARGS,
+    PromptTemplate.IMPLEMENT_DOCS: _ISSUE_SCOPE_ARGS,
+    PromptTemplate.REVIEW: _ISSUE_SCOPE_ARGS,
+    PromptTemplate.MERGE: {"BRANCHES": "main,feature"},
+    PromptTemplate.PREFLIGHT_ISSUE: {
+        "CHECK_NAME": "lint",
+        "COMMAND": "ruff check",
+        "OUTPUT": "failure",
+    },
+    PromptTemplate.HOST_CHECK_ISSUE: {
+        "HOST_OS": "Linux",
+        "HOST_PLATFORM": "x86_64",
+        "CHECKED_SHA": "abc123",
+        "CHECK_NAME": "lint",
+        "COMMAND": "ruff check",
+        "OUTPUT": "failure",
+    },
+    PromptTemplate.IMPROVE_PRD: _IMPROVE_PRD_SCOPE_ARGS,
+    PromptTemplate.IMPROVE_NO_CANDIDATE: _IMPROVE_PRD_SCOPE_ARGS,
+    PromptTemplate.IMPROVE_SCAN: {"RECENT_IMPROVE_PRD_TITLES": "[]"},
+    PromptTemplate.IMPROVE_ISSUES: {
+        "IMPROVE_SHORT_SID": "abc123",
+        "ISSUE_NUMBER": "1928",
+        "ISSUE_TITLE": "Title",
+        "ISSUE_BODY": "Body",
+        "ISSUE_COMMENTS": "",
+    },
+    PromptTemplate.DIVERGENCE_RESOLVE: {"BRANCH": "pycastle/issue-1928"},
+    PromptTemplate.FAILURE_REPORT: {
+        "FAILED_ROLE": "reviewer",
+        "SESSION_DIR": "/tmp/session",
+        "EVIDENCE_PATH": "/tmp/log.txt",
+        "HAS_EVIDENCE_PATH": "true",
+        "FAILURE_CLASS": "HardAgentError",
+    },
+    PromptTemplate.PLAN: {
+        "ALL_OPEN_ISSUES_JSON": "[]",
+        "READY_FOR_AGENT_ISSUES_JSON": "[]",
+    },
+    PromptTemplate.RESUME: {},
+}
+
+
 def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
-    if template in {
-        PromptTemplate.IMPLEMENT_BEHAVIOR,
-        PromptTemplate.IMPLEMENT_REFACTOR,
-        PromptTemplate.IMPLEMENT_DOCS,
-        PromptTemplate.REVIEW,
-    }:
-        return {
-            "ISSUE_NUMBER": "1928",
-            "ISSUE_TITLE": "Title",
-            "ISSUE_BODY": "Body",
-            "ISSUE_COMMENTS": "",
-            "BRANCH": "pycastle/issue-1928",
-            "INTERRUPTED_WORK": "",
-        }
-    if template is PromptTemplate.MERGE:
-        return {"BRANCHES": "main,feature"}
-    if template is PromptTemplate.PREFLIGHT_ISSUE:
-        return {
-            "CHECK_NAME": "lint",
-            "COMMAND": "ruff check",
-            "OUTPUT": "failure",
-        }
-    if template is PromptTemplate.HOST_CHECK_ISSUE:
-        return {
-            "HOST_OS": "Linux",
-            "HOST_PLATFORM": "x86_64",
-            "CHECKED_SHA": "abc123",
-            "CHECK_NAME": "lint",
-            "COMMAND": "ruff check",
-            "OUTPUT": "failure",
-        }
-    if template in {
-        PromptTemplate.IMPROVE_PRD,
-        PromptTemplate.IMPROVE_NO_CANDIDATE,
-    }:
-        return {
-            "IMPROVE_SHORT_SID": "abc123",
-            "RECENT_IMPROVE_PRDS": "[]",
-        }
-    if template is PromptTemplate.IMPROVE_SCAN:
-        return {"RECENT_IMPROVE_PRD_TITLES": "[]"}
-    if template is PromptTemplate.IMPROVE_ISSUES:
-        return {
-            "IMPROVE_SHORT_SID": "abc123",
-            "ISSUE_NUMBER": "1928",
-            "ISSUE_TITLE": "Title",
-            "ISSUE_BODY": "Body",
-            "ISSUE_COMMENTS": "",
-        }
-    if template is PromptTemplate.DIVERGENCE_RESOLVE:
-        return {"BRANCH": "pycastle/issue-1928"}
-    if template is PromptTemplate.FAILURE_REPORT:
-        return {
-            "FAILED_ROLE": "reviewer",
-            "SESSION_DIR": "/tmp/session",
-            "EVIDENCE_PATH": "/tmp/log.txt",
-            "HAS_EVIDENCE_PATH": "true",
-            "FAILURE_CLASS": "HardAgentError",
-        }
-    if template is PromptTemplate.PLAN:
-        return {
-            "ALL_OPEN_ISSUES_JSON": "[]",
-            "READY_FOR_AGENT_ISSUES_JSON": "[]",
-        }
-    if template is PromptTemplate.RESUME:
-        return {}
-    raise AssertionError(f"Unhandled template: {template}")
+    try:
+        return _SCOPE_ARGS_BY_TEMPLATE[template]
+    except KeyError:
+        raise AssertionError(f"Unhandled template: {template}") from None
 
 
 def _invocation(template: PromptTemplate):

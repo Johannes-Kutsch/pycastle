@@ -9,6 +9,7 @@ from pycastle._host_check import (
     HostCheckFailure,
     HostCheckIssueFiledVerdict,
     HostCheckIssuePayload,
+    HostCheckLoopCallbacks,
     HostCheckPassedVerdict,
     run_host_check_loop,
 )
@@ -117,7 +118,7 @@ def test_run_host_check_loop_closes_host_check_row_before_issue_filing_starts(
             status_display=_RecordingDisplay(),
             run_host_check=fake_run_host_check,
             transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
-            file_issue_for_failure=fake_file_issue,
+            callbacks=HostCheckLoopCallbacks(file_issue_for_failure=fake_file_issue),
         )
     )
 
@@ -194,7 +195,7 @@ def test_run_host_check_loop_collects_all_failed_commands_before_reporting_issue
             status_display=_RecordingDisplay(),
             run_host_check=fake_run_host_check,
             transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
-            file_issue_for_failure=fake_file_issue,
+            callbacks=HostCheckLoopCallbacks(file_issue_for_failure=fake_file_issue),
         )
     )
 
@@ -276,7 +277,7 @@ def test_run_host_check_loop_collects_all_failed_command_results_before_reportin
             status_display=_RecordingDisplay(),
             run_host_check=fake_run_host_check,
             transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
-            file_issue_for_failure=fake_file_issue,
+            callbacks=HostCheckLoopCallbacks(file_issue_for_failure=fake_file_issue),
         )
     )
 
@@ -345,7 +346,7 @@ def test_run_host_check_loop_passes_raw_failed_command_payload_to_reporter_adapt
             repo_root=tmp_path,
             run_host_check=fake_run_host_check,
             transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
-            file_issue_for_failure=fake_file_issue,
+            callbacks=HostCheckLoopCallbacks(file_issue_for_failure=fake_file_issue),
         )
     )
 
@@ -404,7 +405,7 @@ def test_run_host_check_loop_does_not_file_issue_when_checks_pass(
                 output="passing stdout\npassing stderr",
             ),
             transient_worktree_factory=lambda *a, **kw: _TransientWorktree(),
-            file_issue_for_failure=fake_file_issue,
+            callbacks=HostCheckLoopCallbacks(file_issue_for_failure=fake_file_issue),
         )
     )
 

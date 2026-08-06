@@ -212,6 +212,15 @@ class _StatusRowHandle:
         return self._closed
 
 
+@dataclasses.dataclass(frozen=True)
+class RuntimeStatusRowConfig:
+    color_key: int | None = None
+    work_body: str = ""
+    initial_phase: str = "Setup"
+    startup_message: str = "started"
+    model_display: RuntimeModelDisplayMetadata | None = None
+
+
 class _DefaultStatusRow:
     def __init__(
         self,
@@ -220,21 +229,18 @@ class _DefaultStatusRow:
         *,
         kind: str,
         must_close: bool,
-        color_key: int | None = None,
-        work_body: str = "",
-        initial_phase: str = "Setup",
-        startup_message: str = "started",
-        model_display: RuntimeModelDisplayMetadata | None = None,
+        config: RuntimeStatusRowConfig | None = None,
     ) -> None:
+        _cfg = config or RuntimeStatusRowConfig()
         self._status_display = status_display
         self._caller = caller
         self._must_close = must_close
         self._kind = kind
-        self._color_key = color_key
-        self._work_body = work_body
-        self._initial_phase = initial_phase
-        self._startup_message = startup_message
-        self._model_display = model_display
+        self._color_key = _cfg.color_key
+        self._work_body = _cfg.work_body
+        self._initial_phase = _cfg.initial_phase
+        self._startup_message = _cfg.startup_message
+        self._model_display = _cfg.model_display
         self._row = _StatusRowHandle(status_display, caller)
 
     async def __aenter__(self) -> RuntimeStatusRow:
@@ -285,22 +291,14 @@ def _default_status_row_factory(
     *,
     kind: str,
     must_close: bool,
-    color_key: int | None = None,
-    work_body: str = "",
-    initial_phase: str = "Setup",
-    startup_message: str = "started",
-    model_display: RuntimeModelDisplayMetadata | None = None,
+    config: RuntimeStatusRowConfig | None = None,
 ) -> AbstractAsyncContextManager[RuntimeStatusRow]:
     return _DefaultStatusRow(
         status_display,
         caller,
         kind=kind,
         must_close=must_close,
-        color_key=color_key,
-        work_body=work_body,
-        initial_phase=initial_phase,
-        startup_message=startup_message,
-        model_display=model_display,
+        config=config,
     )
 
 

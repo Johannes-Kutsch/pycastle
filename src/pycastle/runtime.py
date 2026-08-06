@@ -28,6 +28,7 @@ from pycastle.execution_contracts import (
     RuntimeModelDisplayMetadata,
     RuntimeRunSession,
     RuntimeStatusRow,
+    RuntimeStatusRowConfig,
     TextOutputAdapter,
     WorktreeMount,
 )
@@ -598,9 +599,11 @@ async def _execute_runtime_request(request: RuntimeInvocationRequest[Any]) -> An
         request.name,
         kind="agent",
         must_close=False,
-        work_body=request.work_body,
-        color_key=request.color_key,
-        model_display=_build_model_display_metadata(request),
+        config=RuntimeStatusRowConfig(
+            work_body=request.work_body,
+            color_key=request.color_key,
+            model_display=_build_model_display_metadata(request),
+        ),
     ) as row:
         session = request.dependencies.build_session(
             request.mount_path,

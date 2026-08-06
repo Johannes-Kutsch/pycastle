@@ -19,7 +19,7 @@ from pycastle.infrastructure.worktree import (
 )
 from pycastle.iteration import planning_issue_intake
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
-from pycastle.iteration._rows import StatusRow, status_row
+from pycastle.iteration._rows import StatusRow, StatusRowConfig, status_row
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.planning_issue_intake import PlanReady, PreparedPlanningIssueSet
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
@@ -135,8 +135,10 @@ async def planning_phase(
         "Plan",
         kind="phase",
         must_close=True,
-        initial_phase="Planning",
-        startup_message=startup_msg,
+        config=StatusRowConfig(
+            initial_phase="Planning",
+            startup_message=startup_msg,
+        ),
     ) as row:
         if _in_flight:
             verdict = await deps.preflight_cache.get_safe_sha(deps)

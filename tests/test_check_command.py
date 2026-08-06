@@ -14,7 +14,7 @@ def test_check_keeps_adr_0036_terminal_ordering_contract(tmp_path, monkeypatch):
     from pycastle.main import main as cli
 
     async def fake_run_host_check_command(**kwargs):
-        status_display = kwargs["status_display"]
+        status_display = kwargs["overrides"].status_display
         status_display.register("Host Check", "phase")
         status_display.print("Host Check", "tests")
         status_display.remove("Host Check")
@@ -136,15 +136,17 @@ def test_check_delegates_host_check_orchestration_to_run_module_adapter(
         service_registry=service_registry,
     )
 
+    overrides = recorded_kwargs["overrides"]
     assert recorded_kwargs == {
         "cfg": cfg,
         "git_svc": recorded_kwargs["git_svc"],
         "repo_root": tmp_path.resolve(),
-        "github_svc": github_service,
-        "agent_runner": agent_runner,
-        "status_display": recorded_kwargs["status_display"],
-        "service_registry": service_registry,
+        "overrides": overrides,
     }
+    assert overrides.github_svc is github_service
+    assert overrides.agent_runner is agent_runner
+    assert overrides.service_registry is service_registry
+    assert overrides.status_display is not None
     module_tree = ast.parse(inspect.getsource(check_mod))
     main_def = next(
         node

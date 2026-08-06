@@ -13,6 +13,7 @@ from pycastle._host_check import (
     HostCheckIssueFiledVerdict,
     HostCheckIssueFiler,
     HostCheckIssuePayload,
+    HostCheckLoopCallbacks,
     HostCheckPassedVerdict,
     HostCheckVerdict,
     HostCheckWorktreeDeps,
@@ -193,11 +194,7 @@ async def _file_host_check_issue(
     payload: HostCheckIssuePayload,
     mount_path: Path,
     repo_root: Path,
-    cfg: Config,
-    github_svc: GithubService,
-    agent_runner: AgentRunnerProtocol,
-    status_display: StatusDisplay,
-    reporter_override: StageOverride | None,
+    deps: HostCheckIssueDeps,
 ) -> int:
     mount_decision = decide_diagnostic_mount_dispatch(
         repo_root=repo_root,
@@ -209,12 +206,12 @@ async def _file_host_check_issue(
             f"Host check {payload.check_name!r} failed while running "
             f"{payload.command!r}."
         ),
-        github_svc=github_svc,
+        github_svc=deps.github_svc,
     )
     if isinstance(mount_decision, DiagnosticMountFallbackIssue):
         return mount_decision.issue_number
-    override = reporter_override or cfg.preflight_issue_override
-    agent_result = await agent_runner.run(
+    override = deps.reporter_override or deps.cfg.preflight_issue_override
+    agent_result = await deps.agent_runner.run(
         RunRequest(
             name="Host-Check Reporter",
             prompt=build_prompt_invocation(
@@ -233,7 +230,7 @@ async def _file_host_check_issue(
             model=override.model,
             effort=override.effort,
             service=override.service,
-            status_display=status_display,
+            status_display=deps.status_display,
             work_body=f"reporting {payload.check_name} host-check issue",
         )
     )
@@ -245,8 +242,8 @@ async def _file_host_check_issue(
     validation = validate_diagnostic_issue_report(
         caller="Host-Check Reporter",
         issue_output=agent_result,
-        cfg=cfg,
-        filed_issue_reader=github_svc,
+        cfg=deps.cfg,
+        filed_issue_reader=deps.github_svc,
     )
     return validation.issue_number
 
@@ -254,11 +251,7 @@ async def _file_host_check_issue(
 def create_host_check_issue_filer(
     *,
     repo_root: Path,
-    cfg: Config,
-    github_svc: GithubService,
-    agent_runner: AgentRunnerProtocol,
-    status_display: StatusDisplay,
-    reporter_override: StageOverride | None,
+    deps: HostCheckIssueDeps,
 ) -> HostCheckIssueFiler:
     async def file_issue_for_failure(
         payload: HostCheckIssuePayload, mount_path: Path
@@ -268,11 +261,7 @@ def create_host_check_issue_filer(
                 payload=payload,
                 mount_path=mount_path,
                 repo_root=repo_root,
-                cfg=cfg,
-                github_svc=github_svc,
-                agent_runner=agent_runner,
-                status_display=status_display,
-                reporter_override=reporter_override,
+                deps=deps,
             )
         except SetupPhaseError as exc:
             raise _preserve_host_check_context(
@@ -287,88 +276,103 @@ def create_host_check_issue_filer(
     return file_issue_for_failure
 
 
+@dataclass(frozen=True)
+class HostCheckServiceOverrides:
+    github_svc: GithubService | None = None
+    agent_runner: AgentRunnerProtocol | None = None
+    status_display: StatusDisplay | None = None
+    service_registry: ServiceRegistry | None = None
+    run_host_check: HostCheckCommandExecutor | None = None
+    transient_worktree_factory: HostCheckWorktreeFactory | None = None
+
+
+@dataclass(frozen=True)
+class HostCheckRunContext:
+    host_checks: tuple[tuple[str, str], ...]
+    git_svc: GitService
+    repo_root: Path | None = None
+    cfg: Config | None = None
+    github_svc: GithubService | None = None
+    agent_runner: AgentRunnerProtocol | None = None
+    status_display: StatusDisplay | None = None
+    reporter_override: StageOverride | None = None
+    issue_deps_factory: Callable[[], HostCheckIssueDeps] | None = None
+    on_check_start: Callable[[str], None] | None = None
+    on_failures_detected: Callable[[list[HostCheckFailure]], None] | None = None
+    run_host_check: HostCheckCommandExecutor | None = None
+    transient_worktree_factory: HostCheckWorktreeFactory | None = None
+
+
 async def run_host_check_command(
     *,
     cfg: Config,
     git_svc: GitService,
     repo_root: Path | None = None,
-    github_svc: GithubService | None = None,
-    agent_runner: AgentRunnerProtocol | None = None,
-    status_display: StatusDisplay | None = None,
-    service_registry: ServiceRegistry | None = None,
-    run_host_check: HostCheckCommandExecutor | None = None,
-    transient_worktree_factory: HostCheckWorktreeFactory | None = None,
+    overrides: HostCheckServiceOverrides | None = None,
 ) -> HostCheckRunOutcome:
+    _ov = overrides or HostCheckServiceOverrides()
     resolved_repo_root = (
         repo_root or Path.cwd()
     )  # asyncio codebase; Path.cwd() is safe here
-    resolved_status_display = status_display or PlainStatusDisplay()
+    resolved_status_display = _ov.status_display or PlainStatusDisplay()
     resolved_reporter_override: StageOverride | None = None
-    if github_svc is not None and agent_runner is not None:
-        resolved_reporter_override = _resolve_reporter_override(cfg, service_registry)
+    if _ov.github_svc is not None and _ov.agent_runner is not None:
+        resolved_reporter_override = _resolve_reporter_override(
+            cfg, _ov.service_registry
+        )
     return await run_host_check_run(
-        host_checks=cfg.host_checks,
-        git_svc=git_svc,
-        repo_root=resolved_repo_root,
-        cfg=cfg,
-        github_svc=github_svc,
-        agent_runner=agent_runner,
-        status_display=resolved_status_display,
-        reporter_override=resolved_reporter_override,
-        issue_deps_factory=lambda: resolve_host_check_issue_deps(
-            cfg=cfg,
+        HostCheckRunContext(
+            host_checks=cfg.host_checks,
             git_svc=git_svc,
             repo_root=resolved_repo_root,
+            cfg=cfg,
+            github_svc=_ov.github_svc,
+            agent_runner=_ov.agent_runner,
             status_display=resolved_status_display,
-            github_svc=github_svc,
-            agent_runner=agent_runner,
-            service_registry=service_registry,
-        ),
-        run_host_check=run_host_check,
-        transient_worktree_factory=transient_worktree_factory,
+            reporter_override=resolved_reporter_override,
+            issue_deps_factory=lambda: resolve_host_check_issue_deps(
+                cfg=cfg,
+                git_svc=git_svc,
+                repo_root=resolved_repo_root,
+                status_display=resolved_status_display,
+                github_svc=_ov.github_svc,
+                agent_runner=_ov.agent_runner,
+                service_registry=_ov.service_registry,
+            ),
+            run_host_check=_ov.run_host_check,
+            transient_worktree_factory=_ov.transient_worktree_factory,
+        )
     )
 
 
-async def run_host_check_run(
-    *,
-    host_checks: tuple[tuple[str, str], ...],
-    git_svc: GitService,
-    repo_root: Path | None = None,
-    cfg: Config | None = None,
-    github_svc: GithubService | None = None,
-    agent_runner: AgentRunnerProtocol | None = None,
-    status_display: StatusDisplay | None = None,
-    reporter_override: StageOverride | None = None,
-    issue_deps_factory: Callable[[], HostCheckIssueDeps] | None = None,
-    on_check_start: Callable[[str], None] | None = None,
-    on_failures_detected: Callable[[list[HostCheckFailure]], None] | None = None,
-    run_host_check: HostCheckCommandExecutor | None = None,
-    transient_worktree_factory: HostCheckWorktreeFactory | None = None,
-) -> HostCheckRunOutcome:
+async def run_host_check_run(ctx: HostCheckRunContext) -> HostCheckRunOutcome:
     resolved_repo_root = (
-        repo_root or Path.cwd()
+        ctx.repo_root or Path.cwd()
     )  # asyncio codebase; Path.cwd() is safe here
-    execute_host_check = run_host_check or _run_host_check
+    execute_host_check = ctx.run_host_check or _run_host_check
     create_transient_worktree = cast(
         "HostCheckWorktreeFactory",
-        transient_worktree_factory or transient_worktree,
+        ctx.transient_worktree_factory or transient_worktree,
     )
     file_issue_for_failure: HostCheckIssueFiler | None = None
     if (
-        cfg is not None
-        and github_svc is not None
-        and agent_runner is not None
-        and status_display is not None
+        ctx.cfg is not None
+        and ctx.github_svc is not None
+        and ctx.agent_runner is not None
+        and ctx.status_display is not None
     ):
         file_issue_for_failure = create_host_check_issue_filer(
             repo_root=resolved_repo_root,
-            cfg=cfg,
-            github_svc=github_svc,
-            agent_runner=agent_runner,
-            status_display=status_display,
-            reporter_override=reporter_override,
+            deps=HostCheckIssueDeps(
+                cfg=ctx.cfg,
+                github_svc=ctx.github_svc,
+                agent_runner=ctx.agent_runner,
+                status_display=ctx.status_display,
+                reporter_override=ctx.reporter_override,
+            ),
         )
-    elif issue_deps_factory is not None:
+    elif ctx.issue_deps_factory is not None:
+        issue_deps_factory = ctx.issue_deps_factory
         resolved_issue_deps: HostCheckIssueDeps | None = None
 
         def get_issue_deps() -> HostCheckIssueDeps:
@@ -383,21 +387,19 @@ async def run_host_check_run(
             issue_deps = get_issue_deps()
             return await create_host_check_issue_filer(
                 repo_root=resolved_repo_root,
-                cfg=issue_deps.cfg,
-                github_svc=issue_deps.github_svc,
-                agent_runner=issue_deps.agent_runner,
-                status_display=issue_deps.status_display,
-                reporter_override=issue_deps.reporter_override,
+                deps=issue_deps,
             )(payload, mount_path)
 
     return await run_host_check_loop(
-        host_checks=host_checks,
-        git_svc=git_svc,
+        host_checks=ctx.host_checks,
+        git_svc=ctx.git_svc,
         repo_root=resolved_repo_root,
-        status_display=status_display,
-        on_check_start=on_check_start,
-        on_failures_detected=on_failures_detected,
+        status_display=ctx.status_display,
+        callbacks=HostCheckLoopCallbacks(
+            on_check_start=ctx.on_check_start,
+            on_failures_detected=ctx.on_failures_detected,
+            file_issue_for_failure=file_issue_for_failure,
+        ),
         run_host_check=execute_host_check,
         transient_worktree_factory=create_transient_worktree,
-        file_issue_for_failure=file_issue_for_failure,
     )

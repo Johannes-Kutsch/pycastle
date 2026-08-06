@@ -373,6 +373,28 @@ def _cleanup_stale_named_worktree(
             svc.delete_branch(branch, repo_path)
 
 
+def _teardown_worktree_branch(
+    path: Path,
+    deps: _WorktreeDeps,
+    identity: WorktreeIdentity,
+    lifecycle: BranchWorktreeLifecycle,
+    *,
+    preservation_worthy: bool,
+) -> None:
+    try:
+        dirty = not deps.git_svc.is_working_tree_clean(path)
+    except GitServiceError:
+        dirty = True
+    if not (preservation_worthy or dirty or any_role_dir_present(path)):
+        try:
+            _branch_has_commits = deps.git_svc.has_commits_ahead_of_main(path)
+        except GitServiceError:
+            _branch_has_commits = True
+        teardown_worktree(deps.git_svc, deps.repo_root, path)
+        if _deletes_branch_on_teardown(lifecycle) or not _branch_has_commits:
+            deps.git_svc.delete_branch(identity.branch, deps.repo_root)
+
+
 @asynccontextmanager
 async def managed_worktree(
     name: str | None = None,
@@ -423,18 +445,13 @@ async def managed_worktree(
         mark_failure_worktree_preserved(path)
         raise
     finally:
-        try:
-            dirty = not deps.git_svc.is_working_tree_clean(path)
-        except GitServiceError:
-            dirty = True
-        if not (_preservation_worthy_exc or dirty or any_role_dir_present(path)):
-            try:
-                _branch_has_commits = deps.git_svc.has_commits_ahead_of_main(path)
-            except GitServiceError:
-                _branch_has_commits = True
-            teardown_worktree(deps.git_svc, deps.repo_root, path)
-            if _deletes_branch_on_teardown(lifecycle) or not _branch_has_commits:
-                deps.git_svc.delete_branch(resolved_identity.branch, deps.repo_root)
+        _teardown_worktree_branch(
+            path,
+            deps,
+            resolved_identity,
+            lifecycle,
+            preservation_worthy=_preservation_worthy_exc,
+        )
 
 
 @asynccontextmanager

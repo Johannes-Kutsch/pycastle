@@ -7,17 +7,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from importlib.resources.abc import Traversable
 
 import click
 
 from pycastle.init_wizard import (
     ConfigFileAction,
+    CredentialPrompt,
     HostAuthFacts,
     InitPlan,
     ScaffoldStageChainFacts,
     build_init_plan_for_scope,
 )
+from pycastle.init_wizard.planning import InitEnvContext
 from pycastle.layout import resolve_layout
 from pycastle.scaffold import InitScaffold
 
@@ -142,6 +145,168 @@ def _prompt_and_save_credential(env_file: Path, key: str, prompt_text: str) -> s
     return value
 
 
+def _build_init_plan(
+    plan_scope: Literal["global", "local"],
+    service_selection: str,
+    pycastle_dir: Path,
+    pycastle_home: Path,
+    *,
+    env_ctx: InitEnvContext | None = None,
+    host_auth: HostAuthFacts | None = None,
+    scaffold_stage_chains: ScaffoldStageChainFacts | None = None,
+) -> InitPlan:
+    try:
+        return build_init_plan_for_scope(
+            selected_services=(service_selection,),
+            scope_choice=plan_scope,
+            pycastle_dir=pycastle_dir,
+            pycastle_home=pycastle_home,
+            env_ctx=env_ctx,
+            host_auth=host_auth,
+            scaffold_stage_chains=scaffold_stage_chains,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+def _plan_env_for_existing_file(
+    plan_for_scope: Callable[..., InitPlan],
+    scope: Literal["global", "local"],
+    env_file: Path,
+    *,
+    local_env_exists: bool,
+    global_env_exists: bool,
+) -> InitPlan:
+    existing_env_keys = _read_env_keys(env_file)
+    env_plan = plan_for_scope(
+        scope,
+        env_ctx=InitEnvContext(
+            existing_env_keys=existing_env_keys,
+            existing_env_values=_read_env_values(env_file),
+            target_env_exists=True,
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
+        ),
+    )
+    _merge_missing_env_keys(env_file, env_plan.planned_env_file.missing_keys)
+    return env_plan
+
+
+def _plan_and_create_env_file(
+    plan_for_scope: Callable[..., InitPlan],
+    scope: Literal["global", "local"],
+    env_file: Path,
+    *,
+    local_env_exists: bool,
+    global_env_exists: bool,
+) -> InitPlan:
+    env_plan = plan_for_scope(
+        scope,
+        env_ctx=InitEnvContext(
+            target_env_exists=False,
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
+        ),
+    )
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        env_file.write_text(
+            "".join(f"{key}=\n" for key in env_plan.planned_env_file.missing_keys)
+        )
+    except OSError as e:
+        click.echo(
+            click.style(f"Error: could not write {env_file} — {e}", fg="red"),
+            err=True,
+        )
+        sys.exit(1)
+    return env_plan
+
+
+def _apply_env_setup(
+    env_file: Path,
+    scope: Literal["global", "local"],
+    *,
+    plan_for_scope: Callable[..., InitPlan],
+    local_env_exists: bool,
+    global_env_exists: bool,
+    local_env_file: Path,
+    global_env_file: Path,
+) -> tuple[str, dict[str, str]]:
+    """Handle env file management and credential prompting.
+
+    Returns (gh_token, prompted_values).
+    """
+    if env_file.exists():
+        _plan_env_for_existing_file(
+            plan_for_scope,
+            scope,
+            env_file,
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
+        )
+    else:
+        _plan_and_create_env_file(
+            plan_for_scope,
+            scope,
+            env_file,
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
+        )
+
+    existing_env = _read_env_values(env_file)
+    env_plan = plan_for_scope(
+        scope,
+        env_ctx=InitEnvContext(
+            existing_env_keys=_read_env_keys(env_file),
+            existing_env_values=existing_env,
+            target_env_exists=True,
+            local_env_exists=local_env_exists or env_file == local_env_file,
+            global_env_exists=global_env_exists or env_file == global_env_file,
+        ),
+    )
+
+    prompted_values, effective_values = _collect_credential_prompts(
+        env_file, env_plan.credential_prompts, existing_env
+    )
+
+    gh_token = effective_values.get("GH_TOKEN", "")
+    claude_token = effective_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+
+    if "claude" in env_plan.selected_services and not claude_token:
+        click.echo(
+            f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
+            "Run `claude setup-token` to generate a token."
+        )
+    return gh_token, prompted_values
+
+
+def _collect_credential_prompts(
+    env_file: Path,
+    credential_prompts: tuple[CredentialPrompt, ...],
+    existing_env: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    prompted_values: dict[str, str] = {}
+    effective_values: dict[str, str] = {}
+    for credential_prompt in credential_prompts:
+        if credential_prompt.allow_overwrite:
+            value, was_prompted = _prompt_credential_with_overwrite(
+                env_file,
+                credential_prompt.key,
+                credential_prompt.prompt_text,
+                existing_env,
+            )
+            if was_prompted and value:
+                prompted_values[credential_prompt.key] = value
+        else:
+            value = _prompt_and_save_credential(
+                env_file, credential_prompt.key, credential_prompt.prompt_text
+            )
+            if value:
+                prompted_values[credential_prompt.key] = value
+        effective_values[credential_prompt.key] = value
+    return prompted_values, effective_values
+
+
 def refresh() -> None:
     layout = resolve_layout()
     pkg = files("pycastle").joinpath("defaults")
@@ -176,34 +341,19 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     def plan_for_scope(
         plan_scope: Literal["global", "local"],
         *,
-        manage_env_file: bool = False,
-        prompted_env_values: dict[str, str] | None = None,
-        existing_env_keys: tuple[str, ...] = (),
-        existing_env_values: dict[str, str] | None = None,
-        target_env_exists: bool | None = None,
-        local_env_exists: bool | None = None,
-        global_env_exists: bool | None = None,
+        env_ctx: InitEnvContext | None = None,
         host_auth: HostAuthFacts | None = None,
         scaffold_stage_chains: ScaffoldStageChainFacts | None = None,
     ) -> InitPlan:
-        try:
-            return build_init_plan_for_scope(
-                selected_services=(service_selection,),
-                scope_choice=plan_scope,
-                pycastle_dir=layout.pycastle_dir,
-                pycastle_home=layout.pycastle_home,
-                manage_env_file=manage_env_file,
-                prompted_env_values=prompted_env_values,
-                existing_env_keys=existing_env_keys,
-                existing_env_values=existing_env_values,
-                target_env_exists=target_env_exists,
-                local_env_exists=local_env_exists,
-                global_env_exists=global_env_exists,
-                host_auth=host_auth,
-                scaffold_stage_chains=scaffold_stage_chains,
-            )
-        except ValueError as exc:
-            raise click.ClickException(str(exc)) from exc
+        return _build_init_plan(
+            plan_scope,
+            service_selection,
+            layout.pycastle_dir,
+            layout.pycastle_home,
+            env_ctx=env_ctx,
+            host_auth=host_auth,
+            scaffold_stage_chains=scaffold_stage_chains,
+        )
 
     service_selection = click.prompt(
         "Which agent services do you want to use? [claude/codex/opencode/all]",
@@ -211,9 +361,11 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     )
     service_plan = plan_for_scope(
         "local",
-        target_env_exists=layout.local_env_file.exists(),
-        local_env_exists=layout.local_env_file.exists(),
-        global_env_exists=layout.global_env_file.exists(),
+        env_ctx=InitEnvContext(
+            target_env_exists=layout.local_env_file.exists(),
+            local_env_exists=layout.local_env_file.exists(),
+            global_env_exists=layout.global_env_file.exists(),
+        ),
         host_auth=HostAuthFacts(
             has_host_codex_auth=(Path.home() / ".codex" / "auth.json").exists()
         ),
@@ -235,11 +387,15 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     global_env_exists = layout.global_env_file.exists()
     init_plan = plan_for_scope(
         scope,
-        target_env_exists=(
-            local_env_exists if scope == "local" else layout.global_env_file.exists()
+        env_ctx=InitEnvContext(
+            target_env_exists=(
+                local_env_exists
+                if scope == "local"
+                else layout.global_env_file.exists()
+            ),
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
         ),
-        local_env_exists=local_env_exists,
-        global_env_exists=global_env_exists,
     )
     manage_env_file = init_plan.planned_env_file.should_manage
 
@@ -256,13 +412,15 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
     if local_env_exists != layout.local_env_file.exists():
         init_plan = plan_for_scope(
             scope,
-            target_env_exists=(
-                local_env_exists
-                if scope == "local"
-                else layout.global_env_file.exists()
+            env_ctx=InitEnvContext(
+                target_env_exists=(
+                    local_env_exists
+                    if scope == "local"
+                    else layout.global_env_file.exists()
+                ),
+                local_env_exists=local_env_exists,
+                global_env_exists=global_env_exists,
             ),
-            local_env_exists=local_env_exists,
-            global_env_exists=global_env_exists,
         )
 
     try:
@@ -279,88 +437,29 @@ def main(scope: Literal["global", "local"] | None = None) -> None:
         _apply_config_file_action(pkg, config_action)
 
     env_file = init_plan.planned_env_file.path
+    prompted_values: dict[str, str] = {}
     gh_token = ""
-    claude_token = ""
     if manage_env_file:
-        if env_file.exists():
-            existing_env_keys = _read_env_keys(env_file)
-            env_plan = plan_for_scope(
-                scope,
-                existing_env_keys=existing_env_keys,
-                existing_env_values=_read_env_values(env_file),
-                target_env_exists=True,
-                local_env_exists=local_env_exists,
-                global_env_exists=global_env_exists,
-            )
-            _merge_missing_env_keys(env_file, env_plan.planned_env_file.missing_keys)
-        else:
-            env_plan = plan_for_scope(
-                scope,
-                target_env_exists=False,
-                local_env_exists=local_env_exists,
-                global_env_exists=global_env_exists,
-            )
-            env_file.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                env_file.write_text(
-                    "".join(
-                        f"{key}=\n" for key in env_plan.planned_env_file.missing_keys
-                    )
-                )
-            except OSError as e:
-                click.echo(
-                    click.style(f"Error: could not write {env_file} — {e}", fg="red"),
-                    err=True,
-                )
-                sys.exit(1)
-
-        existing_env = _read_env_values(env_file)
-        env_plan = plan_for_scope(
+        gh_token, prompted_values = _apply_env_setup(
+            env_file,
             scope,
-            existing_env_keys=_read_env_keys(env_file),
-            existing_env_values=existing_env,
-            target_env_exists=True,
-            local_env_exists=local_env_exists or env_file == layout.local_env_file,
-            global_env_exists=global_env_exists or env_file == layout.global_env_file,
+            plan_for_scope=plan_for_scope,
+            local_env_exists=local_env_exists,
+            global_env_exists=global_env_exists,
+            local_env_file=layout.local_env_file,
+            global_env_file=layout.global_env_file,
         )
-
-        prompted_values: dict[str, str] = {}
-        effective_values: dict[str, str] = {}
-        for credential_prompt in env_plan.credential_prompts:
-            if credential_prompt.allow_overwrite:
-                value, was_prompted = _prompt_credential_with_overwrite(
-                    env_file,
-                    credential_prompt.key,
-                    credential_prompt.prompt_text,
-                    existing_env,
-                )
-                if was_prompted and value:
-                    prompted_values[credential_prompt.key] = value
-            else:
-                value = _prompt_and_save_credential(
-                    env_file, credential_prompt.key, credential_prompt.prompt_text
-                )
-                if value:
-                    prompted_values[credential_prompt.key] = value
-            effective_values[credential_prompt.key] = value
-
-        gh_token = effective_values.get("GH_TOKEN", "")
-        claude_token = effective_values.get("CLAUDE_CODE_OAUTH_TOKEN", "")
-
-        if "claude" in env_plan.selected_services and not claude_token:
-            click.echo(
-                f"Set CLAUDE_CODE_OAUTH_TOKEN in {env_file} before running pycastle. "
-                "Run `claude setup-token` to generate a token."
-            )
 
     click.echo()
     label_plan = plan_for_scope(
         scope,
-        manage_env_file=manage_env_file,
-        prompted_env_values=prompted_values if manage_env_file else {},
-        target_env_exists=env_file.exists(),
-        local_env_exists=layout.local_env_file.exists(),
-        global_env_exists=layout.global_env_file.exists(),
+        env_ctx=InitEnvContext(
+            manage_env_file=manage_env_file,
+            prompted_env_values=prompted_values if manage_env_file else {},
+            target_env_exists=env_file.exists(),
+            local_env_exists=layout.local_env_file.exists(),
+            global_env_exists=layout.global_env_file.exists(),
+        ),
     )
     if label_plan.label_prompt_eligibility.should_prompt and click.confirm(
         "Create GitHub labels?", default=False

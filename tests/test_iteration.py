@@ -141,10 +141,11 @@ def _make_deps(
     git_svc,
     github_svc,
     logger,
-    cfg=None,
-    status_display=None,
-    preflight_responses=None,
+    **_kw,
 ) -> Deps:
+    cfg = _kw.get("cfg")
+    status_display = _kw.get("status_display")
+    preflight_responses = _kw.get("preflight_responses")
     return _make_test_deps(
         tmp_path,
         run_agent_fn,
@@ -3886,16 +3887,6 @@ def test_run_iteration_routes_merge_time_preflight_afk_at_iteration_boundary(
         }
 
     github_svc.get_issue.side_effect = _get_issue
-
-    def _close_issue(issue_number: int):
-        action_log.append(("close_issue", issue_number))
-
-    github_svc.close_issue_with_parents.side_effect = _close_issue
-
-    def _delete_branch(branch: str, repo_root: Path):
-        action_log.append(("delete_branch", branch))
-
-    git_svc.delete_branch.side_effect = _delete_branch
     git_svc.try_merge.side_effect = [True, False, True]
 
     async def _fake_agent(request: RunRequest):

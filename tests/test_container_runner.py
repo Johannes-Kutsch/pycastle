@@ -175,15 +175,16 @@ def _make_runner(
     *,
     name: str = "agent",
     session: FakeDockerSession | None = None,
-    status_display=None,
-    cfg: Config | None = None,
     tmp_path: Path | None = None,
-    model: str = "gpt-5.5",
-    effort: str = "medium",
     runtime_client: FakeRuntimeClient | None = None,
     active_container: bool = False,
-    mount_path: Path | None = None,
+    **_opts,
 ) -> tuple[ContainerRunner, FakeDockerSession]:
+    status_display = _opts.get("status_display")
+    cfg: Config | None = _opts.get("cfg")
+    model: str = _opts.get("model", "gpt-5.5")
+    effort: str = _opts.get("effort", "medium")
+    mount_path: Path | None = _opts.get("mount_path")
     if session is None:
         session = FakeDockerSession()
     if cfg is None:

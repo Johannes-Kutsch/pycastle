@@ -86,27 +86,35 @@ class DockerBuildOutputInterpreter:
     _buildkit_total_steps: int | None = None
     _last_progress_text: str | None = None
 
+    def _handle_buildkit_step(
+        self, buildkit_step: re.Match[str]
+    ) -> BuildLineInterpretation:
+        self._buildkit_step_ids.add(buildkit_step.group(1))
+        if self._buildkit_total_steps is None:
+            self._buildkit_total_steps = int(buildkit_step.group(3))
+        return self._progress(
+            f"Step {buildkit_step.group(2)}/{self._buildkit_total_steps}"
+        )
+
+    def _handle_classic_step(
+        self, classic_step: re.Match[str]
+    ) -> BuildLineInterpretation:
+        classic_step_key = (classic_step.group(1), classic_step.group(2))
+        if classic_step_key not in self._classic_step_keys:
+            self._classic_steps_seen += 1
+            self._classic_step_keys.add(classic_step_key)
+        self._pending_classic_step = True
+        return self._progress(f"Step {classic_step.group(1)}/{classic_step.group(2)}")
+
     def observe_line(self, line: str) -> BuildLineInterpretation:
         stripped = line.strip()
         buildkit_step = re.match(r"^#(\d+)\s+\[(\d+)/(\d+)\]", stripped)
         if buildkit_step:
-            self._buildkit_step_ids.add(buildkit_step.group(1))
-            if self._buildkit_total_steps is None:
-                self._buildkit_total_steps = int(buildkit_step.group(3))
-            return self._progress(
-                f"Step {buildkit_step.group(2)}/{self._buildkit_total_steps}"
-            )
+            return self._handle_buildkit_step(buildkit_step)
 
         classic_step = re.match(r"^Step (\d+)/(\d+) :", line)
         if classic_step:
-            classic_step_key = (classic_step.group(1), classic_step.group(2))
-            if classic_step_key not in self._classic_step_keys:
-                self._classic_steps_seen += 1
-                self._classic_step_keys.add(classic_step_key)
-            self._pending_classic_step = True
-            return self._progress(
-                f"Step {classic_step.group(1)}/{classic_step.group(2)}"
-            )
+            return self._handle_classic_step(classic_step)
 
         if self._pending_classic_step:
             if not stripped:

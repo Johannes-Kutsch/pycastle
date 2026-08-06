@@ -112,12 +112,17 @@ ignore = [
     "TRY004",  # type-check-error: domain failures use RuntimeError not TypeError — see ADR 0052
     "EM101",   # string-in-exception: same pressure as TRY003, rejected with it
     "EM102",   # f-string-in-exception: same pressure as TRY003, rejected with it
-    "PLR09",   # numeric-thresholds: arbitrary; C901 is the better-calibrated alternative
+    "PLR0911", # too-many-return-statements: arbitrary threshold
+    "PLR0912", # too-many-branches: C901 covers structural complexity
+    "PLR0914", # too-many-local-variables: arbitrary threshold
+    "PLR0915", # too-many-statements: C901 covers structural complexity
+    "PLR0916", # too-many-boolean-expressions: arbitrary threshold
+    "PLR0917", # too-many-positional-arguments: PLR0913 with max-args covers this
     "CPY001",  # copyright: repository has LICENSE; per-file headers add nothing
-    # ── backlog (drain one entry per ticket) ─────────────────────────────────
-    # complexity
-    "C901",     # complex-structure (architecture work required)
 ]
+
+[tool.ruff.lint.pylint]
+max-args = 7
 
 [tool.ruff.lint.per-file-ignores]
 # PLC0415 — deferred imports justified by circular cycles or startup-performance / robustness

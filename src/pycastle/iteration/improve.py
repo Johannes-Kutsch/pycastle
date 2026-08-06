@@ -18,7 +18,7 @@ from pycastle.infrastructure.worktree import (
     reusable_sandbox_worktree_identity,
 )
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
-from pycastle.iteration._rows import status_row
+from pycastle.iteration._rows import StatusRowConfig, status_row
 from pycastle.iteration.improve_preparation import prepare_improve_step
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
 from pycastle.managed_worktree_mount_policy import (
@@ -258,7 +258,7 @@ async def improve_phase(
         phase_label,
         kind="phase",
         must_close=True,
-        initial_phase="Running",
+        config=StatusRowConfig(initial_phase="Running"),
     ) as row:
         verdict = await deps.preflight_cache.get_safe_sha(deps)
         if isinstance(verdict, (PreflightHITL, PreflightAFK)):

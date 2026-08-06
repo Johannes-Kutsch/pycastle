@@ -44,7 +44,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.config import Config, image_name_for
-from pycastle.display.rows import status_row
+from pycastle.display.rows import StatusRowConfig, status_row
 from pycastle.display.status_display import (
     WORK_PHASE,
     ModelDisplayMetadata,
@@ -65,6 +65,7 @@ from pycastle.execution_contracts import (
     RuntimeInvocationDependencies,
     RuntimeModelDisplayMetadata,
     RuntimeRunSession,
+    RuntimeStatusRowConfig,
 )
 from pycastle.infrastructure.container_runner import (
     ContainerRunner,
@@ -381,9 +382,13 @@ class AgentRunner:
         def _status_row_factory(
             status_display: StatusDisplay,
             caller: str,
-            **kwargs: Any,  # noqa: ANN401  # StatusRowFactory uses Callable[...] — no typed kwargs protocol
+            *,
+            kind: str,
+            must_close: bool,
+            config: RuntimeStatusRowConfig | None = None,
         ) -> AbstractAsyncContextManager[Any]:
-            model_display = kwargs.pop("model_display", None)
+            _cfg = config or RuntimeStatusRowConfig()
+            model_display = _cfg.model_display
             pycastle_model_display = (
                 None
                 if model_display is None
@@ -396,8 +401,15 @@ class AgentRunner:
             return status_row(
                 status_display,
                 caller,
-                model_display=pycastle_model_display,
-                **kwargs,
+                kind=cast("Any", kind),
+                must_close=must_close,
+                config=StatusRowConfig(
+                    color_key=_cfg.color_key,
+                    work_body=_cfg.work_body,
+                    initial_phase=_cfg.initial_phase,
+                    startup_message=_cfg.startup_message,
+                    model_display=pycastle_model_display,
+                ),
             )
 
         def _prepare_session(
@@ -659,9 +671,11 @@ class AgentRunner:
             request.name,
             kind="agent",
             must_close=False,
-            color_key=color_key,
-            work_body=request.work_body,
-            model_display=model_display,
+            config=StatusRowConfig(
+                color_key=color_key,
+                work_body=request.work_body,
+                model_display=model_display,
+            ),
         ) as row:
             try:
                 try:
@@ -1017,8 +1031,7 @@ class AgentRunner:
             name,
             kind="agent",
             must_close=False,
-            work_body=work_body,
-            color_key=None,
+            config=StatusRowConfig(work_body=work_body, color_key=None),
         ) as row:
             session = self._build_preflight_session(mount_path)
             runner = ContainerRunner(

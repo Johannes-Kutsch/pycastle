@@ -112,6 +112,86 @@ class HostCheckWorktreeFactory(Protocol):
 type HostCheckIssueFiler = Callable[[HostCheckIssuePayload, Path], Awaitable[int]]
 
 
+@dataclass(frozen=True)
+class HostCheckLoopCallbacks:
+    on_check_start: Callable[[str], None] | None = None
+    on_failures_detected: Callable[[list[HostCheckFailure]], None] | None = None
+    file_issue_for_failure: HostCheckIssueFiler | None = None
+
+
+@dataclass
+class _CheckDeps:
+    repo_root: Path
+    git_svc: HostCheckGitAdapter
+
+
+def _run_configured_host_checks(
+    host_checks: tuple[tuple[str, str], ...],
+    path: Path,
+    *,
+    status_display: StatusDisplay | None,
+    on_check_start: Callable[[str], None] | None,
+    run_host_check: HostCheckCommandExecutor,
+) -> list[HostCheckFailure]:
+    failures: list[HostCheckFailure] = []
+    for name, command in host_checks:
+        if status_display is not None:
+            _surface_current_host_check(status_display, name)
+        if on_check_start is not None:
+            on_check_start(name)
+        try:
+            command_result = run_host_check(name, command, path)
+        except RuntimeError as exc:
+            failures.append(_failure_from_exception(name, command, exc))
+            continue
+        if _is_failed_command_result(command_result):
+            if command_result is None:
+                raise RuntimeError("narrowing: loop filter already proves non-None")
+            failures.append(_failure_from_command_result(command_result))
+    if failures and status_display is not None:
+        _surface_failed_host_checks(status_display, failures)
+    return failures
+
+
+async def _collect_failure_verdicts(
+    failures: list[HostCheckFailure],
+    *,
+    checked_sha: str,
+    path: Path,
+    host_os: str,
+    host_platform: str,
+    on_failures_detected: Callable[[list[HostCheckFailure]], None] | None,
+    file_issue_for_failure: HostCheckIssueFiler | None,
+) -> HostCheckVerdict:
+    if not failures:
+        return HostCheckPassedVerdict(checked_sha=checked_sha)
+    if on_failures_detected is not None:
+        on_failures_detected(failures)
+    issue_numbers: tuple[int, ...] = ()
+    if file_issue_for_failure is not None:
+        issue_numbers = tuple(
+            [
+                await file_issue_for_failure(
+                    HostCheckIssuePayload(
+                        host_os=host_os,
+                        host_platform=host_platform,
+                        checked_sha=checked_sha,
+                        check_name=failure.name,
+                        command=failure.command,
+                        output=failure.output,
+                    ),
+                    path,
+                )
+                for failure in failures
+            ]
+        )
+    return HostCheckIssueFiledVerdict(
+        checked_sha=checked_sha,
+        failures=tuple(failures),
+        issue_numbers=issue_numbers,
+    )
+
+
 def prepare_host_check_loop(
     *, git_svc: HostCheckGitAdapter, repo_root: Path | None = None
 ) -> str:
@@ -173,73 +253,16 @@ async def run_host_check_loop(
     git_svc: HostCheckGitAdapter,
     repo_root: Path | None = None,
     status_display: StatusDisplay | None = None,
-    on_check_start: Callable[[str], None] | None = None,
-    on_failures_detected: Callable[[list[HostCheckFailure]], None] | None = None,
+    callbacks: HostCheckLoopCallbacks | None = None,
     run_host_check: HostCheckCommandExecutor,
     transient_worktree_factory: HostCheckWorktreeFactory,
-    file_issue_for_failure: HostCheckIssueFiler | None = None,
 ) -> HostCheckVerdict:
     resolved_repo_root = (
         repo_root or Path.cwd()
     )  # asyncio codebase; Path.cwd() is safe here
     host_os = platform.system()
     host_platform = platform.platform()
-
-    @dataclass
-    class _CheckDeps:
-        repo_root: Path
-        git_svc: HostCheckGitAdapter
-
-    def _run_configured_host_checks(path: Path) -> list[HostCheckFailure]:
-        failures: list[HostCheckFailure] = []
-        for name, command in host_checks:
-            if status_display is not None:
-                _surface_current_host_check(status_display, name)
-            if on_check_start is not None:
-                on_check_start(name)
-            try:
-                command_result = run_host_check(name, command, path)
-            except RuntimeError as exc:
-                failures.append(_failure_from_exception(name, command, exc))
-                continue
-            if _is_failed_command_result(command_result):
-                if command_result is None:
-                    raise RuntimeError("narrowing: loop filter already proves non-None")
-                failures.append(_failure_from_command_result(command_result))
-        if failures and status_display is not None:
-            _surface_failed_host_checks(status_display, failures)
-        return failures
-
-    async def _verdict_for_failures(
-        *, checked_sha: str, path: Path, failures: list[HostCheckFailure]
-    ) -> HostCheckVerdict:
-        if not failures:
-            return HostCheckPassedVerdict(checked_sha=checked_sha)
-        if on_failures_detected is not None:
-            on_failures_detected(failures)
-        issue_numbers: tuple[int, ...] = ()
-        if file_issue_for_failure is not None:
-            issue_numbers = tuple(
-                [
-                    await file_issue_for_failure(
-                        HostCheckIssuePayload(
-                            host_os=host_os,
-                            host_platform=host_platform,
-                            checked_sha=checked_sha,
-                            check_name=failure.name,
-                            command=failure.command,
-                            output=failure.output,
-                        ),
-                        path,
-                    )
-                    for failure in failures
-                ]
-            )
-        return HostCheckIssueFiledVerdict(
-            checked_sha=checked_sha,
-            failures=tuple(failures),
-            issue_numbers=issue_numbers,
-        )
+    cb = callbacks or HostCheckLoopCallbacks()
 
     if status_display is None:
         checked_sha = prepare_host_check_loop(
@@ -249,9 +272,21 @@ async def run_host_check_loop(
         async with transient_worktree_factory(
             f"host-check-{checked_sha[:7]}", sha=checked_sha, deps=deps
         ) as path:
-            failures = _run_configured_host_checks(path)
-            return await _verdict_for_failures(
-                checked_sha=checked_sha, path=path, failures=failures
+            failures = _run_configured_host_checks(
+                host_checks,
+                path,
+                status_display=status_display,
+                on_check_start=cb.on_check_start,
+                run_host_check=run_host_check,
+            )
+            return await _collect_failure_verdicts(
+                failures,
+                checked_sha=checked_sha,
+                path=path,
+                host_os=host_os,
+                host_platform=host_platform,
+                on_failures_detected=cb.on_failures_detected,
+                file_issue_for_failure=cb.file_issue_for_failure,
             )
 
     async with status_row(
@@ -267,11 +302,23 @@ async def run_host_check_loop(
         async with transient_worktree_factory(
             f"host-check-{checked_sha[:7]}", sha=checked_sha, deps=deps
         ) as path:
-            failures = _run_configured_host_checks(path)
+            failures = _run_configured_host_checks(
+                host_checks,
+                path,
+                status_display=status_display,
+                on_check_start=cb.on_check_start,
+                run_host_check=run_host_check,
+            )
             if not failures:
                 row.close("finished")
             else:
                 row.close(f"failed {failures[0].name}", shutdown_style="error")
-            return await _verdict_for_failures(
-                checked_sha=checked_sha, path=path, failures=failures
+            return await _collect_failure_verdicts(
+                failures,
+                checked_sha=checked_sha,
+                path=path,
+                host_os=host_os,
+                host_platform=host_platform,
+                on_failures_detected=cb.on_failures_detected,
+                file_issue_for_failure=cb.file_issue_for_failure,
             )

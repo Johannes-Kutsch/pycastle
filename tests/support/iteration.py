@@ -244,18 +244,22 @@ def _default_git_service() -> GitService:
 def _make_deps(
     repo_root: Path,
     agent_runner: AgentRunnerProtocol | Callable[..., Any],
-    *,
-    git_svc: GitService | None = None,
-    github_svc: GithubService | None = None,
-    cfg: Config | None = None,
-    logger: Logger | None = None,
-    status_display: StatusDisplay | None = None,
-    preflight_cache: PreflightCache | StubPreflightCache | None = None,
-    service_registry: ServiceRegistry | None = None,
-    preflight_responses: list[list[PreflightCommandFailure] | BaseException]
-    | None = None,
-    setup_worktrees: bool = False,
+    **_opts: Any,
 ) -> Deps:
+    git_svc: GitService | None = _opts.get("git_svc")
+    github_svc: GithubService | None = _opts.get("github_svc")
+    cfg: Config | None = _opts.get("cfg")
+    logger: Logger | None = _opts.get("logger")
+    status_display: StatusDisplay | None = _opts.get("status_display")
+    preflight_cache: PreflightCache | StubPreflightCache | None = _opts.get(
+        "preflight_cache"
+    )
+    service_registry: ServiceRegistry | None = _opts.get("service_registry")
+    preflight_responses: list[list[PreflightCommandFailure] | BaseException] | None = (
+        _opts.get("preflight_responses")
+    )
+    setup_worktrees: bool = _opts.get("setup_worktrees", False)
+
     if hasattr(agent_runner, "run") and hasattr(agent_runner, "run_preflight"):
         runner = agent_runner
     else:

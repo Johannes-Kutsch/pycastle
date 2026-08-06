@@ -44,6 +44,55 @@ def _resolve_repo(
     return owner, repo
 
 
+def _create_labels_batch(
+    service: GithubService, labels: list[dict[str, str]]
+) -> tuple[dict[str, int], list[str]]:
+    counts = {"created": 0, "skipped": 0, "failed": 0}
+    failures: list[str] = []
+    for label in labels:
+        try:
+            service.create_label(label)
+            counts["created"] += 1
+        except GithubAPIError as exc:
+            if exc.status == _HTTP_UNPROCESSABLE_ENTITY:
+                counts["skipped"] += 1
+            else:
+                counts["failed"] += 1
+                failures.append(f"{label['name']}: HTTP {exc.status}")
+    return counts, failures
+
+
+def _reset_existing_labels(service: GithubService) -> None:
+    try:
+        existing = service.list_labels()
+    except GithubAPIError:
+        existing = []
+    for label in existing:
+        with contextlib.suppress(GithubAPIError):
+            service.delete_label(label["name"])
+
+
+def _report_label_results(counts: dict[str, int], failures: list[str]) -> None:
+    for name in failures:
+        click.echo(
+            click.style(f"Error: failed to create label {name}.", fg="red"),
+            err=True,
+        )
+
+    parts = []
+    if counts["created"]:
+        parts.append(f"Created {counts['created']} labels.")
+    if counts["skipped"]:
+        parts.append(f"{counts['skipped']} skipped.")
+    if counts["failed"]:
+        parts.append(f"{counts['failed']} failed.")
+    if parts:
+        click.echo(" ".join(parts))
+
+    if counts["failed"] or counts["skipped"]:
+        click.echo("To rerun: pycastle labels")
+
+
 def create_labels_interactive(
     token: str,
     git_service: GitService | None = None,
@@ -71,45 +120,10 @@ def create_labels_interactive(
         reset = click.confirm("Delete all existing labels first?", default=False)
 
         if reset:
-            try:
-                existing = service.list_labels()
-            except GithubAPIError:
-                existing = []
-            for label in existing:
-                with contextlib.suppress(GithubAPIError):
-                    service.delete_label(label["name"])
+            _reset_existing_labels(service)
 
-        counts = {"created": 0, "skipped": 0, "failed": 0}
-        failures: list[str] = []
-        for label in labels:
-            try:
-                service.create_label(label)
-                counts["created"] += 1
-            except GithubAPIError as exc:
-                if exc.status == _HTTP_UNPROCESSABLE_ENTITY:
-                    counts["skipped"] += 1
-                else:
-                    counts["failed"] += 1
-                    failures.append(f"{label['name']}: HTTP {exc.status}")
-
-        for name in failures:
-            click.echo(
-                click.style(f"Error: failed to create label {name}.", fg="red"),
-                err=True,
-            )
-
-        parts = []
-        if counts["created"]:
-            parts.append(f"Created {counts['created']} labels.")
-        if counts["skipped"]:
-            parts.append(f"{counts['skipped']} skipped.")
-        if counts["failed"]:
-            parts.append(f"{counts['failed']} failed.")
-        if parts:
-            click.echo(" ".join(parts))
-
-        if counts["failed"] or counts["skipped"]:
-            click.echo("To rerun: pycastle labels")
+        counts, failures = _create_labels_batch(service, labels)
+        _report_label_results(counts, failures)
     except GithubAuthError as exc:
         click.echo(click.style(f"Error: {exc.body}", fg="red"), err=True)
         sys.exit(1)

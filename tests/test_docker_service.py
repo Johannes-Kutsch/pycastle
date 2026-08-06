@@ -5,7 +5,7 @@ import pytest
 
 from pycastle.errors import DockerBuildError, DockerServiceError, PycastleError
 from pycastle.services import DockerService
-from pycastle.services.docker_service import BuildOutcome
+from pycastle.services.docker_service import BuildConfig, BuildOutcome
 
 # ── Helpers: streaming mode ───────────────────────────────────────────────────
 
@@ -148,7 +148,10 @@ def test_build_image_no_cache_adds_flag(tmp_path):
         "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, no_cache=True
+            "img",
+            tmp_path / "Dockerfile",
+            tmp_path,
+            build_config=BuildConfig(no_cache=True),
         )
     args = mock_run.call_args[0][0]
     assert "--no-cache" in args
@@ -159,7 +162,10 @@ def test_build_image_no_cache_false_omits_flag(tmp_path):
         "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, no_cache=False
+            "img",
+            tmp_path / "Dockerfile",
+            tmp_path,
+            build_config=BuildConfig(no_cache=False),
         )
     args = mock_run.call_args[0][0]
     assert "--no-cache" not in args
@@ -173,7 +179,10 @@ def test_build_image_python_version_adds_build_arg(tmp_path):
         "pycastle.services.docker_service.subprocess.run", return_value=_ok_result()
     ) as mock_run:
         DockerService().build_image(
-            "img", tmp_path / "Dockerfile", tmp_path, python_version="3.12"
+            "img",
+            tmp_path / "Dockerfile",
+            tmp_path,
+            build_config=BuildConfig(python_version="3.12"),
         )
     args = mock_run.call_args[0][0]
     assert "--build-arg" in args

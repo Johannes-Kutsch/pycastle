@@ -290,6 +290,39 @@ class PromptRenderer:
             )
         return _render(content, allowed_args)
 
+    def _get_shared_reference(
+        self, key: str, template: PromptTemplate | None
+    ) -> PromptReference:
+        if key != "EXPECTED_OUTPUT_SHAPE":
+            return self._SHARED_FILES[key]
+        if template is None:
+            raise PromptRenderError(
+                f"Template context is required to resolve placeholder {key!r}"
+            )
+        try:
+            return self._EXPECTED_OUTPUT_SHAPES[template]
+        except KeyError:
+            raise PromptRenderError(
+                f"Expected-output-shape fragment is not configured for template "
+                f"{template.filename!r}"
+            ) from None
+
+    def _resolve_missing_shared(
+        self,
+        key: str,
+        reference: PromptReference,
+        stack_key: str,
+        cache: dict[str, str],
+    ) -> str:
+        if key in self._OPTIONAL_SHARED_FILES:
+            cache[stack_key] = ""
+            return ""
+        if key == "ISSUE_TRACKER":
+            raise PromptRenderError(
+                f"Missing prompt fragment for {key}: {reference.relative_path}"
+            )
+        raise PromptRenderError(f"Missing prompt fragment: {reference.relative_path}")
+
     def _resolve_shared_file(
         self,
         key: str,
@@ -303,48 +336,19 @@ class PromptRenderer:
             raise PromptRenderError(
                 f"Template context is required to resolve placeholder {key!r}"
             )
-
-        if key == "EXPECTED_OUTPUT_SHAPE":
-            if template is None:
-                raise PromptRenderError(
-                    f"Template context is required to resolve placeholder {key!r}"
-                )
-            stack_key = f"{template.filename}:{key}"
-        else:
-            stack_key = key
+        stack_key = (
+            f"{template.filename}:{key}" if key == "EXPECTED_OUTPUT_SHAPE" else key
+        )
         if stack_key in cache:
             return cache[stack_key]
         if stack_key in stack:
             cycle = " -> ".join((*stack, stack_key))
             raise PromptRenderError(f"Prompt fragment cycle detected: {cycle}")
 
-        if key == "EXPECTED_OUTPUT_SHAPE":
-            if template is None:
-                raise PromptRenderError(
-                    f"Template context is required to resolve placeholder {key!r}"
-                )
-            try:
-                reference = self._EXPECTED_OUTPUT_SHAPES[template]
-            except KeyError:
-                raise PromptRenderError(
-                    f"Expected-output-shape fragment is not configured for template "
-                    f"{template.filename!r}"
-                ) from None
-        else:
-            reference = self._SHARED_FILES[key]
-
+        reference = self._get_shared_reference(key, template)
         prompt_file = self._prompt_source.maybe_lookup_reference(reference)
         if prompt_file is None:
-            if key in self._OPTIONAL_SHARED_FILES:
-                cache[stack_key] = ""
-                return ""
-            if key == "ISSUE_TRACKER":
-                raise PromptRenderError(
-                    f"Missing prompt fragment for {key}: {reference.relative_path}"
-                )
-            raise PromptRenderError(
-                f"Missing prompt fragment: {reference.relative_path}"
-            )
+            return self._resolve_missing_shared(key, reference, stack_key, cache)
 
         content = prompt_file.read_text()
         found = self._referenced_tokens(content)

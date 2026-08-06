@@ -231,6 +231,31 @@ def _parse_stage_override_services(node: ast.AST) -> tuple[str, ...]:
     return tuple(services)
 
 
+def _process_commented_line(
+    line: str, body: str, *, uncomment_block: bool, preserve_commented_block: bool
+) -> tuple[str | None, bool, bool, bool]:
+    """Return (output_line_or_none, new_uncomment, new_preserve, handled).
+
+    handled=True means the caller should continue to the next line without
+    appending `line` (the returned output_line is already the correct value or
+    None to skip entirely).
+    """
+    if uncomment_block:
+        return body, body.strip() != ")", preserve_commented_block, True
+    if preserve_commented_block:
+        return line, uncomment_block, body.strip() != ")", True
+    if _CONFIG_FIELD_RE.match(body):
+        field_name = body.split("=", 1)[0].strip()
+        if field_name in _EXCLUDED_CONFIG_EXAMPLE_FIELDS:
+            return None, False, False, True
+        if body.startswith("opencode_") or (
+            body.startswith("plan_override") and 'service="opencode"' in body
+        ):
+            return line, False, body.rstrip().endswith("("), True
+        return body, body.rstrip().endswith("("), False, True
+    return None, uncomment_block, preserve_commented_block, False
+
+
 def _render_config_example(defaults_text: str) -> str:
     out = ["from pathlib import Path", ""]
     uncomment_block = False
@@ -241,28 +266,17 @@ def _render_config_example(defaults_text: str) -> str:
             continue
         if line.startswith("# "):
             body = line[2:]
-            if uncomment_block:
-                out.append(body)
-                if body.strip() == ")":
-                    uncomment_block = False
-                continue
-            if preserve_commented_block:
-                out.append(line)
-                if body.strip() == ")":
-                    preserve_commented_block = False
-                continue
-            if _CONFIG_FIELD_RE.match(body):
-                field_name = body.split("=", 1)[0].strip()
-                if field_name in _EXCLUDED_CONFIG_EXAMPLE_FIELDS:
-                    continue
-                if body.startswith("opencode_") or (
-                    body.startswith("plan_override") and 'service="opencode"' in body
-                ):
-                    out.append(line)
-                    preserve_commented_block = body.rstrip().endswith("(")
-                else:
-                    out.append(body)
-                    uncomment_block = body.rstrip().endswith("(")
+            emitted, uncomment_block, preserve_commented_block, handled = (
+                _process_commented_line(
+                    line,
+                    body,
+                    uncomment_block=uncomment_block,
+                    preserve_commented_block=preserve_commented_block,
+                )
+            )
+            if handled:
+                if emitted is not None:
+                    out.append(emitted)
                 continue
         out.append(line)
 

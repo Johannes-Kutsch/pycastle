@@ -765,15 +765,18 @@ def test_build_init_plan_uses_local_env_without_cross_scope_action_when_both_env
 
 def test_build_init_plan_accepts_explicit_env_existence_facts_without_reading_paths():
     from pycastle.init_wizard import build_init_plan_for_scope
+    from pycastle.init_wizard.planning import InitEnvContext
 
     plan = build_init_plan_for_scope(
         selected_services=("claude",),
         scope_choice="local",
         pycastle_dir=Path("pycastle"),
         pycastle_home=Path("/tmp/home"),
-        target_env_exists=False,
-        local_env_exists=False,
-        global_env_exists=True,
+        env_ctx=InitEnvContext(
+            target_env_exists=False,
+            local_env_exists=False,
+            global_env_exists=True,
+        ),
     )
 
     assert plan.planned_env_file.should_manage is False

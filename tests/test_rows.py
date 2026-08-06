@@ -4,7 +4,7 @@ import pytest
 
 from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.errors import AgentTimeoutError, UsageLimitError
-from pycastle.iteration import StatusRow, status_row
+from pycastle.iteration import StatusRow, StatusRowConfig, status_row
 
 
 def test_status_row_phase_success_path_registers_and_closes(
@@ -62,7 +62,9 @@ def test_status_row_phase_custom_startup_message_appears_in_output(
             "Plan",
             kind="phase",
             must_close=True,
-            startup_message="started planning for 3 issue(s) labeled ready-for-agent",
+            config=StatusRowConfig(
+                startup_message="started planning for 3 issue(s) labeled ready-for-agent",
+            ),
         ) as row:
             row.close("done")
 
@@ -81,7 +83,11 @@ def test_status_row_phase_custom_startup_message_appears_on_exception_path(
 
     async def run() -> None:
         async with status_row(
-            d, "Plan", kind="phase", must_close=True, startup_message="custom message"
+            d,
+            "Plan",
+            kind="phase",
+            must_close=True,
+            config=StatusRowConfig(startup_message="custom message"),
         ) as _row:
             raise RuntimeError("boom")
 
@@ -100,7 +106,11 @@ def test_status_row_agent_success_path_registers_removes_and_closes(
     async def run() -> None:
         nonlocal row
         async with status_row(
-            d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
+            d,
+            "Worker",
+            kind="agent",
+            must_close=False,
+            config=StatusRowConfig(work_body="implementing #1"),
         ) as current_row:
             row = current_row
             assert isinstance(current_row, StatusRow)
@@ -120,7 +130,11 @@ def test_status_row_agent_exception_path_marks_failed_and_propagates(
 
     async def run() -> None:
         async with status_row(
-            d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
+            d,
+            "Worker",
+            kind="agent",
+            must_close=False,
+            config=StatusRowConfig(work_body="implementing #1"),
         ):
             raise RuntimeError("boom")
 
@@ -137,7 +151,11 @@ def test_status_row_agent_usage_limit_paints_interrupted_and_propagates(
 
     async def run() -> None:
         async with status_row(
-            d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
+            d,
+            "Worker",
+            kind="agent",
+            must_close=False,
+            config=StatusRowConfig(work_body="implementing #1"),
         ):
             raise UsageLimitError
 
@@ -154,7 +172,11 @@ def test_status_row_agent_timeout_paints_interrupted_and_propagates(
 
     async def run() -> None:
         async with status_row(
-            d, "Worker", kind="agent", must_close=False, work_body="implementing #1"
+            d,
+            "Worker",
+            kind="agent",
+            must_close=False,
+            config=StatusRowConfig(work_body="implementing #1"),
         ):
             raise AgentTimeoutError("timed out")
 
@@ -177,7 +199,7 @@ def test_status_row_agent_registration_uses_agent_kind_and_work_body(
                 "Worker",
                 kind="agent",
                 must_close=False,
-                work_body="implementing #42",
+                config=StatusRowConfig(work_body="implementing #42"),
             ),
         ):
             pass
