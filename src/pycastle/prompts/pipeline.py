@@ -332,13 +332,14 @@ class PromptRenderer:
         template: PromptTemplate | None = None,
         stack: tuple[str, ...] = (),
     ) -> str:
-        if key == "EXPECTED_OUTPUT_SHAPE" and template is None:
-            raise PromptRenderError(
-                f"Template context is required to resolve placeholder {key!r}"
-            )
-        stack_key = (
-            f"{template.filename}:{key}" if key == "EXPECTED_OUTPUT_SHAPE" else key
-        )
+        if key == "EXPECTED_OUTPUT_SHAPE":
+            if template is None:
+                raise PromptRenderError(
+                    f"Template context is required to resolve placeholder {key!r}"
+                )
+            stack_key = f"{template.filename}:{key}"
+        else:
+            stack_key = key
         if stack_key in cache:
             return cache[stack_key]
         if stack_key in stack:
