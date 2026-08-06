@@ -176,7 +176,7 @@ def _plan_env_for_existing_file(
     *,
     local_env_exists: bool,
     global_env_exists: bool,
-) -> InitPlan:
+) -> None:
     existing_env_keys = _read_env_keys(env_file)
     env_plan = plan_for_scope(
         scope,
@@ -189,7 +189,6 @@ def _plan_env_for_existing_file(
         ),
     )
     _merge_missing_env_keys(env_file, env_plan.planned_env_file.missing_keys)
-    return env_plan
 
 
 def _plan_and_create_env_file(
@@ -199,7 +198,7 @@ def _plan_and_create_env_file(
     *,
     local_env_exists: bool,
     global_env_exists: bool,
-) -> InitPlan:
+) -> None:
     env_plan = plan_for_scope(
         scope,
         env_ctx=InitEnvContext(
@@ -219,7 +218,6 @@ def _plan_and_create_env_file(
             err=True,
         )
         sys.exit(1)
-    return env_plan
 
 
 def _apply_env_setup(
@@ -232,10 +230,6 @@ def _apply_env_setup(
     local_env_file: Path,
     global_env_file: Path,
 ) -> tuple[str, dict[str, str]]:
-    """Handle env file management and credential prompting.
-
-    Returns (gh_token, prompted_values).
-    """
     if env_file.exists():
         _plan_env_for_existing_file(
             plan_for_scope,
