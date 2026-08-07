@@ -9,14 +9,18 @@ from typing import Any, cast
 
 import agent_runtime
 import agent_runtime.runtime
-from agent_runtime import _provider_invocation, _session_backed_provider_execution
-from agent_runtime._provider_invocation import (
+from agent_runtime import (
+    HardAgentError,
+    InvocationFailureKind,
     ProviderInvocationFailure,
     ProviderInvocationRequest,
     ProviderInvocationResult,
+    consume_provider_stdout_lines,
 )
 from agent_runtime.contracts import ToolAccess, ToolPolicyProfile
+from agent_runtime.errors import ProviderUnavailableError as _ARProviderUnavailableError
 from agent_runtime.errors import ProviderUnavailableReason
+from agent_runtime.errors import UsageLimitError as _ARUsageLimitError
 from agent_runtime.runtime import (
     Completed,
     Continuation,
@@ -113,7 +117,7 @@ class _DockerBackedProviderInvocationAdapter:
             if not isinstance(chunk, bytes):
                 continue
             for line in chunk.decode("utf-8", errors="replace").splitlines():
-                _provider_invocation._consume_new_stdout_lines(
+                consume_provider_stdout_lines(
                     request.output_hooks.reduce_output,
                     [line],
                 )
@@ -129,22 +133,30 @@ def _process_execution_output(
     try:
         output, usage = request.output_hooks.reduce_output(stdout_lines)
     except Exception as exc:
-        if isinstance(
-            exc,
-            (
-                _provider_invocation.UsageLimitError,
-                _provider_invocation.ProviderUnavailableError,
-            ),
-        ):
+        if isinstance(exc, (_ARUsageLimitError, _ARProviderUnavailableError)):
             provider_session_id: str | None = None
             if request.output_hooks.extract_provider_session_id is not None:
                 provider_session_id = request.output_hooks.extract_provider_session_id(
                     stdout_lines
                 )
-            return _provider_invocation._provider_invocation_failure_from_error(
-                exc,
+            if isinstance(exc, _ARUsageLimitError):
+                return ProviderInvocationFailure(
+                    kind=InvocationFailureKind.USAGE_LIMITED,
+                    detail=exc.raw_message or str(exc),
+                    stdout_lines=tuple(stdout_lines),
+                    provider_session_id=provider_session_id,
+                    usage=exc.usage,
+                    reset_time=exc.reset_time,
+                    is_permanent=exc.is_permanent,
+                )
+            return ProviderInvocationFailure(
+                kind=InvocationFailureKind.PROVIDER_UNAVAILABLE,
+                detail=str(exc),
                 stdout_lines=tuple(stdout_lines),
                 provider_session_id=provider_session_id,
+                usage=exc.usage,
+                reset_time=None,
+                provider_unavailable_reason=exc.reason,
             )
         raise
 
@@ -155,7 +167,7 @@ def _process_execution_output(
         )
 
     if not output.strip():
-        error = _provider_invocation.HardAgentError(
+        error = HardAgentError(
             "Provider subprocess completed without producing output."
         )
         error.provider_session_id = provider_session_id
@@ -169,27 +181,6 @@ def _process_execution_output(
     )
 
 
-class _DockerlessRuntimeClient:
-    """Fallback runtime client used when host docker CLI is unavailable."""
-
-    def __init__(self, session: DockerSession) -> None:
-        self._session = session
-        self._invocation_adapter = _DockerBackedProviderInvocationAdapter(session)
-
-    async def run_new_session(self, request: NewSessionRunRequest) -> Any:  # noqa: ANN401  # return type mirrors agent_runtime.RuntimeClient which is opaque
-        return _session_backed_provider_execution._run_builtin_new_session(
-            request,
-            provider_invocation_adapter=self._invocation_adapter,
-            on_live_output=request.on_live_output,
-        )
-
-    async def run_resumed_session(self, request: ResumedSessionRunRequest) -> Any:  # noqa: ANN401  # return type mirrors agent_runtime.RuntimeClient which is opaque
-        return _session_backed_provider_execution._run_builtin_resumed_session(
-            request,
-            provider_invocation_adapter=self._invocation_adapter,
-            on_live_output=request.on_live_output,
-        )
-
 
 @dataclasses.dataclass
 class _ContainerRunnerConfig:
@@ -198,9 +189,7 @@ class _ContainerRunnerConfig:
     effort: str = ""
     status_display: StatusDisplay | None = None
     service: AgentService | None = None
-    runtime_client: Any | None = (
-        None  # agent_runtime.RuntimeClient or _DockerlessRuntimeClient
-    )
+    runtime_client: Any | None = None  # agent_runtime.RuntimeClient
     mount_path: Path | None = None
 
 
@@ -552,11 +541,15 @@ class ContainerRunner:
             return outcome.result.output
         return extract_output(outcome.result.output, ctx.role)
 
-    def _get_runtime_client(self) -> Any:  # noqa: ANN401  # returns injected client or one of two concrete types; no shared protocol
+    def _get_runtime_client(self) -> Any:  # noqa: ANN401  # returns injected client or agent_runtime.RuntimeClient; no shared protocol
         if self._runtime_client is not None:
             return self._runtime_client
         if shutil.which("docker") is None:
-            return _DockerlessRuntimeClient(self._session)
+            return agent_runtime.RuntimeClient(
+                provider_invocation_adapter=_DockerBackedProviderInvocationAdapter(
+                    self._session
+                )
+            )
         return agent_runtime.RuntimeClient()
 
     def _build_runtime_request(

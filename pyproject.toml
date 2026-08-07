@@ -17,7 +17,7 @@ dependencies = [
     "platformdirs",
     "python-dotenv",
     "rich",
-    "ruhken-agent-runtime>=0.2.9",
+    "ruhken-agent-runtime>=0.2.10",
 ]
 
 [project.optional-dependencies]
@@ -126,7 +126,6 @@ max-args = 7
 
 [tool.ruff.lint.per-file-ignores]
 # SLF001 — private-member-access justified by third-party package internal API usage
-"src/pycastle/infrastructure/container_runner.py" = ["SLF001"]    # _provider_invocation and _session_backed_provider_execution are private APIs of agent_runtime third-party package
 # PLC0415 — deferred imports justified by circular cycles or startup-performance / robustness
 "src/pycastle/bug_reporter.py" = ["PLC0415"]                      # try/except deferred imports for robustness
 "src/pycastle/main.py" = ["PLC0415"]                              # lazy CLI submodule loading
