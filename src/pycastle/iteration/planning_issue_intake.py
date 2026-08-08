@@ -3,6 +3,11 @@ import re
 from typing import Literal
 
 from pycastle.agents.output_protocol import PlannerOutput
+from pycastle.agents.slice_classifier import (
+    ConcreteSliceVerdict,
+    SliceClassifierVerdict,
+    UncertainSliceVerdict,
+)
 from pycastle.config import Config
 from pycastle.issue_readiness import (
     BODY_FLOOR,
@@ -10,6 +15,8 @@ from pycastle.issue_readiness import (
     IssueReadinessKind,
     Malformed,
     MalformedBody,
+    SliceMode,
+    classify_issue_readiness,
     resolve_issue_readiness,
 )
 
@@ -359,6 +366,136 @@ def _prepare_issue(issue: dict, *, open_issue_numbers: set[int]) -> dict:
         "comments": issue.get("comments") or [],
         "labels": issue.get("labels") or [],
     }
+
+
+def _collect_classifier_decisions(
+    prepared_issue_set: "PreparedPlanningIssueSet",
+    verdicts: dict[int, SliceClassifierVerdict],
+    all_slice_labels: frozenset[str],
+    mode_to_label: dict[SliceMode, str],
+    cfg: Config,
+) -> tuple[dict[int, tuple[dict, IssueReadiness, str, list[str]]], dict[int, str]]:
+    malformed_body_numbers = {
+        issue["number"] for issue in prepared_issue_set.malformed_body_issues
+    }
+    concrete: dict[int, tuple[dict, IssueReadiness, str, list[str]]] = {}
+    uncertain: dict[int, str] = {}
+
+    for issue in prepared_issue_set.malformed_slice_mode_issues:
+        number = issue["number"]
+        if number in malformed_body_numbers:
+            continue
+        verdict = verdicts.get(number)
+        if verdict is None:
+            continue
+
+        current_labels = list(issue.get("labels") or [])
+        if isinstance(verdict, ConcreteSliceVerdict):
+            chosen_label = mode_to_label[verdict.mode]
+            current_slice = [lbl for lbl in current_labels if lbl in all_slice_labels]
+            labels_to_remove = [lbl for lbl in current_slice if lbl != chosen_label]
+            updated_labels = [
+                lbl for lbl in current_labels if lbl not in all_slice_labels
+            ] + [chosen_label]
+            updated_issue = {**issue, "labels": updated_labels}
+            concrete[number] = (
+                updated_issue,
+                classify_issue_readiness(updated_issue, cfg),
+                chosen_label,
+                labels_to_remove,
+            )
+        elif isinstance(verdict, UncertainSliceVerdict):
+            uncertain[number] = verdict.reason
+
+    return concrete, uncertain
+
+
+def apply_slice_classifier_verdicts(
+    prepared_issue_set: "PreparedPlanningIssueSet",
+    verdicts: dict[int, SliceClassifierVerdict],
+    cfg: Config,
+) -> "PreparedPlanningIssueSet":
+    all_slice_labels = frozenset(
+        {cfg.refactor_slice_label, cfg.behavior_slice_label, cfg.docs_slice_label}
+    )
+    mode_to_label: dict[SliceMode, str] = {
+        SliceMode.BEHAVIOR: cfg.behavior_slice_label,
+        SliceMode.REFACTOR: cfg.refactor_slice_label,
+        SliceMode.DOCS: cfg.docs_slice_label,
+    }
+
+    concrete, uncertain = _collect_classifier_decisions(
+        prepared_issue_set, verdicts, all_slice_labels, mode_to_label, cfg
+    )
+
+    if not concrete and not uncertain:
+        return prepared_issue_set
+
+    classified_numbers = frozenset(concrete) | frozenset(uncertain)
+    new_actions: list[LabelSyncAction] = [
+        action
+        for action in prepared_issue_set.label_sync_actions
+        if not (
+            action.issue_number in classified_numbers
+            and action.label_name == cfg.needs_slice_type_label
+            and action.intent == "add"
+        )
+    ]
+    for number, (_, _, chosen_label, labels_to_remove) in concrete.items():
+        new_actions.append(
+            LabelSyncAction(issue_number=number, label_name=chosen_label, intent="add")
+        )
+        new_actions.extend(
+            LabelSyncAction(issue_number=number, label_name=lbl, intent="remove")
+            for lbl in labels_to_remove
+        )
+    for number, reason in uncertain.items():
+        new_actions.append(
+            LabelSyncAction(
+                issue_number=number,
+                label_name=cfg.needs_slice_type_label,
+                intent="add",
+                comment_body=reason,
+            )
+        )
+
+    old_bsi = prepared_issue_set.blocker_summary_inputs
+    updated_bsi = dataclasses.replace(
+        old_bsi,
+        malformed_slice_mode_issues=tuple(
+            iss
+            for iss in old_bsi.malformed_slice_mode_issues
+            if iss["number"] not in concrete
+        ),
+        malformed_slice_mode_readiness=tuple(
+            r
+            for iss, r in zip(
+                old_bsi.malformed_slice_mode_issues,
+                old_bsi.malformed_slice_mode_readiness,
+                strict=True,
+            )
+            if iss["number"] not in concrete
+        ),
+    )
+    return PreparedPlanningIssueSet(
+        prepared_issues=prepared_issue_set.prepared_issues,
+        ready_candidates=(
+            *prepared_issue_set.ready_candidates,
+            *(issue for issue, _, _, _ in concrete.values()),
+        ),
+        ready_readiness_by_number={
+            **prepared_issue_set.ready_readiness_by_number,
+            **{n: readiness for n, (_, readiness, _, _) in concrete.items()},
+        },
+        malformed_body_issues=prepared_issue_set.malformed_body_issues,
+        malformed_slice_mode_issues=tuple(
+            issue
+            for issue in prepared_issue_set.malformed_slice_mode_issues
+            if issue["number"] not in concrete
+        ),
+        label_sync_actions=tuple(new_actions),
+        blocker_summary_inputs=updated_bsi,
+    )
 
 
 def _strip_stale_blocker_lines(body: str | None, open_issue_numbers: set[int]) -> str:
