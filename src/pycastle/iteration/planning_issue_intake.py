@@ -459,6 +459,24 @@ def apply_slice_classifier_verdicts(
             )
         )
 
+    old_bsi = prepared_issue_set.blocker_summary_inputs
+    updated_bsi = dataclasses.replace(
+        old_bsi,
+        malformed_slice_mode_issues=tuple(
+            iss
+            for iss in old_bsi.malformed_slice_mode_issues
+            if iss["number"] not in concrete
+        ),
+        malformed_slice_mode_readiness=tuple(
+            r
+            for iss, r in zip(
+                old_bsi.malformed_slice_mode_issues,
+                old_bsi.malformed_slice_mode_readiness,
+                strict=True,
+            )
+            if iss["number"] not in concrete
+        ),
+    )
     return PreparedPlanningIssueSet(
         prepared_issues=prepared_issue_set.prepared_issues,
         ready_candidates=(
@@ -476,7 +494,7 @@ def apply_slice_classifier_verdicts(
             if issue["number"] not in concrete
         ),
         label_sync_actions=tuple(new_actions),
-        blocker_summary_inputs=prepared_issue_set.blocker_summary_inputs,
+        blocker_summary_inputs=updated_bsi,
     )
 
 

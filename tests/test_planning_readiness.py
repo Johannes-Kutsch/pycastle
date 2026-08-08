@@ -1154,6 +1154,46 @@ def test_apply_slice_classifier_verdicts_concrete_verdict_for_multiple_slices_ke
     assert (2, "behavior-slice", "remove") not in action_triples
 
 
+def test_apply_slice_classifier_verdicts_concrete_verdict_removes_issue_from_blocker_summary():
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import SliceMode
+    from pycastle.iteration.planning_issue_intake import (
+        apply_slice_classifier_verdicts,
+        planning_blocker_summary,
+        prepare_planning_issue_set,
+    )
+
+    cfg = Config()
+    classified_issue = {
+        "number": 10,
+        "title": "Classified",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    unclassified_issue = {
+        "number": 11,
+        "title": "Unclassified",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    prepared = prepare_planning_issue_set([classified_issue, unclassified_issue], cfg)
+    assert len(prepared.blocker_summary_inputs.malformed_slice_mode_readiness) == 2
+    verdicts = {10: ConcreteSliceVerdict(mode=SliceMode.BEHAVIOR)}
+
+    result = apply_slice_classifier_verdicts(prepared, verdicts, cfg)
+
+    assert len(result.blocker_summary_inputs.malformed_slice_mode_readiness) == 1
+    assert not any(
+        iss["number"] == 10
+        for iss in result.blocker_summary_inputs.malformed_slice_mode_issues
+    )
+    summary = planning_blocker_summary(result.blocker_summary_inputs)
+    assert summary is not None
+    assert "1 missing" in summary
+
+
 def test_resolve_planner_all_blocked_intake_uses_canonical_ready_titles():
     from pycastle.agents.output_protocol import PlannerOutput
     from pycastle.iteration.planning_issue_intake import (
