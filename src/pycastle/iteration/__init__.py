@@ -283,7 +283,7 @@ async def _run_improve_phase(deps: Deps) -> IterationOutcome | None:
     """Runs the improve phase when idle. Returns None to continue to planning."""
     if deps.improve_mode is None:
         return Done()
-    if deps.improve_mode == "until_sleep" and deps.slept_once:
+    if deps.improve_mode == "until_sleep" and deps.slept_once and not deps.improve_cycle_interrupted:
         return Done()
     if (
         deps.cfg.improve_max is not None
@@ -291,6 +291,7 @@ async def _run_improve_phase(deps: Deps) -> IterationOutcome | None:
     ):
         return Done(improve_cap_reached=True)
     improve_result = await improve_phase(deps)
+    deps.improve_cycle_interrupted = False
     if isinstance(improve_result, ImproveContinue):
         deps.improve_dispatched_count += 1
     if isinstance(improve_result, ImproveNoCandidate):
@@ -331,7 +332,16 @@ async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
     )
 
     if not open_issues and not in_flight:
-        outcome = await _run_improve_phase(deps)
+        try:
+            outcome = await _run_improve_phase(deps)
+        except UsageLimitError as err:
+            # Mark the cycle as interrupted so the next iteration resumes it
+            # rather than treating the sleep as a completed-cycle stop signal.
+            # Also stamp stage_key for accurate sleep-duration routing.
+            deps.improve_cycle_interrupted = True
+            if err.stage_key is None:
+                err.stage_key = "improve"
+            raise
         if outcome is not None:
             return outcome
         open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)

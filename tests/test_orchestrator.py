@@ -1647,6 +1647,47 @@ def test_usage_limit_loop_continues_after_sleep_and_sets_slept_once(tmp_path):
     assert mock_github.get_open_issues.call_count == 2
 
 
+def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
+    """A usage limit mid-improve-cycle must be resumed exactly once, then stop.
+
+    Desired behaviour for until_sleep:
+    - Iteration 1: Scan Agent hits usage limit → improve_cycle_interrupted=True,
+      slept_once=True (sleep happens).
+    - Iteration 2: interrupted cycle is resumed; Scan Agent succeeds; full cycle
+      runs (PRD + Slice); improve_cycle_interrupted cleared to False.
+    - Iteration 3: slept_once=True AND improve_cycle_interrupted=False → Done(),
+      no third improve cycle started.
+    """
+    scan_call_count = 0
+
+    mock_github = _make_github_svc()
+    mock_github.get_open_issues.return_value = []
+    mock_github.get_recent_improve_prds.return_value = []
+
+    async def _fake_run_agent(request: RunRequest):
+        nonlocal scan_call_count
+        if "Scan Agent" in request.name:
+            scan_call_count += 1
+            if scan_call_count == 1:
+                raise UsageLimitError(reset_time=None)
+            return CompletionOutput()
+        return CompletionOutput()
+
+    with patch("time.sleep"):
+        _run(
+            tmp_path,
+            _fake_run_agent,
+            github_service=mock_github,
+            max_iterations=4,
+            improve_mode="until_sleep",
+        )
+
+    assert scan_call_count == 2, (
+        f"Scan Agent must be called exactly twice (once interrupted, once resumed); "
+        f"was called {scan_call_count} time(s)"
+    )
+
+
 def test_usage_limit_error_not_written_to_errors_log(tmp_path):
     """UsageLimitError must not be logged to errors.log."""
     logs_dir = tmp_path / "pycastle" / "logs"

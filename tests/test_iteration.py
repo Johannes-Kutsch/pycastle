@@ -2282,6 +2282,34 @@ def test_run_iteration_until_sleep_exits_when_slept_and_idle(tmp_path, git_svc, 
     assert isinstance(result, Done)
 
 
+def test_run_iteration_until_sleep_resumes_interrupted_cycle_when_slept(
+    tmp_path, git_svc, logger
+):
+    """until_sleep + slept_once=True + improve_cycle_interrupted=True + 0 AFK → improve dispatched.
+
+    An interrupted improve cycle must be resumed even after sleep; the cycle
+    completes and improve_cycle_interrupted is cleared to False afterward.
+    """
+    deps = _make_improve_deps(
+        tmp_path,
+        git_svc,
+        logger,
+        improve_mode="until_sleep",
+        slept_once=True,
+        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+    )
+    deps.improve_cycle_interrupted = True
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue), (
+        "An interrupted improve cycle must be resumed and the iteration must continue"
+    )
+    assert not deps.improve_cycle_interrupted, (
+        "improve_cycle_interrupted must be cleared once the cycle completes"
+    )
+
+
 def test_run_iteration_until_sleep_dispatches_improve_before_first_sleep(
     tmp_path, git_svc, logger
 ):

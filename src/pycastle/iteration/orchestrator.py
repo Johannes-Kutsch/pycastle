@@ -273,6 +273,7 @@ async def run(
 
     slept_once = False
     improve_dispatched_count = 0
+    improve_cycle_interrupted = False
     preflight_cache = PreflightCache()
 
     try:
@@ -298,10 +299,12 @@ async def run(
                 improve_mode=_opts.improve_mode,
                 slept_once=slept_once,
                 improve_dispatched_count=improve_dispatched_count,
+                improve_cycle_interrupted=improve_cycle_interrupted,
                 preflight_cache=preflight_cache,
             )
             outcome = await _run_one_iteration(deps, status_display)  # type: ignore[arg-type]
             improve_dispatched_count = deps.improve_dispatched_count
+            improve_cycle_interrupted = deps.improve_cycle_interrupted
 
             _post_iteration_now = _time_module.now_local()
             router_deps = RouterDeps(

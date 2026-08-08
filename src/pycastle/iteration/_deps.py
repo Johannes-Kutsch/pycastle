@@ -32,4 +32,5 @@ class Deps:
     improve_mode: ImproveMode = None
     slept_once: bool = False
     improve_dispatched_count: int = 0
+    improve_cycle_interrupted: bool = False
     preflight_cache: PreflightCache = dataclasses.field(default_factory=PreflightCache)
