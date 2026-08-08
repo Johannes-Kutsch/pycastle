@@ -283,7 +283,11 @@ async def _run_improve_phase(deps: Deps) -> IterationOutcome | None:
     """Runs the improve phase when idle. Returns None to continue to planning."""
     if deps.improve_mode is None:
         return Done()
-    if deps.improve_mode == "until_sleep" and deps.slept_once and not deps.improve_cycle_interrupted:
+    if (
+        deps.improve_mode == "until_sleep"
+        and deps.slept_once
+        and not deps.improve_cycle_interrupted
+    ):
         return Done()
     if (
         deps.cfg.improve_max is not None

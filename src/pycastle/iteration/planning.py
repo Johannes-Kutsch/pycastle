@@ -62,6 +62,49 @@ def _sync_labels(deps: _PlanningDeps, issue_set: PreparedPlanningIssueSet) -> No
         deps.github_svc.remove_label_from_issue(action.issue_number, action.label_name)
 
 
+def _classification_work_exists(issue_set: PreparedPlanningIssueSet) -> bool:
+    malformed_body_numbers = {i["number"] for i in issue_set.malformed_body_issues}
+    return any(
+        i["number"] not in malformed_body_numbers
+        for i in issue_set.malformed_slice_mode_issues
+    )
+
+
+def _resolve_no_planner_path(
+    row: StatusRow,
+    deps: _PlanningDeps,
+    issue_set: PreparedPlanningIssueSet,
+    well_formed: list[dict],
+    sha: str,
+) -> PlanReady | AllBlocked:
+    if not well_formed:
+        blocker_summary = planning_issue_intake.planning_blocker_summary(
+            issue_set.blocker_summary_inputs
+        )
+        lines = ["All ready-for-agent issues are blocked."]
+        if blocker_summary:
+            lines.append(blocker_summary)
+        row.close("\n".join(lines))
+        return AllBlocked(blocked=[])
+    row.close(
+        f"only one open issue (#{well_formed[0]['number']}) labeled"
+        f" {deps.cfg.issue_label}, skipping plan agent"
+    )
+    return planning_issue_intake.resolve_planner_issue_intake(
+        PlanReady(
+            issues=[
+                {
+                    "number": well_formed[0]["number"],
+                    "title": well_formed[0]["title"],
+                }
+            ],
+            sha=sha,
+            readiness_by_number=dict(issue_set.ready_readiness_by_number),
+        ),
+        issue_set,
+    )
+
+
 async def _run_planner_agent(
     deps: _PlanningDeps,
     wt: Path,
@@ -158,39 +201,12 @@ async def planning_phase(
             return verdict
         sha = verdict.sha
 
-        _sync_labels(deps, issue_set)
-
         well_formed = list(issue_set.ready_candidates)
-        readiness_by_number = dict(issue_set.ready_readiness_by_number)
+        _use_worktree = _classification_work_exists(issue_set) or len(well_formed) > 1
 
-        if not well_formed:
-            blocker_summary = planning_issue_intake.planning_blocker_summary(
-                issue_set.blocker_summary_inputs
-            )
-            lines = ["All ready-for-agent issues are blocked."]
-            if blocker_summary:
-                lines.append(blocker_summary)
-            row.close("\n".join(lines))
-            return AllBlocked(blocked=[])
-
-        if len(well_formed) == 1:
-            row.close(
-                f"only one open issue (#{well_formed[0]['number']}) labeled"
-                f" {deps.cfg.issue_label}, skipping plan agent"
-            )
-            return planning_issue_intake.resolve_planner_issue_intake(
-                PlanReady(
-                    issues=[
-                        {
-                            "number": well_formed[0]["number"],
-                            "title": well_formed[0]["title"],
-                        }
-                    ],
-                    sha=sha,
-                    readiness_by_number=readiness_by_number,
-                ),
-                issue_set,
-            )
+        if not _use_worktree:
+            _sync_labels(deps, issue_set)
+            return _resolve_no_planner_path(row, deps, issue_set, well_formed, sha)
 
         _sorted_ids = sorted(i["number"] for i in all_open_issues)
         fingerprint = hashlib.sha256(f"{sha}:{_sorted_ids}".encode()).hexdigest()
@@ -208,6 +224,11 @@ async def planning_phase(
             deps=deps,
         ) as wt:
             _plan_sandbox_session.write_fingerprint(fingerprint)
+            _sync_labels(deps, issue_set)
+
+            if len(well_formed) <= 1:
+                return _resolve_no_planner_path(row, deps, issue_set, well_formed, sha)
+
             output = await _run_planner_agent(deps, wt, well_formed, all_open_issues)
 
             if not output.issues:
