@@ -30,6 +30,7 @@ from pycastle.execution_contracts import (
     RuntimeStatusRow,
     RuntimeStatusRowConfig,
     TextOutputAdapter,
+    WorkSessionState,
     WorktreeMount,
 )
 from pycastle.runtime_session import RunKind
@@ -225,9 +226,16 @@ class PromptRuntime:
 
 
 class _OneShotOutputAdapter:
-    def __init__(self, *, prompt: str, session_namespace: str) -> None:
+    def __init__(
+        self,
+        *,
+        prompt: str,
+        session_namespace: str,
+        tool_policy: ToolPolicy = ToolPolicy.FULL,
+    ) -> None:
         self._prompt = prompt
         self._session_namespace = session_namespace
+        self._tool_policy = tool_policy
         self.runtime_metadata = OneShotRuntimeMetadata(
             provider_session_id=None,
             run_kind=RunKind.FRESH,
@@ -250,7 +258,7 @@ class _OneShotOutputAdapter:
         role: AgentRole,
         prompt: str,
         run_session: PreparedProviderRunSession,
-    ) -> Any:  # noqa: ANN401  # returns whatever runner.work() produces; type depends on the concrete adapter
+    ) -> Any:  # noqa: ANN401  # returns whatever runner.work_text() produces; type depends on the concrete adapter
         provider_session_id: str | None = None
 
         def _record_provider_session_id(value: str) -> None:
@@ -258,12 +266,15 @@ class _OneShotOutputAdapter:
             provider_session_id = value
             run_session.record_provider_session_id(value)
 
-        raw_output = await runner.work(
-            role,
+        raw_output = await runner.work_text(
             prompt,
-            run_kind=run_session.run_kind,
-            session_uuid=run_session.provider_session_id,
-            on_provider_session_id=_record_provider_session_id,
+            role=role,
+            tool_policy=self._tool_policy,
+            session=WorkSessionState(
+                run_kind=run_session.run_kind,
+                session_uuid=run_session.provider_session_id,
+                on_provider_session_id=_record_provider_session_id,
+            ),
         )
         self.runtime_metadata = OneShotRuntimeMetadata(
             provider_session_id=provider_session_id or run_session.provider_session_id,
@@ -450,6 +461,7 @@ async def run_one_shot(
         output_adapter = _OneShotOutputAdapter(
             prompt=request.prompt,
             session_namespace=request.session_namespace,
+            tool_policy=request.tool_policy,
         )
         attempt_token = (
             CancellationToken() if request.token is not None else request.token
