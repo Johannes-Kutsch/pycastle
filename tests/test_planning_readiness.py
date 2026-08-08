@@ -996,6 +996,164 @@ def test_resolve_planner_blocked_intake_keeps_only_tolerated_fields_for_unknown_
     ]
 
 
+def test_apply_slice_classifier_verdicts_concrete_verdict_for_missing_slice_adds_label_and_makes_candidate():
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import IssueReadinessKind, SliceMode
+    from pycastle.iteration.planning_issue_intake import (
+        LabelSyncAction,
+        apply_slice_classifier_verdicts,
+        prepare_planning_issue_set,
+    )
+
+    cfg = Config()
+    issue = {
+        "number": 1,
+        "title": "Missing slice",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    prepared = prepare_planning_issue_set([issue], cfg)
+    verdicts = {1: ConcreteSliceVerdict(mode=SliceMode.BEHAVIOR)}
+
+    result = apply_slice_classifier_verdicts(prepared, verdicts, cfg)
+
+    candidate_numbers = [c["number"] for c in result.ready_candidates]
+    assert 1 in candidate_numbers
+    assert (
+        LabelSyncAction(issue_number=1, label_name="behavior-slice", intent="add")
+        in result.label_sync_actions
+    )
+    assert result.ready_readiness_by_number[1].kind == IssueReadinessKind.READY_AFK
+
+
+def test_apply_slice_classifier_verdicts_leaves_single_slice_issue_untouched():
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import IssueReadinessKind, SliceMode
+    from pycastle.iteration.planning_issue_intake import (
+        apply_slice_classifier_verdicts,
+        prepare_planning_issue_set,
+    )
+
+    cfg = Config()
+    issue = {
+        "number": 5,
+        "title": "Already labeled",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    prepared = prepare_planning_issue_set([issue], cfg)
+    verdicts = {5: ConcreteSliceVerdict(mode=SliceMode.REFACTOR)}
+
+    result = apply_slice_classifier_verdicts(prepared, verdicts, cfg)
+
+    assert any(c["number"] == 5 for c in result.ready_candidates)
+    assert result.ready_readiness_by_number[5].kind == IssueReadinessKind.READY_AFK
+    assert not any(a.issue_number == 5 for a in result.label_sync_actions)
+    assert result.ready_candidates == prepared.ready_candidates
+
+
+def test_apply_slice_classifier_verdicts_skips_below_floor_and_preserves_existing_actions():
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import SliceMode
+    from pycastle.iteration.planning_issue_intake import (
+        apply_slice_classifier_verdicts,
+        prepare_planning_issue_set,
+    )
+
+    cfg = Config()
+    issue = {
+        "number": 4,
+        "title": "Short body",
+        "body": "short",
+        "comments": [],
+        "labels": [],
+    }
+    prepared = prepare_planning_issue_set([issue], cfg)
+    verdicts = {4: ConcreteSliceVerdict(mode=SliceMode.BEHAVIOR)}
+
+    result = apply_slice_classifier_verdicts(prepared, verdicts, cfg)
+
+    assert not any(c["number"] == 4 for c in result.ready_candidates)
+    action_pairs = [
+        (a.label_name, a.intent)
+        for a in result.label_sync_actions
+        if a.issue_number == 4
+    ]
+    assert (cfg.needs_info_label, "add") in action_pairs
+    assert (cfg.needs_slice_type_label, "add") in action_pairs
+    assert not any(
+        a.label_name == "behavior-slice"
+        for a in result.label_sync_actions
+        if a.issue_number == 4
+    )
+
+
+def test_apply_slice_classifier_verdicts_uncertain_verdict_produces_needs_slice_type_with_reason():
+    from pycastle.agents.slice_classifier import UncertainSliceVerdict
+    from pycastle.iteration.planning_issue_intake import (
+        apply_slice_classifier_verdicts,
+        prepare_planning_issue_set,
+    )
+
+    cfg = Config()
+    issue = {
+        "number": 3,
+        "title": "Uncertain",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+    prepared = prepare_planning_issue_set([issue], cfg)
+    reason = "Cannot determine if this is docs or behavior."
+    verdicts = {3: UncertainSliceVerdict(reason=reason)}
+
+    result = apply_slice_classifier_verdicts(prepared, verdicts, cfg)
+
+    assert not any(c["number"] == 3 for c in result.ready_candidates)
+    matching = [
+        a
+        for a in result.label_sync_actions
+        if a.issue_number == 3
+        and a.label_name == cfg.needs_slice_type_label
+        and a.intent == "add"
+    ]
+    assert len(matching) == 1
+    assert matching[0].comment_body == reason
+
+
+def test_apply_slice_classifier_verdicts_concrete_verdict_for_multiple_slices_keeps_chosen_removes_others():
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import IssueReadinessKind, SliceMode
+    from pycastle.iteration.planning_issue_intake import (
+        apply_slice_classifier_verdicts,
+        prepare_planning_issue_set,
+    )
+
+    cfg = Config()
+    issue = {
+        "number": 2,
+        "title": "Multiple slices",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice", "docs-slice"],
+    }
+    prepared = prepare_planning_issue_set([issue], cfg)
+    verdicts = {2: ConcreteSliceVerdict(mode=SliceMode.BEHAVIOR)}
+
+    result = apply_slice_classifier_verdicts(prepared, verdicts, cfg)
+
+    candidate_numbers = [c["number"] for c in result.ready_candidates]
+    assert 2 in candidate_numbers
+    assert result.ready_readiness_by_number[2].kind == IssueReadinessKind.READY_AFK
+    action_triples = [
+        (a.issue_number, a.label_name, a.intent) for a in result.label_sync_actions
+    ]
+    assert (2, "docs-slice", "remove") in action_triples
+    assert (2, "behavior-slice", "remove") not in action_triples
+
+
 def test_resolve_planner_all_blocked_intake_uses_canonical_ready_titles():
     from pycastle.agents.output_protocol import PlannerOutput
     from pycastle.iteration.planning_issue_intake import (
