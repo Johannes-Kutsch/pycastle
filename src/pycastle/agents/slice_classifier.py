@@ -28,15 +28,9 @@ type SliceClassifierVerdict = ConcreteSliceVerdict | UncertainSliceVerdict
 
 
 def parse_classifier_output(raw: str) -> SliceClassifierVerdict:
-    """Parse the slice classifier's raw model output into a typed verdict.
-
-    Returns ``ConcreteSliceVerdict`` when the output names a known slice mode,
-    ``UncertainSliceVerdict`` when the model declared uncertainty or the output
-    is malformed.
-    """
     try:
         data = json.loads(raw)
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError:
         return UncertainSliceVerdict(reason=_FALLBACK_REASON)
 
     if not isinstance(data, dict):

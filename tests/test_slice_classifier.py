@@ -55,11 +55,28 @@ def test_uncertain_output_yields_uncertain_verdict_with_reason():
         "null",
         "42",
         '["behavior"]',
+        '{"mode": "BEHAVIOR"}',
+        '{"mode": "Refactor"}',
+        '{"mode": 1}',
+        '{"reason": "   "}',
+        '{"reason": null}',
     ],
 )
 def test_malformed_or_unexpected_output_yields_uncertain_verdict(raw):
     verdict = parse_classifier_output(raw)
     assert isinstance(verdict, UncertainSliceVerdict)
+
+
+def test_whitespace_only_reason_uses_fallback_not_whitespace():
+    verdict = parse_classifier_output('{"reason": "   "}')
+    assert isinstance(verdict, UncertainSliceVerdict)
+    assert verdict.reason.strip() != ""
+
+
+def test_uncertain_reason_is_stripped():
+    verdict = parse_classifier_output('{"reason": "  leading and trailing  "}')
+    assert isinstance(verdict, UncertainSliceVerdict)
+    assert verdict.reason == "leading and trailing"
 
 
 # ── Behavior 4: Verdict type is shared ───────────────────────────────────────
