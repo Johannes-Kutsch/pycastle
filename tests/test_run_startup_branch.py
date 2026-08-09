@@ -10,7 +10,11 @@ import pytest
 
 from pycastle.iteration.orchestrator import RunOptions, run
 from pycastle.services import GithubService
-from tests.support import FakeAgentRunner, functional_git_svc
+from tests.support import (
+    FakeAgentRunner,
+    RecordingStatusDisplay,
+    functional_git_svc,
+)
 
 
 def _write_config(tmp_path: Path, **kwargs) -> None:
@@ -58,7 +62,12 @@ def _make_git_svc(
     return git_svc
 
 
-def _do_run(tmp_path: Path, git_svc: Any, **config_kwargs: object) -> None:
+def _do_run(
+    tmp_path: Path,
+    git_svc: Any,
+    status_display: Any = None,
+    **config_kwargs: object,
+) -> None:
     config_kwargs.setdefault("max_iterations", 1)
     config_kwargs.setdefault("max_parallel", 1)
     _write_config(tmp_path, **config_kwargs)
@@ -70,6 +79,7 @@ def _do_run(tmp_path: Path, git_svc: Any, **config_kwargs: object) -> None:
                 agent_runner=FakeAgentRunner(),
                 git_service=git_svc,
                 github_service=_make_github_svc(),
+                status_display=status_display,
             ),
         )
     )
@@ -264,3 +274,72 @@ def test_no_working_branch_does_not_push_upstream(tmp_path: Path) -> None:
     _do_run(tmp_path, git_svc, dev_branch="main", working_branch=None)
 
     git_svc.push_upstream.assert_not_called()
+
+
+# ── Issue 2081: resolved branches are announced at startup ────────────────────
+
+
+def _printed_lines(display: RecordingStatusDisplay) -> list[str]:
+    return [str(call[2]) for call in display.calls if call[0] == "print"]
+
+
+def test_startup_announces_dev_and_working_branch(tmp_path: Path) -> None:
+    """The resolved branches must be visible, so an inherited global value is obvious."""
+    display = RecordingStatusDisplay()
+    git_svc = _make_git_svc()
+
+    _do_run(
+        tmp_path,
+        git_svc,
+        display,
+        dev_branch="main",
+        working_branch="feature-x",
+    )
+
+    assert "Branches: dev=main, working=feature-x" in _printed_lines(display)
+
+
+def test_startup_announcement_omits_working_when_unset(tmp_path: Path) -> None:
+    display = RecordingStatusDisplay()
+    git_svc = _make_git_svc(working_branch=None)
+
+    _do_run(tmp_path, git_svc, display, dev_branch="main", working_branch=None)
+
+    assert "Branches: dev=main" in _printed_lines(display)
+
+
+def test_startup_announces_branches_before_aborting_on_unclean_tree(
+    tmp_path: Path,
+) -> None:
+    """The line must survive the abort paths — that is when it is most needed."""
+    display = RecordingStatusDisplay()
+    git_svc = _make_git_svc(clean=False)
+
+    with pytest.raises(click.UsageError):
+        _do_run(
+            tmp_path,
+            git_svc,
+            display,
+            dev_branch="main",
+            working_branch="feature-x",
+        )
+
+    assert "Branches: dev=main, working=feature-x" in _printed_lines(display)
+
+
+def test_startup_announces_branches_before_aborting_on_missing_dev(
+    tmp_path: Path,
+) -> None:
+    display = RecordingStatusDisplay()
+    git_svc = _make_git_svc(dev_on_origin=False)
+
+    with pytest.raises(click.UsageError):
+        _do_run(
+            tmp_path,
+            git_svc,
+            display,
+            dev_branch="main",
+            working_branch="feature-x",
+        )
+
+    assert "Branches: dev=main, working=feature-x" in _printed_lines(display)

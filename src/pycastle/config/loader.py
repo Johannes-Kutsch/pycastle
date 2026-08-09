@@ -54,11 +54,11 @@ _LEGACY_IGNORED_CONFIG_KEYS = frozenset(
 
 _IGNORED_CONFIG_KEYS = _REMOVED_PROJECT_LOCAL_PATH_KEYS | _LEGACY_IGNORED_CONFIG_KEYS
 
+# Fields whose default is derived from project identity, so a single global value
+# would collide across every project (ADR 0003). Everything else is globalizable.
 _GLOBAL_FORBIDDEN_FIELDS = frozenset(
     {
         "docker_image_name",
-        "dev_branch",
-        "working_branch",
     }
 )
 
@@ -266,8 +266,10 @@ def load_config(
         forbidden = sorted(_GLOBAL_FORBIDDEN_FIELDS & global_kwargs.keys())
         if forbidden:
             raise ConfigValidationError(
-                "Global-forbidden fields are not allowed in global config.py; "
-                f"offending field(s): {forbidden}",
+                f"Field(s) not allowed in global config.py: {forbidden}. "
+                "Each is derived from the project it runs in, so one global "
+                "value would be shared by every project. "
+                "Set them per project, in that repo's pycastle/config.py.",
                 invalid_value=", ".join(forbidden),
             )
         global_logs_dir_set = "logs_dir" in global_kwargs

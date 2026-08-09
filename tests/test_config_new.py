@@ -1240,24 +1240,6 @@ def test_load_config_dev_branch_and_working_branch_from_local_file(tmp_path):
     assert cfg.working_branch == "feature-x"
 
 
-def test_load_config_global_dev_branch_raises(tmp_path):
-    global_dir = tmp_path / "global"
-    global_dir.mkdir()
-    (global_dir / "config.py").write_text('dev_branch = "main"\n')
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, global_dir=global_dir)
-    assert "dev_branch" in str(exc_info.value)
-
-
-def test_load_config_global_working_branch_raises(tmp_path):
-    global_dir = tmp_path / "global"
-    global_dir.mkdir()
-    (global_dir / "config.py").write_text('working_branch = "feature"\n')
-    with pytest.raises(ConfigValidationError) as exc_info:
-        load_config(repo_root=tmp_path, global_dir=global_dir)
-    assert "working_branch" in str(exc_info.value)
-
-
 def test_load_config_empty_dev_branch_raises(tmp_path):
     (tmp_path / "pycastle").mkdir()
     (tmp_path / "pycastle" / "config.py").write_text('dev_branch = ""\n')
@@ -1287,3 +1269,118 @@ def test_config_operating_branch_is_dev_branch_when_working_branch_is_none():
 def test_load_config_operating_branch_defaults_to_main(tmp_path):
     cfg = load_config(repo_root=tmp_path)
     assert cfg.operating_branch == "main"
+
+
+# ── Issue 2081: dev_branch and working_branch are globalizable ──────────────
+
+
+def _write_layers(tmp_path, *, global_src: str | None, local_src: str | None):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir(exist_ok=True)
+    if global_src is not None:
+        (global_dir / "config.py").write_text(global_src)
+    if local_src is not None:
+        (tmp_path / "pycastle").mkdir(exist_ok=True)
+        (tmp_path / "pycastle" / "config.py").write_text(local_src)
+    return global_dir
+
+
+def test_load_config_dev_branch_from_global_file(tmp_path):
+    global_dir = _write_layers(
+        tmp_path, global_src='dev_branch = "develop"\n', local_src=None
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.dev_branch == "develop"
+
+
+def test_load_config_working_branch_from_global_file(tmp_path):
+    global_dir = _write_layers(
+        tmp_path, global_src='working_branch = "pycastle/work"\n', local_src=None
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.working_branch == "pycastle/work"
+
+
+def test_load_config_local_dev_branch_overrides_global(tmp_path):
+    global_dir = _write_layers(
+        tmp_path,
+        global_src='dev_branch = "develop"\n',
+        local_src='dev_branch = "trunk"\n',
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.dev_branch == "trunk"
+
+
+def test_load_config_local_working_branch_overrides_global(tmp_path):
+    global_dir = _write_layers(
+        tmp_path,
+        global_src='working_branch = "pycastle/work"\n',
+        local_src='working_branch = "pycastle/other"\n',
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.working_branch == "pycastle/other"
+
+
+def test_load_config_local_working_branch_none_opts_out_of_global(tmp_path):
+    """A project sets working_branch = None explicitly to opt out of a global one."""
+    global_dir = _write_layers(
+        tmp_path,
+        global_src='working_branch = "pycastle/work"\n',
+        local_src="working_branch = None\n",
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.working_branch is None
+    assert cfg.operating_branch == "main"
+
+
+def test_load_config_global_working_branch_equal_to_local_dev_branch_raises(tmp_path):
+    """Cross-layer collision is still rejected: values validate against the merged config."""
+    global_dir = _write_layers(
+        tmp_path,
+        global_src='working_branch = "develop"\n',
+        local_src='dev_branch = "develop"\n',
+    )
+    with pytest.raises(ConfigValidationError, match="working_branch"):
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+
+
+def test_load_config_global_dev_branch_equal_to_local_working_branch_raises(tmp_path):
+    global_dir = _write_layers(
+        tmp_path,
+        global_src='dev_branch = "develop"\n',
+        local_src='working_branch = "develop"\n',
+    )
+    with pytest.raises(ConfigValidationError, match="working_branch"):
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+
+
+def test_load_config_global_empty_dev_branch_raises(tmp_path):
+    global_dir = _write_layers(tmp_path, global_src='dev_branch = ""\n', local_src=None)
+    with pytest.raises(ConfigValidationError, match="dev_branch"):
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+
+
+def test_load_config_global_docker_image_name_still_raises(tmp_path):
+    global_dir = _write_layers(
+        tmp_path, global_src='docker_image_name = "shared"\n', local_src=None
+    )
+    with pytest.raises(ConfigValidationError, match="docker_image_name"):
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+
+
+def test_global_forbidden_error_names_the_project_local_remedy(tmp_path):
+    global_dir = _write_layers(
+        tmp_path, global_src='docker_image_name = "shared"\n', local_src=None
+    )
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert "pycastle/config.py" in str(exc_info.value)
+
+
+def test_global_forbidden_error_explains_the_per_project_reason(tmp_path):
+    global_dir = _write_layers(
+        tmp_path, global_src='docker_image_name = "shared"\n', local_src=None
+    )
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert "every project" in str(exc_info.value)

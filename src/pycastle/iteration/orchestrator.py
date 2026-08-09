@@ -213,6 +213,13 @@ def _apply_branch_setup_plan(
             git_svc.push_upstream(repo_root, step.branch)
 
 
+def _branch_summary_line(cfg: Config) -> str:
+    """Announce the resolved branches, so a value inherited from global config is visible."""
+    if cfg.working_branch is None:
+        return f"Branches: dev={cfg.dev_branch}"
+    return f"Branches: dev={cfg.dev_branch}, working={cfg.working_branch}"
+
+
 def _setup_branch(git_svc: GitService, repo_root: Path, cfg: Config) -> None:
     facts = _collect_branch_facts(git_svc, repo_root, cfg)
     result = resolve_branch_setup(cfg, facts)
@@ -330,6 +337,7 @@ async def run(
     login = _check_github_auth(github_service)
     status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 
+    status_display.print("", _branch_summary_line(cfg))  # type: ignore[union-attr]
     _setup_branch(git_svc, repo_root, cfg)
 
     service_registry = _opts.service_registry

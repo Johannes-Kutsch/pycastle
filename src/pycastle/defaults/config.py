@@ -8,6 +8,8 @@ from pycastle import StageOverride
 # auto_push = True
 # timeout_retries = 1
 # diagnose_on_failure = True
+# Settable in global config.py; a project config.py overrides either value.
+# Set working_branch = None in a project to opt out of a globally-configured one.
 # dev_branch = "main"
 # working_branch = None
 # Minimum unknown-reset duration (hours) for usage-limit exhaustion when reset time is not explicit.
@@ -18,7 +20,8 @@ from pycastle import StageOverride
 
 # --- Docker ---
 # Local-only build artifact name used by `pycastle build`.
-# Rejected in global config.py.
+# Rejected in global config.py: it is derived per project, so one global value
+# would have every repo build into the same image tag.
 # Defaults to a sanitised CWD name when left empty.
 # docker_image_name = ""
 
