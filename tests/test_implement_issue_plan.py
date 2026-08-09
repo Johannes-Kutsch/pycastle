@@ -871,3 +871,24 @@ def test_reviewer_scope_args_reflect_custom_working_branch_as_diff_base(tmp_path
     assert (
         plan.reviewer_step.prompt_scope_args["OPERATING_BRANCH"] == "my-feature-branch"
     )
+
+
+def test_reviewer_scope_args_reflect_custom_dev_branch_as_diff_base(tmp_path):
+    cfg = Config(dev_branch="develop")
+    deps = _make_deps(tmp_path, FakeAgentRunner([]), cfg=cfg)
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+
+    plan = plan_issue_execution(
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
+    )
+
+    assert plan.reviewer_step.prompt_scope_args["OPERATING_BRANCH"] == "develop"
