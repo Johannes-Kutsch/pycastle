@@ -1671,34 +1671,47 @@ def test_bug_reporting_group_reraises_after_report_and_exit_returns(
 # ── Issue 2081: config errors name the layers that could have caused them ─────
 
 
-def _invoke_with_config_error(tmp_path, monkeypatch, *, write_local_config: bool):
-    from pycastle.main import main as cli
+def _stderr_of_config_error(tmp_path, monkeypatch, capsys, *, write_local_config: bool):
+    """Drive the error path directly: CliRunner's stream-separation API varies by click version."""
+    from pycastle.main import _load_config_or_exit
 
     (tmp_path / "pycastle").mkdir()
     if write_local_config:
         (tmp_path / "pycastle" / "config.py").write_text("")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
-    with patch(
-        "pycastle.main.load_config",
-        side_effect=ConfigValidationError("dev_branch must not be empty"),
+    with (
+        patch(
+            "pycastle.main.load_config",
+            side_effect=ConfigValidationError("dev_branch must not be empty"),
+        ),
+        pytest.raises(SystemExit),
     ):
-        return CliRunner(mix_stderr=False).invoke(cli, ["build"])
+        _load_config_or_exit()
+    return capsys.readouterr().err
 
 
-def test_config_error_names_the_layers_on_the_error_stream(tmp_path, monkeypatch):
+def test_config_error_names_the_layers_on_the_error_stream(
+    tmp_path, monkeypatch, capsys
+):
     """The layer summary goes to stdout, so the error itself must carry the paths.
 
     Otherwise `pycastle build 2>err.log` captures the failure without the config
     files that could have caused it.
     """
-    result = _invoke_with_config_error(tmp_path, monkeypatch, write_local_config=False)
+    stderr = _stderr_of_config_error(
+        tmp_path, monkeypatch, capsys, write_local_config=False
+    )
 
-    assert "dev_branch must not be empty" in result.stderr
-    assert "Config: defaults" in result.stderr
+    assert "dev_branch must not be empty" in stderr
+    assert "Config: defaults" in stderr
 
 
-def test_config_error_layer_summary_lists_the_local_config_file(tmp_path, monkeypatch):
-    result = _invoke_with_config_error(tmp_path, monkeypatch, write_local_config=True)
+def test_config_error_layer_summary_lists_the_local_config_file(
+    tmp_path, monkeypatch, capsys
+):
+    stderr = _stderr_of_config_error(
+        tmp_path, monkeypatch, capsys, write_local_config=True
+    )
 
-    assert "pycastle/config.py" in result.stderr
+    assert "pycastle/config.py" in stderr
