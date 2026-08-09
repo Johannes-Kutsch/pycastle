@@ -57,6 +57,8 @@ _IGNORED_CONFIG_KEYS = _REMOVED_PROJECT_LOCAL_PATH_KEYS | _LEGACY_IGNORED_CONFIG
 _GLOBAL_FORBIDDEN_FIELDS = frozenset(
     {
         "docker_image_name",
+        "dev_branch",
+        "working_branch",
     }
 )
 
@@ -188,6 +190,15 @@ class Config:
     improve_max: int | None = None
     improve_mode: Literal["until_sleep", "endless"] | None = None
     diagnose_on_failure: bool = True
+    dev_branch: str = "main"
+    working_branch: str | None = None
+
+    @property
+    def operating_branch(self) -> str:
+        return (
+            self.working_branch if self.working_branch is not None else self.dev_branch
+        )
+
     repo_root: Path = dataclasses.field(
         default_factory=Path.cwd, init=False, repr=False, compare=False
     )
@@ -286,6 +297,7 @@ def load_config(
     _validate_improve_mode(cfg)
     _validate_minimum_unknown_reset_duration_hours(cfg)
     _validate_stage_override_models(cfg)
+    _validate_branch_config(cfg)
     object.__setattr__(cfg, "repo_root", layout.repo_root)
     object.__setattr__(
         cfg,
@@ -373,6 +385,19 @@ def _validate_improve_max(cfg: Config) -> None:
         raise ConfigValidationError(
             "improve_max must be >= 1",
             invalid_value=str(cfg.improve_max),
+        )
+
+
+def _validate_branch_config(cfg: Config) -> None:
+    if cfg.dev_branch == "":
+        raise ConfigValidationError(
+            "dev_branch must not be empty",
+            invalid_value="",
+        )
+    if cfg.working_branch is not None and cfg.working_branch == cfg.dev_branch:
+        raise ConfigValidationError(
+            f"working_branch must differ from dev_branch; both are {cfg.dev_branch!r}",
+            invalid_value=cfg.working_branch,
         )
 
 

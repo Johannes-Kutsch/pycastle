@@ -1211,3 +1211,79 @@ def test_load_config_round_trips_stage_override_service_and_fallback(tmp_path):
     assert cfg.plan_override.fallback == StageOverride(
         service="codex", model="gpt-5", effort="medium"
     )
+
+
+# ── Issue 2074: dev_branch and working_branch config fields ─────────────────
+
+
+def test_config_dev_branch_defaults_to_main():
+    assert Config().dev_branch == "main"
+
+
+def test_config_working_branch_defaults_to_none():
+    assert Config().working_branch is None
+
+
+def test_load_config_dev_branch_and_working_branch_defaults_when_unset(tmp_path):
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.dev_branch == "main"
+    assert cfg.working_branch is None
+
+
+def test_load_config_dev_branch_and_working_branch_from_local_file(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        'dev_branch = "develop"\nworking_branch = "feature-x"\n'
+    )
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.dev_branch == "develop"
+    assert cfg.working_branch == "feature-x"
+
+
+def test_load_config_global_dev_branch_raises(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text('dev_branch = "main"\n')
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert "dev_branch" in str(exc_info.value)
+
+
+def test_load_config_global_working_branch_raises(tmp_path):
+    global_dir = tmp_path / "global"
+    global_dir.mkdir()
+    (global_dir / "config.py").write_text('working_branch = "feature"\n')
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert "working_branch" in str(exc_info.value)
+
+
+def test_load_config_empty_dev_branch_raises(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text('dev_branch = ""\n')
+    with pytest.raises(ConfigValidationError, match="dev_branch"):
+        load_config(repo_root=tmp_path)
+
+
+def test_load_config_working_branch_equal_to_dev_branch_raises(tmp_path):
+    (tmp_path / "pycastle").mkdir()
+    (tmp_path / "pycastle" / "config.py").write_text(
+        'dev_branch = "main"\nworking_branch = "main"\n'
+    )
+    with pytest.raises(ConfigValidationError, match="working_branch"):
+        load_config(repo_root=tmp_path)
+
+
+def test_config_operating_branch_is_working_branch_when_set():
+    cfg = Config(dev_branch="main", working_branch="feature")
+    assert cfg.operating_branch == "feature"
+
+
+def test_config_operating_branch_is_dev_branch_when_working_branch_is_none():
+    cfg = Config(dev_branch="develop", working_branch=None)
+    assert cfg.operating_branch == "develop"
+
+
+def test_load_config_operating_branch_defaults_to_main(tmp_path):
+    cfg = load_config(repo_root=tmp_path)
+    assert cfg.operating_branch == "main"

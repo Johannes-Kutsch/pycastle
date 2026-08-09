@@ -8,6 +8,8 @@ from pycastle import StageOverride
 # auto_push = True
 # timeout_retries = 1
 # diagnose_on_failure = True
+# dev_branch = "main"
+# working_branch = None
 # Minimum unknown-reset duration (hours) for usage-limit exhaustion when reset time is not explicit.
 # The wake estimate is aligned to the next hour boundary plus 2 minutes and may be further in the future.
 # claude_minimum_unknown_reset_duration_hours = 0.0
