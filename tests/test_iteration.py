@@ -63,6 +63,7 @@ from tests.support import (
     RecordingLogger,
     RecordingStatusDisplay,
     StubPreflightCache,
+    functional_git_svc,
 )
 from tests.support import (
     _make_deps as _make_test_deps,
@@ -4355,6 +4356,100 @@ def test_improve_max_cap_not_consumed_by_usage_limit_abort(tmp_path, git_svc, lo
         "improve_phase must be dispatched again on iteration 2 since the slot was not consumed"
     )
     assert deps.improve_dispatched_count == 0
+
+
+def _seed_improve_progress(worktree_path: Path, phase_id: str) -> None:
+    role_session_dir = worktree_path / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_phase_progress").write_text(phase_id, encoding="utf-8")
+    (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
+
+
+def _improve_restart_git_svc():
+    # No-ops remove_worktree/list_worktrees so REUSABLE_SANDBOX cleanup doesn't delete pre-seeded session files.
+    svc = functional_git_svc()
+    svc.get_head_sha.return_value = "abc123"
+    svc.is_working_tree_clean.return_value = True
+    svc.list_worktrees.side_effect = None
+    svc.list_worktrees.return_value = []
+    svc.remove_worktree.side_effect = None
+    return svc
+
+
+def test_phase1_restart_leaves_improve_dispatched_count_unchanged(tmp_path, logger):
+    """When improve_phase restarts from phase 1 due to missing transcript handoff,
+    improve_dispatched_count must NOT increment — no improvement was completed."""
+    git_svc = _improve_restart_git_svc()
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_improve_progress(wt, "01-scan:picked")
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    # setup_worktrees=False so that _wire_worktrees is not called again, which
+    # would overwrite the no-op remove_worktree we need to preserve session files.
+    deps = dataclasses.replace(
+        _make_test_deps(
+            tmp_path,
+            FakeAgentRunner([], preflight_responses=[[]]),
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_cache=StubPreflightCache(),
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert deps.improve_dispatched_count == 0, (
+        "A phase-1 restart must not consume an improve slot — "
+        "only a completed improvement (PRD + sub-issues filed) increments the counter"
+    )
+
+
+def test_improve_cap_not_consumed_by_phase1_restart(tmp_path, logger):
+    """With improve_max=1, a phase-1 restart does not consume the improve cap.
+    A second run_iteration call dispatches improve again (not Done)."""
+    git_svc = _improve_restart_git_svc()
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_improve_progress(wt, "01-scan:picked")
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    runner = FakeAgentRunner(
+        # First run: restart — no agents called.
+        # Second run: fresh phase-1 scan → no-candidate → report (2 agents).
+        [NoCandidateOutput(), CompletionOutput()],
+        preflight_responses=[[], []],
+    )
+    # setup_worktrees=False so that _wire_worktrees is not called again.
+    deps = dataclasses.replace(
+        _make_test_deps(
+            tmp_path,
+            runner,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(improve_max=1),
+            preflight_cache=StubPreflightCache(),
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    # First run: phase-1 restart, cap slot not consumed
+    asyncio.run(run_iteration(deps))
+    assert deps.improve_dispatched_count == 0
+
+    # Second run: cap not reached (0 < 1), improve is dispatched again
+    result2 = asyncio.run(run_iteration(deps))
+    assert not isinstance(result2, Done), (
+        "After a phase-1 restart the cap slot must remain available; "
+        "a second run must dispatch improve, not return Done(improve_cap_reached=True)"
+    )
 
 
 # ── TransientAgentError: iteration boundary continues without sleeping ────────
