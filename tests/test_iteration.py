@@ -1619,8 +1619,8 @@ def test_run_iteration_passes_full_ready_for_agent_fetch_to_in_flight_selector(
         agent_names.append(request.name)
         return CompletionOutput()
 
-    def _selector(candidates, *, repo_root, git_svc):
-        del repo_root, git_svc
+    def _selector(candidates, *, repo_root, git_svc, operating_branch="main"):
+        del repo_root, git_svc, operating_branch
         if [issue["number"] for issue in candidates] == [5, 6]:
             return list(candidates)
         return []
@@ -1679,8 +1679,8 @@ def test_run_iteration_selected_in_flight_issues_resume_through_planning(
         agent_names.append(request.name)
         return CompletionOutput()
 
-    def _selector(candidates, *, repo_root, git_svc):
-        del repo_root, git_svc
+    def _selector(candidates, *, repo_root, git_svc, operating_branch="main"):
+        del repo_root, git_svc, operating_branch
         if [issue["number"] for issue in candidates] == [5, 6]:
             return list(candidates)
         return []

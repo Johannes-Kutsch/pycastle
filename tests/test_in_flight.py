@@ -274,3 +274,81 @@ def test_select_in_flight_issues_keeps_ready_issue_input_order_for_branch_eviden
         issues[0],
         issues[1],
     ]
+
+
+def _setup_branch(repo: Path, branch: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(repo), "checkout", "-b", branch],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _checkout(repo: Path, branch: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(repo), "checkout", branch],
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_select_in_flight_issues_detects_issue_branch_ahead_of_non_main_operating_branch(
+    git_repo: Path,
+):
+    issues = [{"number": 1, "title": "Work on develop", "labels": ["behavior-slice"]}]
+    git_svc = GitService(Config())
+
+    _commit(git_repo, "seed main", "main-1\n")
+    _setup_branch(git_repo, "develop")
+    _commit(git_repo, "develop work", "main-1\ndevelop-1\n")
+    _setup_branch(git_repo, "pycastle/issue-1")
+    _commit(git_repo, "issue work", "main-1\ndevelop-1\nissue-1\n")
+    _checkout(git_repo, "develop")
+
+    result = select_in_flight_issues(
+        issues, repo_root=git_repo, git_svc=git_svc, operating_branch="develop"
+    )
+
+    assert result == [issues[0]]
+
+
+def test_select_in_flight_issues_omits_issue_branch_not_ahead_of_non_main_operating_branch(
+    git_repo: Path,
+):
+    issues = [{"number": 1, "title": "Empty on develop", "labels": ["behavior-slice"]}]
+    git_svc = GitService(Config())
+
+    _commit(git_repo, "seed main", "main-1\n")
+    _setup_branch(git_repo, "develop")
+    _commit(git_repo, "develop work", "main-1\ndevelop-1\n")
+    subprocess.run(
+        ["git", "-C", str(git_repo), "branch", "pycastle/issue-1"],
+        check=True,
+        capture_output=True,
+    )
+
+    result = select_in_flight_issues(
+        issues, repo_root=git_repo, git_svc=git_svc, operating_branch="develop"
+    )
+
+    assert result == []
+
+
+def test_select_in_flight_issues_default_operating_branch_main_unchanged(
+    git_repo: Path,
+):
+    issues = [
+        {"number": 1, "title": "Branch-backed in-flight", "labels": ["behavior-slice"]},
+        {"number": 2, "title": "No branch evidence", "labels": ["behavior-slice"]},
+    ]
+    git_svc = GitService(Config())
+
+    _commit(git_repo, "seed main", "main-1\n")
+    _setup_branch(git_repo, "pycastle/issue-1")
+    _commit(git_repo, "issue work", "main-1\nissue-1\n")
+    _checkout(git_repo, "main")
+    _commit(git_repo, "advance main", "main-1\nmain-2\n")
+
+    result = select_in_flight_issues(issues, repo_root=git_repo, git_svc=git_svc)
+
+    assert result == [issues[0]]
