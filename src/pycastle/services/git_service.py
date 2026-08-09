@@ -533,6 +533,28 @@ class GitService(_SubprocessService):
                     )
                 return
 
+    def checkout_branch(self, repo_path: Path, branch: str) -> None:
+        self._run_or_raise(
+            ["git", "checkout", branch],
+            f"git checkout {branch!r} failed",
+            cwd=repo_path,
+        )
+
+    def create_branch_from(self, repo_path: Path, branch: str, source: str) -> None:
+        self._run_or_raise(
+            ["git", "branch", branch, source],
+            f"git branch {branch!r} {source!r} failed",
+            cwd=repo_path,
+        )
+
+    def push_upstream(self, repo_path: Path, branch: str) -> None:
+        self._run_or_raise_with_retry(
+            ["git", "push", "-u", "origin", branch],
+            f"git push -u origin {branch!r} failed",
+            operation="push",
+            cwd=repo_path,
+        )
+
     def remove_worktree(self, repo_path: Path, worktree_path: Path) -> None:
         result = self._run(
             ["git", "worktree", "remove", "--force", str(worktree_path)],

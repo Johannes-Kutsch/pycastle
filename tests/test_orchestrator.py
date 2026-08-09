@@ -88,6 +88,12 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
         start_merge=False,
     )
     mock_svc.get_head_sha.return_value = "abc1234"
+    mock_svc.is_working_tree_clean.return_value = True
+
+    def _verify_ref(ref, repo_path):
+        return ref.startswith("refs/remotes/origin/")
+
+    mock_svc.verify_ref_exists.side_effect = _verify_ref
     if try_merge_side_effect is not None:
         results = list(try_merge_side_effect)
         idx = [0]

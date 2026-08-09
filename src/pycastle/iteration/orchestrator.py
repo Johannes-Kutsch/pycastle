@@ -23,6 +23,17 @@ from pycastle.iteration import IterationOutcome, run_iteration
 from pycastle.iteration._deps import Deps as IterationDeps
 from pycastle.iteration._deps import ImproveMode
 from pycastle.iteration._service_summary import render_service_summary_line
+from pycastle.iteration.branch_resolution import (
+    BranchFacts,
+    BranchSetupPlan,
+    Checkout,
+    DevBranchMissing,
+    Fetch,
+    PushUpstream,
+    Seed,
+    UncleanWorkingTree,
+    resolve_branch_setup,
+)
 from pycastle.iteration.outcome_routing import (
     BreakLoop,
     ContinueLoop,
@@ -163,6 +174,57 @@ def _resolve_github_service(
     return _create_github_service(env, repo_root, cfg, git_svc)
 
 
+def _collect_branch_facts(
+    git_svc: GitService, repo_root: Path, cfg: Config
+) -> BranchFacts:
+    dev_branch_on_origin = git_svc.verify_ref_exists(
+        f"refs/remotes/origin/{cfg.dev_branch}", repo_root
+    )
+    if cfg.working_branch is None:
+        return BranchFacts(
+            dev_branch_on_origin=dev_branch_on_origin,
+            working_branch_on_local=False,
+            working_branch_on_origin=False,
+            working_tree_clean=git_svc.is_working_tree_clean(repo_root),
+        )
+    working_branch_on_local = git_svc.verify_ref_exists(cfg.working_branch, repo_root)
+    working_branch_on_origin = git_svc.verify_ref_exists(
+        f"refs/remotes/origin/{cfg.working_branch}", repo_root
+    )
+    return BranchFacts(
+        dev_branch_on_origin=dev_branch_on_origin,
+        working_branch_on_local=working_branch_on_local,
+        working_branch_on_origin=working_branch_on_origin,
+        working_tree_clean=git_svc.is_working_tree_clean(repo_root),
+    )
+
+
+def _apply_branch_setup_plan(
+    git_svc: GitService, repo_root: Path, plan: BranchSetupPlan
+) -> None:
+    for step in plan.steps:
+        if isinstance(step, Fetch):
+            git_svc.fetch(repo_root)
+        elif isinstance(step, Seed):
+            git_svc.create_branch_from(repo_root, step.target, step.source)
+        elif isinstance(step, Checkout):
+            git_svc.checkout_branch(repo_root, step.branch)
+        elif isinstance(step, PushUpstream):
+            git_svc.push_upstream(repo_root, step.branch)
+
+
+def _setup_branch(git_svc: GitService, repo_root: Path, cfg: Config) -> None:
+    facts = _collect_branch_facts(git_svc, repo_root, cfg)
+    result = resolve_branch_setup(cfg, facts)
+    if isinstance(result, DevBranchMissing):
+        raise click.UsageError(result.message)
+    if isinstance(result, UncleanWorkingTree):
+        raise click.UsageError(
+            "Working tree is not clean. Commit or stash changes before running."
+        )
+    _apply_branch_setup_plan(git_svc, repo_root, result)
+
+
 def _check_github_auth(github_service: GithubService) -> str:
     try:
         return github_service.check_auth()
@@ -267,6 +329,8 @@ async def run(
     _owned_display, status_display = _init_display(_opts.status_display)
     login = _check_github_auth(github_service)
     status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
+
+    _setup_branch(git_svc, repo_root, cfg)
 
     service_registry = _opts.service_registry
     _print_service_registry_summary(service_registry, status_display)  # type: ignore[arg-type]
