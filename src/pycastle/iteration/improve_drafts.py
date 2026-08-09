@@ -160,7 +160,7 @@ def _parse_simple_yaml(text: str) -> dict[str, object]:
             inner = value_str[1:-1]
             items = [s.strip().strip("'\"") for s in inner.split(",") if s.strip()]
             result[key] = items
-        elif value_str == "" or value_str is None:
+        elif value_str == "":
             items = []
             i += 1
             while i < len(lines) and lines[i].startswith("  - "):

@@ -162,3 +162,61 @@ def test_validation_error_is_protocol_error(tmp_path: Path, cfg: Config) -> None
 
 def test_draft_set_validation_error_is_subclass() -> None:
     assert issubclass(DraftSetValidationError, AgentOutputProtocolError)
+
+
+# ---------------------------------------------------------------------------
+# Edge cases: structural invariants
+# ---------------------------------------------------------------------------
+
+
+def test_empty_directory_raises_validation_error(tmp_path: Path, cfg: Config) -> None:
+    with pytest.raises(DraftSetValidationError):
+        read_draft_set(tmp_path, cfg)
+
+
+def test_draft_with_no_frontmatter_rejects_set(tmp_path: Path, cfg: Config) -> None:
+    (tmp_path / "spec.md").write_text("No frontmatter here.\n" + _VALID_BODY)
+
+    with pytest.raises(DraftSetValidationError) as exc_info:
+        read_draft_set(tmp_path, cfg)
+
+    problems = exc_info.value.problems
+    assert any("title" in p for p in problems)
+    assert any("labels" in p for p in problems)
+
+
+def test_valid_blocked_by_reference_is_accepted(tmp_path: Path, cfg: Config) -> None:
+    _spec_draft(tmp_path)
+    _slice_draft(tmp_path, "01-foo", blocked_by=["spec"])
+
+    result = read_draft_set(tmp_path, cfg)
+
+    assert result[1].blocked_by == ["spec"]
+
+
+def test_files_touched_is_populated_in_result(tmp_path: Path, cfg: Config) -> None:
+    (tmp_path / "spec.md").write_text(
+        f"---\ntitle: Spec\nlabels:\n  - behavior-slice\n  - ready-for-agent\n"
+        f"files_touched:\n  - src/foo.py\n  - src/bar.py\n---\n\n{_VALID_BODY}"
+    )
+
+    result = read_draft_set(tmp_path, cfg)
+
+    assert result[0].files_touched == ["src/foo.py", "src/bar.py"]
+
+
+def test_returned_draft_carries_correct_handle_title_labels_body(
+    tmp_path: Path, cfg: Config
+) -> None:
+    (tmp_path / "spec.md").write_text(
+        f"---\ntitle: My Feature\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{_VALID_BODY}"
+    )
+
+    result = read_draft_set(tmp_path, cfg)
+
+    assert len(result) == 1
+    draft = result[0]
+    assert draft.handle == "spec"
+    assert draft.title == "My Feature"
+    assert draft.labels == ["behavior-slice", "ready-for-agent"]
+    assert draft.body == _VALID_BODY
