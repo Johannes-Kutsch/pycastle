@@ -135,7 +135,7 @@ def _try_api_path(
         if existing:
             html_url = f"https://github.com/{repo}/issues/{existing[0]}"
             return existing[0], html_url
-        number = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)
+        number, _ = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)
         html_url = f"https://github.com/{repo}/issues/{number}"
     except (GithubServiceError, ImportError):
         return None
@@ -198,7 +198,7 @@ def file_merge_close_failure_issue(
             return existing[0]
         title = f"{_MERGE_CLOSE_FAILURE_TITLE_PREFIX}: #{issue_number}"
         body = _build_merge_close_failure_body(issue_number=issue_number, exc=exc)
-        number = github_svc.create_issue_in(
+        number, _ = github_svc.create_issue_in(
             github_svc.repo,
             title,
             body,
@@ -241,7 +241,7 @@ def file_operator_actionable_git_issue(
         body = _build_operator_actionable_body(
             op=op, stderr=stderr, attempt_count=attempt_count
         )
-        number = github_svc.create_issue_in(
+        number, _ = github_svc.create_issue_in(
             github_svc.repo,
             title,
             body,

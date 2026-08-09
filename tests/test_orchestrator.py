@@ -143,7 +143,7 @@ def _make_github_svc(numbers: list[int] | None = None):
     mock.get_all_open_issues_lightweight.return_value = []
     mock.repo = "test/repo"
     mock.search_open_issues_by_title.return_value = []
-    mock.create_issue_in.return_value = 999
+    mock.create_issue_in.return_value = (999, 10999)
     return mock
 
 
@@ -3433,7 +3433,7 @@ def test_orchestrator_files_setup_failure_via_api_when_auto_file_bugs_is_enabled
         ),
         patch(
             "pycastle.services.github_service.GithubService.create_issue_in",
-            return_value=321,
+            return_value=(321, 10321),
         ) as mock_create,
         pytest.raises(SystemExit),
     ):
@@ -3623,7 +3623,7 @@ def test_orchestrator_files_issue_on_consuming_repo_when_no_existing_match(tmp_p
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 99
+    github_svc.create_issue_in.return_value = (99, 10099)
 
     with pytest.raises(SystemExit) as exc_info:
         _run(tmp_path, git_service=git_svc, github_service=github_svc)
@@ -3679,7 +3679,7 @@ def test_orchestrator_filed_issue_body_contains_diagnostic_info(tmp_path):
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 99
+    github_svc.create_issue_in.return_value = (99, 10099)
 
     with pytest.raises(SystemExit):
         _run(tmp_path, git_service=git_svc, github_service=github_svc)
@@ -3709,7 +3709,7 @@ def test_orchestrator_operator_actionable_never_routes_to_pycastle_upstream(tmp_
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 5
+    github_svc.create_issue_in.return_value = (5, 10005)
 
     auto_file_calls: list = []
 

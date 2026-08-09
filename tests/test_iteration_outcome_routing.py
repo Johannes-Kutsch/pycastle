@@ -203,7 +203,7 @@ def test_route_outcome_aborted_operator_actionable_returns_exit_failure_and_file
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/repo"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 99
+    github_svc.create_issue_in.return_value = (99, 10099)
 
     result = route_outcome(
         AbortedOperatorActionable(

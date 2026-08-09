@@ -286,7 +286,7 @@ def test_auto_file_bugs_true_reads_gh_token_from_local_env_layer(monkeypatch, tm
 
     def _fake_create_issue_in(self, owner_repo, title, body, labels):
         assert self._token == "from-local-env"
-        return 42
+        return (42, 10042)
 
     monkeypatch.setattr(
         "pycastle.services.GithubService.create_issue_in",
@@ -412,7 +412,7 @@ def _make_github_svc():
     svc = MagicMock(spec=GithubService)
     svc.repo = "consumer/owner"
     svc.search_open_issues_by_title.return_value = []
-    svc.create_issue_in.return_value = 123
+    svc.create_issue_in.return_value = (123, 10123)
     return svc
 
 

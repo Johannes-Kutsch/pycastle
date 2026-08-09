@@ -188,7 +188,7 @@ def _file_or_reuse_agent_credential_failure_issue(
             remediation=remediation,
             observations=observations,
         )
-        number = github_svc.create_issue_in(
+        number, _ = github_svc.create_issue_in(
             github_svc.repo,
             _AGENT_CREDENTIAL_FAILURE_TITLE,
             body,
