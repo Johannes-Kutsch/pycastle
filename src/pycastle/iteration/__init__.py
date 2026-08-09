@@ -332,7 +332,10 @@ async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
     prepared_open_issues = list(prepared_issue_set.prepared_issues)
     all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
     in_flight = select_in_flight_issues(
-        prepared_open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+        prepared_open_issues,
+        repo_root=deps.repo_root,
+        git_svc=deps.git_svc,
+        operating_branch=deps.cfg.operating_branch,
     )
 
     if not open_issues and not in_flight:
@@ -355,7 +358,10 @@ async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
         if not open_issues:
             return Continue()
         in_flight = select_in_flight_issues(
-            prepared_open_issues, repo_root=deps.repo_root, git_svc=deps.git_svc
+            prepared_open_issues,
+            repo_root=deps.repo_root,
+            git_svc=deps.git_svc,
+            operating_branch=deps.cfg.operating_branch,
         )
 
     return await _run_plan_and_implement(
