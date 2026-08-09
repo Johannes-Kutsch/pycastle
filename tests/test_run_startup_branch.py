@@ -226,6 +226,16 @@ def test_unclean_tree_does_not_checkout(tmp_path: Path) -> None:
     git_svc.checkout_branch.assert_not_called()
 
 
+def test_unclean_tree_with_working_branch_set_raises_usage_error(
+    tmp_path: Path,
+) -> None:
+    """Unclean tree aborts even when working_branch is configured."""
+    git_svc = _make_git_svc(clean=False)
+
+    with pytest.raises(click.UsageError):
+        _do_run(tmp_path, git_svc, dev_branch="main", working_branch="feature-x")
+
+
 # ── Behavior 5: no working_branch → anchored to dev branch ───────────────────
 
 
