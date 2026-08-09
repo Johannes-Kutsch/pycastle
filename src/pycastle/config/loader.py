@@ -265,12 +265,13 @@ def load_config(
         )
         forbidden = sorted(_GLOBAL_FORBIDDEN_FIELDS & global_kwargs.keys())
         if forbidden:
+            names = ", ".join(forbidden)
             raise ConfigValidationError(
-                f"Field(s) not allowed in global config.py: {forbidden}. "
-                "Each is derived from the project it runs in, so one global "
-                "value would be shared by every project. "
-                "Set them per project, in that repo's pycastle/config.py.",
-                invalid_value=", ".join(forbidden),
+                f"Not allowed in global config.py: {names}. "
+                "Derived from the project it runs in, so one global value "
+                "would be shared by every project. "
+                "Set it per project, in that repo's pycastle/config.py.",
+                invalid_value=names,
             )
         global_logs_dir_set = "logs_dir" in global_kwargs
         kwargs.update(global_kwargs)

@@ -334,10 +334,10 @@ async def run(
         env, repo_root, cfg, git_svc, _opts.github_service
     )
     _owned_display, status_display = _init_display(_opts.status_display)
+    status_display.print("", _branch_summary_line(cfg))  # type: ignore[union-attr]
     login = _check_github_auth(github_service)
     status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 
-    status_display.print("", _branch_summary_line(cfg))  # type: ignore[union-attr]
     _setup_branch(git_svc, repo_root, cfg)
 
     service_registry = _opts.service_registry

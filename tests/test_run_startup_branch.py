@@ -65,6 +65,7 @@ def _make_git_svc(
 def _do_run(
     tmp_path: Path,
     git_svc: Any,
+    *,
     status_display: Any = None,
     **config_kwargs: object,
 ) -> None:
@@ -291,7 +292,7 @@ def test_startup_announces_dev_and_working_branch(tmp_path: Path) -> None:
     _do_run(
         tmp_path,
         git_svc,
-        display,
+        status_display=display,
         dev_branch="main",
         working_branch="feature-x",
     )
@@ -303,7 +304,13 @@ def test_startup_announcement_omits_working_when_unset(tmp_path: Path) -> None:
     display = RecordingStatusDisplay()
     git_svc = _make_git_svc(working_branch=None)
 
-    _do_run(tmp_path, git_svc, display, dev_branch="main", working_branch=None)
+    _do_run(
+        tmp_path,
+        git_svc,
+        status_display=display,
+        dev_branch="main",
+        working_branch=None,
+    )
 
     assert "Branches: dev=main" in _printed_lines(display)
 
@@ -319,7 +326,7 @@ def test_startup_announces_branches_before_aborting_on_unclean_tree(
         _do_run(
             tmp_path,
             git_svc,
-            display,
+            status_display=display,
             dev_branch="main",
             working_branch="feature-x",
         )
@@ -337,9 +344,28 @@ def test_startup_announces_branches_before_aborting_on_missing_dev(
         _do_run(
             tmp_path,
             git_svc,
-            display,
+            status_display=display,
             dev_branch="main",
             working_branch="feature-x",
         )
 
     assert "Branches: dev=main, working=feature-x" in _printed_lines(display)
+
+
+def test_startup_announces_branches_before_github_auth(tmp_path: Path) -> None:
+    """Announced before any step that can exit first, so the line is truly unconditional."""
+    display = RecordingStatusDisplay()
+    git_svc = _make_git_svc()
+
+    _do_run(
+        tmp_path,
+        git_svc,
+        status_display=display,
+        dev_branch="main",
+        working_branch="feature-x",
+    )
+
+    lines = _printed_lines(display)
+    branches = lines.index("Branches: dev=main, working=feature-x")
+    auth = next(i for i, line in enumerate(lines) if line.startswith("GitHub auth:"))
+    assert branches < auth

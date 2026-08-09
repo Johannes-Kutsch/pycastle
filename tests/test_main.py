@@ -1671,34 +1671,34 @@ def test_bug_reporting_group_reraises_after_report_and_exit_returns(
 # ── Issue 2081: config errors name the layers that could have caused them ─────
 
 
-def test_config_error_output_includes_layer_summary(tmp_path, monkeypatch):
-    """A config error must say which config files were in play, not just what was wrong."""
+def _invoke_with_config_error(tmp_path, monkeypatch, *, write_local_config: bool):
     from pycastle.main import main as cli
 
     (tmp_path / "pycastle").mkdir()
+    if write_local_config:
+        (tmp_path / "pycastle" / "config.py").write_text("")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
     with patch(
         "pycastle.main.load_config",
         side_effect=ConfigValidationError("dev_branch must not be empty"),
     ):
-        result = CliRunner().invoke(cli, ["build"])
+        return CliRunner(mix_stderr=False).invoke(cli, ["build"])
 
-    assert "dev_branch must not be empty" in result.output
-    assert "Config: defaults" in result.output
+
+def test_config_error_names_the_layers_on_the_error_stream(tmp_path, monkeypatch):
+    """The layer summary goes to stdout, so the error itself must carry the paths.
+
+    Otherwise `pycastle build 2>err.log` captures the failure without the config
+    files that could have caused it.
+    """
+    result = _invoke_with_config_error(tmp_path, monkeypatch, write_local_config=False)
+
+    assert "dev_branch must not be empty" in result.stderr
+    assert "Config: defaults" in result.stderr
 
 
 def test_config_error_layer_summary_lists_the_local_config_file(tmp_path, monkeypatch):
-    from pycastle.main import main as cli
+    result = _invoke_with_config_error(tmp_path, monkeypatch, write_local_config=True)
 
-    (tmp_path / "pycastle").mkdir()
-    (tmp_path / "pycastle" / "config.py").write_text("")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("PYCASTLE_HOME", str(tmp_path / "no_global"))
-    with patch(
-        "pycastle.main.load_config",
-        side_effect=ConfigValidationError("dev_branch must not be empty"),
-    ):
-        result = CliRunner().invoke(cli, ["build"])
-
-    assert "pycastle/config.py" in result.output
+    assert "pycastle/config.py" in result.stderr

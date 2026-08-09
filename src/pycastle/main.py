@@ -80,7 +80,9 @@ def _load_config_or_exit() -> Config:
         )
         sys.exit(1)
     except ConfigValidationError as exc:
-        click.echo(str(exc), err=True)
+        # The layer summary goes to stdout; repeat it here so a captured error
+        # stream still names the config files that could have caused this.
+        click.echo(f"{exc}\n{describe_config_layers()}", err=True)
         sys.exit(1)
 
 
