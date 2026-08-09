@@ -44,6 +44,15 @@ def test_no_working_branch_emits_no_seed_or_push_upstream():
     assert PushUpstream not in step_types
 
 
+def test_no_working_branch_checks_out_dev_branch():
+    cfg = Config(dev_branch="main", working_branch=None)
+    result = resolve_branch_setup(cfg, _facts())
+    assert isinstance(result, BranchSetupPlan)
+    checkout_steps = [s for s in result.steps if isinstance(s, Checkout)]
+    assert len(checkout_steps) == 1
+    assert checkout_steps[0].branch == "main"
+
+
 # AC2: working_branch set, absent both locally and on origin → fetch, seed, checkout, push
 def test_new_working_branch_fetches_seeds_checks_out_and_pushes():
     cfg = Config(dev_branch="main", working_branch="feature-x")
@@ -76,6 +85,14 @@ def test_new_working_branch_push_upstream_targets_working_branch():
     assert push_steps[0].branch == "feature-x"
 
 
+def test_new_working_branch_steps_in_order_fetch_seed_checkout_push():
+    cfg = Config(dev_branch="main", working_branch="feature-x")
+    result = resolve_branch_setup(cfg, _facts())
+    assert isinstance(result, BranchSetupPlan)
+    step_types = [type(s) for s in result.steps]
+    assert step_types == [Fetch, Seed, Checkout, PushUpstream]
+
+
 # AC3: working_branch set and already existing → reuse as-is, no seed/reconcile steps
 def test_existing_local_working_branch_reuses_without_seed():
     cfg = Config(dev_branch="main", working_branch="feature-x")
@@ -97,6 +114,19 @@ def test_existing_remote_working_branch_reuses_without_seed():
     assert PushUpstream not in step_types
 
 
+def test_working_branch_existing_both_locally_and_remotely_reuses_without_seed():
+    cfg = Config(dev_branch="main", working_branch="feature-x")
+    result = resolve_branch_setup(
+        cfg, _facts(working_branch_on_local=True, working_branch_on_origin=True)
+    )
+    assert isinstance(result, BranchSetupPlan)
+    assert result.operating_branch == "feature-x"
+    step_types = [type(s) for s in result.steps]
+    assert Seed not in step_types
+    assert PushUpstream not in step_types
+    assert Fetch not in step_types
+
+
 # AC4: dev_branch absent from origin → typed abort with operator-facing context
 def test_missing_dev_branch_returns_typed_abort():
     cfg = Config(dev_branch="main", working_branch=None)
@@ -115,6 +145,13 @@ def test_missing_dev_branch_abort_has_no_setup_steps():
     cfg = Config(dev_branch="main", working_branch=None)
     result = resolve_branch_setup(cfg, _facts(dev_branch_on_origin=False))
     assert not isinstance(result, BranchSetupPlan)
+
+
+def test_missing_dev_branch_with_working_branch_configured_aborts():
+    cfg = Config(dev_branch="main", working_branch="feature-x")
+    result = resolve_branch_setup(cfg, _facts(dev_branch_on_origin=False))
+    assert isinstance(result, DevBranchMissing)
+    assert result.dev_branch == "main"
 
 
 # AC5: unclean working tree → refuses before checkout step
