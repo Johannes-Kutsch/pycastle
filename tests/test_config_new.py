@@ -1384,3 +1384,47 @@ def test_global_forbidden_error_explains_the_per_project_reason(tmp_path):
     with pytest.raises(ConfigValidationError) as exc_info:
         load_config(repo_root=tmp_path, global_dir=global_dir)
     assert "every project" in str(exc_info.value)
+
+
+# ── Issue 2083: improve_candidates_per_scan field ───────────────────────────
+
+
+def test_config_improve_candidates_per_scan_defaults_to_3():
+    assert Config().improve_candidates_per_scan == 3
+
+
+def test_load_config_improve_candidates_per_scan_defaults_to_3(tmp_path):
+    cfg = load_config(repo_root=tmp_path, global_dir=tmp_path / "no_global")
+    assert cfg.improve_candidates_per_scan == 3
+
+
+@pytest.mark.parametrize("bad", [0, -1, -100])
+def test_load_config_improve_candidates_per_scan_rejects_zero_and_negative(
+    tmp_path, bad
+):
+    with pytest.raises(ConfigValidationError) as exc_info:
+        load_config(
+            repo_root=tmp_path,
+            global_dir=tmp_path / "no_global",
+            overrides={"improve_candidates_per_scan": bad},
+        )
+    assert "improve_candidates_per_scan" in str(exc_info.value)
+    assert str(bad) in exc_info.value.invalid_value
+
+
+def test_load_config_improve_candidates_per_scan_from_global_file(tmp_path):
+    global_dir = _write_layers(
+        tmp_path, global_src="improve_candidates_per_scan = 5\n", local_src=None
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.improve_candidates_per_scan == 5
+
+
+def test_load_config_local_improve_candidates_per_scan_overrides_global(tmp_path):
+    global_dir = _write_layers(
+        tmp_path,
+        global_src="improve_candidates_per_scan = 5\n",
+        local_src="improve_candidates_per_scan = 7\n",
+    )
+    cfg = load_config(repo_root=tmp_path, global_dir=global_dir)
+    assert cfg.improve_candidates_per_scan == 7

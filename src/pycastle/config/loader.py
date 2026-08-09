@@ -188,6 +188,7 @@ class Config:
         )
     )
     improve_max: int | None = None
+    improve_candidates_per_scan: int = 3
     improve_mode: Literal["until_sleep", "endless"] | None = None
     diagnose_on_failure: bool = True
     dev_branch: str = "main"
@@ -297,6 +298,7 @@ def load_config(
         )
     _validate_bug_report_repo(cfg)
     _validate_improve_max(cfg)
+    _validate_improve_candidates_per_scan(cfg)
     _validate_improve_mode(cfg)
     _validate_minimum_unknown_reset_duration_hours(cfg)
     _validate_stage_override_models(cfg)
@@ -388,6 +390,14 @@ def _validate_improve_max(cfg: Config) -> None:
         raise ConfigValidationError(
             "improve_max must be >= 1",
             invalid_value=str(cfg.improve_max),
+        )
+
+
+def _validate_improve_candidates_per_scan(cfg: Config) -> None:
+    if cfg.improve_candidates_per_scan < 1:
+        raise ConfigValidationError(
+            f"improve_candidates_per_scan must be >= 1, got {cfg.improve_candidates_per_scan}",
+            invalid_value=str(cfg.improve_candidates_per_scan),
         )
 
 
