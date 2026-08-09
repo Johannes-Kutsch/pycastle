@@ -1000,7 +1000,6 @@ def test_apply_slice_classifier_verdicts_concrete_verdict_for_missing_slice_adds
     from pycastle.agents.slice_classifier import ConcreteSliceVerdict
     from pycastle.issue_readiness import IssueReadinessKind, SliceMode
     from pycastle.iteration.planning_issue_intake import (
-        LabelSyncAction,
         apply_slice_classifier_verdicts,
         prepare_planning_issue_set,
     )
@@ -1020,10 +1019,16 @@ def test_apply_slice_classifier_verdicts_concrete_verdict_for_missing_slice_adds
 
     candidate_numbers = [c["number"] for c in result.ready_candidates]
     assert 1 in candidate_numbers
-    assert (
-        LabelSyncAction(issue_number=1, label_name="behavior-slice", intent="add")
-        in result.label_sync_actions
-    )
+    matching_adds = [
+        a
+        for a in result.label_sync_actions
+        if a.issue_number == 1
+        and a.label_name == "behavior-slice"
+        and a.intent == "add"
+    ]
+    assert len(matching_adds) == 1
+    assert matching_adds[0].comment_body is not None
+    assert "automatically during AI triage" in matching_adds[0].comment_body
     assert result.ready_readiness_by_number[1].kind == IssueReadinessKind.READY_AFK
 
 

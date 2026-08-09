@@ -1295,3 +1295,207 @@ def test_planning_phase_in_flight_returns_preflight_hitl_before_resuming(
 
     assert result == PreflightHITL(sha="safe-sha-123", issue_number=182)
     assert len(fake.calls) == 0, "Planner must not be called on in-flight HITL path"
+
+
+# ── planning_phase: slice classifier auto-labeling ───────────────────────────
+
+
+def test_planning_phase_auto_classifies_missing_slice_label_into_ready_candidate(
+    tmp_path, git_svc
+):
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import SliceMode
+    from pycastle.services.github_service import GithubService
+
+    issue = {
+        "number": 1,
+        "title": "Add feature",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+
+    async def classify_fn(title: str, body: str) -> ConcreteSliceVerdict:
+        return ConcreteSliceVerdict(mode=SliceMode.BEHAVIOR)
+
+    fake = FakeAgentRunner([])
+    github_svc = MagicMock(spec=GithubService)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    result = asyncio.run(planning_phase(deps, [issue], [], _classify_fn=classify_fn))
+
+    assert isinstance(result, PlanReady)
+    assert len(result.issues) == 1
+    assert result.issues[0]["number"] == 1
+    assert "behavior-slice" in result.issues[0]["labels"]
+    github_svc.add_label_to_issue.assert_called_once_with(1, "behavior-slice")
+
+
+def test_planning_phase_uncertain_classification_applies_needs_slice_type_with_reason(
+    tmp_path, git_svc
+):
+    from pycastle.agents.slice_classifier import UncertainSliceVerdict
+    from pycastle.services.github_service import GithubService
+
+    issue = {
+        "number": 1,
+        "title": "Ambiguous work",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+
+    reason = "Cannot determine if this touches code or only docs."
+
+    async def classify_fn(title: str, body: str) -> UncertainSliceVerdict:
+        return UncertainSliceVerdict(reason=reason)
+
+    fake = FakeAgentRunner([])
+    github_svc = MagicMock(spec=GithubService)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    result = asyncio.run(planning_phase(deps, [issue], [], _classify_fn=classify_fn))
+
+    assert isinstance(result, AllBlocked)
+    github_svc.add_label_to_issue.assert_called_once_with(1, "needs-slice-type")
+    github_svc.post_comment.assert_called_once()
+    comment_body = github_svc.post_comment.call_args[0][1]
+    assert reason in comment_body
+
+
+def test_planning_phase_auto_classifies_multiple_slice_labels_to_single_chosen(
+    tmp_path, git_svc
+):
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import SliceMode
+    from pycastle.services.github_service import GithubService
+
+    issue_with_multiple = {
+        "number": 1,
+        "title": "Ambiguous",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice", "docs-slice"],
+    }
+    other = {
+        "number": 2,
+        "title": "Other",
+        "body": "y" * 100,
+        "comments": [],
+        "labels": ["refactor-slice"],
+    }
+
+    async def classify_fn(title: str, body: str) -> ConcreteSliceVerdict:
+        return ConcreteSliceVerdict(mode=SliceMode.BEHAVIOR)
+
+    fake = FakeAgentRunner([_plan_output([issue_with_multiple, other])])
+    github_svc = MagicMock(spec=GithubService)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    result = asyncio.run(
+        planning_phase(deps, [issue_with_multiple, other], [], _classify_fn=classify_fn)
+    )
+
+    assert isinstance(result, PlanReady)
+    issue_numbers = {i["number"] for i in result.issues}
+    assert 1 in issue_numbers
+    github_svc.remove_label_from_issue.assert_called_with(1, "docs-slice")
+
+
+def test_planning_phase_auto_applied_slice_label_posts_ai_triage_comment(
+    tmp_path, git_svc
+):
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import SliceMode
+    from pycastle.services.github_service import GithubService
+
+    issue = {
+        "number": 5,
+        "title": "New feature",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": [],
+    }
+
+    async def classify_fn(title: str, body: str) -> ConcreteSliceVerdict:
+        return ConcreteSliceVerdict(mode=SliceMode.REFACTOR)
+
+    fake = FakeAgentRunner([])
+    github_svc = MagicMock(spec=GithubService)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    asyncio.run(planning_phase(deps, [issue], [], _classify_fn=classify_fn))
+
+    github_svc.post_comment.assert_called_once()
+    comment_body = github_svc.post_comment.call_args[0][1]
+    assert "automatically during AI triage" in comment_body
+    assert "refactor-slice" in comment_body
+
+
+def test_planning_phase_short_body_issue_not_classified_keeps_today_behavior(
+    tmp_path, git_svc
+):
+    from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+    from pycastle.issue_readiness import SliceMode
+    from pycastle.services.github_service import GithubService
+
+    classify_calls: list[str] = []
+
+    short_body_issue = {
+        "number": 1,
+        "title": "Short body no slice",
+        "body": "too short",
+        "comments": [],
+        "labels": [],
+    }
+
+    async def classify_fn(title: str, body: str) -> ConcreteSliceVerdict:
+        classify_calls.append(title)
+        return ConcreteSliceVerdict(mode=SliceMode.BEHAVIOR)
+
+    fake = FakeAgentRunner([])
+    github_svc = MagicMock(spec=GithubService)
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+
+    result = asyncio.run(
+        planning_phase(deps, [short_body_issue], [], _classify_fn=classify_fn)
+    )
+
+    assert isinstance(result, AllBlocked)
+    assert classify_calls == [], "Classifier must not be called for below-floor body"
+    add_calls = list(github_svc.add_label_to_issue.call_args_list)
+    label_names = [c[0][1] for c in add_calls]
+    assert "behavior-slice" not in label_names
+    assert "needs-info" in label_names
+
+
+def test_planning_phase_single_slice_label_issue_not_reclassified(tmp_path, git_svc):
+    classify_calls: list[str] = []
+
+    issue_with_label = {
+        "number": 1,
+        "title": "Human labeled",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+
+    async def classify_fn(title: str, body: str):
+        classify_calls.append(title)
+        from pycastle.agents.slice_classifier import ConcreteSliceVerdict
+        from pycastle.issue_readiness import SliceMode
+
+        return ConcreteSliceVerdict(mode=SliceMode.DOCS)
+
+    fake = FakeAgentRunner([])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc)
+
+    result = asyncio.run(
+        planning_phase(deps, [issue_with_label], [], _classify_fn=classify_fn)
+    )
+
+    assert isinstance(result, PlanReady)
+    assert result.issues[0]["labels"] == ["behavior-slice"]
+    assert classify_calls == [], (
+        "Classifier must not be called for already-labeled issue"
+    )

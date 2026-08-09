@@ -177,6 +177,12 @@ The implement phase skips this issue until the labeling is fixed.
 `needs-slice-type` will be removed automatically once a single slice label is set.\
 """
 
+_AUTO_TRIAGE_SLICE_COMMENT = """\
+> *This was applied automatically during AI triage.*
+
+This issue has been labeled `{label}` by the slice classifier during the plan phase.\
+"""
+
 
 def _needs_info_actions(
     issues_with_readiness: list[tuple[dict, IssueReadiness]],
@@ -443,7 +449,12 @@ def apply_slice_classifier_verdicts(
     ]
     for number, (_, _, chosen_label, labels_to_remove) in concrete.items():
         new_actions.append(
-            LabelSyncAction(issue_number=number, label_name=chosen_label, intent="add")
+            LabelSyncAction(
+                issue_number=number,
+                label_name=chosen_label,
+                intent="add",
+                comment_body=_AUTO_TRIAGE_SLICE_COMMENT.format(label=chosen_label),
+            )
         )
         new_actions.extend(
             LabelSyncAction(issue_number=number, label_name=lbl, intent="remove")

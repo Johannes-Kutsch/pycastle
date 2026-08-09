@@ -1,7 +1,8 @@
 import dataclasses
 import hashlib
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 from pycastle.agents.output_protocol import (
     AgentOutputProtocolError,
@@ -9,9 +10,14 @@ from pycastle.agents.output_protocol import (
     PlannerOutput,
 )
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.agents.slice_classifier import (
+    SliceClassifierVerdict,
+    classify_slice,
+)
 from pycastle.config import Config
 from pycastle.display.status_display import StatusDisplay
 from pycastle.errors import SetupPhaseError
+from pycastle.execution_contracts import WorktreeMount
 from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
     reusable_sandbox_worktree,
@@ -21,7 +27,11 @@ from pycastle.iteration import planning_issue_intake
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration._rows import StatusRow, StatusRowConfig, status_row
 from pycastle.iteration.implement import branch_for
-from pycastle.iteration.planning_issue_intake import PlanReady, PreparedPlanningIssueSet
+from pycastle.iteration.planning_issue_intake import (
+    PlanReady,
+    PreparedPlanningIssueSet,
+    apply_slice_classifier_verdicts,
+)
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
 from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
@@ -34,7 +44,13 @@ from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_plan_scope_args
 from pycastle.services import GitService
 from pycastle.services.github_service import GithubService
+from pycastle.services.service_registry import ServiceRegistry
 from pycastle.session import RoleSession
+
+if TYPE_CHECKING:
+    from pycastle.execution_contracts import PromptRuntimeExecutionAdapter
+
+type _ClassifySliceFn = Callable[[str, str], Awaitable[SliceClassifierVerdict]]
 
 
 class _PlanningDeps(Protocol):
@@ -45,11 +61,62 @@ class _PlanningDeps(Protocol):
     git_svc: GitService
     github_svc: GithubService
     preflight_cache: PreflightCache
+    service_registry: ServiceRegistry | None
 
 
 @dataclasses.dataclass(frozen=True)
 class AllBlocked:
     blocked: list[dict]
+
+
+async def _run_slice_classifiers(
+    deps: _PlanningDeps,
+    wt: Path,
+    issue_set: PreparedPlanningIssueSet,
+    classify_fn: _ClassifySliceFn | None,
+) -> dict[int, SliceClassifierVerdict]:
+    service_registry = deps.service_registry
+    if classify_fn is None and service_registry is None:
+        return {}
+
+    malformed_body_numbers = {i["number"] for i in issue_set.malformed_body_issues}
+    verdicts: dict[int, SliceClassifierVerdict] = {}
+
+    for issue in issue_set.malformed_slice_mode_issues:
+        number = issue["number"]
+        if number in malformed_body_numbers:
+            continue
+
+        title = issue.get("title") or ""
+        body = issue.get("body") or ""
+
+        if classify_fn is not None:
+            verdict = await classify_fn(title, body)
+        else:
+            verdict = await classify_slice(
+                issue_title=title,
+                issue_body=body,
+                worktree=WorktreeMount(host_path=wt),
+                plan_override=deps.cfg.plan_override,
+                runner=cast("PromptRuntimeExecutionAdapter", deps.agent_runner),
+                service_registry=service_registry,  # type: ignore[arg-type]
+            )
+        verdicts[number] = verdict
+
+    return verdicts
+
+
+async def _relabel_issue_set(
+    deps: _PlanningDeps,
+    wt: Path,
+    issue_set: PreparedPlanningIssueSet,
+    classify_fn: _ClassifySliceFn | None,
+) -> tuple[PreparedPlanningIssueSet, list[dict]]:
+    if _classification_work_exists(issue_set):
+        verdicts = await _run_slice_classifiers(deps, wt, issue_set, classify_fn)
+        if verdicts:
+            issue_set = apply_slice_classifier_verdicts(issue_set, verdicts, deps.cfg)
+    return issue_set, list(issue_set.ready_candidates)
 
 
 def _sync_labels(deps: _PlanningDeps, issue_set: PreparedPlanningIssueSet) -> None:
@@ -160,6 +227,8 @@ async def planning_phase(
     all_open_issues: list[dict],
     prepared_issue_set: PreparedPlanningIssueSet | None = None,
     in_flight: list[dict] | None = None,
+    *,
+    _classify_fn: _ClassifySliceFn | None = None,
 ) -> PlanReady | AllBlocked | PreflightHITL | PreflightAFK:
     _in_flight = in_flight or []
     issue_set = (
@@ -224,6 +293,9 @@ async def planning_phase(
             deps=deps,
         ) as wt:
             _plan_sandbox_session.write_fingerprint(fingerprint)
+            issue_set, well_formed = await _relabel_issue_set(
+                deps, wt, issue_set, _classify_fn
+            )
             _sync_labels(deps, issue_set)
 
             if len(well_formed) <= 1:
