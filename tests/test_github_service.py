@@ -2819,6 +2819,36 @@ def test_create_issue_in_with_scripted_transport_raises_api_error_when_number_mi
     transport.assert_exhausted()
 
 
+def test_create_issue_in_with_scripted_transport_raises_api_error_when_id_missing():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/Johannes-Kutsch/pycastle/issues",
+                data={"title": "title", "body": "body", "labels": ["bug"]},
+                payload={"number": 42, "html_url": "https://x"},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAPIError) as exc_info:
+        svc.create_issue_in("Johannes-Kutsch/pycastle", "title", "body", ["bug"])
+
+    assert exc_info.value.status == 200
+    assert exc_info.value.body == "{'number': 42, 'html_url': 'https://x'}"
+    assert exc_info.value.method == "POST"
+    assert exc_info.value.path == "/repos/Johannes-Kutsch/pycastle/issues"
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/Johannes-Kutsch/pycastle/issues",
+            {"title": "title", "body": "body", "labels": ["bug"]},
+        )
+    ]
+    transport.assert_exhausted()
+
+
 # ── search_open_issues_by_title ──────────────────────────────────────────────
 
 
