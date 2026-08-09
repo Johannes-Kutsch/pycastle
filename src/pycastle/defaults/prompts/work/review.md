@@ -12,13 +12,13 @@ Run `{{FEEDBACK_COMMANDS}}` to confirm the current state passes before making an
 
 ## 2. Read the diff
 
-Run `git diff main... --stat` to get the file-level summary, then `git diff main...` (and narrower variants scoped to specific paths) to inspect what changed.
+Run `git diff {{OPERATING_BRANCH}}... --stat` to get the file-level summary, then `git diff {{OPERATING_BRANCH}}...` (and narrower variants scoped to specific paths) to inspect what changed.
 
 Emit `<reviewed_diff>` immediately after reading so downstream steps are gated on having actually read the diff:
 
 ```
 <reviewed_diff>
-<paste of git diff main... --stat output>
+<paste of git diff {{OPERATING_BRANCH}}... --stat output>
 <one-line summary per changed file>
 </reviewed_diff>
 ```

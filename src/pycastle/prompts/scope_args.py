@@ -92,6 +92,7 @@ def build_per_issue_scope_args(
     branch: str,
     run_kind: RunKind,
     is_dirty: bool,
+    operating_branch: str,
 ) -> dict[str, str]:
     return build_issue_scope_args(
         issue,
@@ -101,6 +102,7 @@ def build_per_issue_scope_args(
                 run_kind,
                 is_dirty=is_dirty,
             ),
+            "OPERATING_BRANCH": operating_branch,
         },
     )
 

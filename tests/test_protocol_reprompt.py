@@ -46,6 +46,7 @@ _ISSUE_SCOPE_ARGS: dict[str, str] = {
     "ISSUE_COMMENTS": "",
     "BRANCH": "pycastle/issue-1928",
     "INTERRUPTED_WORK": "",
+    "OPERATING_BRANCH": "main",
 }
 
 _IMPROVE_PRD_SCOPE_ARGS: dict[str, str] = {

@@ -31,6 +31,7 @@ Used by: work/behavior.md, work/refactor.md, work/docs.md, work/review.md
 - `{{ISSUE_COMMENTS}}` — Formatted issue comments.
 - `{{BRANCH}}` — The working branch name.
 - `{{INTERRUPTED_WORK}}` — Interrupted-work clause rendered only for FRESH dispatch on a dirty working tree; tells the agent to inspect `git diff` and `git status`; empty string otherwise.
+- `{{OPERATING_BRANCH}}` — The configured operating branch (dev_branch or working_branch) used as the diff base for code review.
 
 ## Scope: MERGE
 

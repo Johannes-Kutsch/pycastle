@@ -828,3 +828,46 @@ def test_plan_ready_issue_slice_returns_prompt_and_shared_display_bodies_from_ca
         ready_slice.review_work_body
         == 'reviewing docs "Scaffold implement issue execution planning module"'
     )
+
+
+def test_reviewer_scope_args_use_configured_operating_branch_as_diff_base(tmp_path):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+
+    plan = plan_issue_execution(
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
+    )
+
+    assert plan.reviewer_step.prompt_scope_args["OPERATING_BRANCH"] == "main"
+
+
+def test_reviewer_scope_args_reflect_custom_working_branch_as_diff_base(tmp_path):
+    cfg = Config(working_branch="my-feature-branch")
+    deps = _make_deps(tmp_path, FakeAgentRunner([]), cfg=cfg)
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+
+    plan = plan_issue_execution(
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
+    )
+
+    assert (
+        plan.reviewer_step.prompt_scope_args["OPERATING_BRANCH"] == "my-feature-branch"
+    )

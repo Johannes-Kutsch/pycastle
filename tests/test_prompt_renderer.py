@@ -77,6 +77,7 @@ def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
         "IMPROVE_SHORT_SID": "imp-123",
         "INTERRUPTED_WORK": "",
         "ISSUE_BODY": "issue body",
+        "OPERATING_BRANCH": "main",
         "ISSUE_COMMENTS": "issue comments",
         "ISSUE_NUMBER": "1",
         "ISSUE_TITLE": "title",
@@ -133,6 +134,7 @@ def test_renderer_renders_global_placeholder(cfg, prompts_dir):
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -166,6 +168,7 @@ def test_renderer_preserves_all_label_global_placeholders(cfg, prompts_dir):
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -203,6 +206,7 @@ def test_renderer_uses_fixed_project_local_prompt_overrides_when_config_is_stale
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -238,6 +242,7 @@ def test_scope_per_issue_placeholders():
             "ISSUE_COMMENTS",
             "BRANCH",
             "INTERRUPTED_WORK",
+            "OPERATING_BRANCH",
         }
     )
 
@@ -680,6 +685,7 @@ def test_render_implement_output_rules_available_in_per_issue_template(
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -711,6 +717,7 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             recording_exec,
         )
@@ -727,6 +734,7 @@ def test_arg_value_containing_shell_token_is_not_executed(cfg, prompts_dir):
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -826,6 +834,7 @@ def test_renderer_ignores_broken_unreferenced_local_shared_file_in_custom_prompt
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -884,6 +893,7 @@ def test_renderer_renders_implement_review_shared_framing_fragment(prompts_dir):
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -967,6 +977,7 @@ def test_renderer_renders_local_shared_framing_override_through_bundled_prompt(
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -1005,6 +1016,7 @@ def test_renderer_allows_empty_local_shared_framing_override(tmp_path, monkeypat
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -1325,6 +1337,7 @@ def test_renderer_falls_back_per_file_for_partial_absolute_local_role_tree(tmp_p
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "pycastle/issue-1",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -1465,6 +1478,7 @@ def test_template_shell_expr_runs_arg_shell_token_stays_inert(cfg, prompts_dir):
                 "ISSUE_COMMENTS": "",
                 "BRANCH": "b",
                 "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             recording_exec,
         )
@@ -1734,6 +1748,7 @@ _PER_ISSUE_BASE = {
     "ISSUE_BODY": "",
     "ISSUE_COMMENTS": "",
     "BRANCH": "pycastle/issue-42",
+    "OPERATING_BRANCH": "main",
 }
 
 

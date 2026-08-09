@@ -64,6 +64,7 @@ class Scope(enum.Enum):
                 "ISSUE_COMMENTS",
                 "BRANCH",
                 "INTERRUPTED_WORK",
+                "OPERATING_BRANCH",
             }
         ),
     )

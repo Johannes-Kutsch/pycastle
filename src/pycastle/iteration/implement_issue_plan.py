@@ -234,6 +234,7 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
             branch=branch,
             run_kind=run_kind,
             is_dirty=interrupted_work_from_dirty_tree,
+            operating_branch=deps.cfg.operating_branch,
         )
         return IssueRoleStepPlan(
             outcome="skip",
@@ -274,6 +275,7 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
                 branch=branch,
                 run_kind=RunKind.FRESH,
                 is_dirty=False,
+                operating_branch=deps.cfg.operating_branch,
             ),
             model=_resolved_stage_model(deps.cfg, role),
             effort=_resolved_stage_effort(deps.cfg, role),
@@ -297,6 +299,7 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
         branch=branch,
         run_kind=run_kind,
         is_dirty=interrupted_work_from_dirty_tree,
+        operating_branch=deps.cfg.operating_branch,
     )
     return IssueRoleStepPlan(
         outcome="run",

@@ -182,6 +182,7 @@ def test_build_per_issue_scope_args_builds_exact_renderable_per_issue_args():
         branch="pycastle/issue-7",
         run_kind=RunKind.FRESH,
         is_dirty=True,
+        operating_branch="main",
     )
 
     assert validated_scope_args_for_scope(Scope.PER_ISSUE, result) is result
@@ -192,6 +193,7 @@ def test_build_per_issue_scope_args_builds_exact_renderable_per_issue_args():
         "ISSUE_COMMENTS": "",
         "BRANCH": "pycastle/issue-7",
         "INTERRUPTED_WORK": build_interrupted_work_clause(RunKind.FRESH, is_dirty=True),
+        "OPERATING_BRANCH": "main",
     }
 
 

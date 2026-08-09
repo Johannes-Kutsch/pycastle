@@ -1005,6 +1005,7 @@ def test_run_issue_projects_run_requests_from_issue_execution_plan(
         "ISSUE_BODY": issue["body"],
         "ISSUE_COMMENTS": "",
         "INTERRUPTED_WORK": "planned implement interrupted work",
+        "OPERATING_BRANCH": "main",
     }
     planned_review_args = {
         "ISSUE_NUMBER": "52",
@@ -1013,6 +1014,7 @@ def test_run_issue_projects_run_requests_from_issue_execution_plan(
         "ISSUE_BODY": issue["body"],
         "ISSUE_COMMENTS": "",
         "INTERRUPTED_WORK": "planned review interrupted work",
+        "OPERATING_BRANCH": "main",
     }
     issue_plan = IssueExecutionPlan(
         issue_number=issue["number"],
@@ -1817,6 +1819,7 @@ def test_run_issue_uses_planned_implementer_fallback_when_commit_message_omitted
         "ISSUE_BODY": issue["body"],
         "ISSUE_COMMENTS": "",
         "INTERRUPTED_WORK": "",
+        "OPERATING_BRANCH": "main",
     }
     planned_review_args = {
         "ISSUE_NUMBER": "53",
@@ -1825,6 +1828,7 @@ def test_run_issue_uses_planned_implementer_fallback_when_commit_message_omitted
         "ISSUE_BODY": issue["body"],
         "ISSUE_COMMENTS": "",
         "INTERRUPTED_WORK": "",
+        "OPERATING_BRANCH": "main",
     }
     issue_plan = IssueExecutionPlan(
         issue_number=issue["number"],
@@ -1969,6 +1973,7 @@ def test_run_issue_uses_planned_reviewer_fallback_when_commit_message_omitted(
         "ISSUE_BODY": issue["body"],
         "ISSUE_COMMENTS": "",
         "INTERRUPTED_WORK": "",
+        "OPERATING_BRANCH": "main",
     }
     planned_review_args = {
         "ISSUE_NUMBER": "54",
@@ -1977,6 +1982,7 @@ def test_run_issue_uses_planned_reviewer_fallback_when_commit_message_omitted(
         "ISSUE_BODY": issue["body"],
         "ISSUE_COMMENTS": "",
         "INTERRUPTED_WORK": "",
+        "OPERATING_BRANCH": "main",
     }
     issue_plan = IssueExecutionPlan(
         issue_number=issue["number"],
