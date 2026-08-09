@@ -12,7 +12,9 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "click",
+    # >=8.2 removes CliRunner(mix_stderr); unpinned, local envs and CI drifted
+    # across that boundary and broke a release build.
+    "click>=8.2",
     "docker",
     "platformdirs",
     "python-dotenv",
