@@ -2925,6 +2925,82 @@ def test_search_open_issues_by_title_returns_empty_list_when_items_missing():
     assert result == []
 
 
+# ── add_issue_dependency ─────────────────────────────────────────────────────
+
+
+def test_add_issue_dependency_posts_blocker_database_id_to_correct_endpoint():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/issue_dependencies",
+                data={"blocked_by_id": 999},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.add_issue_dependency(child_number=42, blocker_database_id=999)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/owner/repo/issues/42/issue_dependencies",
+            {"blocked_by_id": 999},
+        )
+    ]
+    transport.assert_exhausted()
+
+
+def test_add_issue_dependency_surfaces_api_error_as_github_service_error():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/issue_dependencies",
+                data={"blocked_by_id": 999},
+                error=GithubHttpTransportAPIError(
+                    "server error",
+                    status=500,
+                    body="server error",
+                    method="POST",
+                    path="/repos/owner/repo/issues/42/issue_dependencies",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubServiceError):
+        svc.add_issue_dependency(child_number=42, blocker_database_id=999)
+
+    transport.assert_exhausted()
+
+
+def test_add_issue_dependency_does_not_fail_when_dependency_already_exists():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/issue_dependencies",
+                data={"blocked_by_id": 999},
+                error=GithubHttpTransportAPIError(
+                    "dependency already exists",
+                    status=422,
+                    body='{"message":"dependency already exists"}',
+                    method="POST",
+                    path="/repos/owner/repo/issues/42/issue_dependencies",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.add_issue_dependency(child_number=42, blocker_database_id=999)
+
+    transport.assert_exhausted()
+
+
 # ── No real network ──────────────────────────────────────────────────────────
 
 
