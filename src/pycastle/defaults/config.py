@@ -86,6 +86,9 @@ from pycastle import StageOverride
 # Maximum number of improve-agent dispatches per run.
 # improve_max = None
 
+# Number of candidates one scan is asked to nominate.
+# improve_candidates_per_scan = 3
+
 # --- Stage overrides ---
 # Claude model shorthands: haiku, sonnet, opus
 # Codex model names: gpt-5.5, gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.3-codex-spark, gpt-5.2

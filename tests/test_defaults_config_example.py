@@ -21,3 +21,12 @@ def test_rendered_config_example_includes_branch_fields() -> None:
 
     assert 'dev_branch = "main"' in example
     assert "working_branch = None" in example
+
+
+def test_rendered_config_example_includes_improve_candidates_per_scan() -> None:
+    example = _BundledDefaultsIntrospection.from_defaults(
+        files("pycastle.defaults")
+    ).render_config_example()
+
+    assert "improve_candidates_per_scan" in example
+    assert "candidates one scan" in example
