@@ -360,7 +360,7 @@ def test_run_host_check_run_files_fallback_issue_when_reporter_mount_is_invalid(
     github_svc = MagicMock()
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 777
+    github_svc.create_issue_in.return_value = (777, 10777)
     (tmp_path / "pycastle" / ".worktrees").mkdir(parents=True, exist_ok=True)
 
     class _RecordingAgentRunner:

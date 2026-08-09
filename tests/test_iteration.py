@@ -3120,7 +3120,7 @@ def test_run_iteration_files_fallback_issue_when_failure_report_mount_is_invalid
     github_svc.repo = "owner/consuming-project"
     github_svc.get_open_issues.return_value = []
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 321
+    github_svc.create_issue_in.return_value = (321, 10321)
 
     observed_requests: list[RunRequest] = []
 

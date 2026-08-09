@@ -64,7 +64,7 @@ def github_svc():
     svc = MagicMock(spec=GithubService)
     svc.repo = "test/repo"
     svc.search_open_issues_by_title.return_value = []
-    svc.create_issue_in.return_value = 999
+    svc.create_issue_in.return_value = (999, 10999)
     return svc
 
 

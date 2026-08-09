@@ -2678,7 +2678,7 @@ def test_create_issue_in_with_scripted_transport_returns_number_for_normal_paylo
                     "body": "body",
                     "labels": ["bug", "needs-triage"],
                 },
-                payload={"number": 42, "html_url": "https://x"},
+                payload={"number": 42, "id": 1001, "html_url": "https://x"},
             )
         ]
     )
@@ -2691,7 +2691,7 @@ def test_create_issue_in_with_scripted_transport_returns_number_for_normal_paylo
         ["bug", "needs-triage"],
     )
 
-    assert result == 42
+    assert result == (42, 1001)
     assert transport.requests == [
         _GithubTransportRequest(
             "POST",
@@ -2713,7 +2713,7 @@ def test_create_issue_in_with_scripted_transport_uses_owner_repo_arg_not_self_re
                 "POST",
                 "/repos/target-owner/target-repo/issues",
                 data={"title": "t", "body": "b", "labels": []},
-                payload={"number": 1},
+                payload={"number": 1, "id": 1002},
             )
         ]
     )
@@ -2721,7 +2721,7 @@ def test_create_issue_in_with_scripted_transport_uses_owner_repo_arg_not_self_re
 
     result = svc.create_issue_in("target-owner/target-repo", "t", "b", [])
 
-    assert result == 1
+    assert result == (1, 1002)
     assert transport.requests == [
         _GithubTransportRequest(
             "POST",

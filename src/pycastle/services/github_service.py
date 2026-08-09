@@ -504,13 +504,17 @@ class GithubService:
 
     def create_issue_in(
         self, owner_repo: str, title: str, body: str, labels: list[str]
-    ) -> int:
+    ) -> tuple[int, int]:
         payload, _ = self._request(
             "POST",
             f"/repos/{owner_repo}/issues",
             data={"title": title, "body": body, "labels": labels},
         )
-        if not isinstance(payload, dict) or "number" not in payload:
+        if (
+            not isinstance(payload, dict)
+            or "number" not in payload
+            or "id" not in payload
+        ):
             raise GithubAPIError(
                 f"GitHub API POST /repos/{owner_repo}/issues returned no number",
                 status=200,
@@ -518,7 +522,7 @@ class GithubService:
                 method="POST",
                 path=f"/repos/{owner_repo}/issues",
             )
-        return int(payload["number"])
+        return int(payload["number"]), int(payload["id"])
 
 
 def _next_link(link_header: str | None) -> str | None:
