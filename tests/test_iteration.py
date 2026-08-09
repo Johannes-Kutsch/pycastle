@@ -4366,12 +4366,7 @@ def _seed_improve_progress(worktree_path: Path, phase_id: str) -> None:
 
 
 def _improve_restart_git_svc():
-    """Git service for improve-restart tests.
-
-    Sets remove_worktree and list_worktrees as no-ops so that the REUSABLE_SANDBOX
-    lifecycle's _cleanup_stale_named_worktree call does not delete pre-seeded session
-    files. create_worktree uses exist_ok so the seeded session directory survives.
-    """
+    # No-ops remove_worktree/list_worktrees so REUSABLE_SANDBOX cleanup doesn't delete pre-seeded session files.
     svc = functional_git_svc()
     svc.get_head_sha.return_value = "abc123"
     svc.is_working_tree_clean.return_value = True
