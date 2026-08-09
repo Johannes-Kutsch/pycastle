@@ -228,7 +228,7 @@ class ImproveNoCandidate:
 
 @dataclass(frozen=True)
 class ImproveContinue:
-    pass
+    completed: bool = True
 
 
 class _ImproveDeps(Protocol):
@@ -315,7 +315,7 @@ async def improve_phase(
                     )
                     role_session.discard()
                     row.close("restarting from phase 1")
-                    return ImproveContinue()
+                    return ImproveContinue(completed=False)
 
             role_session.write_fingerprint(fingerprint)
 
