@@ -26,6 +26,7 @@ _HTTP_TOO_MANY_REQUESTS = 429
 _HTTP_SERVER_ERROR_MIN = 500
 _HTTP_SERVER_ERROR_MAX = 599
 _HTTP_FORBIDDEN = 403
+_HTTP_UNPROCESSABLE = 422
 _RECENT_PRD_PAGE_SIZE = 12
 
 
@@ -501,6 +502,17 @@ class GithubService:
             return []
         items = payload.get("items") or []
         return [int(item["number"]) for item in items if "number" in item]
+
+    def add_issue_dependency(self, child_number: int, blocker_database_id: int) -> None:
+        try:
+            self._request(
+                "POST",
+                f"/repos/{self.repo}/issues/{child_number}/issue_dependencies",
+                data={"blocked_by_id": blocker_database_id},
+            )
+        except GithubAPIError as exc:
+            if exc.status != _HTTP_UNPROCESSABLE:
+                raise
 
     def create_issue_in(
         self, owner_repo: str, title: str, body: str, labels: list[str]
