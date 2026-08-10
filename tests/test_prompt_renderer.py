@@ -84,6 +84,7 @@ def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
         "OUTPUT": "boom",
         "EVIDENCE_PATH": ".pycastle/failure-report-evidence/agent-invocation.log",
         "HAS_EVIDENCE_PATH": "yes",
+        "CANDIDATE_BUDGET": "3",
         "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
         "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
         "SESSION_DIR": "/sessions/abc",
@@ -277,7 +278,9 @@ def test_scope_host_check_placeholders():
 
 
 def test_scope_improve_scan_placeholders():
-    assert Scope.IMPROVE_SCAN.placeholders == frozenset({"RECENT_IMPROVE_PRD_TITLES"})
+    assert Scope.IMPROVE_SCAN.placeholders == frozenset(
+        {"RECENT_IMPROVE_PRD_TITLES", "CANDIDATE_BUDGET"}
+    )
 
 
 def test_scope_improve_session_placeholders():
@@ -604,7 +607,10 @@ def test_render_implementation_standards_available_in_improve_scan(cfg, prompts_
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -621,7 +627,10 @@ def test_render_design_standards_available_in_improve_scan(cfg, prompts_dir):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -640,6 +649,7 @@ def test_render_recent_improve_prd_titles_available_in_improve_scan(cfg, prompts
             PromptTemplate.IMPROVE_SCAN,
             {
                 "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+                "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
         )
@@ -757,7 +767,10 @@ def test_renderer_loads_both_standards_keys(prompts_dir):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -781,7 +794,10 @@ def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -802,7 +818,10 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -865,7 +884,10 @@ def test_renderer_renders_issue_tracker_fragment(prompts_dir):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -1363,7 +1385,10 @@ def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypa
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -1432,6 +1457,7 @@ def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles()
             PromptTemplate.IMPROVE_SCAN,
             {
                 "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+                "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
         )

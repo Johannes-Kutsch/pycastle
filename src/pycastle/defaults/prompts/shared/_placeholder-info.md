@@ -69,6 +69,7 @@ Used by: diagnostics/host-check-issue.md
 
 Used by: improve/01-scan.md
 
+- `{{CANDIDATE_BUDGET}}` — Number of candidates the scan is asked to nominate; the minimum of the configured width and the run's remaining improve budget.
 - `{{RECENT_IMPROVE_PRD_TITLES}}` — Plain-text recent Improve PRD title history for novelty checking, or `No recent improve PRDs found.` when the lookup is empty.
 
 ## Scope: IMPROVE_SESSION

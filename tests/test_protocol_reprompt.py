@@ -75,7 +75,10 @@ _SCOPE_ARGS_BY_TEMPLATE: dict[PromptTemplate, dict[str, str]] = {
     },
     PromptTemplate.IMPROVE_PRD: _IMPROVE_PRD_SCOPE_ARGS,
     PromptTemplate.IMPROVE_NO_CANDIDATE: _IMPROVE_PRD_SCOPE_ARGS,
-    PromptTemplate.IMPROVE_SCAN: {"RECENT_IMPROVE_PRD_TITLES": "[]"},
+    PromptTemplate.IMPROVE_SCAN: {
+        "RECENT_IMPROVE_PRD_TITLES": "[]",
+        "CANDIDATE_BUDGET": "3",
+    },
     PromptTemplate.IMPROVE_ISSUES: {
         "IMPROVE_SHORT_SID": "abc123",
         "ISSUE_NUMBER": "1928",

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import platform
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.session import RunKind
@@ -84,6 +84,39 @@ def build_issue_scope_args(
         "ISSUE_COMMENTS": _format_issue_comments(issue.get("comments") or []),
         **extra_scope_args,
     }
+
+
+def compute_candidate_budget(
+    *,
+    candidates_per_scan: int,
+    improve_max: int | None,
+    dispatched: int,
+) -> int:
+    if improve_max is None:
+        return candidates_per_scan
+    return min(candidates_per_scan, improve_max - dispatched)
+
+
+def build_improve_scan_scope_args(
+    *,
+    recent_prds: list[dict[str, Any]],
+    candidate_budget: int,
+) -> dict[str, str]:
+    return validated_scope_args_for_template(
+        PromptTemplate.IMPROVE_SCAN,
+        {
+            "CANDIDATE_BUDGET": str(candidate_budget),
+            "RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds(recent_prds),
+        },
+    )
+
+
+def _format_recent_improve_prds(recent_prds: list[dict[str, Any]]) -> str:
+    if not recent_prds:
+        return "No recent improve PRDs found."
+    return "\n".join(
+        f"#{prd['number']} {prd['state']} - {prd['title']}" for prd in recent_prds
+    )
 
 
 def build_per_issue_scope_args(

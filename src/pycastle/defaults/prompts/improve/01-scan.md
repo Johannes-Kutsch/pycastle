@@ -2,7 +2,7 @@
 
 You are the Improve Agent — Phase 1: Scan and Pick.
 
-Surface architectural friction in this codebase and pick **one** deepening opportunity that is safe to implement autonomously. The aim is testability and AI-navigability.
+Surface architectural friction in this codebase and nominate up to **{{CANDIDATE_BUDGET}}** deepening opportunities that are safe to implement autonomously. The aim is testability and AI-navigability.
 
 </task>
 

@@ -10,12 +10,14 @@ from pycastle.prompts.scope_args import (
     build_divergence_scope_args,
     build_failure_report_scope_args,
     build_host_check_scope_args,
+    build_improve_scan_scope_args,
     build_interrupted_work_clause,
     build_issue_scope_args,
     build_merge_scope_args,
     build_per_issue_scope_args,
     build_plan_scope_args,
     build_preflight_scope_args,
+    compute_candidate_budget,
     validated_scope_args_for_scope,
     validated_scope_args_for_template,
 )
@@ -195,6 +197,35 @@ def test_build_per_issue_scope_args_builds_exact_renderable_per_issue_args():
         "INTERRUPTED_WORK": build_interrupted_work_clause(RunKind.FRESH, is_dirty=True),
         "OPERATING_BRANCH": "main",
     }
+
+
+def test_build_improve_scan_scope_args_includes_candidate_budget():
+    result = build_improve_scan_scope_args(recent_prds=[], candidate_budget=7)
+    assert result["CANDIDATE_BUDGET"] == "7"
+    assert validated_scope_args_for_scope(Scope.IMPROVE_SCAN, result) is result
+
+
+def test_compute_candidate_budget_returns_width_when_no_cap():
+    assert (
+        compute_candidate_budget(
+            candidates_per_scan=5, improve_max=None, dispatched=100
+        )
+        == 5
+    )
+
+
+def test_compute_candidate_budget_clamps_to_remaining_when_remaining_smaller_than_width():
+    assert (
+        compute_candidate_budget(candidates_per_scan=5, improve_max=8, dispatched=6)
+        == 2
+    )
+
+
+def test_compute_candidate_budget_returns_width_when_remaining_exceeds_width():
+    assert (
+        compute_candidate_budget(candidates_per_scan=3, improve_max=10, dispatched=5)
+        == 3
+    )
 
 
 def test_build_issue_scope_args_normalizes_missing_body_and_comments_to_empty():

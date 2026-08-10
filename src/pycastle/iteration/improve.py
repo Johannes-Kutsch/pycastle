@@ -28,6 +28,7 @@ from pycastle.managed_worktree_mount_policy import (
     should_reject_managed_worktree_mount,
 )
 from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.scope_args import compute_candidate_budget
 from pycastle.runtime_session import session_uuid
 from pycastle.services import GitService, ServiceRegistry
 from pycastle.services.github_service import GithubService
@@ -319,11 +320,17 @@ async def improve_phase(
 
             role_session.write_fingerprint(fingerprint)
 
+            candidate_budget = compute_candidate_budget(
+                candidates_per_scan=deps.cfg.improve_candidates_per_scan,
+                improve_max=deps.cfg.improve_max,
+                dispatched=deps.improve_dispatched_count,
+            )
             while step is not None:
                 prepared_step = prepare_improve_step(
                     step,
                     github_port=deps.github_svc,
                     short_sid=short_sid,
+                    candidate_budget=candidate_budget,
                 )
                 mount_decision = decide_managed_worktree_mount(
                     repo_root=deps.repo_root,

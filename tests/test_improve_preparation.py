@@ -60,6 +60,7 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
         short_sid="abcd1234",
         prd_number=None,
         github_port=github_port,
+        candidate_budget=3,
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
@@ -68,7 +69,8 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
     assert prepared.work_body == "picking an improvement"
     assert prepared.prompt.send_role_prompt_on_resume is False
     assert prepared.prompt.scope_args == {
-        "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate"
+        "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+        "CANDIDATE_BUDGET": "3",
     }
     assert github_port.recent_prd_calls == 1
 
@@ -268,6 +270,7 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
         short_sid="abcd1234",
         prd_number=None,
         github_port=github_port,
+        candidate_budget=2,
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
@@ -276,7 +279,8 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
     assert prepared.work_body == "picking an improvement"
     assert prepared.prompt.send_role_prompt_on_resume is False
     assert prepared.prompt.scope_args == {
-        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."
+        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+        "CANDIDATE_BUDGET": "2",
     }
     assert github_port.recent_prd_calls == 0
 

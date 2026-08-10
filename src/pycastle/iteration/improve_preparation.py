@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
-from pycastle.prompts.pipeline import PromptTemplate, Scope
+from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.scope_args import (
+    build_improve_scan_scope_args,
     build_issue_scope_args,
     validated_scope_args_for_template,
 )
@@ -63,6 +64,7 @@ class ImproveStepPreparationRequest:
     required only when preparing `PromptTemplate.IMPROVE_ISSUES`; `None`
     preserves the current empty-placeholder fallback. `fetch_recent_prd_titles`
     preserves the existing scan-step retry behavior that skips the GitHub read.
+    `candidate_budget` is required when preparing `PromptTemplate.IMPROVE_SCAN`.
     """
 
     prompt_template: PromptTemplate
@@ -73,6 +75,7 @@ class ImproveStepPreparationRequest:
     short_sid: str
     prd_number: int | None
     fetch_recent_prd_titles: bool = False
+    candidate_budget: int | None = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +92,7 @@ def prepare_improve_step(
     github_port: ImprovePreparationGithubPort,
     short_sid: str | None = None,
     prd_number: int | None = None,
+    candidate_budget: int | None = None,
 ) -> PreparedImproveStep:
     """Prepare the exact `RunRequest` payload for one Improve step.
 
@@ -99,7 +103,10 @@ def prepare_improve_step(
     """
 
     request = _coerce_request(
-        request_or_step, short_sid=short_sid, prd_number=prd_number
+        request_or_step,
+        short_sid=short_sid,
+        prd_number=prd_number,
+        candidate_budget=candidate_budget,
     )
     scope_args = _build_scope_args(request, github_port=github_port)
     return PreparedImproveStep(
@@ -119,6 +126,7 @@ def _coerce_request(
     *,
     short_sid: str | None,
     prd_number: int | None,
+    candidate_budget: int | None,
 ) -> ImproveStepPreparationRequest:
     if isinstance(request_or_step, ImproveStepPreparationRequest):
         return request_or_step
@@ -135,6 +143,7 @@ def _coerce_request(
         short_sid=short_sid,
         prd_number=step.prd_number if prd_number is None else prd_number,
         fetch_recent_prd_titles=step.fetch_recent_prd_titles,
+        candidate_budget=candidate_budget,
     )
 
 
@@ -146,13 +155,25 @@ def _build_scope_args(
     if request.fetch_recent_prd_titles:
         return _build_improve_scope_args(request, github_port=github_port)
     if request.prompt_template.scope is Scope.IMPROVE_SCAN:
-        return _validated_recent_prd_title_scope_args(
-            request.prompt_template,
-            recent_prds=[],
-        )
+        return _build_scan_scope_args(request, recent_prds=[])
     if request.prompt_template.scope in (Scope.IMPROVE_ISSUES, Scope.IMPROVE_SESSION):
         return _build_improve_scope_args(request, github_port=github_port)
     return {}
+
+
+def _build_scan_scope_args(
+    request: ImproveStepPreparationRequest,
+    *,
+    recent_prds: list[dict[str, Any]],
+) -> dict[str, str]:
+    if request.candidate_budget is None:
+        raise PromptRenderError(
+            "candidate_budget is required to render the improve scan prompt"
+        )
+    return build_improve_scan_scope_args(
+        recent_prds=recent_prds,
+        candidate_budget=request.candidate_budget,
+    )
 
 
 def _build_improve_scope_args(
@@ -162,8 +183,8 @@ def _build_improve_scope_args(
 ) -> dict[str, str]:
     template = request.prompt_template
     if template is PromptTemplate.IMPROVE_SCAN:
-        return _validated_recent_prd_title_scope_args(
-            template,
+        return _build_scan_scope_args(
+            request,
             recent_prds=github_port.get_recent_improve_prds(),
         )
 
@@ -203,17 +224,6 @@ def _build_improve_scope_args(
         )
 
     raise TypeError(f"unsupported Improve template: {template.name}")
-
-
-def _validated_recent_prd_title_scope_args(
-    template: PromptTemplate,
-    *,
-    recent_prds: list[dict[str, Any]],
-) -> dict[str, str]:
-    return validated_scope_args_for_template(
-        template,
-        {"RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds(recent_prds)},
-    )
 
 
 def _format_recent_improve_prds(recent_prds: list[dict[str, Any]]) -> str:
