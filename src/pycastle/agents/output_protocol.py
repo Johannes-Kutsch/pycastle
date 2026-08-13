@@ -45,6 +45,18 @@ class NoCandidateOutput:
 
 
 @dataclasses.dataclass(frozen=True)
+class ScanCandidateItem:
+    rank: int
+    title: str
+    summary: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class ScanCandidatesOutput:
+    candidates: tuple[ScanCandidateItem, ...]
+
+
+@dataclasses.dataclass(frozen=True)
 class BehaviorOutput:
     name: str
     observable_surface: str
@@ -68,6 +80,7 @@ type AgentOutput = (
     | IssueOutput
     | CompletionOutput
     | NoCandidateOutput
+    | ScanCandidatesOutput
     | CommitMessageOutput
     | FailedOutput
 )
@@ -77,6 +90,7 @@ type AgentSuccessOutput = (
     | IssueOutput
     | CompletionOutput
     | NoCandidateOutput
+    | ScanCandidatesOutput
     | CommitMessageOutput
 )
 
@@ -94,6 +108,10 @@ class IssueParseError(AgentOutputProtocolError):
 
 
 class PromiseParseError(AgentOutputProtocolError):
+    pass
+
+
+class CandidatesParseError(AgentOutputProtocolError):
     pass
 
 
@@ -284,6 +302,34 @@ def _extract_issue_numbers(text: str) -> tuple[int, ...]:
     return tuple(int(m.group(1)) for m in _ISSUE_NUMBER_RE.finditer(text))
 
 
+def _parse_candidates_body(body: str) -> ScanCandidatesOutput:
+    try:
+        data = json.loads(_strip_markdown_fence(body))
+    except json.JSONDecodeError as exc:
+        raise CandidatesParseError(
+            f"Malformed JSON inside <candidates> tag: {exc}"
+        ) from exc
+    if not isinstance(data, list):
+        raise CandidatesParseError(
+            f"<candidates> JSON must be an array, got {type(data).__name__}."
+        )
+    if len(data) == 0:
+        raise CandidatesParseError("<candidates> array must not be empty.")
+    items: list[ScanCandidateItem] = []
+    for entry in data:
+        try:
+            rank = int(entry["rank"])
+            title = str(entry["title"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise CandidatesParseError(
+                f"<candidates> entry has unexpected structure: {exc}"
+            ) from exc
+        summary_raw = entry.get("summary")
+        summary = str(summary_raw) if summary_raw is not None else None
+        items.append(ScanCandidateItem(rank=rank, title=title, summary=summary))
+    return ScanCandidatesOutput(candidates=tuple(items))
+
+
 def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
     # Phase 02 (PRD) emits a JSON-form <issue>; phase 03 emits bare integers.
     try:
@@ -367,6 +413,12 @@ class _ImproveHandler:
         if extract_promise(turn, _NO_CANDIDATE) is not None:
             return NoCandidateOutput()
         if extract_promise(turn, _COMPLETE) is not None:
+            candidates_body = _last_tag_block(turn, "candidates")
+            if candidates_body is not None:
+                try:
+                    return _parse_candidates_body(candidates_body)
+                except CandidatesParseError:
+                    return None
             return _extract_improve_output(turn)
         return None
 
@@ -376,6 +428,9 @@ class _ImproveHandler:
         sentinel = extract_promise_or_raise(text, _COMPLETE_OR_NO_CANDIDATE, tail)
         if sentinel == "NO-CANDIDATE":
             return NoCandidateOutput()
+        candidates_body = _last_tag_block(text, "candidates")
+        if candidates_body is not None:
+            return _parse_candidates_body(candidates_body)
         return _extract_improve_output(text)
 
 

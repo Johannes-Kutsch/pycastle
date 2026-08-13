@@ -1776,7 +1776,7 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
 @pytest.mark.parametrize(
     ("template", "expected_fragment"),
     [
-        (PromptTemplate.IMPROVE_SCAN, "Emit `<promise>COMPLETE</promise>`"),
+        (PromptTemplate.IMPROVE_SCAN, "<candidates>"),
         (
             PromptTemplate.IMPROVE_PRD,
             'Output the filed issue as `<issue>{"number": N, "labels": []}</issue>`',

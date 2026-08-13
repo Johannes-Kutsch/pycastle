@@ -22,6 +22,8 @@ from pycastle.agents.output_protocol import (
     NoCandidateOutput,
     PlannerOutput,
     PromiseParseError,
+    ScanCandidateItem,
+    ScanCandidatesOutput,
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config, StageOverride
@@ -86,6 +88,13 @@ def _make_agent_failed_error(role: AgentRole, worktree_path: Path) -> AgentFaile
         worktree_path=worktree_path,
         namespace="",
         failure_class="",
+    )
+
+
+def _scan_out() -> ScanCandidatesOutput:
+    """Minimal valid scan output for use in tests."""
+    return ScanCandidatesOutput(
+        candidates=(ScanCandidateItem(rank=1, title="Candidate"),)
     )
 
 
@@ -1101,6 +1110,8 @@ def test_run_iteration_improve_chains_into_planning_on_success(
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([filed_issue])
+        if request.name == "Scan Agent":
+            return _scan_out()
         return CompletionOutput()
 
     deps = dataclasses.replace(
@@ -2263,7 +2274,7 @@ def test_run_iteration_endless_dispatches_improve_when_idle(tmp_path, git_svc, l
         logger,
         improve_mode="endless",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[_scan_out(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
@@ -2297,7 +2308,7 @@ def test_run_iteration_until_sleep_resumes_interrupted_cycle_when_slept(
         logger,
         improve_mode="until_sleep",
         slept_once=True,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[_scan_out(), CompletionOutput(), CompletionOutput()],
     )
     deps.improve_cycle_interrupted = True
 
@@ -2321,7 +2332,7 @@ def test_run_iteration_until_sleep_dispatches_improve_before_first_sleep(
         logger,
         improve_mode="until_sleep",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[_scan_out(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
@@ -2337,7 +2348,7 @@ def test_run_iteration_endless_dispatches_improve_even_after_sleep(
         logger,
         improve_mode="endless",
         slept_once=True,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[_scan_out(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
@@ -2406,7 +2417,7 @@ def test_run_iteration_successful_improve_still_returns_continue(
         logger,
         improve_mode="endless",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[_scan_out(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
@@ -2423,7 +2434,7 @@ def test_run_iteration_improve_dispatch_runs_preflight_checks_with_no_open_issue
         logger,
         improve_mode="endless",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[_scan_out(), CompletionOutput(), CompletionOutput()],
     )
     asyncio.run(run_iteration(deps))
 
@@ -2443,7 +2454,7 @@ def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger
         logger,
         improve_mode="endless",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[_scan_out(), CompletionOutput(), CompletionOutput()],
     )
     asyncio.run(run_iteration(deps))
 
@@ -4218,6 +4229,8 @@ def test_improve_continue_increments_dispatched_count_by_one(tmp_path, git_svc, 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([filed_issue])
+        if request.name == "Scan Agent":
+            return _scan_out()
         return CompletionOutput()
 
     deps = dataclasses.replace(

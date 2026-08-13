@@ -13,6 +13,8 @@ from pycastle.agents.output_protocol import (
     IssueOutput,
     PlannerOutput,
     PromiseParseError,
+    ScanCandidateItem,
+    ScanCandidatesOutput,
 )
 from pycastle.agents.runner import RunRequest
 from pycastle.config import StageOverride
@@ -57,6 +59,13 @@ if TYPE_CHECKING:
     from pycastle.services.runtime_services import AgentService
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _scan_out() -> ScanCandidatesOutput:
+    """Minimal valid scan output for use in tests."""
+    return ScanCandidatesOutput(
+        candidates=(ScanCandidateItem(rank=1, title="Candidate"),)
+    )
 
 
 def _plan_output(issues: list[dict]) -> PlannerOutput:
@@ -1676,7 +1685,7 @@ def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
             scan_call_count += 1
             if scan_call_count == 1:
                 raise UsageLimitError(reset_time=None)
-            return CompletionOutput()
+            return _scan_out()
         return CompletionOutput()
 
     with patch("time.sleep"):
@@ -2841,7 +2850,7 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if "Scan Agent" in request.name:
-            return IssueOutput(number=5, labels=[])  # 01-scan picks a candidate
+            return _scan_out()  # 01-scan nominates candidates
         if "PRD Agent" in request.name:
             return IssueOutput(number=5, labels=[])  # 02-prd
         if "Slice Agent" in request.name:

@@ -1,8 +1,8 @@
 <task>
 
-You are the Improve Agent — Phase 1: Scan and Pick.
+You are the Improve Agent — Phase 1: Scan and Nominate.
 
-Surface architectural friction in this codebase and pick **one** deepening opportunity that is safe to implement autonomously. The aim is testability and AI-navigability.
+Surface architectural friction in this codebase and nominate up to **three** deepening opportunities that are safe to implement autonomously, ordered from strongest to weakest. The aim is testability and AI-navigability.
 
 </task>
 
@@ -10,7 +10,7 @@ Surface architectural friction in this codebase and pick **one** deepening oppor
 
 ## Safety net
 
-You must NOT modify any files in the worktree. Your only output for this phase is the conversation itself — the picked candidate, its justification, and a final `<promise>` tag.
+You must NOT modify any files in the worktree. Your only output for this phase is the conversation itself — your ranked candidates with their justifications, and a final `<candidates>` block followed by a `<promise>` tag.
 
 ## Glossary
 
@@ -92,14 +92,14 @@ Walk the design tree for your top candidate:
 - The shape of the deepened module (interface, what sits behind the seam)
 - Which existing tests survive the change, which become waste
 
-### 4. Pick
+### 4. Rank
 
-After grilling, answer the following four questions explicitly:
+After grilling, produce an ordered list of candidates by strength. For each candidate you keep, answer:
 
-1. Why this pick over each rejected candidate?
-2. What was the strongest runner-up among reversible options, and why this one?
-3. What is closest to front-facing functionality and why is it still safe?
-4. What is the strongest argument *against* the pick?
+1. Why this candidate over those ranked below it?
+2. What is the strongest argument *against* this candidate?
+
+Do not pad the list: return only candidates you genuinely believe are worth pursuing. Fewer strong candidates beat more weak ones.
 
 </workflow>
 
