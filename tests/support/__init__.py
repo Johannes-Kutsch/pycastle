@@ -5,6 +5,7 @@ from tests.support.iteration import (
     StubPreflightCache,
     _make_deps,
     functional_git_svc,
+    make_scan_output,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "StubPreflightCache",
     "_make_deps",
     "functional_git_svc",
+    "make_scan_output",
 ]

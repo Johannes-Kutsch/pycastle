@@ -51,6 +51,7 @@ from tests.support import (
     RecordingStatusDisplay,
     _make_deps,
     functional_git_svc,
+    make_scan_output,
 )
 
 if TYPE_CHECKING:
@@ -1676,7 +1677,7 @@ def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
             scan_call_count += 1
             if scan_call_count == 1:
                 raise UsageLimitError(reset_time=None)
-            return CompletionOutput()
+            return make_scan_output()
         return CompletionOutput()
 
     with patch("time.sleep"):
@@ -2841,7 +2842,7 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
 
     async def _fake_run_agent(request: RunRequest):
         if "Scan Agent" in request.name:
-            return IssueOutput(number=5, labels=[])  # 01-scan picks a candidate
+            return make_scan_output()  # 01-scan nominates candidates
         if "PRD Agent" in request.name:
             return IssueOutput(number=5, labels=[])  # 02-prd
         if "Slice Agent" in request.name:

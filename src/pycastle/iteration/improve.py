@@ -4,9 +4,11 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from pycastle.agents.output_protocol import (
     AgentOutput,
+    AgentOutputProtocolError,
     AgentRole,
     IssueOutput,
     NoCandidateOutput,
+    ScanCandidatesOutput,
 )
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
 from pycastle.config import Config
@@ -361,6 +363,14 @@ async def improve_phase(
                         preserve_session_on_completion=True,
                     )
                 )
+                if step.prompt_key == "01-scan.md" and not isinstance(
+                    output, (ScanCandidatesOutput, NoCandidateOutput)
+                ):
+                    raise AgentOutputProtocolError(
+                        f"Scan phase completed without a <candidates> block. "
+                        f"Expected ScanCandidatesOutput or NoCandidateOutput, "
+                        f"got {type(output).__name__}."
+                    )
                 driver.record_outcome(step, output)
                 step = driver.next()
 
