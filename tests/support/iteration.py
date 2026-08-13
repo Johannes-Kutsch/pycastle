@@ -7,7 +7,12 @@ from unittest.mock import MagicMock
 
 from agent_runtime.errors import HardAgentError
 
-from pycastle.agents.output_protocol import AgentOutput, AgentSuccessOutput
+from pycastle.agents.output_protocol import (
+    AgentOutput,
+    AgentSuccessOutput,
+    ScanCandidateItem,
+    ScanCandidatesOutput,
+)
 from pycastle.agents.runner import (
     AgentRunnerProtocol,
     RunRequest,
@@ -100,6 +105,13 @@ class RecordingStatusDisplay:
 
     def print(self, caller: str, message: object, style: str | None = None) -> None:
         self.calls.append(("print", caller, message, style))
+
+
+def make_scan_output() -> ScanCandidatesOutput:
+    """Minimal valid scan output for use in tests."""
+    return ScanCandidatesOutput(
+        candidates=(ScanCandidateItem(rank=1, title="Candidate"),)
+    )
 
 
 class FakeAgentRunner:

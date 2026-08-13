@@ -32,14 +32,12 @@ from pycastle.session.service_session_store import (
     save_service_session_id,
     save_service_session_metadata,
 )
-from tests.support import FakeAgentRunner, _make_deps, functional_git_svc
-
-
-def _scan_out() -> ScanCandidatesOutput:
-    """Minimal valid scan output for use in tests."""
-    return ScanCandidatesOutput(
-        candidates=(ScanCandidateItem(rank=1, title="Candidate"),)
-    )
+from tests.support import (
+    FakeAgentRunner,
+    _make_deps,
+    functional_git_svc,
+    make_scan_output,
+)
 
 
 @pytest.fixture
@@ -58,7 +56,7 @@ def git_svc(tmp_path):
 def agent_runner():
     # Happy path: 01-scan → 02-prd → 03-issues → terminal (3 calls)
     return FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
 
@@ -110,7 +108,7 @@ def test_improve_phase_creates_worktree_on_improve_sandbox_branch(deps, git_svc)
 
 def test_improve_phase_uses_improve_override_service(tmp_path, git_svc):
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
@@ -157,7 +155,7 @@ def test_improve_phase_dispatches_per_phase_display(
     if template == PromptTemplate.IMPROVE_NO_CANDIDATE:
         outputs = [NoCandidateOutput(), CompletionOutput()]
     else:
-        outputs = [_scan_out(), CompletionOutput(), CompletionOutput()]
+        outputs = [make_scan_output(), CompletionOutput(), CompletionOutput()]
     runner = FakeAgentRunner(outputs, preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -199,7 +197,7 @@ def test_improve_phase_removes_session_on_terminal_success(tmp_path, git_svc):
     removed outright to let managed_worktree's teardown predicate fire.
     """
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
@@ -254,7 +252,7 @@ def test_improve_phase_dispatches_prd_step_with_expected_work_body(tmp_path, git
         {"number": 11, "state": "CLOSED", "title": "Second candidate"},
     ]
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
@@ -273,7 +271,7 @@ def test_improve_phase_still_dispatches_prd_step_when_recent_prd_history_is_empt
     github_svc = MagicMock()
     github_svc.get_recent_improve_prds.return_value = []
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
@@ -308,7 +306,7 @@ def test_improve_phase_propagates_prd_preparation_lookup_failures_after_scan(
         [{"number": 12, "state": "OPEN", "title": "First candidate"}],
         GithubNetworkError("transport error", cause=RuntimeError("boom")),
     ]
-    runner = FakeAgentRunner([_scan_out()], preflight_responses=[[]])
+    runner = FakeAgentRunner([make_scan_output()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
     with pytest.raises(GithubNetworkError):
@@ -550,7 +548,7 @@ def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_
     assert runner.calls == []
 
     follow_up = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     follow_up_deps = _make_deps(tmp_path, follow_up, git_svc=git_svc)
@@ -610,7 +608,7 @@ def test_improve_orphan_reset_when_prd_done_but_no_in_flight(tmp_path, git_svc):
     """Progress='02-prd' without in-flight='03-issues' restarts at 01-scan."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     _seed_progress(wt, "02-prd")
@@ -762,7 +760,7 @@ def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
         "corrupted-data", encoding="utf-8"
     )
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
@@ -775,7 +773,7 @@ def test_improve_fresh_run_on_empty_progress_file(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "")
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
@@ -788,7 +786,7 @@ def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_progress(wt, "\n  \t  \n")
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
@@ -913,7 +911,7 @@ def test_fingerprint_gate_discards_session_when_safe_sha_changes(tmp_path, git_s
     (role_session_dir / "_fingerprint").write_text("old-sha-xyz", encoding="utf-8")
 
     runner = FakeAgentRunner(
-        [_scan_out(), CompletionOutput(), CompletionOutput()],
+        [make_scan_output(), CompletionOutput(), CompletionOutput()],
         preflight_responses=[[]],
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
@@ -959,8 +957,6 @@ def test_scan_without_candidates_block_raises_protocol_error(tmp_path, git_svc):
 
 def test_scan_returning_candidates_output_continues_to_phase_2(tmp_path, git_svc):
     """Scan returning ScanCandidatesOutput proceeds normally to phase 2."""
-    from pycastle.agents.output_protocol import ScanCandidateItem
-
     candidates = ScanCandidatesOutput(
         candidates=(ScanCandidateItem(rank=1, title="Refactor seam"),)
     )
