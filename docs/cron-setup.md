@@ -163,8 +163,8 @@ For repos you're actively developing, edit `pycastle/config.py`:
 
 ```python
 improve_mode = "until_sleep"  # or "endless"
-improve_max = 1              # cap on completed improvements per run
-improve_candidates_per_scan = 3  # candidates one scan nominates; improve_max clamps how many complete
+improve_max = 1  # cap on completed improvements per run
+improve_candidates_per_scan = 3  # scan width; improve_max clamps how many complete
 ```
 
 The daily cron tick will then dispatch the improve agent automatically when no issues are ready. The `--improve` CLI flag still works for ad-hoc manual runs and overrides this default.
