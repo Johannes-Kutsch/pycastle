@@ -13,7 +13,7 @@ from pycastle.iteration.improve_preparation import (
     ImproveStepPreparationRequest,
     prepare_improve_step,
 )
-from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate
 from pycastle.services import GithubNetworkError
 
 
@@ -475,6 +475,23 @@ def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
         )
 
     assert exc_info.value is error
+
+
+def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render(
+    tmp_path: Path,
+):
+    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
+    step = driver.start()
+    assert step is not None
+    github_port = _GithubPortStandIn()
+
+    with pytest.raises(PromptRenderError):
+        prepare_improve_step(
+            step,
+            short_sid="abcd1234",
+            prd_number=None,
+            github_port=github_port,
+        )
 
 
 def test_prepare_improve_step_propagates_issue_read_failures():
