@@ -46,7 +46,7 @@ Issues absent from both lists have already been completed. Do not treat absent i
 **Parent PRDs and their implementation issues form a unit.** An implementation issue declares its parent PRD with a `## Parent` heading followed by `#N` near the top of its body. The relationship has two consequences:
 
 - The parent PRD cannot be worked on while any implementation child is open.
-- An implementation child is **not** blocked by its parent PRD — the PRD's role is complete once the child carries the spec forward.
+- An implementation child is **not** blocked by its **own** parent PRD — the PRD's role is complete once the child carries the spec forward. A blocking edge onto any *other* PRD remains in force.
 
 ## Conflict avoidance
 

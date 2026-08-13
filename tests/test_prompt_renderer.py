@@ -1479,6 +1479,51 @@ def test_shipped_templates_render_without_unresolved_placeholders():
         )
 
 
+# ── Shipped plan prompt: parent PRD blocker scoping ─────────────────────────
+
+
+def test_rendered_plan_prompt_scopes_parent_prd_exception_to_own_parent():
+    """The plan prompt must scope the unblocking exception to the slice's own parent PRD."""
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    result = _run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"},
+            _noop_exec,
+        )
+    )
+
+    assert "its **own** parent PRD" in result
+
+
+def test_rendered_plan_prompt_states_other_prd_blockers_remain_in_force():
+    """The plan prompt must explicitly state that other PRD blocking edges stay in force."""
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    result = _run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"},
+            _noop_exec,
+        )
+    )
+
+    assert "blocking edge onto any *other* PRD remains in force" in result
+
+
+def test_rendered_plan_prompt_retains_parent_cannot_be_worked_rule():
+    """The parent/child unit rule must remain: parent cannot be worked while child is open."""
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    result = _run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"},
+            _noop_exec,
+        )
+    )
+
+    assert "parent PRD cannot be worked" in result
+
+
 # ── Template shell expression tests ──────────────────────────────────────────
 
 
