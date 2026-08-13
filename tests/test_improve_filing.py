@@ -1,5 +1,7 @@
 """Tests for file_draft_set — two-stage commit of a validated draft set."""
 
+import json
+import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, call
 
@@ -246,8 +248,6 @@ def test_failure_after_spec_leaves_record_with_spec_and_no_label(
     record_file = tmp_path / "_candidate_record"
     assert record_file.is_file()
 
-    import json
-
     data = json.loads(record_file.read_text(encoding="utf-8"))
     assert data["spec_number"] == 100
     assert data["labels_applied"] is False
@@ -339,8 +339,6 @@ def test_candidate_record_survives_nested_dir_removal(
     tmp_path: Path, port: MagicMock
 ) -> None:
     """The record at role_dir is not affected when a sub-directory is removed."""
-    import shutil
-
     role_dir = tmp_path / "improve"
     namespace_dir = role_dir / "main"
     namespace_dir.mkdir(parents=True, exist_ok=True)
@@ -353,3 +351,59 @@ def test_candidate_record_survives_nested_dir_removal(
 
     record_file = role_dir / "_candidate_record"
     assert record_file.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Edge cases
+# ---------------------------------------------------------------------------
+
+
+def test_empty_drafts_is_no_op(tmp_path: Path) -> None:
+    port = MagicMock(spec=FilingPort)
+
+    file_draft_set([], port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    port.create_issue.assert_not_called()
+    port.apply_label.assert_not_called()
+
+
+def test_spec_only_draft_gets_state_label_applied(tmp_path: Path) -> None:
+    port = MagicMock(spec=FilingPort)
+    port.create_issue.side_effect = [(100, 1000)]
+
+    file_draft_set([_spec()], port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    port.create_issue.assert_called_once()
+    assert _STATE_LABEL not in port.create_issue.call_args.args[2]
+    port.apply_label.assert_called_once_with(100, _STATE_LABEL)
+    port.register_sub_issue.assert_not_called()
+
+
+def test_full_resume_with_labels_pending_only_applies_labels(tmp_path: Path) -> None:
+    """When all issues are already filed but labels not yet applied, only apply_label runs."""
+    port_first = MagicMock(spec=FilingPort)
+    port_first.create_issue.side_effect = [(100, 1000), (101, 1001)]
+    port_first.apply_label.side_effect = RuntimeError("network failure during label")
+
+    drafts = [_spec(), _slice("01-foo")]
+
+    with pytest.raises(RuntimeError, match="network failure during label"):
+        file_draft_set(
+            drafts, port=port_first, role_dir=tmp_path, state_label=_STATE_LABEL
+        )
+
+    # Record has both issues filed; labels_applied still False
+    data = json.loads((tmp_path / "_candidate_record").read_text(encoding="utf-8"))
+    assert data["spec_number"] == 100
+    assert len(data["filed_slices"]) == 1
+    assert data["labels_applied"] is False
+
+    port_second = MagicMock(spec=FilingPort)
+
+    file_draft_set(
+        drafts, port=port_second, role_dir=tmp_path, state_label=_STATE_LABEL
+    )
+
+    port_second.create_issue.assert_not_called()
+    applied_numbers = {c.args[0] for c in port_second.apply_label.call_args_list}
+    assert applied_numbers == {100, 101}
