@@ -95,10 +95,14 @@ def _body_with_blockers(
     base_body: str,
     blocked_by: list[str],
     handle_to_filed: dict[str, _FiledIssue],
+    extra_blocker_numbers: list[int] | None = None,
 ) -> str:
-    if not blocked_by:
+    intra = [f"#{handle_to_filed[h].number}" for h in blocked_by]
+    extra = [f"#{n}" for n in (extra_blocker_numbers or [])]
+    all_refs = intra + extra
+    if not all_refs:
         return base_body
-    refs = ", ".join(f"#{handle_to_filed[h].number}" for h in blocked_by)
+    refs = ", ".join(all_refs)
     return base_body.rstrip() + f"\n\nBlocked by {refs}"
 
 
@@ -112,6 +116,7 @@ def file_draft_set(
     port: FilingPort,
     role_dir: Path,
     state_label: str,
+    prev_spec: tuple[int, int] | None = None,
 ) -> None:
     """File a validated draft set as a two-stage commit.
 
@@ -169,8 +174,9 @@ def file_draft_set(
             continue
 
         slice_labels = _strip_state_label(slice_draft.labels, state_label)
+        extra = [prev_spec[0]] if prev_spec is not None else []
         body = _body_with_blockers(
-            slice_draft.body, slice_draft.blocked_by, handle_to_filed
+            slice_draft.body, slice_draft.blocked_by, handle_to_filed, extra
         )
         slice_number, slice_db_id = port.create_issue(
             slice_draft.title, body, slice_labels
@@ -182,6 +188,8 @@ def file_draft_set(
             port.add_issue_dependency(
                 slice_number, handle_to_filed[blocker_handle].database_id
             )
+        if prev_spec is not None:
+            port.add_issue_dependency(slice_number, prev_spec[1])
 
         slice_filed = _FiledIssue(
             handle=slice_draft.handle,
