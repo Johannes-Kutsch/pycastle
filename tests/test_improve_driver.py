@@ -1,5 +1,6 @@
 """Tests for ImprovePhaseDriver at its three-method interface."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -8,8 +9,11 @@ from pycastle.agents.output_protocol import (
     CompletionOutput,
     IssueOutput,
     NoCandidateOutput,
+    ScanCandidateItem,
+    ScanCandidatesOutput,
 )
 from pycastle.iteration.improve import ImprovePhaseDriver
+from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
 from pycastle.prompts.pipeline import PromptTemplate
 
 
@@ -24,11 +28,51 @@ def _make_driver(
     return ImprovePhaseDriver(driver_dir, no_candidate_report=no_candidate_report)
 
 
+def _seed_candidate_list(
+    driver_dir: Path,
+    candidates: list[ScanCandidateItem],
+    *,
+    no_candidate: bool = False,
+    cursor: int = 0,
+) -> None:
+    """Pre-seed the candidate list and cursor to simulate a prior scan."""
+    driver_dir.mkdir(parents=True, exist_ok=True)
+    data: dict = {
+        "candidates": [{"rank": c.rank, "title": c.title} for c in candidates]
+    }
+    if no_candidate:
+        data["no_candidate"] = True
+    (driver_dir / "_candidate_list").write_text(json.dumps(data), encoding="utf-8")
+    (driver_dir / "_candidate_cursor").write_text(str(cursor), encoding="utf-8")
+
+
+def _seed_candidate_record(
+    driver_dir: Path,
+    idx: int,
+    *,
+    prd_number: int | None = None,
+    spec_number: int | None = None,
+    labels_applied: bool = False,
+) -> None:
+    """Pre-seed a per-candidate record."""
+    candidate_dir = driver_dir / "candidates" / str(idx)
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    record = _CandidateRecord(
+        prd_number=prd_number,
+        spec_number=spec_number,
+        spec_database_id=42 if spec_number is not None else None,
+        spec_title="Seeded" if spec_number is not None else "",
+        filed_slices=[],
+        labels_applied=labels_applied,
+    )
+    _save_record(candidate_dir, record)
+
+
 # ── start() sequence ──────────────────────────────────────────────────────────
 
 
 def test_fresh_run_start_returns_scan_step(driver_dir: Path) -> None:
-    """Fresh run (no progress file) starts at 01-scan."""
+    """Fresh run (no candidate list) starts at 01-scan."""
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
@@ -36,34 +80,40 @@ def test_fresh_run_start_returns_scan_step(driver_dir: Path) -> None:
     assert step.cfg.template == PromptTemplate.IMPROVE_SCAN
 
 
-def test_fresh_run_start_returns_none_after_terminal(driver_dir: Path) -> None:
-    """Terminal state (03-issues completed) → start() returns None."""
-    (driver_dir).mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_progress").write_text("03-issues", encoding="utf-8")
+def test_start_returns_none_when_all_candidates_done(driver_dir: Path) -> None:
+    """Cursor past end of candidate list → start() returns None (terminal)."""
+    _seed_candidate_list(
+        driver_dir,
+        [ScanCandidateItem(rank=1, title="A")],
+        cursor=1,  # past end
+    )
     driver = _make_driver(driver_dir)
     assert driver.start() is None
 
 
-# ── happy path: picked → 02-prd → 03-issues ──────────────────────────────────
+# ── happy path: scan → PRD → Issues ──────────────────────────────────────────
 
 
-def test_picked_path_full_sequence(driver_dir: Path) -> None:
-    """Picked path: start=01-scan, record picked, next=02-prd, record, next=03-issues, record, next=None."""
+def test_full_sequence_one_candidate(driver_dir: Path) -> None:
+    """Happy path: start=scan, record scan, next=PRD, record PRD, next=Issues, record, next=None."""
     driver = _make_driver(driver_dir)
 
     step1 = driver.start()
     assert step1 is not None
     assert step1.prompt_key == "01-scan.md"
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1, ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="C"),))
+    )
 
     step2 = driver.next()
     assert step2 is not None
     assert step2.prompt_key == "02-prd.md"
-    driver.record_outcome(step2, CompletionOutput())
+    driver.record_outcome(step2, IssueOutput(number=10, labels=[]))
 
     step3 = driver.next()
     assert step3 is not None
     assert step3.prompt_key == "03-issues.md"
+    assert step3.prd_number == 10
     driver.record_outcome(step3, CompletionOutput())
 
     assert driver.next() is None
@@ -100,103 +150,211 @@ def test_no_candidate_with_report_disabled_is_terminal(driver_dir: Path) -> None
 # ── terminal states ───────────────────────────────────────────────────────────
 
 
-def test_terminal_after_03_issues(driver_dir: Path) -> None:
-    """Resume from 03-issues is immediately terminal."""
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_progress").write_text("03-issues", encoding="utf-8")
+def test_terminal_after_all_candidates_cursor_at_end(driver_dir: Path) -> None:
+    """Cursor at end of candidate list → immediately terminal."""
+    _seed_candidate_list(
+        driver_dir,
+        [ScanCandidateItem(rank=1, title="A"), ScanCandidateItem(rank=2, title="B")],
+        cursor=2,
+    )
     driver = _make_driver(driver_dir)
     assert driver.start() is None
 
 
-def test_terminal_after_04_report(driver_dir: Path) -> None:
-    """Resume from 04-report is immediately terminal."""
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_progress").write_text("04-report", encoding="utf-8")
+def test_terminal_after_no_candidate_report_done(driver_dir: Path) -> None:
+    """Resume from no-candidate with report cursor=1 → immediately terminal."""
+    _seed_candidate_list(driver_dir, [], no_candidate=True, cursor=1)
     driver = _make_driver(driver_dir)
     assert driver.start() is None
 
 
-# ── orphan-after-02 reset ─────────────────────────────────────────────────────
+# ── AC 1: Candidate list written at role level after scan ─────────────────────
 
 
-def test_orphan_reset_wipes_progress_and_restarts_at_01(driver_dir: Path) -> None:
-    """progress=02-prd without in-flight=03-issues wipes progress and restarts at 01-scan."""
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    progress_file = driver_dir / "_phase_progress"
-    progress_file.write_text("02-prd", encoding="utf-8")
-
+def test_candidate_list_written_to_role_dir_after_scan(driver_dir: Path) -> None:
+    """After scan records candidates, ordered list is durable at role level."""
     driver = _make_driver(driver_dir)
     step = driver.start()
-
     assert step is not None
     assert step.prompt_key == "01-scan.md"
-    assert not progress_file.exists()
+
+    driver.record_outcome(
+        step,
+        ScanCandidatesOutput(
+            candidates=(
+                ScanCandidateItem(rank=1, title="Alpha"),
+                ScanCandidateItem(rank=2, title="Beta"),
+            )
+        ),
+    )
+
+    list_file = driver_dir / "_candidate_list"
+    assert list_file.is_file(), "_candidate_list must be written at role level"
+    data = json.loads(list_file.read_text(encoding="utf-8"))
+    assert [c["title"] for c in data["candidates"]] == ["Alpha", "Beta"]
 
 
-def test_orphan_reset_does_not_trigger_when_03_issues_in_flight(
-    driver_dir: Path,
-) -> None:
-    """progress=02-prd WITH in-flight=03-issues is a valid mid-phase resume, not orphan."""
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
-    (driver_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
-
+def test_candidate_list_is_at_role_level_not_inside_namespace(driver_dir: Path) -> None:
+    """Candidate list lives directly in role_session_dir, not in any namespace subdir."""
     driver = _make_driver(driver_dir)
     step = driver.start()
+    assert step is not None
+    driver.record_outcome(
+        step, ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="X"),))
+    )
+    # The list file must be directly at driver_dir, not inside main/ or issues/
+    assert (driver_dir / "_candidate_list").is_file()
+    assert not (driver_dir / "main" / "_candidate_list").exists()
 
+
+# ── AC 5: No record → spec (PRD) phase ───────────────────────────────────────
+
+
+def test_candidate_with_no_record_starts_at_prd(driver_dir: Path) -> None:
+    """Candidate with no per-candidate record starts from the spec (PRD) phase."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "02-prd.md"
+
+
+# ── AC 3: Record with prd_number → slice (Issues) phase ──────────────────────
+
+
+def test_candidate_with_prd_number_resumes_at_issues(driver_dir: Path) -> None:
+    """Candidate whose record names a prd_number resumes at the slice (Issues) phase."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_record(driver_dir, 0, prd_number=77)
+    driver = _make_driver(driver_dir)
+    step = driver.start()
     assert step is not None
     assert step.prompt_key == "03-issues.md"
+    assert step.prd_number == 77
+
+
+# ── AC 4: Record with spec_number → Issues phase, not scan ───────────────────
+
+
+def test_candidate_with_spec_number_starts_at_issues_not_scan(driver_dir: Path) -> None:
+    """Candidate whose record names a filed spec issue goes to Issues, never back to scan."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_record(driver_dir, 0, prd_number=5, spec_number=99)
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "03-issues.md"
+
+
+# ── AC 2: Per-candidate phase state ──────────────────────────────────────────
+
+
+def test_advancing_one_candidate_leaves_other_unchanged(driver_dir: Path) -> None:
+    """Advancing candidate 0 through Issues phase leaves candidate 1 at PRD phase."""
+    _seed_candidate_list(
+        driver_dir,
+        [ScanCandidateItem(rank=1, title="A"), ScanCandidateItem(rank=2, title="B")],
+        cursor=0,
+    )
+    # Candidate 0 has completed Issues (cursor advanced to 1)
+    driver_for_candidate_0 = _make_driver(driver_dir)
+    step1 = driver_for_candidate_0.start()
+    assert step1 is not None
+    assert step1.prompt_key == "02-prd.md"
+    driver_for_candidate_0.record_outcome(step1, IssueOutput(number=1, labels=[]))
+
+    step2 = driver_for_candidate_0.next()
+    assert step2 is not None
+    assert step2.prompt_key == "03-issues.md"
+    driver_for_candidate_0.record_outcome(step2, CompletionOutput())
+
+    # Now cursor is at 1. Candidate 1 has no record → PRD phase.
+    step3 = driver_for_candidate_0.next()
+    assert step3 is not None
+    assert step3.prompt_key == "02-prd.md"
+
+    # Candidate 0's record (written by driver) is separate from candidate 1.
+    assert not (driver_dir / "candidates" / "1" / "_candidate_record").exists()
+
+
+# ── AC 6: All candidates complete → terminal ─────────────────────────────────
+
+
+def test_all_candidates_complete_makes_no_further_dispatch(driver_dir: Path) -> None:
+    """When all candidates have labels_applied=True, start() is terminal."""
+    _seed_candidate_list(
+        driver_dir,
+        [ScanCandidateItem(rank=1, title="A"), ScanCandidateItem(rank=2, title="B")],
+        cursor=0,
+    )
+    # Both candidates are fully complete.
+    _seed_candidate_record(
+        driver_dir, 0, prd_number=1, spec_number=10, labels_applied=True
+    )
+    _seed_candidate_record(
+        driver_dir, 1, prd_number=2, spec_number=20, labels_applied=True
+    )
+
+    driver = _make_driver(driver_dir)
+    assert driver.start() is None
+
+
+def test_cursor_at_end_of_list_is_terminal(driver_dir: Path) -> None:
+    """Cursor past last candidate index → start() returns None with no dispatch."""
+    _seed_candidate_list(
+        driver_dir,
+        [ScanCandidateItem(rank=1, title="A")],
+        cursor=1,  # Past end of single-element list.
+    )
+    driver = _make_driver(driver_dir)
+    assert driver.start() is None
 
 
 # ── send_role_prompt_on_resume ────────────────────────────────────────────────
 
 
-def test_cold_start_phase_01_does_not_send_role_prompt(driver_dir: Path) -> None:
-    """Cold start: phase 01 step has send_role_prompt_on_resume=False."""
+def test_cold_start_scan_does_not_send_role_prompt(driver_dir: Path) -> None:
+    """Cold start: scan step has send_role_prompt_on_resume=False."""
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
     assert step.send_role_prompt_on_resume is False
 
 
-def test_mid_phase_retry_does_not_send_role_prompt(driver_dir: Path) -> None:
-    """In-flight marker matches upcoming phase → send_role_prompt_on_resume=False."""
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_progress").write_text("01-scan:picked", encoding="utf-8")
-    (driver_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
-
-    driver = _make_driver(driver_dir)
-    step = driver.start()
-
-    assert step is not None
-    assert step.prompt_key == "02-prd.md"
-    assert step.send_role_prompt_on_resume is False
-
-
-def test_clean_phase_boundary_sends_role_prompt(driver_dir: Path) -> None:
-    """Previous phase completed cleanly, no in-flight → send_role_prompt_on_resume=True."""
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_progress").write_text("01-scan:picked", encoding="utf-8")
-
-    driver = _make_driver(driver_dir)
-    step = driver.start()
-
-    assert step is not None
-    assert step.prompt_key == "02-prd.md"
-    assert step.send_role_prompt_on_resume is True
-
-
-def test_next_step_after_record_sends_role_prompt(driver_dir: Path) -> None:
-    """Step returned by next() after record_outcome has send_role_prompt_on_resume=True."""
+def test_prd_step_sends_role_prompt_after_scan(driver_dir: Path) -> None:
+    """PRD step after successful scan signals send_role_prompt_on_resume=True."""
     driver = _make_driver(driver_dir)
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
-
+    driver.record_outcome(
+        step1, ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="A"),))
+    )
     step2 = driver.next()
     assert step2 is not None
     assert step2.prompt_key == "02-prd.md"
     assert step2.send_role_prompt_on_resume is True
+
+
+def test_mid_prd_retry_does_not_send_role_prompt(driver_dir: Path) -> None:
+    """In-flight=02-prd → PRD step has send_role_prompt_on_resume=False (mid-phase retry)."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    driver_dir.mkdir(parents=True, exist_ok=True)
+    (driver_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "02-prd.md"
+    assert step.send_role_prompt_on_resume is False
+
+
+def test_clean_prd_entry_sends_role_prompt(driver_dir: Path) -> None:
+    """No in-flight at PRD start → send_role_prompt_on_resume=True (cross-teardown resume)."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "02-prd.md"
+    assert step.send_role_prompt_on_resume is True
 
 
 # ── in-flight marker written before step is consumed ─────────────────────────
@@ -218,7 +376,9 @@ def test_next_writes_in_flight_before_returning(driver_dir: Path) -> None:
     driver = _make_driver(driver_dir)
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1, ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="A"),))
+    )
 
     step2 = driver.next()
     assert step2 is not None
@@ -231,49 +391,74 @@ def test_next_writes_in_flight_before_returning(driver_dir: Path) -> None:
 # ── record_outcome disk effects ───────────────────────────────────────────────
 
 
-def test_record_outcome_writes_progress_and_clears_in_flight(driver_dir: Path) -> None:
-    """record_outcome writes _phase_progress and removes _phase_in_flight."""
+def test_record_outcome_clears_in_flight_after_scan(driver_dir: Path) -> None:
+    """record_outcome for scan clears the in-flight marker."""
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
 
-    driver.record_outcome(step, CompletionOutput())
+    driver.record_outcome(
+        step, ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="A"),))
+    )
 
-    progress_file = driver_dir / "_phase_progress"
-    in_flight_file = driver_dir / "_phase_in_flight"
-    assert progress_file.read_text(encoding="utf-8") == "01-scan:picked"
-    assert not in_flight_file.exists()
+    assert not (driver_dir / "_phase_in_flight").exists()
 
 
-def test_record_outcome_writes_no_candidate_progress(driver_dir: Path) -> None:
-    """record_outcome writes '01-scan:no-candidate' for NoCandidateOutput from scan."""
+def test_record_outcome_writes_prd_number_to_candidate_record(driver_dir: Path) -> None:
+    """record_outcome for PRD writes prd_number to per-candidate record."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
+    assert step.prompt_key == "02-prd.md"
 
-    driver.record_outcome(step, NoCandidateOutput())
+    driver.record_outcome(step, IssueOutput(number=4242, labels=[]))
 
-    progress_file = driver_dir / "_phase_progress"
-    assert progress_file.read_text(encoding="utf-8") == "01-scan:no-candidate"
+    import json as _json
+
+    record_file = driver_dir / "candidates" / "0" / "_candidate_record"
+    assert record_file.is_file()
+    data = _json.loads(record_file.read_text(encoding="utf-8"))
+    assert data["prd_number"] == 4242
+
+
+def test_record_outcome_advances_cursor_after_issues(driver_dir: Path) -> None:
+    """record_outcome for Issues increments cursor on disk."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "02-prd.md"
+    driver.record_outcome(step, IssueOutput(number=1, labels=[]))
+
+    step2 = driver.next()
+    assert step2 is not None
+    assert step2.prompt_key == "03-issues.md"
+    driver.record_outcome(step2, CompletionOutput())
+
+    cursor_file = driver_dir / "_candidate_cursor"
+    assert int(cursor_file.read_text(encoding="utf-8").strip()) == 1
 
 
 # ── prd_number exposure ───────────────────────────────────────────────────────
 
 
-def test_prd_number_none_before_phase_02(driver_dir: Path) -> None:
-    """prd_number is None before phase 02 outcome is recorded."""
+def test_prd_number_none_before_prd_phase(driver_dir: Path) -> None:
+    """prd_number is None before PRD outcome is recorded."""
     driver = _make_driver(driver_dir)
     driver.start()
     assert driver.prd_number is None
 
 
-def test_prd_number_set_from_phase_02_issue_output(driver_dir: Path) -> None:
-    """Phase 02 IssueOutput sets prd_number for use by phase 03."""
+def test_prd_number_set_from_prd_issue_output(driver_dir: Path) -> None:
+    """PRD IssueOutput sets prd_number for use by Issues step."""
     driver = _make_driver(driver_dir)
 
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1, ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="A"),))
+    )
 
     step2 = driver.next()
     assert step2 is not None
@@ -281,21 +466,3 @@ def test_prd_number_set_from_phase_02_issue_output(driver_dir: Path) -> None:
     driver.record_outcome(step2, IssueOutput(number=4242, labels=[]))
 
     assert driver.prd_number == 4242
-
-
-def test_phase_02_outcome_does_not_persist_parent_prd_number_to_disk(
-    driver_dir: Path,
-) -> None:
-    """Phase 02 keeps the parent PRD number in memory only."""
-    driver = _make_driver(driver_dir)
-
-    step1 = driver.start()
-    assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
-
-    step2 = driver.next()
-    assert step2 is not None
-    assert step2.prompt_key == "02-prd.md"
-    driver.record_outcome(step2, IssueOutput(number=4242, labels=[]))
-
-    assert sorted(path.name for path in driver_dir.iterdir()) == ["_phase_progress"]

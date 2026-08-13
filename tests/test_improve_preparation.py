@@ -4,9 +4,10 @@ from pathlib import Path
 import pytest
 
 from pycastle.agents.output_protocol import (
-    CompletionOutput,
     IssueOutput,
     NoCandidateOutput,
+    ScanCandidateItem,
+    ScanCandidatesOutput,
 )
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import (
@@ -81,7 +82,10 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
     driver = ImprovePhaseDriver(tmp_path / "improve-prd", no_candidate_report=True)
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
+    )
     step2 = driver.next()
     assert step2 is not None
     github_port = _GithubPortStandIn(
@@ -329,7 +333,10 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     driver = ImprovePhaseDriver(tmp_path / "improve-issues", no_candidate_report=True)
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
+    )
 
     step2 = driver.next()
     assert step2 is not None
@@ -376,9 +383,29 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
 def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_handoff(
     tmp_path: Path,
 ):
+    import json as _json
+
+    from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
+
     driver_dir = tmp_path / "improve-issues-resume"
     driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
+    # Seed candidate list + a candidate record (PRD done, prd_number=None) + in-flight=03-issues
+    data = {"candidates": [{"rank": 1, "title": "Seeded"}]}
+    (driver_dir / "_candidate_list").write_text(_json.dumps(data), encoding="utf-8")
+    (driver_dir / "_candidate_cursor").write_text("0", encoding="utf-8")
+    candidate_dir = driver_dir / "candidates" / "0"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    _save_record(
+        candidate_dir,
+        _CandidateRecord(
+            prd_number=None,
+            spec_number=None,
+            spec_database_id=None,
+            spec_title="",
+            filed_slices=[],
+            labels_applied=False,
+        ),
+    )
     (driver_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
     driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
     step = driver.start()
@@ -417,7 +444,10 @@ def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
     )
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
+    )
 
     step2 = driver.next()
     assert step2 is not None

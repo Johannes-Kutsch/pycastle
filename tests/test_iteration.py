@@ -4364,9 +4364,17 @@ def test_improve_max_cap_not_consumed_by_usage_limit_abort(tmp_path, git_svc, lo
 
 
 def _seed_improve_progress(worktree_path: Path, phase_id: str) -> None:
+    import json as _json
+
     role_session_dir = worktree_path / ".pycastle-session" / "improve"
     role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "_phase_progress").write_text(phase_id, encoding="utf-8")
+    if phase_id == "01-scan:picked":
+        # Simulate scan done with one candidate, cursor at 0 (no record → PRD phase)
+        data = {"candidates": [{"rank": 1, "title": "Seeded candidate"}]}
+        (role_session_dir / "_candidate_list").write_text(
+            _json.dumps(data), encoding="utf-8"
+        )
+        (role_session_dir / "_candidate_cursor").write_text("0", encoding="utf-8")
     (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
 
 

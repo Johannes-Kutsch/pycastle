@@ -1,3 +1,5 @@
+import contextlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
@@ -8,6 +10,7 @@ from pycastle.agents.output_protocol import (
     AgentRole,
     IssueOutput,
     NoCandidateOutput,
+    ScanCandidateItem,
     ScanCandidatesOutput,
 )
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
@@ -21,6 +24,11 @@ from pycastle.infrastructure.worktree import (
 )
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration._rows import StatusRowConfig, status_row
+from pycastle.iteration.improve_filing import (
+    _CandidateRecord,
+    _load_record,
+    _save_record,
+)
 from pycastle.iteration.improve_preparation import prepare_improve_step
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
 from pycastle.managed_worktree_mount_policy import (
@@ -92,136 +100,290 @@ class ImprovePhaseDriver:
     """State machine for the improve pipeline phases.
 
     Construction is side-effect-free; start() performs the first disk read.
+
+    State is held in three role-level files:
+    - _candidate_list: JSON with ordered scan candidates (and no_candidate flag).
+    - _candidate_cursor: integer index of the candidate currently being processed.
+    - _phase_in_flight: key of the phase currently executing (for mid-phase resumption).
+
+    Per-candidate state lives in candidates/<idx>/_candidate_record (written by the
+    filing pass and widened here to carry prd_number from the spec phase).
     """
 
-    _PROGRESS_FILE = "_phase_progress"
+    _CANDIDATE_LIST_FILE = "_candidate_list"
+    _CANDIDATE_CURSOR_FILE = "_candidate_cursor"
     _IN_FLIGHT_FILE = "_phase_in_flight"
-    _VALID_PHASE_IDS = frozenset(
-        {"01-scan:picked", "01-scan:no-candidate", "02-prd", "03-issues", "04-report"}
-    )
 
     def __init__(self, role_session_dir: Path, *, no_candidate_report: bool) -> None:
         self._dir = role_session_dir
-        self._progress_file = role_session_dir / self._PROGRESS_FILE
-        self._in_flight_file = role_session_dir / self._IN_FLIGHT_FILE
         self._no_candidate_report = no_candidate_report
-        self._last_id: str | None = None
+        self._candidates: list[ScanCandidateItem] | None = None
+        self._no_candidate: bool = False
+        self._cursor: int = 0
         self._prd_number: int | None = None
 
-    def _load(self) -> tuple[str | None, str | None]:
+    # ── Disk I/O helpers ──────────────────────────────────────────────────────
+
+    def _candidate_list_path(self) -> Path:
+        return self._dir / self._CANDIDATE_LIST_FILE
+
+    def _candidate_cursor_path(self) -> Path:
+        return self._dir / self._CANDIDATE_CURSOR_FILE
+
+    def _in_flight_path(self) -> Path:
+        return self._dir / self._IN_FLIGHT_FILE
+
+    def _candidate_dir(self, idx: int) -> Path:
+        return self._dir / "candidates" / str(idx)
+
+    def _load_state(self) -> tuple[list[ScanCandidateItem] | None, bool, int]:
+        """Return (candidates, no_candidate, cursor). None candidates = scan not done."""
+        list_path = self._candidate_list_path()
+        if not list_path.is_file():
+            return None, False, 0
         try:
-            value = self._progress_file.read_text(encoding="utf-8").strip()
-            last_id: str | None = value if value in self._VALID_PHASE_IDS else None
-        except OSError:
-            last_id = None
+            data = json.loads(list_path.read_text(encoding="utf-8"))
+            no_candidate = data.get("no_candidate", False)
+            candidates = [
+                ScanCandidateItem(rank=c["rank"], title=c["title"])
+                for c in data.get("candidates", [])
+            ]
+        except (KeyError, json.JSONDecodeError):
+            return None, False, 0
 
-        in_flight_id: str | None = (
-            self._in_flight_file.read_text(encoding="utf-8").strip()
-            if self._in_flight_file.is_file()
-            else None
-        )
+        cursor = 0
+        cursor_path = self._candidate_cursor_path()
+        if cursor_path.is_file():
+            with contextlib.suppress(ValueError, OSError):
+                cursor = int(cursor_path.read_text(encoding="utf-8").strip())
+        return candidates, no_candidate, cursor
 
-        # Orphan-reset: process restarted after phase 02 wrote progress but
-        # before phase 03 recorded its in-flight marker. The only recoverable
-        # phase-02 states are a true mid-phase retry ("02-prd") and a phase-03
-        # continuation ("03-issues"). Any other state lost the in-memory
-        # prd_number, so restart from phase 01 (leaves a dead PRD on GitHub
-        # with no label).
-        if last_id == "02-prd" and in_flight_id not in {"02-prd", "03-issues"}:
-            self._progress_file.unlink(missing_ok=True)
-            return None, None
-
-        return last_id, in_flight_id
-
-    def _next_prompt_key(self, last_id: str | None) -> str | None:
-        if last_id is None:
-            return "01-scan.md"
-        if last_id == "01-scan:picked":
-            return "02-prd.md"
-        if last_id == "01-scan:no-candidate":
-            return "04-no-candidate-report.md" if self._no_candidate_report else None
-        if last_id == "02-prd":
-            return "03-issues.md"
-        return None
-
-    def _resume_prompt_key(
-        self, last_id: str | None, in_flight_id: str | None
-    ) -> str | None:
-        if last_id == "02-prd" and in_flight_id == "02-prd":
-            return "02-prd.md"
-        return self._next_prompt_key(last_id)
-
-    def _compute_phase_id(self, prompt_key: str, output: AgentOutput) -> str:
-        if prompt_key == "01-scan.md":
-            return (
-                "01-scan:no-candidate"
-                if isinstance(output, NoCandidateOutput)
-                else "01-scan:picked"
-            )
-        return {
-            "02-prd.md": "02-prd",
-            "03-issues.md": "03-issues",
-            "04-no-candidate-report.md": "04-report",
-        }.get(prompt_key, prompt_key)
-
-    def _make_step(
-        self, prompt_key: str, last_id: str | None, in_flight_id: str | None
-    ) -> Step:
-        phase = _PHASES[prompt_key]
-        phase_key = prompt_key.removesuffix(".md")
-        is_mid_phase_retry = in_flight_id == phase_key
-        send_role_prompt_on_resume = last_id is not None and not is_mid_phase_retry
-
-        return Step(
-            prompt_key=prompt_key,
-            cfg=phase,
-            send_role_prompt_on_resume=send_role_prompt_on_resume,
-            fetch_recent_prd_titles=prompt_key == "01-scan.md"
-            and not is_mid_phase_retry,
-            prd_number=self._prd_number,
-        )
-
-    def _write_in_flight(self, prompt_key: str) -> None:
+    def _save_candidate_list(
+        self, candidates: list[ScanCandidateItem], *, no_candidate: bool = False
+    ) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
-        self._in_flight_file.write_text(
-            prompt_key.removesuffix(".md"), encoding="utf-8"
+        data: dict = {
+            "candidates": [{"rank": c.rank, "title": c.title} for c in candidates],
+        }
+        if no_candidate:
+            data["no_candidate"] = True
+        self._candidate_list_path().write_text(json.dumps(data), encoding="utf-8")
+
+    def _save_cursor(self, cursor: int) -> None:
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._candidate_cursor_path().write_text(str(cursor), encoding="utf-8")
+
+    def _write_in_flight(self, phase_key: str) -> None:
+        self._dir.mkdir(parents=True, exist_ok=True)
+        self._in_flight_path().write_text(phase_key, encoding="utf-8")
+
+    def _load_in_flight(self) -> str | None:
+        p = self._in_flight_path()
+        return p.read_text(encoding="utf-8").strip() if p.is_file() else None
+
+    def _clear_in_flight(self) -> None:
+        self._in_flight_path().unlink(missing_ok=True)
+
+    def _load_candidate_record(self, idx: int) -> _CandidateRecord | None:
+        return _load_record(self._candidate_dir(idx))
+
+    def _write_prd_number(self, idx: int, prd_number: int | None) -> None:
+        """Record that the spec (PRD) phase completed for candidate idx."""
+        candidate_dir = self._candidate_dir(idx)
+        record = _load_record(candidate_dir)
+        if record is None:
+            record = _CandidateRecord(
+                spec_number=None,
+                spec_database_id=None,
+                spec_title="",
+                filed_slices=[],
+                labels_applied=False,
+                prd_number=prd_number,
+            )
+        else:
+            record.prd_number = prd_number
+        _save_record(candidate_dir, record)
+
+    # ── Step factories ────────────────────────────────────────────────────────
+
+    def _make_scan_step(self, *, fetch_recent_prd_titles: bool) -> Step:
+        return Step(
+            prompt_key="01-scan.md",
+            cfg=_PHASES["01-scan.md"],
+            send_role_prompt_on_resume=False,
+            fetch_recent_prd_titles=fetch_recent_prd_titles,
+            prd_number=None,
         )
+
+    def _make_prd_step(self, *, send_role_prompt_on_resume: bool) -> Step:
+        return Step(
+            prompt_key="02-prd.md",
+            cfg=_PHASES["02-prd.md"],
+            send_role_prompt_on_resume=send_role_prompt_on_resume,
+            fetch_recent_prd_titles=True,
+            prd_number=None,
+        )
+
+    def _make_issues_step(self, prd_number: int | None) -> Step:
+        return Step(
+            prompt_key="03-issues.md",
+            cfg=_PHASES["03-issues.md"],
+            send_role_prompt_on_resume=True,
+            fetch_recent_prd_titles=False,
+            prd_number=prd_number,
+        )
+
+    def _make_report_step(self, *, send_role_prompt_on_resume: bool) -> Step:
+        return Step(
+            prompt_key="04-no-candidate-report.md",
+            cfg=_PHASES["04-no-candidate-report.md"],
+            send_role_prompt_on_resume=send_role_prompt_on_resume,
+            fetch_recent_prd_titles=True,
+            prd_number=None,
+        )
+
+    # ── Core state resolution ─────────────────────────────────────────────────
+
+    def _step_for_candidate(self, idx: int, *, from_start: bool) -> Step | None:
+        """Return the next step for candidate at idx, or None if already complete."""
+        record = self._load_candidate_record(idx)
+
+        if record is not None and record.labels_applied:
+            return None  # Candidate fully complete
+
+        if record is None:
+            # No record → spec (PRD) phase. Check in-flight for mid-PRD resume.
+            in_flight = self._load_in_flight() if from_start else None
+            is_mid_prd = in_flight == "02-prd"
+            return self._make_prd_step(send_role_prompt_on_resume=not is_mid_prd)
+
+        # Has record (prd_number or spec_number set) → slice (Issues) phase.
+        prd_number = record.prd_number
+        self._prd_number = prd_number
+        in_flight = self._load_in_flight() if from_start else None
+        is_mid_issues = in_flight == "03-issues"
+        step = self._make_issues_step(prd_number)
+        # For mid-issues resume, override send_role_prompt_on_resume to False.
+        if is_mid_issues:
+            step = Step(
+                prompt_key=step.prompt_key,
+                cfg=step.cfg,
+                send_role_prompt_on_resume=False,
+                fetch_recent_prd_titles=step.fetch_recent_prd_titles,
+                prd_number=step.prd_number,
+            )
+        return step
+
+    def _next_step_from_cursor(self, cursor: int, *, from_start: bool) -> Step | None:
+        """Scan forward from cursor to find next candidate needing work."""
+        candidates = self._candidates
+        if candidates is None:
+            return None
+        while cursor < len(candidates):
+            step = self._step_for_candidate(cursor, from_start=from_start)
+            if step is not None:
+                self._cursor = cursor
+                return step
+            # labels_applied=True: auto-advance cursor for this completed candidate.
+            cursor += 1
+            self._save_cursor(cursor)
+        return None  # All candidates done
+
+    # ── Public interface ──────────────────────────────────────────────────────
 
     def start(self) -> "Step | None":
-        last_id, in_flight_id = self._load()
-        self._last_id = last_id
-        prompt_key = self._resume_prompt_key(last_id, in_flight_id)
-        if prompt_key is None:
+        candidates, no_candidate, cursor = self._load_state()
+
+        if candidates is None:
+            # Scan not done → return scan step.
+            in_flight = self._load_in_flight()
+            is_mid_scan = in_flight == "01-scan"
+            step = self._make_scan_step(fetch_recent_prd_titles=not is_mid_scan)
+            self._write_in_flight("01-scan")
+            return step
+
+        self._candidates = candidates
+        self._no_candidate = no_candidate
+        self._cursor = cursor
+
+        if no_candidate:
+            if self._no_candidate_report and cursor == 0:
+                in_flight = self._load_in_flight()
+                is_mid_report = in_flight == "04-no-candidate-report"
+                step = self._make_report_step(
+                    send_role_prompt_on_resume=not is_mid_report
+                )
+                self._write_in_flight("04-no-candidate-report")
+                return step
             return None
-        step = self._make_step(prompt_key, last_id, in_flight_id)
-        self._write_in_flight(prompt_key)
-        return step
+
+        next_step: Step | None = self._next_step_from_cursor(cursor, from_start=True)
+        if next_step is not None:
+            self._write_in_flight(next_step.prompt_key.removesuffix(".md"))
+        return next_step
 
     def next(self) -> "Step | None":
-        prompt_key = self._next_prompt_key(self._last_id)
-        if prompt_key is None:
+        candidates = self._candidates
+        if candidates is None:
             return None
-        step = self._make_step(prompt_key, self._last_id, None)
-        self._write_in_flight(prompt_key)
-        return step
+
+        if self._no_candidate:
+            if self._no_candidate_report and self._cursor == 0:
+                step = self._make_report_step(send_role_prompt_on_resume=True)
+                self._write_in_flight("04-no-candidate-report")
+                return step
+            return None
+
+        next_step: Step | None = self._next_step_from_cursor(self._cursor, from_start=False)
+        if next_step is not None:
+            self._write_in_flight(next_step.prompt_key.removesuffix(".md"))
+        return next_step
 
     def record_outcome(self, step: "Step", output: AgentOutput) -> None:
-        completed_id = self._compute_phase_id(step.prompt_key, output)
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._progress_file.write_text(completed_id, encoding="utf-8")
-        self._in_flight_file.unlink(missing_ok=True)
-        self._last_id = completed_id
+        if step.prompt_key == "01-scan.md":
+            if isinstance(output, ScanCandidatesOutput):
+                candidates = list(output.candidates)
+                self._candidates = candidates
+                self._no_candidate = False
+                self._cursor = 0
+                self._save_candidate_list(candidates)
+                self._save_cursor(0)
+            elif isinstance(output, NoCandidateOutput):
+                self._candidates = []
+                self._no_candidate = True
+                self._cursor = 0
+                self._save_candidate_list([], no_candidate=True)
+                self._save_cursor(0)
 
-        if step.prompt_key == "02-prd.md" and isinstance(output, IssueOutput):
-            self._prd_number = output.number
+        elif step.prompt_key == "02-prd.md":
+            prd_number = output.number if isinstance(output, IssueOutput) else None
+            self._prd_number = prd_number
+            self._write_prd_number(self._cursor, prd_number)
+
+        elif step.prompt_key == "03-issues.md":
+            self._cursor += 1
+            self._save_cursor(self._cursor)
+
+        elif step.prompt_key == "04-no-candidate-report.md":
+            # cursor=1 marks report done; checked in start() and next().
+            self._cursor = 1
+            self._save_cursor(1)
+
+        self._clear_in_flight()
 
     @property
     def prd_number(self) -> int | None:
         return self._prd_number
 
     @property
-    def last_id(self) -> str | None:
-        return self._last_id
+    def no_candidate(self) -> bool:
+        return self._no_candidate
+
+    @property
+    def all_candidates_complete(self) -> bool:
+        if self._candidates is None:
+            return False
+        return self._cursor >= len(self._candidates)
 
 
 @dataclass(frozen=True)
@@ -374,7 +536,7 @@ async def improve_phase(
                 driver.record_outcome(step, output)
                 step = driver.next()
 
-            no_candidate = driver.last_id in {"01-scan:no-candidate", "04-report"}
+            no_candidate = driver.no_candidate
             role_session.discard()
 
         row.close("finished")

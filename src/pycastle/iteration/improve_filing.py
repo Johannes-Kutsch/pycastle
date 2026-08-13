@@ -38,11 +38,12 @@ class _FiledIssue:
 
 @dataclasses.dataclass
 class _CandidateRecord:
-    spec_number: int
-    spec_database_id: int
+    spec_number: int | None
+    spec_database_id: int | None
     spec_title: str
     filed_slices: list[_FiledIssue]
     labels_applied: bool
+    prd_number: int | None = None
 
 
 def _load_record(role_dir: Path) -> _CandidateRecord | None:
@@ -61,11 +62,12 @@ def _load_record(role_dir: Path) -> _CandidateRecord | None:
             for s in data.get("filed_slices", [])
         ]
         return _CandidateRecord(
-            spec_number=data["spec_number"],
-            spec_database_id=data["spec_database_id"],
+            spec_number=data.get("spec_number"),
+            spec_database_id=data.get("spec_database_id"),
             spec_title=data.get("spec_title", ""),
             filed_slices=filed_slices,
             labels_applied=data.get("labels_applied", False),
+            prd_number=data.get("prd_number"),
         )
     except (KeyError, json.JSONDecodeError):
         return None
@@ -73,7 +75,7 @@ def _load_record(role_dir: Path) -> _CandidateRecord | None:
 
 def _save_record(role_dir: Path, record: _CandidateRecord) -> None:
     role_dir.mkdir(parents=True, exist_ok=True)
-    data = {
+    data: dict = {
         "spec_number": record.spec_number,
         "spec_database_id": record.spec_database_id,
         "spec_title": record.spec_title,
@@ -88,6 +90,8 @@ def _save_record(role_dir: Path, record: _CandidateRecord) -> None:
         ],
         "labels_applied": record.labels_applied,
     }
+    if record.prd_number is not None:
+        data["prd_number"] = record.prd_number
     (role_dir / _CANDIDATE_RECORD_FILE).write_text(json.dumps(data), encoding="utf-8")
 
 
@@ -129,7 +133,7 @@ def file_draft_set(
     record = _load_record(role_dir)
     handle_to_filed: dict[str, _FiledIssue] = {}
 
-    if record is None:
+    if record is None or record.spec_number is None:
         # Stage 1a: create the spec issue.
         spec_labels = _strip_state_label(spec_draft.labels, state_label)
         spec_number, spec_db_id = port.create_issue(
@@ -142,15 +146,19 @@ def file_draft_set(
             title=spec_draft.title,
         )
         handle_to_filed[spec_draft.handle] = spec_filed
+        prd_number = record.prd_number if record is not None else None
         record = _CandidateRecord(
             spec_number=spec_number,
             spec_database_id=spec_db_id,
             spec_title=spec_draft.title,
             filed_slices=[],
             labels_applied=False,
+            prd_number=prd_number,
         )
         _save_record(role_dir, record)
     else:
+        assert record.spec_number is not None
+        assert record.spec_database_id is not None
         spec_filed = _FiledIssue(
             handle=spec_draft.handle,
             number=record.spec_number,
@@ -161,6 +169,7 @@ def file_draft_set(
         for filed in record.filed_slices:
             handle_to_filed[filed.handle] = filed
 
+    assert record.spec_number is not None
     filed_handles = {s.handle for s in record.filed_slices}
 
     # Stage 1b: create each slice in order.
