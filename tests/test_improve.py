@@ -28,6 +28,7 @@ from pycastle.iteration.improve import (
 )
 from pycastle.iteration.improve_drafts import DraftSetValidationError
 from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
+from pycastle.iteration.preflight import PreflightReady
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubNetworkError, ServiceRegistry
 from pycastle.services.runtime_services import CodexService, OpenCodeService
@@ -1370,3 +1371,201 @@ def test_cross_teardown_resume_checks_candidate_namespace_for_gate(tmp_path, git
     _run(deps)
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
     assert len(runner.calls) == 2
+
+
+# ── Safe-SHA wind-down (issue #2098) ─────────────────────────────────────────
+
+
+class _ChangingPreflightCache:
+    """Preflight cache that returns a different SHA on the second call."""
+
+    def __init__(
+        self, initial_sha: str = "abc123", changed_sha: str = "new-sha"
+    ) -> None:
+        self._calls = 0
+        self._initial_sha = initial_sha
+        self._changed_sha = changed_sha
+
+    async def get_safe_sha(self, deps):
+        self._calls += 1
+        sha = self._initial_sha if self._calls == 1 else self._changed_sha
+        return PreflightReady(sha=sha)
+
+
+def _make_two_candidate_runner() -> FakeAgentRunner:
+    scan_output = ScanCandidatesOutput(
+        candidates=(
+            ScanCandidateItem(rank=1, title="First"),
+            ScanCandidateItem(rank=2, title="Second"),
+        )
+    )
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return scan_output
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        return CompletionOutput()
+
+    return FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+
+
+def test_sha_change_mid_run_stops_further_agent_dispatch(tmp_path, git_svc):
+    """AC1: SHA change after completing a candidate stops dispatch for subsequent candidates."""
+    runner = _make_two_candidate_runner()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        preflight_cache=_ChangingPreflightCache(),
+    )
+
+    result = _run(deps)
+
+    issues_calls = [
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    ]
+    assert len(issues_calls) == 1
+    assert isinstance(result, ImproveContinue)
+    assert result.completed_count == 1
+
+
+def test_sha_change_mid_run_does_not_start_next_candidate(tmp_path, git_svc):
+    """AC4: No PRD or Issues agent dispatched for candidates after the one in progress."""
+    runner = _make_two_candidate_runner()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        preflight_cache=_ChangingPreflightCache(),
+    )
+
+    _run(deps)
+
+    prd_calls = [
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+    ]
+    assert len(prd_calls) == 1
+    assert prd_calls[0].session_namespace == "candidate/0"
+
+
+def test_sha_unchanged_run_is_unaffected(tmp_path, git_svc):
+    """AC5: A run whose safe SHA does not change processes all candidates normally."""
+    runner = _make_two_candidate_runner()
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    result = _run(deps)
+
+    assert isinstance(result, ImproveContinue)
+    assert result.completed_count == 2
+    issues_calls = [
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    ]
+    assert len(issues_calls) == 2
+
+
+def test_sha_change_fingerprint_gate_closes_spec_only_candidate(tmp_path, git_svc):
+    """AC2: When SHA changes between runs and a candidate has spec but no slices, close the spec."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    two_candidates = [
+        ScanCandidateItem(rank=1, title="First"),
+        ScanCandidateItem(rank=2, title="Second"),
+    ]
+    # candidate 0 fully done (cursor=1); candidate 1 has spec but no slices
+    _seed_candidate_list(wt, two_candidates, cursor=1, fingerprint="old-sha")
+    _seed_candidate_record(wt, 0, spec_number=100, labels_applied=True)
+    _seed_candidate_record(wt, 1, spec_number=200)  # spec only, no slices
+
+    github_svc = _make_filing_github_svc()
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    # Default StubPreflightCache returns sha="abc123", different from "old-sha"
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    github_svc.close_issue.assert_called_once_with(200)
+
+
+def test_sha_change_fingerprint_gate_no_close_when_no_spec(tmp_path, git_svc):
+    """AC2 boundary: when next candidate has no spec filed, nothing is closed."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    two_candidates = [
+        ScanCandidateItem(rank=1, title="First"),
+        ScanCandidateItem(rank=2, title="Second"),
+    ]
+    # candidate 0 fully done; candidate 1 not started (no record)
+    _seed_candidate_list(wt, two_candidates, cursor=1, fingerprint="old-sha")
+    _seed_candidate_record(wt, 0, spec_number=100, labels_applied=True)
+
+    github_svc = _make_filing_github_svc()
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    github_svc.close_issue.assert_not_called()
+
+
+def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
+    tmp_path, git_svc
+):
+    """AC3: When some slices are filed but not labeled, host completes filing without agent."""
+    from pycastle.iteration.improve_filing import _FiledIssue, _save_record
+
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    two_candidates = [
+        ScanCandidateItem(rank=1, title="First"),
+        ScanCandidateItem(rank=2, title="Second"),
+    ]
+    # candidate 0 done; candidate 1 has spec + 1 filed slice but not labeled
+    _seed_candidate_list(wt, two_candidates, cursor=1, fingerprint="old-sha")
+    _seed_candidate_record(wt, 0, spec_number=100, labels_applied=True)
+
+    role_session_dir = wt / ".pycastle-session" / "improve"
+    candidate_dir = role_session_dir / "candidates" / "1"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    from pycastle.iteration.improve_filing import _CandidateRecord as CR
+
+    record = CR(
+        spec_number=200,
+        spec_database_id=2000,
+        spec_title="Spec",
+        filed_slices=[
+            _FiledIssue(handle="slice-a", number=201, database_id=2001, title="Slice A")
+        ],
+        labels_applied=False,
+    )
+    _save_record(candidate_dir, record)
+
+    # Write draft files with spec + 2 slices (slice-a already filed, slice-b not yet)
+    draft_dir = role_session_dir / "_drafts"
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    _write_spec_draft(draft_dir)
+    _write_slice_draft(draft_dir, "slice-a")
+    _write_slice_draft(draft_dir, "slice-b")
+
+    github_svc = _make_filing_github_svc()
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    # Host completed the partial candidate: spec and existing slice must be labelled
+    # without any agent dispatched against the old "candidate/1" session namespace.
+    label_calls = github_svc.add_label_to_issue.call_args_list
+    labeled_numbers = {call.args[0] for call in label_calls}
+    assert 200 in labeled_numbers  # spec labelled by host
+    assert 201 in labeled_numbers  # slice-a labelled by host
+    github_svc.close_issue.assert_not_called()  # completed normally, not closed
+    # No agent was dispatched to handle the partial candidate — wind-down is host-only
+    old_ns_calls = [c for c in runner.calls if c.session_namespace == "candidate/1"]
+    assert old_ns_calls == []
