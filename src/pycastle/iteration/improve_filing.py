@@ -27,6 +27,8 @@ class FilingPort(Protocol):
 
     def apply_label(self, issue_number: int, label: str) -> None: ...
 
+    def close_issue(self, issue_number: int) -> None: ...
+
 
 @dataclasses.dataclass
 class _FiledIssue:

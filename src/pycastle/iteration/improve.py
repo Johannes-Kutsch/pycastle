@@ -24,7 +24,6 @@ from pycastle.infrastructure.worktree import (
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
-from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration._rows import StatusRowConfig, status_row
 from pycastle.iteration.improve_drafts import DraftSetValidationError, read_draft_set
 from pycastle.iteration.improve_filing import (
@@ -34,7 +33,12 @@ from pycastle.iteration.improve_filing import (
     file_draft_set,
 )
 from pycastle.iteration.improve_preparation import prepare_improve_step
-from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.iteration.preflight import (
+    PreflightAFK,
+    PreflightCache,
+    PreflightHITL,
+    PreflightReady,
+)
 from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
@@ -101,6 +105,9 @@ class _GithubFilingPort:
 
     def apply_label(self, issue_number: int, label: str) -> None:
         self._svc.add_label_to_issue(issue_number, label)
+
+    def close_issue(self, issue_number: int) -> None:
+        self._svc.close_issue(issue_number)
 
 
 @dataclass(frozen=True)
@@ -574,6 +581,109 @@ async def _file_improve_drafts(
         shutil.rmtree(draft_dir)
 
 
+def _wind_down_partial_candidates(
+    role_session_dir: Path,
+    *,
+    port: "_GithubFilingPort",
+    cfg: "Config",
+) -> None:
+    """Handle partially-filed candidates when the safe SHA changes (AC2, AC3).
+
+    Reads the candidate list and cursor from disk.  For each candidate at or
+    after the cursor that has not yet been fully labelled:
+    - spec filed but no slices → close the spec (AC2)
+    - some slices filed but not labelled → complete filing by host (AC3)
+    """
+    list_path = role_session_dir / "_candidate_list"
+    if not list_path.is_file():
+        return
+    try:
+        data = json.loads(list_path.read_text(encoding="utf-8"))
+        candidate_count = len(data.get("candidates", []))
+    except (KeyError, json.JSONDecodeError):
+        return
+
+    cursor = 0
+    cursor_path = role_session_dir / "_candidate_cursor"
+    if cursor_path.is_file():
+        with contextlib.suppress(ValueError, OSError):
+            cursor = int(cursor_path.read_text(encoding="utf-8").strip())
+
+    for idx in range(cursor, candidate_count):
+        candidate_dir = role_session_dir / "candidates" / str(idx)
+        record = _load_record(candidate_dir)
+        if record is None or record.spec_number is None or record.labels_applied:
+            continue
+        if not record.filed_slices:
+            port.close_issue(record.spec_number)
+        else:
+            draft_dir = role_session_dir / _DRAFTS_SUBDIR
+            prev_spec = _prev_spec_for_candidate(role_session_dir, idx)
+            try:
+                drafts = read_draft_set(draft_dir, cfg)
+                file_draft_set(
+                    drafts,
+                    port=port,
+                    role_dir=candidate_dir,
+                    state_label=cfg.issue_label,
+                    prev_spec=prev_spec,
+                )
+            except DraftSetValidationError:
+                pass
+
+
+def _gate_and_wind_down(
+    pre_sandbox_path: Path,
+    *,
+    fingerprint: str,
+    port: "_GithubFilingPort",
+    cfg: "Config",
+) -> None:
+    """Discard the improve session if the fingerprint changed.
+
+    Before discarding, wind down any partially-filed candidates (AC2, AC3) so
+    that spec-only candidates are closed and partly-sliced ones are labelled.
+    """
+    pre_role_session = RoleSession(pre_sandbox_path, AgentRole.IMPROVE)
+    if pre_role_session.read_fingerprint() != fingerprint:
+        _wind_down_partial_candidates(pre_role_session.path, port=port, cfg=cfg)
+        pre_role_session.discard()
+
+
+async def _complete_candidate(
+    *,
+    step_namespace: str,
+    deps: "_ImproveDeps",
+    role_session_dir: Path,
+    sandbox_path: Path,
+    fingerprint: str,
+    completed_count: int,
+) -> tuple[int, bool]:
+    """File drafts and check stop conditions after a 03-issues.md step.
+
+    Returns (new_completed_count, should_stop) where should_stop is True when
+    either the cap is reached or the safe SHA changed (AC1).
+    """
+    candidate_idx = int(step_namespace.split("/")[1])
+    prev_spec = _prev_spec_for_candidate(role_session_dir, candidate_idx)
+    await _file_improve_drafts(
+        deps=deps,
+        role_session_dir=role_session_dir,
+        sandbox_path=sandbox_path,
+        candidate_idx=candidate_idx,
+        candidate_namespace=step_namespace,
+        prev_spec=prev_spec,
+    )
+    new_count = completed_count + 1
+    if _cap_reached(deps, new_count):
+        return new_count, True
+    mid_verdict = await deps.preflight_cache.get_safe_sha(deps)
+    sha_changed = (
+        not isinstance(mid_verdict, PreflightReady) or mid_verdict.sha != fingerprint
+    )
+    return new_count, sha_changed
+
+
 async def improve_phase(
     deps: _ImproveDeps,
 ) -> ImproveNoCandidate | ImproveContinue | PreflightHITL | PreflightAFK:
@@ -600,8 +710,11 @@ async def improve_phase(
         pre_sandbox_path = reusable_sandbox_worktree_identity(
             IMPROVE_SANDBOX_INTENT, deps.repo_root
         ).path
-        prepare_fingerprint_gate(
-            RoleSession(pre_sandbox_path, AgentRole.IMPROVE), fingerprint
+        _gate_and_wind_down(
+            pre_sandbox_path,
+            fingerprint=fingerprint,
+            port=_GithubFilingPort(deps.github_svc),
+            cfg=deps.cfg,
         )
 
         async with reusable_sandbox_worktree(
@@ -693,20 +806,15 @@ async def improve_phase(
                     _fork_candidate_namespaces(sandbox_path, list(output.candidates))
 
                 if step.prompt_key == "03-issues.md":
-                    candidate_idx = int(step_namespace.split("/")[1])
-                    prev_spec = _prev_spec_for_candidate(
-                        role_session_dir, candidate_idx
-                    )
-                    await _file_improve_drafts(
+                    completed_count, stop = await _complete_candidate(
+                        step_namespace=step_namespace,
                         deps=deps,
                         role_session_dir=role_session_dir,
                         sandbox_path=sandbox_path,
-                        candidate_idx=candidate_idx,
-                        candidate_namespace=step_namespace,
-                        prev_spec=prev_spec,
+                        fingerprint=fingerprint,
+                        completed_count=completed_count,
                     )
-                    completed_count += 1
-                    if _cap_reached(deps, completed_count):
+                    if stop:
                         break
 
                 step = driver.next()
