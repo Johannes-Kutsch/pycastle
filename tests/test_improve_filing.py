@@ -407,3 +407,131 @@ def test_full_resume_with_labels_pending_only_applies_labels(tmp_path: Path) -> 
     port_second.create_issue.assert_not_called()
     applied_numbers = {c.args[0] for c in port_second.apply_label.call_args_list}
     assert applied_numbers == {100, 101}
+
+
+# ---------------------------------------------------------------------------
+# Behavior 9: cross-candidate blocking — slices of candidate N+1 are blocked
+# by candidate N's spec issue (body + native dep)
+# ---------------------------------------------------------------------------
+
+
+def _make_port(*return_values: tuple[int, int]) -> MagicMock:
+    p = MagicMock(spec=FilingPort)
+    p.create_issue.side_effect = list(return_values)
+    return p
+
+
+def test_second_candidate_slices_blocked_by_prev_spec_in_body(
+    tmp_path: Path,
+) -> None:
+    """Slices of the second candidate have 'Blocked by #prev_spec' in their body."""
+    port = _make_port((200, 2000), (201, 2001))
+    drafts = [_spec(), _slice("01-alpha")]
+
+    file_draft_set(
+        drafts,
+        port=port,
+        role_dir=tmp_path / "c2",
+        state_label=_STATE_LABEL,
+        prev_spec=(100, 1000),
+    )
+
+    _, slice_body, _ = port.create_issue.call_args_list[1].args
+    assert "Blocked by #100" in slice_body
+
+
+def test_second_candidate_slices_have_native_dep_on_prev_spec(
+    tmp_path: Path,
+) -> None:
+    """Slices of the second candidate wire add_issue_dependency to prev spec db_id."""
+    port = _make_port((200, 2000), (201, 2001))
+    drafts = [_spec(), _slice("01-alpha")]
+
+    file_draft_set(
+        drafts,
+        port=port,
+        role_dir=tmp_path / "c2",
+        state_label=_STATE_LABEL,
+        prev_spec=(100, 1000),
+    )
+
+    port.add_issue_dependency.assert_called_once_with(201, 1000)
+
+
+def test_first_candidate_slices_carry_no_cross_candidate_blocker(
+    tmp_path: Path,
+) -> None:
+    """When prev_spec is None (first candidate), slices have no cross-candidate blocker."""
+    port = _make_port((100, 1000), (101, 1001))
+    drafts = [_spec(), _slice("01-alpha")]
+
+    file_draft_set(
+        drafts,
+        port=port,
+        role_dir=tmp_path / "c1",
+        state_label=_STATE_LABEL,
+    )
+
+    _, slice_body, _ = port.create_issue.call_args_list[1].args
+    assert "Blocked by" not in slice_body
+    port.add_issue_dependency.assert_not_called()
+
+
+def test_second_candidate_spec_not_blocked_by_prev_spec(
+    tmp_path: Path,
+) -> None:
+    """The spec issue of a later candidate is NOT blocked by the previous spec."""
+    port = _make_port((200, 2000), (201, 2001))
+    drafts = [_spec(), _slice("01-alpha")]
+
+    file_draft_set(
+        drafts,
+        port=port,
+        role_dir=tmp_path / "c2",
+        state_label=_STATE_LABEL,
+        prev_spec=(100, 1000),
+    )
+
+    _, spec_body, _ = port.create_issue.call_args_list[0].args
+    assert "Blocked by #100" not in spec_body
+
+
+def test_cross_candidate_blocker_alongside_intra_set_blockers(
+    tmp_path: Path,
+) -> None:
+    """Cross-candidate blocker appears in same 'Blocked by' line as intra-set blockers."""
+    port = _make_port((200, 2000), (201, 2001), (202, 2002))
+    drafts = [_spec(), _slice("01-alpha"), _slice("02-beta", blocked_by=["01-alpha"])]
+
+    file_draft_set(
+        drafts,
+        port=port,
+        role_dir=tmp_path / "c2",
+        state_label=_STATE_LABEL,
+        prev_spec=(100, 1000),
+    )
+
+    _, beta_body, _ = port.create_issue.call_args_list[2].args
+    # Both blockers must appear
+    assert "#201" in beta_body  # intra-set: 01-alpha
+    assert "#100" in beta_body  # cross-candidate: prev spec
+    # Only one "Blocked by" line
+    assert beta_body.count("Blocked by") == 1
+
+
+def test_single_candidate_unchanged_behavior(tmp_path: Path) -> None:
+    """Filing one candidate without prev_spec produces the same output as before."""
+    port = _make_port((100, 1000), (101, 1001))
+    drafts = [_spec(), _slice("01-alpha")]
+
+    file_draft_set(
+        drafts,
+        port=port,
+        role_dir=tmp_path / "c1",
+        state_label=_STATE_LABEL,
+    )
+
+    assert port.create_issue.call_count == 2
+    _, slice_body, _ = port.create_issue.call_args_list[1].args
+    assert "Blocked by" not in slice_body
+    port.add_issue_dependency.assert_not_called()
