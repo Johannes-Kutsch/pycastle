@@ -21,6 +21,8 @@ from pycastle.infrastructure.worktree import (
 )
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration._rows import StatusRowConfig, status_row
+from pycastle.iteration.improve_drafts import DraftSetValidationError, read_draft_set
+from pycastle.iteration.improve_filing import file_draft_set
 from pycastle.iteration.improve_preparation import prepare_improve_step
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
 from pycastle.managed_worktree_mount_policy import (
@@ -29,8 +31,12 @@ from pycastle.managed_worktree_mount_policy import (
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
+from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.prompts.scope_args import compute_candidate_budget
+from pycastle.prompts.scope_args import (
+    compute_candidate_budget,
+    validated_scope_args_for_template,
+)
 from pycastle.runtime_session import session_uuid
 from pycastle.services import GitService, ServiceRegistry
 from pycastle.services.github_service import GithubService
@@ -41,6 +47,25 @@ if TYPE_CHECKING:
 
 IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
+
+_DRAFTS_SUBDIR = "_drafts"
+
+
+class _GithubFilingPort:
+    def __init__(self, svc: GithubService) -> None:
+        self._svc = svc
+
+    def create_issue(self, title: str, body: str, labels: list[str]) -> tuple[int, int]:
+        return self._svc.create_issue_in(self._svc.repo, title, body, labels)
+
+    def register_sub_issue(self, parent_number: int, child_database_id: int) -> None:
+        self._svc.add_sub_issue(parent_number, child_database_id)
+
+    def add_issue_dependency(self, child_number: int, blocker_database_id: int) -> None:
+        self._svc.add_issue_dependency(child_number, blocker_database_id)
+
+    def apply_label(self, issue_number: int, label: str) -> None:
+        self._svc.add_label_to_issue(issue_number, label)
 
 
 @dataclass(frozen=True)
@@ -246,6 +271,51 @@ class _ImproveDeps(Protocol):
     improve_dispatched_count: int
 
 
+async def _file_improve_drafts(
+    *,
+    deps: _ImproveDeps,
+    role_session_dir: Path,
+    sandbox_path: Path,
+) -> None:
+    draft_dir = role_session_dir / _DRAFTS_SUBDIR
+    try:
+        drafts = read_draft_set(draft_dir, deps.cfg)
+    except DraftSetValidationError as exc:
+        validation_errors = "\n".join(exc.problems)
+        correction_prompt = build_prompt_invocation(
+            PromptTemplate.IMPROVE_DRAFT_CORRECTION,
+            validated_scope_args_for_template(
+                PromptTemplate.IMPROVE_DRAFT_CORRECTION,
+                {"VALIDATION_ERRORS": validation_errors},
+            ),
+            send_role_prompt_on_resume=False,
+        )
+        await deps.agent_runner.run(
+            RunRequest(
+                name="Draft Correction",
+                prompt=correction_prompt,
+                mount_path=sandbox_path,
+                role=AgentRole.IMPROVE,
+                model=deps.cfg.improve_override.model,
+                effort=deps.cfg.improve_override.effort,
+                service=deps.cfg.improve_override.service,
+                stage="improve-sandbox",
+                status_display=deps.status_display,
+                work_body="fixing draft validation errors",
+                session_namespace="main",
+                preserve_session_on_completion=True,
+            )
+        )
+        drafts = read_draft_set(draft_dir, deps.cfg)
+
+    file_draft_set(
+        drafts,
+        port=_GithubFilingPort(deps.github_svc),
+        role_dir=role_session_dir,
+        state_label=deps.cfg.issue_label,
+    )
+
+
 async def improve_phase(
     deps: _ImproveDeps,
 ) -> ImproveNoCandidate | ImproveContinue | PreflightHITL | PreflightAFK:
@@ -327,6 +397,7 @@ async def improve_phase(
                 improve_max=deps.cfg.improve_max,
                 dispatched=deps.improve_dispatched_count,
             )
+            issues_ran_this_call = False
             while step is not None:
                 prepared_step = prepare_improve_step(
                     step,
@@ -371,10 +442,20 @@ async def improve_phase(
                         f"Expected ScanCandidatesOutput or NoCandidateOutput, "
                         f"got {type(output).__name__}."
                     )
+                if step.prompt_key == "03-issues.md":
+                    issues_ran_this_call = True
                 driver.record_outcome(step, output)
                 step = driver.next()
 
             no_candidate = driver.last_id in {"01-scan:no-candidate", "04-report"}
+
+            if issues_ran_this_call:
+                await _file_improve_drafts(
+                    deps=deps,
+                    role_session_dir=role_session_dir,
+                    sandbox_path=sandbox_path,
+                )
+
             role_session.discard()
 
         row.close("finished")

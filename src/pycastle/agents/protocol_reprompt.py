@@ -67,6 +67,7 @@ _TEMPLATE_SPECIFIC_PROTOCOL_POLICY = MappingProxyType(
                 PromptTemplate.IMPROVE_PRD,
                 PromptTemplate.IMPROVE_ISSUES,
                 PromptTemplate.IMPROVE_NO_CANDIDATE,
+                PromptTemplate.IMPROVE_DRAFT_CORRECTION,
             }
         ),
         AgentRole.FAILURE_REPORT: frozenset({PromptTemplate.FAILURE_REPORT}),

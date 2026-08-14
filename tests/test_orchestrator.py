@@ -30,6 +30,7 @@ from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
     run,
 )
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -1678,6 +1679,13 @@ def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
             if scan_call_count == 1:
                 raise UsageLimitError(reset_time=None)
             return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
         return CompletionOutput()
 
     with patch("time.sleep"):
@@ -2832,21 +2840,22 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
         ],  # after improve
     ]
     mock_github.get_all_open_issues_lightweight.return_value = []
-    mock_github.get_issue.return_value = {
-        "number": 5,
-        "title": "PRD",
-        "body": "x" * 100,
-        "comments": [],
-    }
-    mock_github.get_issue_comments.return_value = []
+    mock_github.repo = "test/repo"
+    mock_github.create_issue_in.return_value = (0, 0)
 
     async def _fake_run_agent(request: RunRequest):
         if "Scan Agent" in request.name:
             return make_scan_output()  # 01-scan nominates candidates
         if "PRD Agent" in request.name:
-            return IssueOutput(number=5, labels=[])  # 02-prd
+            return CompletionOutput()  # 02-prd writes spec draft
         if "Slice Agent" in request.name:
-            return CompletionOutput()  # 03-issues files sub-issues
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
+            return CompletionOutput()  # 03-issues writes slice drafts
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()

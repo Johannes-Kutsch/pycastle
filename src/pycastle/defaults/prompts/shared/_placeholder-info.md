@@ -84,10 +84,12 @@ Used by: improve/02-prd.md, improve/04-no-candidate-report.md
 Used by: improve/03-issues.md
 
 - `{{IMPROVE_SHORT_SID}}` — Short session ID for the improve session.
-- `{{ISSUE_NUMBER}}` — The GitHub issue number.
-- `{{ISSUE_TITLE}}` — The issue title.
-- `{{ISSUE_BODY}}` — The issue body markdown.
-- `{{ISSUE_COMMENTS}}` — Formatted issue comments.
+
+## Scope: IMPROVE_DRAFT_CORRECTION
+
+Used by: improve/_draft-correction.md
+
+- `{{VALIDATION_ERRORS}}` — Bullet list of validation errors found in the draft set.
 
 ## Scope: DIVERGE
 

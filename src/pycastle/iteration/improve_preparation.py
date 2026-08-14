@@ -7,7 +7,6 @@ from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.scope_args import (
     build_improve_scan_scope_args,
-    build_issue_scope_args,
     validated_scope_args_for_template,
 )
 
@@ -203,24 +202,9 @@ def _build_improve_scope_args(
         )
 
     if template is PromptTemplate.IMPROVE_ISSUES:
-        if request.prd_number is None:
-            issue: dict[str, Any] = {
-                "number": "",
-                "title": "",
-                "body": "",
-                "comments": [],
-            }
-        else:
-            issue = {
-                **github_port.get_issue(request.prd_number),
-                "comments": github_port.get_issue_comments(request.prd_number),
-            }
         return validated_scope_args_for_template(
             template,
-            build_issue_scope_args(
-                issue,
-                extra_scope_args={"IMPROVE_SHORT_SID": request.short_sid},
-            ),
+            {"IMPROVE_SHORT_SID": request.short_sid},
         )
 
     raise TypeError(f"unsupported Improve template: {template.name}")

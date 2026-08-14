@@ -281,9 +281,13 @@ def _make_deps(
         )
 
     resolved_git_svc = git_svc if git_svc is not None else _default_git_service()
-    resolved_github_svc = (
-        github_svc if github_svc is not None else MagicMock(spec=GithubService)
-    )
+    if github_svc is not None:
+        resolved_github_svc = github_svc
+    else:
+        _default_github = MagicMock(spec=GithubService)
+        _default_github.repo = "test/repo"
+        _default_github.create_issue_in.return_value = (0, 0)
+        resolved_github_svc = _default_github
 
     if setup_worktrees:
         git_mock = cast("Any", resolved_git_svc)

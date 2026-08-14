@@ -88,6 +88,7 @@ def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
         "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
         "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
         "SESSION_DIR": "/sessions/abc",
+        "VALIDATION_ERRORS": "- Error 1\n- Error 2",
     }
     return {
         placeholder: args[placeholder]
@@ -294,14 +295,12 @@ def test_scope_resume_is_empty():
 
 
 def test_scope_improve_issues_placeholders():
-    assert Scope.IMPROVE_ISSUES.placeholders == frozenset(
-        {
-            "IMPROVE_SHORT_SID",
-            "ISSUE_NUMBER",
-            "ISSUE_TITLE",
-            "ISSUE_BODY",
-            "ISSUE_COMMENTS",
-        }
+    assert Scope.IMPROVE_ISSUES.placeholders == frozenset({"IMPROVE_SHORT_SID"})
+
+
+def test_scope_improve_draft_correction_placeholders():
+    assert Scope.IMPROVE_DRAFT_CORRECTION.placeholders == frozenset(
+        {"VALIDATION_ERRORS"}
     )
 
 
@@ -309,7 +308,7 @@ def test_scopes_are_distinct_members():
     # Regression: empty-frozenset values were aliased by Enum, collapsing
     # IMPROVE_SCAN and RESUME into a single member.
     assert Scope.IMPROVE_SCAN is not Scope.RESUME
-    assert len(list(Scope)) == 11
+    assert len(list(Scope)) == 12
 
 
 # ── PromptTemplate enum has correct filename and scope ────────────────────────
@@ -367,8 +366,8 @@ def test_template_reference_carries_name_and_relative_path():
     assert ref.relative_path == PromptTemplate.IMPLEMENT_BEHAVIOR.filename
 
 
-def test_template_enum_has_fifteen_variants():
-    assert len(list(PromptTemplate)) == 15
+def test_template_enum_has_sixteen_variants():
+    assert len(list(PromptTemplate)) == 16
 
 
 # ── Ctor validates: unknown token raises ─────────────────────────────────────
@@ -392,11 +391,7 @@ def test_renderer_ctor_rejects_typo_in_improve_issues_template(cfg, prompts_dir)
 
 
 def test_renderer_ctor_accepts_improve_issues_template(cfg, prompts_dir):
-    (prompts_dir / "improve" / "03-issues.md").write_text(
-        "Task: #{{ISSUE_NUMBER}} {{ISSUE_TITLE}}\n"
-        "Body: {{ISSUE_BODY}}\nComments: {{ISSUE_COMMENTS}}\n"
-        "SID: {{IMPROVE_SHORT_SID}}"
-    )
+    (prompts_dir / "improve" / "03-issues.md").write_text("SID: {{IMPROVE_SHORT_SID}}")
     PromptRenderer(cfg)  # must not raise
 
 
@@ -1848,14 +1843,8 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
     ("template", "expected_fragment"),
     [
         (PromptTemplate.IMPROVE_SCAN, "<candidates>"),
-        (
-            PromptTemplate.IMPROVE_PRD,
-            'Output the filed issue as `<issue>{"number": N, "labels": []}</issue>`',
-        ),
-        (
-            PromptTemplate.IMPROVE_ISSUES,
-            "Output each filed issue number as `<issue>N</issue>`.",
-        ),
+        (PromptTemplate.IMPROVE_PRD, "<promise>COMPLETE</promise>"),
+        (PromptTemplate.IMPROVE_ISSUES, "<promise>COMPLETE</promise>"),
         (
             PromptTemplate.IMPROVE_NO_CANDIDATE,
             "Output each filed PRD issue number as `<issue>N</issue>`.",
@@ -1889,11 +1878,7 @@ def test_render_expected_output_shape_keeps_improve_no_candidate_distinct_from_i
         no_candidate_scope_args,
     )
 
-    assert issues_shape.strip() == (
-        "Output each filed issue number as `<issue>N</issue>`.\n"
-        "\n"
-        "Then emit `<promise>COMPLETE</promise>`."
-    )
+    assert issues_shape.strip() == "Emit `<promise>COMPLETE</promise>`."
     assert no_candidate_shape.strip() == (
         "Output each filed PRD issue number as `<issue>N</issue>`.\n"
         "\n"
