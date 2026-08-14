@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -157,19 +157,18 @@ def file_draft_set(
         )
         _save_record(role_dir, record)
     else:
-        assert record.spec_number is not None
-        assert record.spec_database_id is not None
+        # Branch condition: record.spec_number is not None (proved by if-guard above).
         spec_filed = _FiledIssue(
             handle=spec_draft.handle,
             number=record.spec_number,
-            database_id=record.spec_database_id,
+            database_id=cast("int", record.spec_database_id),
             title=record.spec_title,
         )
         handle_to_filed[spec_draft.handle] = spec_filed
         for filed in record.filed_slices:
             handle_to_filed[filed.handle] = filed
 
-    assert record.spec_number is not None
+    spec_number = cast("int", record.spec_number)
     filed_handles = {s.handle for s in record.filed_slices}
 
     # Stage 1b: create each slice in order.
@@ -185,7 +184,7 @@ def file_draft_set(
             slice_draft.title, body, slice_labels
         )
 
-        port.register_sub_issue(record.spec_number, slice_db_id)
+        port.register_sub_issue(spec_number, slice_db_id)
 
         for blocker_handle in slice_draft.blocked_by:
             port.add_issue_dependency(
@@ -204,7 +203,7 @@ def file_draft_set(
 
     # Stage 2: apply state label to every issue in the set.
     if not record.labels_applied:
-        port.apply_label(record.spec_number, state_label)
+        port.apply_label(spec_number, state_label)
         for filed in record.filed_slices:
             port.apply_label(filed.number, state_label)
         record.labels_applied = True

@@ -257,7 +257,7 @@ class ImprovePhaseDriver:
             is_mid_prd = in_flight == "02-prd"
             return self._make_prd_step(send_role_prompt_on_resume=not is_mid_prd)
 
-        # Has record (prd_number or spec_number set) → slice (Issues) phase.
+        # Record exists → slice (Issues) phase.
         prd_number = record.prd_number
         self._prd_number = prd_number
         in_flight = self._load_in_flight() if from_start else None
@@ -334,7 +334,9 @@ class ImprovePhaseDriver:
                 return step
             return None
 
-        next_step: Step | None = self._next_step_from_cursor(self._cursor, from_start=False)
+        next_step: Step | None = self._next_step_from_cursor(
+            self._cursor, from_start=False
+        )
         if next_step is not None:
             self._write_in_flight(next_step.prompt_key.removesuffix(".md"))
         return next_step
@@ -378,12 +380,6 @@ class ImprovePhaseDriver:
     @property
     def no_candidate(self) -> bool:
         return self._no_candidate
-
-    @property
-    def all_candidates_complete(self) -> bool:
-        if self._candidates is None:
-            return False
-        return self._cursor >= len(self._candidates)
 
 
 @dataclass(frozen=True)
