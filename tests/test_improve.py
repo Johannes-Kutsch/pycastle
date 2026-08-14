@@ -851,8 +851,8 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
 # ── Session namespace per phase ───────────────────────────────────────────────
 
 
-def test_improve_phases_01_02_04_use_main_namespace(tmp_path, git_svc):
-    """Phases 01-scan, 02-prd, and 04-no-candidate-report must use session_namespace='main'."""
+def test_improve_phases_01_and_04_use_main_namespace(tmp_path, git_svc):
+    """Phases 01-scan and 04-no-candidate-report use session_namespace='main'."""
     no_candidate_cfg = Config(logs_dir=tmp_path, diagnose_on_failure=True)
     runner = FakeAgentRunner(
         [NoCandidateOutput(), CompletionOutput()],  # 01-scan NO-CANDIDATE → 04-report
@@ -1222,32 +1222,6 @@ def test_multi_candidate_run_files_both_candidates_specs(tmp_path, git_svc):
     assert github_svc.create_issue_in.call_count == 2
 
 
-def test_prd_phase_uses_candidate_namespace(tmp_path, git_svc):
-    """Phase 02-prd runs in 'candidate/0' namespace, not 'main'."""
-    runner = _make_runner_with_drafts(
-        make_scan_output(), CompletionOutput(), CompletionOutput()
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
-    _run(deps)
-    prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
-    )
-    assert prd_call.session_namespace == "candidate/0"
-
-
-def test_issues_phase_uses_candidate_namespace(tmp_path, git_svc):
-    """Phase 03-issues runs in 'candidate/0' namespace, not 'main'."""
-    runner = _make_runner_with_drafts(
-        make_scan_output(), CompletionOutput(), CompletionOutput()
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
-    _run(deps)
-    issues_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    )
-    assert issues_call.session_namespace == "candidate/0"
-
-
 def test_multi_candidate_run_files_all_candidates_in_rank_order(tmp_path, git_svc):
     """A scan nominating two candidates files both, candidate/0 before candidate/1."""
     scan_output = ScanCandidatesOutput(
@@ -1334,16 +1308,44 @@ def test_improve_stops_at_cap_after_completing_first_candidate(tmp_path, git_svc
 
 
 def test_no_candidate_path_makes_no_forks(tmp_path, git_svc):
-    """A scan that nominates nothing does not fork any namespaces."""
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    """A scan that nominates nothing does not dispatch any per-candidate work."""
     runner = FakeAgentRunner(
         [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    # Session dir was discarded on success; no candidate dir should have existed
-    role_session = wt / ".pycastle-session" / "improve"
-    assert not (role_session / "candidate").exists()
+    dispatched_templates = [c.prompt.template for c in runner.calls]
+    assert PromptTemplate.IMPROVE_PRD not in dispatched_templates
+    assert PromptTemplate.IMPROVE_ISSUES not in dispatched_templates
+
+
+def test_gate_failure_for_next_candidate_ends_dispatch_without_touching_filed(
+    tmp_path, git_svc
+):
+    """AC4: gate fails for candidate/1 → dispatch ends; candidate/0 already filed is untouched."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    # Simulate: scan done with 2 candidates, candidate/0 fully filed (cursor=1)
+    two_candidates = [
+        ScanCandidateItem(rank=1, title="First"),
+        ScanCandidateItem(rank=2, title="Second"),
+    ]
+    _seed_candidate_list(wt, two_candidates, cursor=1)
+    _seed_candidate_record(wt, 0, spec_number=101, labels_applied=True)
+    # candidate/1 transcript deliberately NOT seeded → gate will fail
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        cfg=Config(improve_override=StageOverride(service="opencode", effort="medium")),
+        service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
+    )
+    result = _run(deps)
+    # Gate failed → no candidates dispatched this call
+    assert isinstance(result, ImproveContinue)
+    assert result.completed_count == 0
+    # No PRD or Issues agents ran (candidate/0 was already filed, candidate/1 blocked)
+    assert runner.calls == []
 
 
 def test_cross_teardown_resume_checks_candidate_namespace_for_gate(tmp_path, git_svc):
