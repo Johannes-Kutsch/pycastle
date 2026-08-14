@@ -19,6 +19,7 @@ Phase 03 receives the PRD's number, title, body, comments inlined via `{{ISSUE_N
 - **Cross-service fallback directly from phase 1 to phase 2.** Rejected: unlike Implementer → Reviewer and other worktree-backed handoffs, phase 1's useful work exists in the provider transcript rather than in committed worktree state. A different service cannot inherit that transcript, so fallback must restart phase 1.
 - **Persist PRD number to disk.** Rejected: only covers a sub-second window with no I/O; orphan-reset costs nothing in normal flow.
 - **Re-fetch PRD body via agent inside phase 03.** Rejected: extra agent turn to re-derive what the host already has; also fails if `gh` mis-auths in container.
+- **Persist the candidate list.** Rejected here: single-candidate scan meant the list was always one entry and the durable handoff was the PRD; persisting a shortlist would let phase 2 proceed without the full scan transcript (see **Amendment** below).
 
 ## Consequences
 
@@ -36,3 +37,5 @@ Phase 03 receives the PRD's number, title, body, comments inlined via `{{ISSUE_N
 - The session-resume primitive is unchanged; the session namespace is additive on top of it.
 
 > **Note (ADR 0036).** Phase 03 later moved back into the `main` namespace and now resumes the Scan/PRD transcript; the `issues` namespace is retired. ADR 0036 supersedes the phase-03-split above, but this ADR's namespace mechanism, strict phase-1→2 gate, and PRD-as-durable-handoff still stand.
+
+> **Amendment (multiple candidates + persisted candidate list).** The single-candidate model above is superseded by multi-candidate scanning (ADR 0058). Two earlier decisions are reversed: (1) **Persisting the candidate list is now permitted.** After scan, `ImprovePhaseDriver` writes a `_candidate_list` file (ordered `ScanCandidateItem`s) and a `_candidate_cursor` file to the role session dir, letting the host resume multi-candidate processing across interruptions without repeating the scan. The strict-transcript invariant that guarded the single-candidate handoff is satisfied differently — the scan transcript is forked into per-candidate namespaces (`candidate/N`) after scan completes, so each PRD and Issues phase runs in an isolated namespace copy rather than sharing `main`. (2) **The orphan-after-02 reset is retired.** The in-memory PRD number loss that motivated the reset is eliminated: the host records the PRD number in the per-candidate `candidates/<N>/_candidate_record` file immediately after phase 02 completes, so a crash between phase 02 and phase 03 no longer means unrecoverable loss. On resume the driver reads the record and proceeds to phase 03; the orphan PRD manual-cleanup trade-off no longer applies.
