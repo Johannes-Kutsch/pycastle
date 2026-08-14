@@ -103,7 +103,7 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_PRD
-    assert prepared.session_namespace == "main"
+    assert prepared.session_namespace == "candidate/0"
     assert prepared.name == "PRD Agent"
     assert prepared.work_body == "writing PRD"
     assert prepared.prompt.send_role_prompt_on_resume is True
@@ -338,7 +338,7 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert prepared.session_namespace == "main"
+    assert prepared.session_namespace == "candidate/0"
     assert prepared.name == "Slice Agent"
     assert prepared.work_body == "filing sub-issues"
     assert prepared.prompt.send_role_prompt_on_resume is True
@@ -393,7 +393,7 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert prepared.session_namespace == "main"
+    assert prepared.session_namespace == "candidate/0"
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
     }
@@ -432,7 +432,7 @@ def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert prepared.session_namespace == "main"
+    assert prepared.session_namespace == "candidate/0"
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
     }

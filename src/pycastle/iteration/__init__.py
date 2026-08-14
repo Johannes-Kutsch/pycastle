@@ -296,8 +296,8 @@ async def _run_improve_phase(deps: Deps) -> IterationOutcome | None:
         return Done(improve_cap_reached=True)
     improve_result = await improve_phase(deps)
     deps.improve_cycle_interrupted = False
-    if isinstance(improve_result, ImproveContinue) and improve_result.completed:
-        deps.improve_dispatched_count += 1
+    if isinstance(improve_result, ImproveContinue):
+        deps.improve_dispatched_count += improve_result.completed_count
     if isinstance(improve_result, ImproveNoCandidate):
         return NoCandidate()
     if isinstance(improve_result, (PreflightHITL, PreflightAFK)):

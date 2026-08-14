@@ -1,5 +1,7 @@
 import contextlib
+import dataclasses
 import json
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
@@ -57,6 +59,31 @@ IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
 
 _DRAFTS_SUBDIR = "_drafts"
+_CANDIDATE_NS_PREFIX = "candidate"
+
+
+def _candidate_namespace(idx: int) -> str:
+    return f"{_CANDIDATE_NS_PREFIX}/{idx}"
+
+
+def _fork_candidate_namespaces(
+    sandbox_path: Path,
+    candidates: list[ScanCandidateItem],
+) -> None:
+    """Fork the scan (main) namespace to per-candidate namespaces.
+
+    Idempotent: skips any fork whose target already exists. Skips entirely
+    when the main namespace directory does not exist (e.g. in unit tests where
+    FakeAgentRunner does not write real session state).
+    """
+    main_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
+    if not main_session.path.is_dir():
+        return
+    for idx in range(len(candidates)):
+        ns = _candidate_namespace(idx)
+        target = RoleSession(sandbox_path, AgentRole.IMPROVE, ns)
+        if not target.path.is_dir():
+            main_session.fork_namespace(ns)
 
 
 class _GithubFilingPort:
@@ -240,19 +267,25 @@ class ImprovePhaseDriver:
             prd_number=None,
         )
 
-    def _make_prd_step(self, *, send_role_prompt_on_resume: bool) -> Step:
+    def _make_prd_step(self, *, send_role_prompt_on_resume: bool, idx: int) -> Step:
+        cfg = dataclasses.replace(
+            _PHASES["02-prd.md"], namespace=_candidate_namespace(idx)
+        )
         return Step(
             prompt_key="02-prd.md",
-            cfg=_PHASES["02-prd.md"],
+            cfg=cfg,
             send_role_prompt_on_resume=send_role_prompt_on_resume,
             fetch_recent_prd_titles=True,
             prd_number=None,
         )
 
-    def _make_issues_step(self, prd_number: int | None) -> Step:
+    def _make_issues_step(self, prd_number: int | None, *, idx: int) -> Step:
+        cfg = dataclasses.replace(
+            _PHASES["03-issues.md"], namespace=_candidate_namespace(idx)
+        )
         return Step(
             prompt_key="03-issues.md",
-            cfg=_PHASES["03-issues.md"],
+            cfg=cfg,
             send_role_prompt_on_resume=True,
             fetch_recent_prd_titles=False,
             prd_number=prd_number,
@@ -280,14 +313,16 @@ class ImprovePhaseDriver:
             # No record → spec (PRD) phase. Check in-flight for mid-PRD resume.
             in_flight = self._load_in_flight() if from_start else None
             is_mid_prd = in_flight == "02-prd"
-            return self._make_prd_step(send_role_prompt_on_resume=not is_mid_prd)
+            return self._make_prd_step(
+                send_role_prompt_on_resume=not is_mid_prd, idx=idx
+            )
 
         # Record exists → slice (Issues) phase.
         prd_number = record.prd_number
         self._prd_number = prd_number
         in_flight = self._load_in_flight() if from_start else None
         is_mid_issues = in_flight == "03-issues"
-        step = self._make_issues_step(prd_number)
+        step = self._make_issues_step(prd_number, idx=idx)
         # For mid-issues resume, override send_role_prompt_on_resume to False.
         if is_mid_issues:
             step = Step(
@@ -414,7 +449,11 @@ class ImproveNoCandidate:
 
 @dataclass(frozen=True)
 class ImproveContinue:
-    completed: bool = True
+    completed_count: int = 0
+
+    @property
+    def completed(self) -> bool:
+        return self.completed_count > 0
 
 
 class _ImproveDeps(Protocol):
@@ -429,13 +468,70 @@ class _ImproveDeps(Protocol):
     improve_dispatched_count: int
 
 
+def _needs_candidate_gate(step: "Step | None") -> bool:
+    return (
+        step is not None
+        and step.prompt_key == "02-prd.md"
+        and step.send_role_prompt_on_resume
+    )
+
+
+def _candidate_transcript_ok(
+    step: "Step",
+    deps: "_ImproveDeps",
+    sandbox_path: Path,
+) -> bool:
+    service_registry = deps.service_registry
+    service = (
+        service_registry[deps.cfg.improve_override.service]
+        if service_registry is not None
+        else None
+    )
+    if service is None:
+        return False
+    return has_exact_transcript_match(
+        worktree=sandbox_path,
+        role=AgentRole.IMPROVE,
+        session_namespace=step.cfg.namespace,
+        service=cast("AgentService", service),
+    )
+
+
+def _prev_spec_for_candidate(
+    role_session_dir: Path, candidate_idx: int
+) -> tuple[int, int] | None:
+    """Return (spec_number, spec_database_id) from the previous candidate record, if available."""
+    if candidate_idx == 0:
+        return None
+    prev_dir = role_session_dir / "candidates" / str(candidate_idx - 1)
+    prev_record = _load_record(prev_dir)
+    if (
+        prev_record is not None
+        and prev_record.spec_number is not None
+        and prev_record.spec_database_id is not None
+    ):
+        return (prev_record.spec_number, prev_record.spec_database_id)
+    return None
+
+
+def _cap_reached(deps: "_ImproveDeps", completed_count: int) -> bool:
+    return (
+        deps.cfg.improve_max is not None
+        and deps.improve_dispatched_count + completed_count >= deps.cfg.improve_max
+    )
+
+
 async def _file_improve_drafts(
     *,
     deps: _ImproveDeps,
     role_session_dir: Path,
     sandbox_path: Path,
+    candidate_idx: int,
+    candidate_namespace: str,
+    prev_spec: tuple[int, int] | None = None,
 ) -> None:
     draft_dir = role_session_dir / _DRAFTS_SUBDIR
+    candidate_dir = role_session_dir / "candidates" / str(candidate_idx)
     try:
         drafts = read_draft_set(draft_dir, deps.cfg)
     except DraftSetValidationError as exc:
@@ -460,7 +556,7 @@ async def _file_improve_drafts(
                 stage="improve-sandbox",
                 status_display=deps.status_display,
                 work_body="fixing draft validation errors",
-                session_namespace="main",
+                session_namespace=candidate_namespace,
                 preserve_session_on_completion=True,
             )
         )
@@ -469,9 +565,13 @@ async def _file_improve_drafts(
     file_draft_set(
         drafts,
         port=_GithubFilingPort(deps.github_svc),
-        role_dir=role_session_dir,
+        role_dir=candidate_dir,
         state_label=deps.cfg.issue_label,
+        prev_spec=prev_spec,
     )
+    # Clear draft dir so the next candidate starts with a clean slate.
+    if draft_dir.is_dir():
+        shutil.rmtree(draft_dir)
 
 
 async def improve_phase(
@@ -519,34 +619,16 @@ async def improve_phase(
             )
 
             step = driver.start()
-            if (
-                step is not None
-                and step.prompt_key == "02-prd.md"
-                and step.send_role_prompt_on_resume
+            if _needs_candidate_gate(step) and not _candidate_transcript_ok(
+                cast("Step", step), deps, sandbox_path
             ):
-                service_name = deps.cfg.improve_override.service
-                service_registry = deps.service_registry
-                service = (
-                    service_registry[service_name]
-                    if service_registry is not None
-                    else None
+                deps.status_display.print(
+                    "Improve",
+                    "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
                 )
-                has_exact_main_transcript = service is not None and (
-                    has_exact_transcript_match(
-                        worktree=sandbox_path,
-                        role=AgentRole.IMPROVE,
-                        session_namespace="main",
-                        service=cast("AgentService", service),
-                    )
-                )
-                if not has_exact_main_transcript:
-                    deps.status_display.print(
-                        "Improve",
-                        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
-                    )
-                    role_session.discard()
-                    row.close("restarting from phase 1")
-                    return ImproveContinue(completed=False)
+                role_session.discard()
+                row.close("restarting from phase 1")
+                return ImproveContinue(completed_count=0)
 
             role_session.write_fingerprint(fingerprint)
 
@@ -555,7 +637,7 @@ async def improve_phase(
                 improve_max=deps.cfg.improve_max,
                 dispatched=deps.improve_dispatched_count,
             )
-            issues_ran_this_call = False
+            completed_count = 0
             while step is not None:
                 prepared_step = prepare_improve_step(
                     step,
@@ -576,6 +658,8 @@ async def improve_phase(
                         AgentRole.IMPROVE.value,
                         describe_managed_worktree_mount_rejection(mount_decision),
                     )
+                # Save namespace before record_outcome advances the cursor.
+                step_namespace = prepared_step.session_namespace
                 output = await deps.agent_runner.run(
                     RunRequest(
                         name=prepared_step.name,
@@ -588,7 +672,7 @@ async def improve_phase(
                         stage="improve-sandbox",
                         status_display=deps.status_display,
                         work_body=prepared_step.work_body,
-                        session_namespace=prepared_step.session_namespace,
+                        session_namespace=step_namespace,
                         preserve_session_on_completion=True,
                     )
                 )
@@ -600,21 +684,40 @@ async def improve_phase(
                         f"Expected ScanCandidatesOutput or NoCandidateOutput, "
                         f"got {type(output).__name__}."
                     )
-                if step.prompt_key == "03-issues.md":
-                    issues_ran_this_call = True
                 driver.record_outcome(step, output)
+
+                # After scan, eagerly fork one namespace per candidate.
+                if step.prompt_key == "01-scan.md" and isinstance(
+                    output, ScanCandidatesOutput
+                ):
+                    _fork_candidate_namespaces(sandbox_path, list(output.candidates))
+
+                if step.prompt_key == "03-issues.md":
+                    candidate_idx = int(step_namespace.split("/")[1])
+                    prev_spec = _prev_spec_for_candidate(
+                        role_session_dir, candidate_idx
+                    )
+                    await _file_improve_drafts(
+                        deps=deps,
+                        role_session_dir=role_session_dir,
+                        sandbox_path=sandbox_path,
+                        candidate_idx=candidate_idx,
+                        candidate_namespace=step_namespace,
+                        prev_spec=prev_spec,
+                    )
+                    completed_count += 1
+                    if _cap_reached(deps, completed_count):
+                        break
+
                 step = driver.next()
 
             no_candidate = driver.no_candidate
 
-            if issues_ran_this_call:
-                await _file_improve_drafts(
-                    deps=deps,
-                    role_session_dir=role_session_dir,
-                    sandbox_path=sandbox_path,
-                )
-
             role_session.discard()
 
         row.close("finished")
-    return ImproveNoCandidate() if no_candidate else ImproveContinue()
+    return (
+        ImproveNoCandidate()
+        if no_candidate
+        else ImproveContinue(completed_count=completed_count)
+    )

@@ -433,8 +433,9 @@ def _seed_exact_phase_1_main_transcript(
     *,
     service_name: str,
     provider_session_id: str,
+    namespace: str = "main",
 ) -> None:
-    role_session = RoleSession(worktree_path, AgentRole.IMPROVE, "main")
+    role_session = RoleSession(worktree_path, AgentRole.IMPROVE, namespace)
     save_service_session_metadata(role_session.path, service_name, provider_session_id)
     if service_name == "opencode":
         state_dir = worktree_path / "opencode"
@@ -462,7 +463,10 @@ def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     _seed_exact_phase_1_main_transcript(
-        wt, service_name="opencode", provider_session_id="sess-opencode-123"
+        wt,
+        service_name="opencode",
+        provider_session_id="sess-opencode-123",
+        namespace="candidate/0",
     )
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(
@@ -486,6 +490,7 @@ def test_improve_clean_phase_2_entry_dispatches_prd_prompt_for_exact_codex_trans
         wt,
         service_name="codex",
         provider_session_id="thread-exact",
+        namespace="candidate/0",
     )
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
@@ -513,8 +518,11 @@ def test_improve_clean_phase_2_entry_accepts_recovered_exact_codex_transcript(
         wt,
         service_name="codex",
         provider_session_id="thread-exact",
+        namespace="candidate/0",
     )
-    (wt / ".pycastle-session" / "improve" / "main" / "codex" / "thread_id").unlink()
+    (
+        wt / ".pycastle-session" / "improve" / "candidate" / "0" / "codex" / "thread_id"
+    ).unlink()
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
     deps = _make_deps(
@@ -735,7 +743,10 @@ def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc)
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     _seed_exact_phase_1_main_transcript(
-        wt, service_name="opencode", provider_session_id="sess-opencode-123"
+        wt,
+        service_name="opencode",
+        provider_session_id="sess-opencode-123",
+        namespace="candidate/0",
     )
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(
@@ -822,6 +833,8 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
     _seed_exact_phase_1_main_transcript(
         wt, service_name="opencode", provider_session_id="sess-opencode-123"
     )
+    # Simulate the post-fork state: candidate/0 namespace forked from main.
+    RoleSession(wt, AgentRole.IMPROVE, "main").fork_namespace("candidate/0")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(
         tmp_path,
@@ -853,35 +866,35 @@ def test_improve_phases_01_02_04_use_main_namespace(tmp_path, git_svc):
     assert runner.calls[1].session_namespace == "main"
 
 
-def test_improve_phase_02_uses_main_namespace(deps, agent_runner):
-    """Phase 02-prd must use session_namespace='main'."""
+def test_improve_phase_02_uses_candidate_namespace(deps, agent_runner):
+    """Phase 02-prd uses a per-candidate session namespace ('candidate/0' for first)."""
     _run(deps)
     prd_call = next(
         c for c in agent_runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
     )
-    assert prd_call.session_namespace == "main"
+    assert prd_call.session_namespace == "candidate/0"
 
 
-def test_improve_phase_03_uses_main_namespace(deps, agent_runner):
-    """Phase 03-issues must use session_namespace='main'."""
+def test_improve_phase_03_uses_candidate_namespace(deps, agent_runner):
+    """Phase 03-issues uses a per-candidate session namespace ('candidate/0' for first)."""
     _run(deps)
     issues_call = next(
         c
         for c in agent_runner.calls
         if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
     )
-    assert issues_call.session_namespace == "main"
+    assert issues_call.session_namespace == "candidate/0"
 
 
 def test_improve_all_phases_have_correct_namespace(deps, agent_runner):
-    """Happy path: namespaces across all three phases match the expected mapping."""
+    """Happy path: scan uses 'main'; prd/issues use per-candidate namespace."""
     _run(deps)
     assert agent_runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
     assert agent_runner.calls[0].session_namespace == "main"
     assert agent_runner.calls[1].prompt.template == PromptTemplate.IMPROVE_PRD
-    assert agent_runner.calls[1].session_namespace == "main"
+    assert agent_runner.calls[1].session_namespace == "candidate/0"
     assert agent_runner.calls[2].prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert agent_runner.calls[2].session_namespace == "main"
+    assert agent_runner.calls[2].session_namespace == "candidate/0"
 
 
 # ── Return type: sum-type variants ───────────────────────────────────────────
@@ -1176,3 +1189,182 @@ def test_draft_dir_is_at_role_level_not_namespace(tmp_path, git_svc):
     draft_dir = _draft_dir(tmp_path)
     # Verify the draft dir is NOT inside the main namespace
     assert not draft_dir.is_relative_to(main_namespace)
+
+
+# ── Multi-candidate: AC1, AC2, AC3, AC4, AC5, AC6, AC7 ───────────────────────
+
+
+def test_multi_candidate_run_files_both_candidates_specs(tmp_path, git_svc):
+    """Scan nominating 2 candidates: both candidates have their spec filed."""
+    call_count = [0]
+
+    def side_effect(request):
+        call_count[0] += 1
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return ScanCandidatesOutput(
+                candidates=(
+                    ScanCandidateItem(rank=1, title="First"),
+                    ScanCandidateItem(rank=2, title="Second"),
+                )
+            )
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            _write_spec_draft(draft_dir)
+        return CompletionOutput()
+
+    github_svc = _make_filing_github_svc()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    # 2 candidates x 1 spec each = 2 create_issue_in calls
+    assert github_svc.create_issue_in.call_count == 2
+
+
+def test_prd_phase_uses_candidate_namespace(tmp_path, git_svc):
+    """Phase 02-prd runs in 'candidate/0' namespace, not 'main'."""
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    _run(deps)
+    prd_call = next(
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+    )
+    assert prd_call.session_namespace == "candidate/0"
+
+
+def test_issues_phase_uses_candidate_namespace(tmp_path, git_svc):
+    """Phase 03-issues runs in 'candidate/0' namespace, not 'main'."""
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    _run(deps)
+    issues_call = next(
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    )
+    assert issues_call.session_namespace == "candidate/0"
+
+
+def test_multi_candidate_run_files_all_candidates_in_rank_order(tmp_path, git_svc):
+    """A scan nominating two candidates files both, candidate/0 before candidate/1."""
+    scan_output = ScanCandidatesOutput(
+        candidates=(
+            ScanCandidateItem(rank=1, title="First"),
+            ScanCandidateItem(rank=2, title="Second"),
+        )
+    )
+    issues_namespaces: list[str] = []
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return scan_output
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            issues_namespaces.append(request.session_namespace)
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        return CompletionOutput()
+
+    github_svc = _make_filing_github_svc()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+    _run(deps)
+
+    assert issues_namespaces == ["candidate/0", "candidate/1"]
+    assert github_svc.create_issue_in.call_count == 2
+
+
+def test_dispatch_count_increments_per_completed_candidate(tmp_path, git_svc):
+    """improve_dispatched_count rises by the number of candidates completed in one run."""
+    scan_output = ScanCandidatesOutput(
+        candidates=(
+            ScanCandidateItem(rank=1, title="First"),
+            ScanCandidateItem(rank=2, title="Second"),
+        )
+    )
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return scan_output
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        return CompletionOutput()
+
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    result = _run(deps)
+
+    assert isinstance(result, ImproveContinue)
+    assert result.completed_count == 2
+
+
+def test_improve_stops_at_cap_after_completing_first_candidate(tmp_path, git_svc):
+    """With improve_max=1 and 2 candidates nominated, only the first is dispatched."""
+    scan_output = ScanCandidatesOutput(
+        candidates=(
+            ScanCandidateItem(rank=1, title="First"),
+            ScanCandidateItem(rank=2, title="Second"),
+        )
+    )
+    issues_namespaces: list[str] = []
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return scan_output
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            issues_namespaces.append(request.session_namespace)
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        return CompletionOutput()
+
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    cfg = Config(improve_max=1)
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
+    result = _run(deps)
+
+    assert issues_namespaces == ["candidate/0"]
+    assert isinstance(result, ImproveContinue)
+    assert result.completed_count == 1
+
+
+def test_no_candidate_path_makes_no_forks(tmp_path, git_svc):
+    """A scan that nominates nothing does not fork any namespaces."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+    _run(deps)
+    # Session dir was discarded on success; no candidate dir should have existed
+    role_session = wt / ".pycastle-session" / "improve"
+    assert not (role_session / "candidate").exists()
+
+
+def test_cross_teardown_resume_checks_candidate_namespace_for_gate(tmp_path, git_svc):
+    """Resume with candidate list (scan done) checks 'candidate/0' transcript, not 'main'."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    # Seed 'candidate/0' namespace transcript (fork of main)
+    _seed_exact_phase_1_main_transcript(
+        wt,
+        service_name="opencode",
+        provider_session_id="sess-123",
+        namespace="candidate/0",
+    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        cfg=Config(improve_override=StageOverride(service="opencode", effort="medium")),
+        service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
+    )
+    _run(deps)
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert len(runner.calls) == 2
