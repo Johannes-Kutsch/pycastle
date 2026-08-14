@@ -12,18 +12,21 @@ from pycastle.agents.output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
     CompletionOutput,
-    IssueOutput,
     NoCandidateOutput,
     ScanCandidateItem,
     ScanCandidatesOutput,
 )
 from pycastle.config import Config, StageOverride
+from pycastle.infrastructure.preflight_failure_interpreter import (
+    PreflightCommandFailure,
+)
 from pycastle.iteration.improve import (
     IMPROVE_SANDBOX,
     ImproveContinue,
     ImproveNoCandidate,
     improve_phase,
 )
+from pycastle.iteration.improve_drafts import DraftSetValidationError
 from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubNetworkError, ServiceRegistry
@@ -57,10 +60,23 @@ def git_svc(tmp_path):
 @pytest.fixture
 def agent_runner():
     # Happy path: 01-scan → 02-prd → 03-issues → terminal (3 calls)
-    return FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
-    )
+    # The issues phase side-effect writes valid draft files so host filing succeeds.
+    responses = [make_scan_output(), CompletionOutput(), CompletionOutput()]
+    idx = [0]
+
+    def _side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{body}"
+            )
+        result = responses[idx[0]]
+        idx[0] += 1
+        return result
+
+    return FakeAgentRunner(side_effect=_side_effect, preflight_responses=[[]])
 
 
 @pytest.fixture
@@ -109,9 +125,8 @@ def test_improve_phase_creates_worktree_on_improve_sandbox_branch(deps, git_svc)
 
 
 def test_improve_phase_uses_improve_override_service(tmp_path, git_svc):
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
@@ -155,10 +170,13 @@ def test_improve_phase_dispatches_per_phase_display(
 ):
     """Each phase dispatches with its own RunRequest name and work_body."""
     if template == PromptTemplate.IMPROVE_NO_CANDIDATE:
-        outputs = [NoCandidateOutput(), CompletionOutput()]
+        runner = FakeAgentRunner(
+            [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+        )
     else:
-        outputs = [make_scan_output(), CompletionOutput(), CompletionOutput()]
-    runner = FakeAgentRunner(outputs, preflight_responses=[[]])
+        runner = _make_runner_with_drafts(
+            make_scan_output(), CompletionOutput(), CompletionOutput()
+        )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     call = next(c for c in runner.calls if c.prompt.template == template)
@@ -198,9 +216,8 @@ def test_improve_phase_removes_session_on_terminal_success(tmp_path, git_svc):
     Improve-sandbox has no downstream stage that needs the sentinel, so the dir is
     removed outright to let managed_worktree's teardown predicate fire.
     """
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -256,9 +273,9 @@ def test_improve_phase_dispatches_prd_step_with_expected_work_body(tmp_path, git
         {"number": 12, "state": "OPEN", "title": "First candidate"},
         {"number": 11, "state": "CLOSED", "title": "Second candidate"},
     ]
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    github_svc.create_issue_in.return_value = (0, 0)
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
@@ -275,9 +292,9 @@ def test_improve_phase_still_dispatches_prd_step_when_recent_prd_history_is_empt
 ):
     github_svc = MagicMock()
     github_svc.get_recent_improve_prds.return_value = []
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    github_svc.create_issue_in.return_value = (0, 0)
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
@@ -447,9 +464,7 @@ def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
     _seed_exact_phase_1_main_transcript(
         wt, service_name="opencode", provider_session_id="sess-opencode-123"
     )
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
-    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(
         tmp_path,
         runner,
@@ -472,19 +487,12 @@ def test_improve_clean_phase_2_entry_dispatches_prd_prompt_for_exact_codex_trans
         service_name="codex",
         provider_session_id="thread-exact",
     )
-    github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
-    github_svc.get_issue_comments.return_value = []
-    runner = FakeAgentRunner(
-        [IssueOutput(number=17, labels=[]), CompletionOutput()],
-        preflight_responses=[[]],
-    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
     deps = _make_deps(
         tmp_path,
         runner,
         git_svc=git_svc,
-        github_svc=github_svc,
         cfg=cfg,
         service_registry=ServiceRegistry({"codex": CodexService()}),
     )
@@ -507,19 +515,12 @@ def test_improve_clean_phase_2_entry_accepts_recovered_exact_codex_transcript(
         provider_session_id="thread-exact",
     )
     (wt / ".pycastle-session" / "improve" / "main" / "codex" / "thread_id").unlink()
-    github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
-    github_svc.get_issue_comments.return_value = []
-    runner = FakeAgentRunner(
-        [IssueOutput(number=17, labels=[]), CompletionOutput()],
-        preflight_responses=[[]],
-    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
     deps = _make_deps(
         tmp_path,
         runner,
         git_svc=git_svc,
-        github_svc=github_svc,
         cfg=cfg,
         service_registry=ServiceRegistry({"codex": CodexService()}),
     )
@@ -591,9 +592,8 @@ def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_
     assert isinstance(result, ImproveContinue)
     assert runner.calls == []
 
-    follow_up = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    follow_up = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     follow_up_deps = _make_deps(tmp_path, follow_up, git_svc=git_svc)
 
@@ -650,9 +650,8 @@ def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
 
 def test_no_candidate_list_starts_at_scan_regardless_of_other_files(tmp_path, git_svc):
     """Without a candidate list on disk, improve always starts from scan."""
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -667,11 +666,11 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     _seed_candidate_record(wt, 0, prd_number=None)
     role_session_dir = wt / ".pycastle-session" / "improve"
     (role_session_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
-    runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    runner = _make_runner_with_drafts(CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert runner.calls[0].prompt.scope_args["ISSUE_NUMBER"] == ""
+    assert runner.calls[0].prompt.scope_args["IMPROVE_SHORT_SID"] != ""
     assert len(runner.calls) == 1
 
 
@@ -681,14 +680,8 @@ def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc)
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
     (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
-    github_svc = MagicMock()
-    github_svc.get_issue.return_value = {"number": 17, "title": "PRD", "body": "body"}
-    github_svc.get_issue_comments.return_value = []
-    runner = FakeAgentRunner(
-        [IssueOutput(number=17, labels=[]), CompletionOutput()],
-        preflight_responses=[[]],
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
     _run(deps)
 
@@ -727,9 +720,7 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
     (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
-    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     prd_call = next(
@@ -746,9 +737,7 @@ def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc)
     _seed_exact_phase_1_main_transcript(
         wt, service_name="opencode", provider_session_id="sess-opencode-123"
     )
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
-    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(
         tmp_path,
         runner,
@@ -790,9 +779,8 @@ def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
     (role_session_dir / "_phase_progress").write_text(
         "corrupted-data", encoding="utf-8"
     )
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -801,9 +789,8 @@ def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
 
 def test_improve_fresh_run_on_empty_progress_file(tmp_path, git_svc):
     """No candidate list on disk → fresh run starting at scan (even if other files present)."""
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -817,9 +804,8 @@ def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
     role_session_dir.mkdir(parents=True, exist_ok=True)
     (role_session_dir / "_candidate_list").write_text("\n  \t  \n", encoding="utf-8")
     (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -836,9 +822,7 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
     _seed_exact_phase_1_main_transcript(
         wt, service_name="opencode", provider_session_id="sess-opencode-123"
     )
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
-    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(
         tmp_path,
         runner,
@@ -945,9 +929,8 @@ def test_fingerprint_gate_discards_session_when_safe_sha_changes(tmp_path, git_s
     )
     (role_session_dir / "_fingerprint").write_text("old-sha-xyz", encoding="utf-8")
 
-    runner = FakeAgentRunner(
-        [make_scan_output(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=[[]],
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -990,10 +973,206 @@ def test_scan_returning_candidates_output_continues_to_phase_2(tmp_path, git_svc
     candidates = ScanCandidatesOutput(
         candidates=(ScanCandidateItem(rank=1, title="Refactor seam"),)
     )
-    runner = FakeAgentRunner(
-        [candidates, CompletionOutput(), CompletionOutput()], preflight_responses=[[]]
+    runner = _make_runner_with_drafts(
+        candidates, CompletionOutput(), CompletionOutput()
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
     assert runner.calls[1].prompt.template == PromptTemplate.IMPROVE_PRD
+
+
+# ── Host-side filing pass (AC3, AC5, AC6, AC7) ──────────────────────────────
+
+_VALID_BODY = "A" * 120
+
+
+def _write_spec_draft(draft_dir: Path, *, body: str = _VALID_BODY) -> None:
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    (draft_dir / "spec.md").write_text(
+        f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{body}"
+    )
+
+
+def _write_slice_draft(draft_dir: Path, name: str, *, body: str = _VALID_BODY) -> None:
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    (draft_dir / f"{name}.md").write_text(
+        f"---\ntitle: {name} Slice\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{body}"
+    )
+
+
+def _draft_dir(tmp_path: Path) -> Path:
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    return wt / ".pycastle-session" / "improve" / "_drafts"
+
+
+def _make_runner_with_drafts(
+    *responses: object,
+    preflight_responses: list[list[PreflightCommandFailure] | BaseException]
+    | None = None,
+) -> FakeAgentRunner:
+    """FakeAgentRunner that writes valid spec draft when the issues phase is called."""
+    if preflight_responses is None:
+        preflight_responses = [[]]
+    resp_list = list(responses)
+    idx = [0]
+
+    def _side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        result = resp_list[idx[0]]
+        idx[0] += 1
+        return result
+
+    return FakeAgentRunner(
+        side_effect=_side_effect, preflight_responses=preflight_responses
+    )
+
+
+def _make_filing_github_svc() -> MagicMock:
+    github_svc = MagicMock()
+    github_svc.repo = "test/repo"
+    github_svc.create_issue_in.side_effect = [
+        (100, 1000),
+        (101, 1001),
+        (102, 1002),
+    ]
+    return github_svc
+
+
+def test_host_files_issues_after_slice_phase_with_valid_drafts(tmp_path, git_svc):
+    """After phase 03 completes, host reads draft files and files the spec and slices."""
+    call_count = [0]
+
+    def side_effect(request):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return make_scan_output()
+        if call_count[0] == 3:
+            # Issues phase: agent writes valid drafts to sandbox
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-first-slice")
+        return CompletionOutput()
+
+    github_svc = _make_filing_github_svc()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    assert github_svc.create_issue_in.call_count == 2
+
+
+def test_host_does_not_file_when_no_drafts_present(tmp_path, git_svc):
+    """When draft dir is absent, improve_phase raises rather than silently succeeding.
+
+    Flow: scan → prd → issues (no drafts written) → correction reprompt (still no
+    drafts written) → second read_draft_set raises DraftSetValidationError.
+    """
+    github_svc = _make_filing_github_svc()
+    # 4 responses: scan, prd, issues, correction reprompt (none write drafts)
+    runner = FakeAgentRunner(
+        [
+            make_scan_output(),
+            CompletionOutput(),
+            CompletionOutput(),
+            CompletionOutput(),
+        ],
+        preflight_responses=[[]],
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    with pytest.raises(DraftSetValidationError):
+        _run(deps)
+
+    assert github_svc.create_issue_in.call_count == 0
+
+
+def test_malformed_drafts_reprompt_agent_before_filing(tmp_path, git_svc):
+    """When drafts fail validation, the agent is reprompted once; nothing is filed yet."""
+    call_count = [0]
+
+    def side_effect(request):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return make_scan_output()
+        if call_count[0] == 3:
+            # Issues phase: agent writes invalid drafts (body too short)
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            (draft_dir / "spec.md").write_text(
+                "---\ntitle: Spec\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\nToo short."
+            )
+        return CompletionOutput()
+
+    github_svc = _make_filing_github_svc()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    with pytest.raises(DraftSetValidationError):
+        _run(deps)
+
+    # Agent is called 4 times total: scan, prd, issues, correction reprompt
+    assert len(runner.calls) == 4
+    assert github_svc.create_issue_in.call_count == 0
+
+
+def test_valid_reprompt_gets_filed(tmp_path, git_svc):
+    """After a correction reprompt produces valid drafts, the issues are filed."""
+    call_count = [0]
+
+    def side_effect(request):
+        call_count[0] += 1
+        draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+        if call_count[0] == 1:
+            return make_scan_output()
+        if call_count[0] == 3:
+            # Issues phase: agent writes invalid drafts initially
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            (draft_dir / "spec.md").write_text(
+                "---\ntitle: Spec\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\nToo short."
+            )
+        if call_count[0] == 4:
+            # Correction call: fix the drafts
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice")
+        return CompletionOutput()
+
+    github_svc = _make_filing_github_svc()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    assert call_count[0] == 4
+    assert github_svc.create_issue_in.call_count == 2
+
+
+def test_draft_dir_is_at_role_level_not_namespace(tmp_path, git_svc):
+    """Draft files live in the role session dir, not inside the 'main' namespace subdir."""
+    call_count = [0]
+
+    def side_effect(request):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return make_scan_output()
+        if call_count[0] == 3:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-first-slice")
+        return CompletionOutput()
+
+    github_svc = _make_filing_github_svc()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+    _run(deps)
+
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    role_session = wt / ".pycastle-session" / "improve"
+    main_namespace = role_session / "main"
+    draft_dir = _draft_dir(tmp_path)
+    # Verify the draft dir is NOT inside the main namespace
+    assert not draft_dir.is_relative_to(main_namespace)

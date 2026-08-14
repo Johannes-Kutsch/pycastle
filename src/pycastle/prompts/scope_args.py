@@ -11,7 +11,9 @@ from pycastle.session import RunKind
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-_ISSUE_VALUE_KEYS = Scope.PER_ISSUE.placeholders & Scope.IMPROVE_ISSUES.placeholders
+_ISSUE_VALUE_KEYS = frozenset(
+    {"ISSUE_NUMBER", "ISSUE_TITLE", "ISSUE_BODY", "ISSUE_COMMENTS"}
+)
 
 
 class FailureReportSource(Protocol):

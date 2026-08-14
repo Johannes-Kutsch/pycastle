@@ -1098,12 +1098,21 @@ def test_run_iteration_improve_chains_into_planning_on_success(
     # Second call (re-fetch after improve): one new issue filed by improve
     github_svc.get_open_issues.side_effect = [[], [filed_issue]]
     github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.repo = "test/repo"
+    github_svc.create_issue_in.return_value = (0, 0)
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([filed_issue])
         if request.name == "Scan Agent":
             return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
         return CompletionOutput()
 
     deps = dataclasses.replace(
@@ -2238,10 +2247,19 @@ def _make_improve_deps(
     """Return Deps wired for an improve-mode test (0 open AFK issues)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = []
+    github_svc.repo = "test/repo"
+    github_svc.create_issue_in.return_value = (0, 0)
 
     response_queue = list(agent_responses)
 
     async def _agent(request: RunRequest):
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
         return response_queue.pop(0)
 
     return dataclasses.replace(
@@ -4217,12 +4235,21 @@ def test_improve_continue_increments_dispatched_count_by_one(tmp_path, git_svc, 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.side_effect = [[], [filed_issue]]
     github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.repo = "test/repo"
+    github_svc.create_issue_in.return_value = (0, 0)
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([filed_issue])
         if request.name == "Scan Agent":
             return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
         return CompletionOutput()
 
     deps = dataclasses.replace(

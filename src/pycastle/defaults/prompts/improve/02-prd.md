@@ -2,7 +2,7 @@
 
 You are the Improve Agent — Phase 2: PRD.
 
-Take the candidate picked in phase 1 and turn it into a PRD. Publish it as a GitHub issue.
+Take the candidate picked in phase 1 and turn it into a PRD. Write it as a draft file.
 
 </task>
 
@@ -10,7 +10,7 @@ Take the candidate picked in phase 1 and turn it into a PRD. Publish it as a Git
 
 ## Safety net
 
-You must NOT modify any files in the worktree. Your only outputs are the GitHub issue and the `<promise>` tag.
+You must NOT modify any files in the worktree. Your only outputs are the draft file and the `<promise>` tag.
 
 ## Design standards
 
@@ -32,11 +32,17 @@ Use this novelty context to avoid filing a duplicate or near-duplicate PRD:
 
 2. Sketch out the seams at which the change will be tested. Prefer existing seams; if a new one is needed, place it at the highest point you can. The fewer seams this change tests at, the better — ideally one.
 
-3. Write the PRD using the template below, then publish it.
+3. Write the PRD using the template below, then save it as `.pycastle-session/improve/_drafts/spec.md` with the following frontmatter:
 
-{{ISSUE_TRACKER}}
+```
+---
+title: [improve-PRD] <concise title>
+labels:
+  - behavior-slice
+---
+```
 
-The issue title must start with `[improve-PRD]`. Do NOT apply any triage label — PRDs are parent/tracking issues; only phase 3 sub-issues carry `{{READY_FOR_AGENT_LABEL}}`.
+Do NOT apply any triage label — PRDs are parent/tracking issues; only phase 3 sub-issues carry a ready-for-agent label.
 
 ## Issue body template
 
