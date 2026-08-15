@@ -694,3 +694,27 @@ def test_blocked_by_section_precedes_files_touched_in_canonical_body(
     assert blocked_pos < files_pos
     # Ref must be inside the ## Blocked by section, not appended after ## Files touched
     assert "#100" in body[blocked_pos:files_pos]
+
+
+# ---------------------------------------------------------------------------
+# Behavior 14: draft body already contains ## Parent — host wins
+# ---------------------------------------------------------------------------
+
+
+def test_draft_body_with_existing_parent_section_is_overwritten(
+    tmp_path: Path, port: MagicMock
+) -> None:
+    """If a draft body already carries ## Parent, the host replaces it with the correct ref."""
+    stale_body = (
+        "## Parent\n\n#999\n\n"
+        "## What to build\n\nDo the thing.\n\n"
+        "## Acceptance criteria\n\n- [ ] It works."
+    )
+    drafts = [_spec(), _slice("01-foo", body=stale_body)]
+
+    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    _, body, _ = port.create_issue.call_args_list[1].args
+    assert body.count("## Parent") == 1
+    assert "#100" in body
+    assert "#999" not in body
