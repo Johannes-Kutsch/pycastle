@@ -56,3 +56,21 @@ def test_empty_issues_returns_empty():
 def test_empty_issues_with_in_flight_returns_empty():
     result = startable_issues([], in_flight={1, 2})
     assert result == []
+
+
+def test_all_blocked_returns_empty():
+    issues = [_issue(1, blocked_by=2), _issue(2, blocked_by=1)]
+    result = startable_issues(issues, in_flight=set())
+    assert result == []
+
+
+def test_missing_issue_dependencies_summary_treats_issue_as_startable():
+    issue = {"number": 1, "title": "Issue 1"}
+    result = startable_issues([issue], in_flight=set())
+    assert [i["number"] for i in result] == [1]
+
+
+def test_missing_blocked_by_field_treats_issue_as_startable():
+    issue = {"number": 1, "title": "Issue 1", "issue_dependencies_summary": {}}
+    result = startable_issues([issue], in_flight=set())
+    assert [i["number"] for i in result] == [1]
