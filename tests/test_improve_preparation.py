@@ -59,7 +59,6 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
     prepared = prepare_improve_step(
         step,
         short_sid="abcd1234",
-        prd_number=None,
         github_port=github_port,
         candidate_budget=3,
     )
@@ -98,7 +97,6 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
     prepared = prepare_improve_step(
         step2,
         short_sid="abcd1234",
-        prd_number=None,
         github_port=github_port,
     )
 
@@ -139,7 +137,6 @@ def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driv
     prepared = prepare_improve_step(
         step2,
         short_sid="abcd1234",
-        prd_number=None,
         github_port=github_port,
     )
 
@@ -175,7 +172,6 @@ def test_prepare_improve_step_builds_exact_prd_payload_without_lookup_policy_fla
             work_body="writing PRD",
             send_role_prompt_on_resume=True,
             short_sid="abcd1234",
-            prd_number=None,
         ),
         github_port=github_port,
     )
@@ -214,7 +210,6 @@ def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_session_te
             work_body="body",
             send_role_prompt_on_resume=True,
             short_sid="abcd1234",
-            prd_number=None,
         ),
         github_port=github_port,
     )
@@ -237,7 +232,6 @@ def test_prepare_improve_step_uses_short_sid_only_for_issues():
             work_body="filing sub-issues",
             send_role_prompt_on_resume=True,
             short_sid="abcd1234",
-            prd_number=None,
             fetch_recent_prd_titles=False,
         ),
         github_port=github_port,
@@ -268,7 +262,6 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
     prepared = prepare_improve_step(
         step,
         short_sid="abcd1234",
-        prd_number=None,
         github_port=github_port,
         candidate_budget=2,
     )
@@ -296,7 +289,6 @@ def test_prepare_improve_step_issues_scope_contains_only_short_sid():
             work_body="filing sub-issues",
             send_role_prompt_on_resume=True,
             short_sid="abcd1234",
-            prd_number=77,
             fetch_recent_prd_titles=False,
         ),
         github_port=github_port,
@@ -359,7 +351,7 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
 
     driver_dir = tmp_path / "improve-issues-resume"
     driver_dir.mkdir(parents=True, exist_ok=True)
-    # Seed candidate list + a candidate record (PRD done, prd_number=None) + in-flight=03-issues
+    # Seed candidate list + a candidate record (PRD done) + in-flight=03-issues
     data = {"candidates": [{"rank": 1, "title": "Seeded"}]}
     (driver_dir / "_candidate_list").write_text(_json.dumps(data), encoding="utf-8")
     (driver_dir / "_candidate_cursor").write_text("0", encoding="utf-8")
@@ -368,7 +360,6 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
     _save_record(
         candidate_dir,
         _CandidateRecord(
-            prd_number=None,
             spec_number=None,
             spec_database_id=None,
             spec_title="",
@@ -453,7 +444,6 @@ def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
         prepare_improve_step(
             step,
             short_sid="abcd1234",
-            prd_number=None,
             github_port=github_port,
         )
 
@@ -472,6 +462,5 @@ def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render(
         prepare_improve_step(
             step,
             short_sid="abcd1234",
-            prd_number=None,
             github_port=github_port,
         )

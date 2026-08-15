@@ -51,19 +51,15 @@ class ImprovePreparationStep(Protocol):
     @property
     def fetch_recent_prd_titles(self) -> bool: ...
 
-    @property
-    def prd_number(self) -> int | None: ...
-
 
 @dataclass(frozen=True)
 class ImproveStepPreparationRequest:
     """Inputs required to prepare a single Improve step.
 
-    `short_sid` is required for session-scoped placeholders. `prd_number` is
-    required only when preparing `PromptTemplate.IMPROVE_ISSUES`; `None`
-    preserves the current empty-placeholder fallback. `fetch_recent_prd_titles`
-    preserves the existing scan-step retry behavior that skips the GitHub read.
-    `candidate_budget` is required when preparing `PromptTemplate.IMPROVE_SCAN`.
+    `short_sid` is required for session-scoped placeholders.
+    `fetch_recent_prd_titles` preserves the existing scan-step retry behavior
+    that skips the GitHub read. `candidate_budget` is required when preparing
+    `PromptTemplate.IMPROVE_SCAN`.
     """
 
     prompt_template: PromptTemplate
@@ -72,7 +68,6 @@ class ImproveStepPreparationRequest:
     work_body: str
     send_role_prompt_on_resume: bool
     short_sid: str
-    prd_number: int | None
     fetch_recent_prd_titles: bool = False
     candidate_budget: int | None = None
 
@@ -90,21 +85,19 @@ def prepare_improve_step(
     *,
     github_port: ImprovePreparationGithubPort,
     short_sid: str | None = None,
-    prd_number: int | None = None,
     candidate_budget: int | None = None,
 ) -> PreparedImproveStep:
     """Prepare the exact `RunRequest` payload for one Improve step.
 
     Callers can either pass an explicit `ImproveStepPreparationRequest` or a
-    driver-produced step plus `short_sid`/`prd_number`. GitHub reads needed for
-    scope args are performed through `github_port`, and any read error is
-    allowed to propagate to the caller unchanged.
+    driver-produced step plus `short_sid`. GitHub reads needed for scope args
+    are performed through `github_port`, and any read error is allowed to
+    propagate to the caller unchanged.
     """
 
     request = _coerce_request(
         request_or_step,
         short_sid=short_sid,
-        prd_number=prd_number,
         candidate_budget=candidate_budget,
     )
     scope_args = _build_scope_args(request, github_port=github_port)
@@ -124,7 +117,6 @@ def _coerce_request(
     request_or_step: ImproveStepPreparationRequest | ImprovePreparationStep,
     *,
     short_sid: str | None,
-    prd_number: int | None,
     candidate_budget: int | None,
 ) -> ImproveStepPreparationRequest:
     if isinstance(request_or_step, ImproveStepPreparationRequest):
@@ -140,7 +132,6 @@ def _coerce_request(
         work_body=step.cfg.display_body,
         send_role_prompt_on_resume=step.send_role_prompt_on_resume,
         short_sid=short_sid,
-        prd_number=step.prd_number if prd_number is None else prd_number,
         fetch_recent_prd_titles=step.fetch_recent_prd_titles,
         candidate_budget=candidate_budget,
     )

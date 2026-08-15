@@ -50,7 +50,6 @@ def _seed_candidate_record(
     driver_dir: Path,
     idx: int,
     *,
-    prd_number: int | None = None,
     spec_number: int | None = None,
     labels_applied: bool = False,
 ) -> None:
@@ -58,7 +57,6 @@ def _seed_candidate_record(
     candidate_dir = driver_dir / "candidates" / str(idx)
     candidate_dir.mkdir(parents=True, exist_ok=True)
     record = _CandidateRecord(
-        prd_number=prd_number,
         spec_number=spec_number,
         spec_database_id=42 if spec_number is not None else None,
         spec_title="Seeded" if spec_number is not None else "",
@@ -113,7 +111,6 @@ def test_full_sequence_one_candidate(driver_dir: Path) -> None:
     step3 = driver.next()
     assert step3 is not None
     assert step3.prompt_key == "03-issues.md"
-    assert step3.prd_number == 10
     driver.record_outcome(step3, CompletionOutput())
 
     assert driver.next() is None
@@ -219,18 +216,17 @@ def test_candidate_with_no_record_starts_at_prd(driver_dir: Path) -> None:
     assert step.prompt_key == "02-prd.md"
 
 
-# ── AC 3: Record with prd_number → slice (Issues) phase ──────────────────────
+# ── AC 3: Existing record → slice (Issues) phase ─────────────────────────────
 
 
-def test_candidate_with_prd_number_resumes_at_issues(driver_dir: Path) -> None:
-    """Candidate whose record names a prd_number resumes at the slice (Issues) phase."""
+def test_candidate_with_existing_record_resumes_at_issues(driver_dir: Path) -> None:
+    """Candidate whose record exists (PRD done) resumes at the slice (Issues) phase."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
-    _seed_candidate_record(driver_dir, 0, prd_number=77)
+    _seed_candidate_record(driver_dir, 0)
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
     assert step.prompt_key == "03-issues.md"
-    assert step.prd_number == 77
 
 
 # ── AC 4: Record with spec_number → Issues phase, not scan ───────────────────
@@ -239,7 +235,7 @@ def test_candidate_with_prd_number_resumes_at_issues(driver_dir: Path) -> None:
 def test_candidate_with_spec_number_starts_at_issues_not_scan(driver_dir: Path) -> None:
     """Candidate whose record names a filed spec issue goes to Issues, never back to scan."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
-    _seed_candidate_record(driver_dir, 0, prd_number=5, spec_number=99)
+    _seed_candidate_record(driver_dir, 0, spec_number=99)
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
@@ -288,12 +284,8 @@ def test_all_candidates_complete_makes_no_further_dispatch(driver_dir: Path) -> 
         cursor=0,
     )
     # Both candidates are fully complete.
-    _seed_candidate_record(
-        driver_dir, 0, prd_number=1, spec_number=10, labels_applied=True
-    )
-    _seed_candidate_record(
-        driver_dir, 1, prd_number=2, spec_number=20, labels_applied=True
-    )
+    _seed_candidate_record(driver_dir, 0, spec_number=10, labels_applied=True)
+    _seed_candidate_record(driver_dir, 1, spec_number=20, labels_applied=True)
 
     driver = _make_driver(driver_dir)
     assert driver.start() is None
@@ -404,24 +396,6 @@ def test_record_outcome_clears_in_flight_after_scan(driver_dir: Path) -> None:
     assert not (driver_dir / "_phase_in_flight").exists()
 
 
-def test_record_outcome_writes_prd_number_to_candidate_record(driver_dir: Path) -> None:
-    """record_outcome for PRD writes prd_number to per-candidate record."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
-    driver = _make_driver(driver_dir)
-    step = driver.start()
-    assert step is not None
-    assert step.prompt_key == "02-prd.md"
-
-    driver.record_outcome(step, IssueOutput(number=4242, labels=[]))
-
-    import json as _json
-
-    record_file = driver_dir / "candidates" / "0" / "_candidate_record"
-    assert record_file.is_file()
-    data = _json.loads(record_file.read_text(encoding="utf-8"))
-    assert data["prd_number"] == 4242
-
-
 def test_record_outcome_advances_cursor_after_issues(driver_dir: Path) -> None:
     """record_outcome for Issues increments cursor on disk."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
@@ -438,31 +412,3 @@ def test_record_outcome_advances_cursor_after_issues(driver_dir: Path) -> None:
 
     cursor_file = driver_dir / "_candidate_cursor"
     assert int(cursor_file.read_text(encoding="utf-8").strip()) == 1
-
-
-# ── prd_number exposure ───────────────────────────────────────────────────────
-
-
-def test_prd_number_none_before_prd_phase(driver_dir: Path) -> None:
-    """prd_number is None before PRD outcome is recorded."""
-    driver = _make_driver(driver_dir)
-    driver.start()
-    assert driver.prd_number is None
-
-
-def test_prd_number_set_from_prd_issue_output(driver_dir: Path) -> None:
-    """PRD IssueOutput sets prd_number for use by Issues step."""
-    driver = _make_driver(driver_dir)
-
-    step1 = driver.start()
-    assert step1 is not None
-    driver.record_outcome(
-        step1, ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="A"),))
-    )
-
-    step2 = driver.next()
-    assert step2 is not None
-    assert step2.prompt_key == "02-prd.md"
-    driver.record_outcome(step2, IssueOutput(number=4242, labels=[]))
-
-    assert driver.prd_number == 4242

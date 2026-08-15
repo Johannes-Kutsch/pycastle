@@ -10,7 +10,6 @@ from pycastle.agents.output_protocol import (
     AgentOutput,
     AgentOutputProtocolError,
     AgentRole,
-    IssueOutput,
     NoCandidateOutput,
     ScanCandidateItem,
     ScanCandidatesOutput,
@@ -152,7 +151,6 @@ class Step:
     cfg: _PhaseConfig
     send_role_prompt_on_resume: bool
     fetch_recent_prd_titles: bool
-    prd_number: int | None
 
 
 class ImprovePhaseDriver:
@@ -166,7 +164,7 @@ class ImprovePhaseDriver:
     - _phase_in_flight: key of the phase currently executing (for mid-phase resumption).
 
     Per-candidate state lives in candidates/<idx>/_candidate_record (written by the
-    filing pass and widened here to carry prd_number from the spec phase).
+    filing pass and the spec phase completion marker).
     """
 
     _CANDIDATE_LIST_FILE = "_candidate_list"
@@ -179,7 +177,6 @@ class ImprovePhaseDriver:
         self._candidates: list[ScanCandidateItem] | None = None
         self._no_candidate: bool = False
         self._cursor: int = 0
-        self._prd_number: int | None = None
 
     # ── Disk I/O helpers ──────────────────────────────────────────────────────
 
@@ -246,22 +243,20 @@ class ImprovePhaseDriver:
     def _load_candidate_record(self, idx: int) -> _CandidateRecord | None:
         return _load_record(self._candidate_dir(idx))
 
-    def _write_prd_number(self, idx: int, prd_number: int | None) -> None:
+    def _write_prd_completion(self, idx: int) -> None:
         """Record that the spec (PRD) phase completed for candidate idx."""
         candidate_dir = self._candidate_dir(idx)
-        record = _load_record(candidate_dir)
-        if record is None:
-            record = _CandidateRecord(
-                spec_number=None,
-                spec_database_id=None,
-                spec_title="",
-                filed_slices=[],
-                labels_applied=False,
-                prd_number=prd_number,
+        if _load_record(candidate_dir) is None:
+            _save_record(
+                candidate_dir,
+                _CandidateRecord(
+                    spec_number=None,
+                    spec_database_id=None,
+                    spec_title="",
+                    filed_slices=[],
+                    labels_applied=False,
+                ),
             )
-        else:
-            record.prd_number = prd_number
-        _save_record(candidate_dir, record)
 
     # ── Step factories ────────────────────────────────────────────────────────
 
@@ -271,7 +266,6 @@ class ImprovePhaseDriver:
             cfg=_PHASES["01-scan.md"],
             send_role_prompt_on_resume=False,
             fetch_recent_prd_titles=fetch_recent_prd_titles,
-            prd_number=None,
         )
 
     def _make_prd_step(self, *, send_role_prompt_on_resume: bool, idx: int) -> Step:
@@ -283,10 +277,9 @@ class ImprovePhaseDriver:
             cfg=cfg,
             send_role_prompt_on_resume=send_role_prompt_on_resume,
             fetch_recent_prd_titles=True,
-            prd_number=None,
         )
 
-    def _make_issues_step(self, prd_number: int | None, *, idx: int) -> Step:
+    def _make_issues_step(self, *, idx: int) -> Step:
         cfg = dataclasses.replace(
             _PHASES["03-issues.md"], namespace=_candidate_namespace(idx)
         )
@@ -295,7 +288,6 @@ class ImprovePhaseDriver:
             cfg=cfg,
             send_role_prompt_on_resume=True,
             fetch_recent_prd_titles=False,
-            prd_number=prd_number,
         )
 
     def _make_report_step(self, *, send_role_prompt_on_resume: bool) -> Step:
@@ -304,7 +296,6 @@ class ImprovePhaseDriver:
             cfg=_PHASES["04-no-candidate-report.md"],
             send_role_prompt_on_resume=send_role_prompt_on_resume,
             fetch_recent_prd_titles=True,
-            prd_number=None,
         )
 
     # ── Core state resolution ─────────────────────────────────────────────────
@@ -325,11 +316,9 @@ class ImprovePhaseDriver:
             )
 
         # Record exists → slice (Issues) phase.
-        prd_number = record.prd_number
-        self._prd_number = prd_number
         in_flight = self._load_in_flight() if from_start else None
         is_mid_issues = in_flight == "03-issues"
-        step = self._make_issues_step(prd_number, idx=idx)
+        step = self._make_issues_step(idx=idx)
         # For mid-issues resume, override send_role_prompt_on_resume to False.
         if is_mid_issues:
             step = Step(
@@ -337,7 +326,6 @@ class ImprovePhaseDriver:
                 cfg=step.cfg,
                 send_role_prompt_on_resume=False,
                 fetch_recent_prd_titles=step.fetch_recent_prd_titles,
-                prd_number=step.prd_number,
             )
         return step
 
@@ -425,9 +413,7 @@ class ImprovePhaseDriver:
                 self._save_cursor(0)
 
         elif step.prompt_key == "02-prd.md":
-            prd_number = output.number if isinstance(output, IssueOutput) else None
-            self._prd_number = prd_number
-            self._write_prd_number(self._cursor, prd_number)
+            self._write_prd_completion(self._cursor)
 
         elif step.prompt_key == "03-issues.md":
             self._cursor += 1
@@ -439,10 +425,6 @@ class ImprovePhaseDriver:
             self._save_cursor(1)
 
         self._clear_in_flight()
-
-    @property
-    def prd_number(self) -> int | None:
-        return self._prd_number
 
     @property
     def no_candidate(self) -> bool:
