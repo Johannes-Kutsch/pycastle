@@ -18,8 +18,10 @@ The separation guarantees that a partial run never leaves issues in the `ready-f
 
 Each slice's blockers are recorded in two complementary forms:
 
-- **Body text:** `Blocked by #N, #M` appended to the issue body so a human reader (and the Planner's plain-text scan) can see the relationship without a GitHub API call.
+- **Body text:** `Blocked by #N, #M` in the issue body so a human reader can see the relationship without a GitHub API call, and so the Planner's judgement gate has the relationship in the prose it reads.
 - **Native dependencies:** `add_issue_dependency(child_number, blocker_database_id)` registers a first-class GitHub issue dependency edge so the dependency graph is queryable via the API and visible in the GitHub UI.
+
+Amended by ADR 0059: this section originally claimed the body line served "the Planner's plain-text scan". No such scan existed — nothing read either form. ADR 0059 makes the native edge the mechanical gate and keeps the body line for human readers and for the Planner's judgement gate.
 
 Both forms are written for every intra-candidate blocking edge and for every cross-spec blocker (see below).
 
