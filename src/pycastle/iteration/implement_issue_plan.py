@@ -15,9 +15,7 @@ from pycastle.managed_worktree_mount_policy import (
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_per_issue_scope_args
 from pycastle.session import RoleSession, RunKind, is_stage_done_for
-from pycastle.session.service_session_store import (
-    has_exact_provider_transcript_for_selected_service,
-)
+from pycastle.session.service_session_store import has_exact_transcript
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -359,12 +357,16 @@ def _prompt_run_state_for_role(
     role_session = RoleSession(mount_path, role)
     service_name = _resolved_stage_service_name(deps.cfg, role)
     has_resumable_state = role_session.is_resumable()
-    has_exact_transcript_handoff = has_exact_provider_transcript_for_selected_service(
+    service = (
+        deps.service_registry[service_name]
+        if deps.service_registry is not None and service_name
+        else None
+    )
+    has_exact_transcript_handoff = service is not None and has_exact_transcript(
         worktree=mount_path,
         role=role,
         namespace="",
-        registry=deps.service_registry,
-        service_name=service_name,
+        service=service,
     )
     run_kind = (
         role_session.run_kind()

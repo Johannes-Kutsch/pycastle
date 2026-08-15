@@ -229,10 +229,10 @@ def select_resumable_provider_session_id(
         return ProviderSessionSelection(provider_session_id=None)
 
     role_session_path = getattr(role_session, "path", None)
-    from pycastle.session.service_session_store import load_service_session_id
+    from pycastle.session.service_session_store import ServiceSessionStore
 
     provider_session_id = (
-        load_service_session_id(role_session_path, service_name)
+        ServiceSessionStore(role_session_path).get_service_session_id(service_name)
         if isinstance(role_session_path, Path)
         else None
     )
