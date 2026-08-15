@@ -19,5 +19,4 @@ def startable_issues(
 
 
 def _open_blocker_count(issue: dict) -> int:
-    summary = issue.get("issue_dependencies_summary") or {}
-    return summary.get("blocked_by", 0)
+    return int(issue.get("open_blockers_count") or 0)
