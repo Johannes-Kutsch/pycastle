@@ -11,6 +11,15 @@ from pycastle.prompts.scope_args import (
 )
 
 
+@dataclass(frozen=True)
+class ImproveCandidate:
+    """Identity of a single improve candidate being worked."""
+
+    rank: int
+    title: str
+    spec_number: int | None = None
+
+
 class ImprovePreparationGithubPort(Protocol):
     """GitHub read contract for preparing Improve steps.
 
@@ -51,6 +60,9 @@ class ImprovePreparationStep(Protocol):
     @property
     def fetch_recent_prd_titles(self) -> bool: ...
 
+    @property
+    def candidate(self) -> ImproveCandidate | None: ...
+
 
 @dataclass(frozen=True)
 class ImproveStepPreparationRequest:
@@ -70,6 +82,7 @@ class ImproveStepPreparationRequest:
     short_sid: str
     fetch_recent_prd_titles: bool = False
     candidate_budget: int | None = None
+    candidate: ImproveCandidate | None = None
 
 
 @dataclass(frozen=True)
@@ -134,6 +147,7 @@ def _coerce_request(
         short_sid=short_sid,
         fetch_recent_prd_titles=step.fetch_recent_prd_titles,
         candidate_budget=candidate_budget,
+        candidate=step.candidate,
     )
 
 

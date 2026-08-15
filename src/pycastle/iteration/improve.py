@@ -31,7 +31,10 @@ from pycastle.iteration.improve_filing import (
     _save_record,
     file_draft_set,
 )
-from pycastle.iteration.improve_preparation import prepare_improve_step
+from pycastle.iteration.improve_preparation import (
+    ImproveCandidate,
+    prepare_improve_step,
+)
 from pycastle.iteration.preflight import (
     PreflightAFK,
     PreflightCache,
@@ -151,6 +154,7 @@ class Step:
     cfg: _PhaseConfig
     send_role_prompt_on_resume: bool
     fetch_recent_prd_titles: bool
+    candidate: ImproveCandidate | None = None
 
 
 class ImprovePhaseDriver:
@@ -268,7 +272,13 @@ class ImprovePhaseDriver:
             fetch_recent_prd_titles=fetch_recent_prd_titles,
         )
 
-    def _make_prd_step(self, *, send_role_prompt_on_resume: bool, idx: int) -> Step:
+    def _make_prd_step(
+        self,
+        *,
+        send_role_prompt_on_resume: bool,
+        idx: int,
+        candidate: ImproveCandidate,
+    ) -> Step:
         cfg = dataclasses.replace(
             _PHASES["02-prd.md"], namespace=_candidate_namespace(idx)
         )
@@ -277,9 +287,10 @@ class ImprovePhaseDriver:
             cfg=cfg,
             send_role_prompt_on_resume=send_role_prompt_on_resume,
             fetch_recent_prd_titles=True,
+            candidate=candidate,
         )
 
-    def _make_issues_step(self, *, idx: int) -> Step:
+    def _make_issues_step(self, *, idx: int, candidate: ImproveCandidate) -> Step:
         cfg = dataclasses.replace(
             _PHASES["03-issues.md"], namespace=_candidate_namespace(idx)
         )
@@ -288,6 +299,7 @@ class ImprovePhaseDriver:
             cfg=cfg,
             send_role_prompt_on_resume=True,
             fetch_recent_prd_titles=False,
+            candidate=candidate,
         )
 
     def _make_report_step(self, *, send_role_prompt_on_resume: bool) -> Step:
@@ -307,18 +319,27 @@ class ImprovePhaseDriver:
         if record is not None and record.labels_applied:
             return None  # Candidate fully complete
 
+        candidates = self._candidates
+        if candidates is None:
+            return None
+        c = candidates[idx]
+        spec_number = record.spec_number if record is not None else None
+        candidate = ImproveCandidate(
+            rank=c.rank, title=c.title, spec_number=spec_number
+        )
+
         if record is None:
             # No record → spec (PRD) phase. Check in-flight for mid-PRD resume.
             in_flight = self._load_in_flight() if from_start else None
             is_mid_prd = in_flight == "02-prd"
             return self._make_prd_step(
-                send_role_prompt_on_resume=not is_mid_prd, idx=idx
+                send_role_prompt_on_resume=not is_mid_prd, idx=idx, candidate=candidate
             )
 
         # Record exists → slice (Issues) phase.
         in_flight = self._load_in_flight() if from_start else None
         is_mid_issues = in_flight == "03-issues"
-        step = self._make_issues_step(idx=idx)
+        step = self._make_issues_step(idx=idx, candidate=candidate)
         # For mid-issues resume, override send_role_prompt_on_resume to False.
         if is_mid_issues:
             step = Step(
@@ -326,6 +347,7 @@ class ImprovePhaseDriver:
                 cfg=step.cfg,
                 send_role_prompt_on_resume=False,
                 fetch_recent_prd_titles=step.fetch_recent_prd_titles,
+                candidate=step.candidate,
             )
         return step
 
