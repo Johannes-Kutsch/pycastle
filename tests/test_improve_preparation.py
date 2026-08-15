@@ -11,6 +11,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import (
+    ImproveCandidate,
     ImproveStepPreparationRequest,
     prepare_improve_step,
 )
@@ -448,6 +449,48 @@ def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
         )
 
     assert exc_info.value is error
+
+
+def test_prepare_improve_step_prd_step_candidate_is_set_on_step(tmp_path: Path) -> None:
+    """The PRD step returned by the driver carries the candidate from the scan."""
+    driver = ImprovePhaseDriver(
+        tmp_path / "improve-candidate", no_candidate_report=True
+    )
+    step1 = driver.start()
+    assert step1 is not None
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(
+            candidates=(ScanCandidateItem(rank=4, title="My Feature"),)
+        ),
+    )
+    step2 = driver.next()
+    assert step2 is not None
+    assert step2.prompt_key == "02-prd.md"
+    assert step2.candidate == ImproveCandidate(
+        rank=4, title="My Feature", spec_number=None
+    )
+
+
+def test_prepare_improve_step_accepts_request_with_candidate(tmp_path: Path) -> None:
+    """ImproveStepPreparationRequest with a candidate passes through prepare_improve_step unchanged."""
+    candidate = ImproveCandidate(rank=1, title="Foo", spec_number=42)
+    request = ImproveStepPreparationRequest(
+        prompt_template=PromptTemplate.IMPROVE_ISSUES,
+        session_namespace="candidate/0",
+        display_name="Slice Agent",
+        work_body="filing sub-issues",
+        send_role_prompt_on_resume=True,
+        short_sid="abcd1234",
+        fetch_recent_prd_titles=False,
+        candidate=candidate,
+    )
+    github_port = _GithubPortStandIn()
+
+    prepared = prepare_improve_step(request, github_port=github_port)
+
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.prompt.scope_args == {"IMPROVE_SHORT_SID": "abcd1234"}
 
 
 def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render(

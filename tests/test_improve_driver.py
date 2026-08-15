@@ -14,6 +14,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
+from pycastle.iteration.improve_preparation import ImproveCandidate
 from pycastle.prompts.pipeline import PromptTemplate
 
 
@@ -412,3 +413,84 @@ def test_record_outcome_advances_cursor_after_issues(driver_dir: Path) -> None:
 
     cursor_file = driver_dir / "_candidate_cursor"
     assert int(cursor_file.read_text(encoding="utf-8").strip()) == 1
+
+
+# ── ImproveCandidate threading ────────────────────────────────────────────────
+
+
+def test_scan_step_has_no_candidate(driver_dir: Path) -> None:
+    """Scan step is not candidate-scoped, so candidate is None."""
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "01-scan.md"
+    assert step.candidate is None
+
+
+def test_prd_step_carries_candidate_with_rank_title_and_no_spec_number(
+    driver_dir: Path,
+) -> None:
+    """PRD step carries the candidate identity from the scan; spec_number is absent before filing."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=3, title="Foo Bar")])
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "02-prd.md"
+    assert step.candidate == ImproveCandidate(rank=3, title="Foo Bar", spec_number=None)
+
+
+def test_issues_step_carries_candidate_with_no_spec_number_before_filing(
+    driver_dir: Path,
+) -> None:
+    """Issues step has spec_number=None when the candidate record has no spec yet."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=2, title="Alpha")])
+    _seed_candidate_record(driver_dir, 0)  # record with spec_number=None
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "03-issues.md"
+    assert step.candidate == ImproveCandidate(rank=2, title="Alpha", spec_number=None)
+
+
+def test_issues_step_carries_spec_number_once_filing_has_produced_one(
+    driver_dir: Path,
+) -> None:
+    """Issues step carries a real spec_number when filing has already produced one (resume after partial filing)."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="Beta")])
+    _seed_candidate_record(driver_dir, 0, spec_number=42)
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "03-issues.md"
+    assert step.candidate == ImproveCandidate(rank=1, title="Beta", spec_number=42)
+
+
+def test_candidate_built_from_durable_scan_output_not_rederived(
+    driver_dir: Path,
+) -> None:
+    """Candidate identity (rank, title) comes from the durable candidate list, not the live scan output."""
+    _seed_candidate_list(
+        driver_dir,
+        [ScanCandidateItem(rank=5, title="Persisted Title")],
+    )
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "02-prd.md"
+    assert step.candidate is not None
+    assert step.candidate.rank == 5
+    assert step.candidate.title == "Persisted Title"
+
+
+def test_mid_issues_resume_preserves_candidate(driver_dir: Path) -> None:
+    """Mid-issues resume keeps candidate intact when overriding send_role_prompt_on_resume."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=7, title="Resume Me")])
+    _seed_candidate_record(driver_dir, 0, spec_number=99)
+    driver_dir.mkdir(parents=True, exist_ok=True)
+    (driver_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "03-issues.md"
+    assert step.send_role_prompt_on_resume is False
+    assert step.candidate == ImproveCandidate(rank=7, title="Resume Me", spec_number=99)
