@@ -11,7 +11,7 @@ Which field carries each role the skills speak in. `docs/agents/triage-labels.md
 | **State** (`needs-triage` … `wontfix`) | a label — a ticket carries exactly one, so setting a new state removes the old |
 | **Category** (`bug`, `enhancement`) | a label |
 | **Slice mode** (`behavior-slice` …) | a label |
-| **Blocking** (which tickets gate this one) | GitHub **native issue dependencies** — `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`). GitHub reports open blockers at `issue_dependencies_summary.blocked_by` — the live gate. A `Blocked by: #<n>` body line is only a human-readable mirror, not the gate. |
+| **Blocking** (which tickets gate this one) | GitHub **native issue dependencies** — `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`). GitHub reports open blockers at `issue_dependencies_summary.blocked_by`. Blocking is enforced by **two gates** (ADR 0059): a mechanical pre-filter drops issues with open native blockers before the Planner sees them, and the Planner then reads issue prose for what the edge cannot carry — parent/child rules, blockers stated only in text, file overlap. Register the native edge whenever you file a blocked ticket; a `Blocked by: #<n>` body line alone reaches only the second gate. |
 
 ## Conventions
 
