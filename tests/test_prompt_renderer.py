@@ -84,9 +84,11 @@ def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
         "OUTPUT": "boom",
         "EVIDENCE_PATH": ".pycastle/failure-report-evidence/agent-invocation.log",
         "HAS_EVIDENCE_PATH": "yes",
+        "CANDIDATE_BUDGET": "3",
         "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
         "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
         "SESSION_DIR": "/sessions/abc",
+        "VALIDATION_ERRORS": "- Error 1\n- Error 2",
     }
     return {
         placeholder: args[placeholder]
@@ -277,7 +279,9 @@ def test_scope_host_check_placeholders():
 
 
 def test_scope_improve_scan_placeholders():
-    assert Scope.IMPROVE_SCAN.placeholders == frozenset({"RECENT_IMPROVE_PRD_TITLES"})
+    assert Scope.IMPROVE_SCAN.placeholders == frozenset(
+        {"RECENT_IMPROVE_PRD_TITLES", "CANDIDATE_BUDGET"}
+    )
 
 
 def test_scope_improve_session_placeholders():
@@ -291,14 +295,12 @@ def test_scope_resume_is_empty():
 
 
 def test_scope_improve_issues_placeholders():
-    assert Scope.IMPROVE_ISSUES.placeholders == frozenset(
-        {
-            "IMPROVE_SHORT_SID",
-            "ISSUE_NUMBER",
-            "ISSUE_TITLE",
-            "ISSUE_BODY",
-            "ISSUE_COMMENTS",
-        }
+    assert Scope.IMPROVE_ISSUES.placeholders == frozenset({"IMPROVE_SHORT_SID"})
+
+
+def test_scope_improve_draft_correction_placeholders():
+    assert Scope.IMPROVE_DRAFT_CORRECTION.placeholders == frozenset(
+        {"VALIDATION_ERRORS"}
     )
 
 
@@ -306,7 +308,7 @@ def test_scopes_are_distinct_members():
     # Regression: empty-frozenset values were aliased by Enum, collapsing
     # IMPROVE_SCAN and RESUME into a single member.
     assert Scope.IMPROVE_SCAN is not Scope.RESUME
-    assert len(list(Scope)) == 11
+    assert len(list(Scope)) == 12
 
 
 # ── PromptTemplate enum has correct filename and scope ────────────────────────
@@ -364,8 +366,8 @@ def test_template_reference_carries_name_and_relative_path():
     assert ref.relative_path == PromptTemplate.IMPLEMENT_BEHAVIOR.filename
 
 
-def test_template_enum_has_fifteen_variants():
-    assert len(list(PromptTemplate)) == 15
+def test_template_enum_has_sixteen_variants():
+    assert len(list(PromptTemplate)) == 16
 
 
 # ── Ctor validates: unknown token raises ─────────────────────────────────────
@@ -389,11 +391,7 @@ def test_renderer_ctor_rejects_typo_in_improve_issues_template(cfg, prompts_dir)
 
 
 def test_renderer_ctor_accepts_improve_issues_template(cfg, prompts_dir):
-    (prompts_dir / "improve" / "03-issues.md").write_text(
-        "Task: #{{ISSUE_NUMBER}} {{ISSUE_TITLE}}\n"
-        "Body: {{ISSUE_BODY}}\nComments: {{ISSUE_COMMENTS}}\n"
-        "SID: {{IMPROVE_SHORT_SID}}"
-    )
+    (prompts_dir / "improve" / "03-issues.md").write_text("SID: {{IMPROVE_SHORT_SID}}")
     PromptRenderer(cfg)  # must not raise
 
 
@@ -604,7 +602,10 @@ def test_render_implementation_standards_available_in_improve_scan(cfg, prompts_
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -621,7 +622,10 @@ def test_render_design_standards_available_in_improve_scan(cfg, prompts_dir):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -640,6 +644,7 @@ def test_render_recent_improve_prd_titles_available_in_improve_scan(cfg, prompts
             PromptTemplate.IMPROVE_SCAN,
             {
                 "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+                "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
         )
@@ -757,7 +762,10 @@ def test_renderer_loads_both_standards_keys(prompts_dir):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -781,7 +789,10 @@ def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -802,7 +813,10 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -865,7 +879,10 @@ def test_renderer_renders_issue_tracker_fragment(prompts_dir):
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -1363,7 +1380,10 @@ def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypa
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
-            {"RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."},
+            {
+                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "CANDIDATE_BUDGET": "3",
+            },
             _noop_exec,
         )
     )
@@ -1432,6 +1452,7 @@ def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles()
             PromptTemplate.IMPROVE_SCAN,
             {
                 "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+                "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
         )
@@ -1451,6 +1472,51 @@ def test_shipped_templates_render_without_unresolved_placeholders():
         assert not unresolved, (
             f"{template.filename} rendered with unresolved placeholders: {unresolved}"
         )
+
+
+# ── Shipped plan prompt: parent PRD blocker scoping ─────────────────────────
+
+
+def test_rendered_plan_prompt_scopes_parent_prd_exception_to_own_parent():
+    """The plan prompt must scope the unblocking exception to the slice's own parent PRD."""
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    result = _run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"},
+            _noop_exec,
+        )
+    )
+
+    assert "its **own** parent PRD" in result
+
+
+def test_rendered_plan_prompt_states_other_prd_blockers_remain_in_force():
+    """The plan prompt must explicitly state that other PRD blocking edges stay in force."""
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    result = _run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"},
+            _noop_exec,
+        )
+    )
+
+    assert "blocking edge onto any *other* PRD remains in force" in result
+
+
+def test_rendered_plan_prompt_retains_parent_cannot_be_worked_rule():
+    """The parent/child unit rule must remain: parent cannot be worked while child is open."""
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    result = _run(
+        renderer.render(
+            PromptTemplate.PLAN,
+            {"ALL_OPEN_ISSUES_JSON": "[]", "READY_FOR_AGENT_ISSUES_JSON": "[]"},
+            _noop_exec,
+        )
+    )
+
+    assert "parent PRD cannot be worked" in result
 
 
 # ── Template shell expression tests ──────────────────────────────────────────
@@ -1776,15 +1842,9 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
 @pytest.mark.parametrize(
     ("template", "expected_fragment"),
     [
-        (PromptTemplate.IMPROVE_SCAN, "Emit `<promise>COMPLETE</promise>`"),
-        (
-            PromptTemplate.IMPROVE_PRD,
-            'Output the filed issue as `<issue>{"number": N, "labels": []}</issue>`',
-        ),
-        (
-            PromptTemplate.IMPROVE_ISSUES,
-            "Output each filed issue number as `<issue>N</issue>`.",
-        ),
+        (PromptTemplate.IMPROVE_SCAN, "<candidates>"),
+        (PromptTemplate.IMPROVE_PRD, "<promise>COMPLETE</promise>"),
+        (PromptTemplate.IMPROVE_ISSUES, "<promise>COMPLETE</promise>"),
         (
             PromptTemplate.IMPROVE_NO_CANDIDATE,
             "Output each filed PRD issue number as `<issue>N</issue>`.",
@@ -1818,11 +1878,7 @@ def test_render_expected_output_shape_keeps_improve_no_candidate_distinct_from_i
         no_candidate_scope_args,
     )
 
-    assert issues_shape.strip() == (
-        "Output each filed issue number as `<issue>N</issue>`.\n"
-        "\n"
-        "Then emit `<promise>COMPLETE</promise>`."
-    )
+    assert issues_shape.strip() == "Emit `<promise>COMPLETE</promise>`."
     assert no_candidate_shape.strip() == (
         "Output each filed PRD issue number as `<issue>N</issue>`.\n"
         "\n"

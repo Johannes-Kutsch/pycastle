@@ -125,7 +125,8 @@ Runtime configuration lives in `config.py`, loaded from pycastle home first and 
 | `host_checks` | pytest host suite | Commands run by `pycastle check` on the current OS in a temporary local worktree |
 | `implement_checks` | ruff fix, mypy, pytest | Commands the implementer must pass |
 | `improve_mode` | `None` | `"until_sleep"` or `"endless"`; default for `pycastle run` when no `--improve` flag is passed |
-| `improve_max` | `None` | Optional cap on improve-agent dispatches per run when improve mode is active |
+| `improve_max` | `None` | Optional cap on completed improvements per run when improve mode is active |
+| `improve_candidates_per_scan` | `3` | Number of candidates one scan is asked to nominate |
 | `plan_override` / `implement_override` / `review_override` / `merge_override` / `preflight_issue_override` / `improve_override` | — | Per-stage service/model/effort override chains |
 
 Edit local `pycastle/config.py` and/or global `config.py` in pycastle home to tailor these to your project. Project-local layout paths are fixed: local config lives at `pycastle/config.py`, local `.env` at `pycastle/.env`, prompt overrides at `pycastle/prompts/`, worktrees under `pycastle/.worktrees/`, setup scaffold under `pycastle/setup/`, and the optional Dockerfile override at `pycastle/Dockerfile`. Ownership is split on purpose: pycastle manages the scaffold allowlist and `config.py.example`, while `config.py`, `.env`, prompt overrides, the optional Dockerfile override, and `.pycastle-session/` runtime state are user-owned. Local `config.py` is ignored by pycastle's managed `.gitignore`, but refresh still preserves it.

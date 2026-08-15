@@ -2,23 +2,13 @@
 
 You are the Improve Agent — Phase 3: Sub-issues.
 
-Break the PRD filed in phase 2 (#{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}) into independently-grabbable issues using vertical slices (tracer bullets).
+Break the PRD you wrote in phase 2 (saved as `.pycastle-session/improve/_drafts/spec.md`) into independently-grabbable issues using vertical slices (tracer bullets). Write each slice as a draft file.
 
 </task>
 
 <context>
 
-<issue>
-
-{{ISSUE_BODY}}
-
-</issue>
-
-<comments>
-
-{{ISSUE_COMMENTS}}
-
-</comments>
+Read `.pycastle-session/improve/_drafts/spec.md` to get the PRD content you will slice.
 
 </context>
 
@@ -26,7 +16,7 @@ Break the PRD filed in phase 2 (#{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}) into indepen
 
 ## Safety net
 
-You must NOT modify any files in the worktree. Your only outputs are the GitHub issues and the `<promise>` tag. CONTEXT.md additions/edits are filed as a dedicated issue (see step 1 below) — never edited in place from this phase.
+You must NOT modify any files in the worktree. Your only outputs are the draft files and the `<promise>` tag. CONTEXT.md additions/edits are filed as a dedicated issue (see step 1 below) — never edited in place from this phase.
 
 ## 1. Explore
 
@@ -42,7 +32,7 @@ Look for opportunities to prefactor the code to make the implementation easier. 
 
 Check whether the candidate introduces a new domain term, sharpens a fuzzy term, or implies an update to `CONTEXT.md`.
 
-If yes, file a single dedicated CONTEXT.md issue **first** before any vertical slice:
+If yes, draft a single dedicated CONTEXT.md issue **first** before any vertical slice:
 
 - Spell out the **exact additions or edits** in the body, ready for an Implementer to apply verbatim.
 - Mark it highest priority — every other sub-issue lists it in its `Blocked by` field.
@@ -144,24 +134,37 @@ Before filing, answer:
 - Is the mode classification right? Any refactor steps sneaking into a behavior slice?
 - Do all acceptance criteria use the mode-appropriate shape and avoid the banned sentence shapes?
 
-## 6. File the issues
+## 6. Write the draft files
 
-For each approved slice, publish a new issue. Each title must start with `[improve-SLICE]`. Apply two labels:
+For each approved slice, write a draft file to `.pycastle-session/improve/_drafts/`. Name each file with a two-digit prefix and a slug, e.g. `01-add-parser-seam.md`, `02-wire-tests.md`. Each title must start with `[improve-SLICE]`. Apply two labels:
 
-{{ISSUE_TRACKER}}
+- A ready-for-agent label (state)
+- One of the slice-mode labels (mode)
 
-- `{{READY_FOR_AGENT_LABEL}}` (state)
-- One of `{{REFACTOR_SLICE_LABEL}}`, `{{BEHAVIOR_SLICE_LABEL}}`, `{{DOCS_SLICE_LABEL}}` (mode)
+Use this frontmatter format:
 
-Publish in dependency order (blockers first) so you can reference real issue identifiers in `Blocked by`. The CONTEXT.md issue from step 2, if any, is filed first; refactor slices land before the behavior slices that depend on them.
+```
+---
+title: [improve-SLICE] <concise title>
+labels:
+  - ready-for-agent
+  - behavior-slice
+blocked_by:
+  - 01-some-prerequisite
+files_touched:
+  - src/pycastle/some/module.py
+---
+
+<issue body here>
+```
+
+Write in dependency order (blockers first) so you can reference draft handles in `blocked_by`. The CONTEXT.md issue from step 2, if any, is written first; refactor slices land before the behavior slices that depend on them.
+
+The `blocked_by` field lists handles (file stems without `.md`) of other drafts in this set. Leave it empty or omit it if there are no blockers.
 
 ## Sub-issue body template
 
 ```
-## Parent
-
-A reference to the parent PRD issue (#N from phase 2).
-
 ## What to build
 
 A concise description of this vertical slice. Describe the end-to-end behavior, not layer-by-layer implementation.
@@ -190,14 +193,6 @@ Explicitly state that this slice is autonomous-safe: no CLI surface changes, no 
 
 _Filed by improve session_
 ```
-
-## Sub-issue registration
-
-After creating all issues, register each new issue as a sub-issue of the parent PRD.
-
-{{ISSUE_TRACKER}}
-
-Do NOT close or modify the parent PRD issue.
 
 </workflow>
 

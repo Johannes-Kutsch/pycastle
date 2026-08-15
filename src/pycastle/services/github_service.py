@@ -26,6 +26,7 @@ _HTTP_TOO_MANY_REQUESTS = 429
 _HTTP_SERVER_ERROR_MIN = 500
 _HTTP_SERVER_ERROR_MAX = 599
 _HTTP_FORBIDDEN = 403
+_HTTP_UNPROCESSABLE = 422
 _RECENT_PRD_PAGE_SIZE = 12
 
 
@@ -502,15 +503,30 @@ class GithubService:
         items = payload.get("items") or []
         return [int(item["number"]) for item in items if "number" in item]
 
+    def add_issue_dependency(self, child_number: int, blocker_database_id: int) -> None:
+        try:
+            self._request(
+                "POST",
+                f"/repos/{self.repo}/issues/{child_number}/issue_dependencies",
+                data={"blocked_by_id": blocker_database_id},
+            )
+        except GithubAPIError as exc:
+            if exc.status != _HTTP_UNPROCESSABLE:
+                raise
+
     def create_issue_in(
         self, owner_repo: str, title: str, body: str, labels: list[str]
-    ) -> int:
+    ) -> tuple[int, int]:
         payload, _ = self._request(
             "POST",
             f"/repos/{owner_repo}/issues",
             data={"title": title, "body": body, "labels": labels},
         )
-        if not isinstance(payload, dict) or "number" not in payload:
+        if (
+            not isinstance(payload, dict)
+            or "number" not in payload
+            or "id" not in payload
+        ):
             raise GithubAPIError(
                 f"GitHub API POST /repos/{owner_repo}/issues returned no number",
                 status=200,
@@ -518,7 +534,7 @@ class GithubService:
                 method="POST",
                 path=f"/repos/{owner_repo}/issues",
             )
-        return int(payload["number"])
+        return int(payload["number"]), int(payload["id"])
 
 
 def _next_link(link_header: str | None) -> str | None:

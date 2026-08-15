@@ -5,15 +5,16 @@ import pytest
 
 from pycastle.agents.output_protocol import (
     CompletionOutput,
-    IssueOutput,
     NoCandidateOutput,
+    ScanCandidateItem,
+    ScanCandidatesOutput,
 )
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import (
     ImproveStepPreparationRequest,
     prepare_improve_step,
 )
-from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate
 from pycastle.services import GithubNetworkError
 
 
@@ -60,6 +61,7 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
         short_sid="abcd1234",
         prd_number=None,
         github_port=github_port,
+        candidate_budget=3,
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
@@ -68,7 +70,8 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
     assert prepared.work_body == "picking an improvement"
     assert prepared.prompt.send_role_prompt_on_resume is False
     assert prepared.prompt.scope_args == {
-        "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate"
+        "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+        "CANDIDATE_BUDGET": "3",
     }
     assert github_port.recent_prd_calls == 1
 
@@ -79,7 +82,10 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
     driver = ImprovePhaseDriver(tmp_path / "improve-prd", no_candidate_report=True)
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
+    )
     step2 = driver.next()
     assert step2 is not None
     github_port = _GithubPortStandIn(
@@ -97,7 +103,7 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_PRD
-    assert prepared.session_namespace == "main"
+    assert prepared.session_namespace == "candidate/0"
     assert prepared.name == "PRD Agent"
     assert prepared.work_body == "writing PRD"
     assert prepared.prompt.send_role_prompt_on_resume is True
@@ -220,7 +226,7 @@ def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_session_te
     assert github_port.recent_prd_calls == 1
 
 
-def test_prepare_improve_step_uses_empty_issue_placeholders_without_prd_number():
+def test_prepare_improve_step_uses_short_sid_only_for_issues():
     github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
@@ -239,10 +245,6 @@ def test_prepare_improve_step_uses_empty_issue_placeholders_without_prd_number()
 
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
-        "ISSUE_NUMBER": "",
-        "ISSUE_TITLE": "",
-        "ISSUE_BODY": "",
-        "ISSUE_COMMENTS": "",
     }
     assert github_port.recent_prd_calls == 0
     assert github_port.issue_calls == []
@@ -268,6 +270,7 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
         short_sid="abcd1234",
         prd_number=None,
         github_port=github_port,
+        candidate_budget=2,
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
@@ -276,22 +279,14 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
     assert prepared.work_body == "picking an improvement"
     assert prepared.prompt.send_role_prompt_on_resume is False
     assert prepared.prompt.scope_args == {
-        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found."
+        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+        "CANDIDATE_BUDGET": "2",
     }
     assert github_port.recent_prd_calls == 0
 
 
-def test_prepare_improve_step_reads_issue_and_comments_for_issues_scope():
-    github_port = _GithubPortStandIn(
-        issue={"number": 77, "title": "Improve PRD", "body": "PRD body"},
-        comments=[
-            {
-                "author": "alice",
-                "created_at": "2026-01-01T00:00:00Z",
-                "body": "looks good",
-            }
-        ],
-    )
+def test_prepare_improve_step_issues_scope_contains_only_short_sid():
+    github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
         ImproveStepPreparationRequest(
@@ -309,14 +304,10 @@ def test_prepare_improve_step_reads_issue_and_comments_for_issues_scope():
 
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
-        "ISSUE_NUMBER": "77",
-        "ISSUE_TITLE": "Improve PRD",
-        "ISSUE_BODY": "PRD body",
-        "ISSUE_COMMENTS": "## Comment by @alice at 2026-01-01T00:00:00Z\n\nlooks good",
     }
     assert github_port.recent_prd_calls == 0
-    assert github_port.issue_calls == [77]
-    assert github_port.issue_comment_calls == [77]
+    assert github_port.issue_calls == []
+    assert github_port.issue_comment_calls == []
 
 
 def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff(
@@ -325,26 +316,20 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     driver = ImprovePhaseDriver(tmp_path / "improve-issues", no_candidate_report=True)
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
+    )
 
     step2 = driver.next()
     assert step2 is not None
     assert step2.prompt_key == "02-prd.md"
-    driver.record_outcome(step2, IssueOutput(number=77, labels=[]))
+    driver.record_outcome(step2, CompletionOutput())
 
     step3 = driver.next()
     assert step3 is not None
     assert step3.prompt_key == "03-issues.md"
-    github_port = _GithubPortStandIn(
-        issue={"number": 77, "title": "Improve PRD", "body": "PRD body"},
-        comments=[
-            {
-                "author": "alice",
-                "created_at": "2026-01-01T00:00:00Z",
-                "body": "looks good",
-            }
-        ],
-    )
+    github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
         step3,
@@ -353,28 +338,44 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert prepared.session_namespace == "main"
+    assert prepared.session_namespace == "candidate/0"
     assert prepared.name == "Slice Agent"
     assert prepared.work_body == "filing sub-issues"
     assert prepared.prompt.send_role_prompt_on_resume is True
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
-        "ISSUE_NUMBER": "77",
-        "ISSUE_TITLE": "Improve PRD",
-        "ISSUE_BODY": "PRD body",
-        "ISSUE_COMMENTS": "## Comment by @alice at 2026-01-01T00:00:00Z\n\nlooks good",
     }
     assert github_port.recent_prd_calls == 0
-    assert github_port.issue_calls == [77]
-    assert github_port.issue_comment_calls == [77]
+    assert github_port.issue_calls == []
+    assert github_port.issue_comment_calls == []
 
 
 def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_handoff(
     tmp_path: Path,
 ):
+    import json as _json
+
+    from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
+
     driver_dir = tmp_path / "improve-issues-resume"
     driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_progress").write_text("02-prd", encoding="utf-8")
+    # Seed candidate list + a candidate record (PRD done, prd_number=None) + in-flight=03-issues
+    data = {"candidates": [{"rank": 1, "title": "Seeded"}]}
+    (driver_dir / "_candidate_list").write_text(_json.dumps(data), encoding="utf-8")
+    (driver_dir / "_candidate_cursor").write_text("0", encoding="utf-8")
+    candidate_dir = driver_dir / "candidates" / "0"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    _save_record(
+        candidate_dir,
+        _CandidateRecord(
+            prd_number=None,
+            spec_number=None,
+            spec_database_id=None,
+            spec_title="",
+            filed_slices=[],
+            labels_applied=False,
+        ),
+    )
     (driver_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
     driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
     step = driver.start()
@@ -392,13 +393,9 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert prepared.session_namespace == "main"
+    assert prepared.session_namespace == "candidate/0"
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
-        "ISSUE_NUMBER": "",
-        "ISSUE_TITLE": "",
-        "ISSUE_BODY": "",
-        "ISSUE_COMMENTS": "",
     }
     assert github_port.recent_prd_calls == 0
     assert github_port.issue_calls == []
@@ -413,26 +410,20 @@ def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
     )
     step1 = driver.start()
     assert step1 is not None
-    driver.record_outcome(step1, CompletionOutput())
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
+    )
 
     step2 = driver.next()
     assert step2 is not None
     assert step2.prompt_key == "02-prd.md"
-    driver.record_outcome(step2, IssueOutput(number=77, labels=[]))
+    driver.record_outcome(step2, CompletionOutput())
 
     step3 = driver.next()
     assert step3 is not None
     assert step3.prompt_key == "03-issues.md"
-    github_port = _GithubPortStandIn(
-        issue={"number": 77, "title": "Edited PRD", "body": "Edited PRD body"},
-        comments=[
-            {
-                "author": "alice",
-                "created_at": "2026-01-01T00:00:00Z",
-                "body": "updated between phases",
-            }
-        ],
-    )
+    github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
         step3,
@@ -441,16 +432,12 @@ def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
-    assert prepared.session_namespace == "main"
+    assert prepared.session_namespace == "candidate/0"
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
-        "ISSUE_NUMBER": "77",
-        "ISSUE_TITLE": "Edited PRD",
-        "ISSUE_BODY": "Edited PRD body",
-        "ISSUE_COMMENTS": "## Comment by @alice at 2026-01-01T00:00:00Z\n\nupdated between phases",
     }
-    assert github_port.issue_calls == [77]
-    assert github_port.issue_comment_calls == [77]
+    assert github_port.issue_calls == []
+    assert github_port.issue_comment_calls == []
 
 
 def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
@@ -473,23 +460,18 @@ def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
     assert exc_info.value is error
 
 
-def test_prepare_improve_step_propagates_issue_read_failures():
-    error = GithubNetworkError("transport error", cause=RuntimeError("boom"))
-    github_port = _GithubPortStandIn(issue_error=error)
+def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render(
+    tmp_path: Path,
+):
+    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
+    step = driver.start()
+    assert step is not None
+    github_port = _GithubPortStandIn()
 
-    with pytest.raises(GithubNetworkError) as exc_info:
+    with pytest.raises(PromptRenderError):
         prepare_improve_step(
-            ImproveStepPreparationRequest(
-                prompt_template=PromptTemplate.IMPROVE_ISSUES,
-                session_namespace="main",
-                display_name="Slice Agent",
-                work_body="filing sub-issues",
-                send_role_prompt_on_resume=True,
-                short_sid="abcd1234",
-                prd_number=42,
-                fetch_recent_prd_titles=False,
-            ),
+            step,
+            short_sid="abcd1234",
+            prd_number=None,
             github_port=github_port,
         )
-
-    assert exc_info.value is error

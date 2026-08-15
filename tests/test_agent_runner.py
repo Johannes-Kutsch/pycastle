@@ -2011,7 +2011,10 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
                 name="Scan Agent",
                 prompt=PromptInvocation(
                     template=PromptTemplate.IMPROVE_SCAN,
-                    scope_args={"RECENT_IMPROVE_PRD_TITLES": ""},
+                    scope_args={
+                        "RECENT_IMPROVE_PRD_TITLES": "",
+                        "CANDIDATE_BUDGET": "3",
+                    },
                 ),
                 mount_path=mount_path,
                 role=AgentRole.IMPROVE,

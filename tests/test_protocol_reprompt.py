@@ -75,13 +75,15 @@ _SCOPE_ARGS_BY_TEMPLATE: dict[PromptTemplate, dict[str, str]] = {
     },
     PromptTemplate.IMPROVE_PRD: _IMPROVE_PRD_SCOPE_ARGS,
     PromptTemplate.IMPROVE_NO_CANDIDATE: _IMPROVE_PRD_SCOPE_ARGS,
-    PromptTemplate.IMPROVE_SCAN: {"RECENT_IMPROVE_PRD_TITLES": "[]"},
+    PromptTemplate.IMPROVE_SCAN: {
+        "RECENT_IMPROVE_PRD_TITLES": "[]",
+        "CANDIDATE_BUDGET": "3",
+    },
     PromptTemplate.IMPROVE_ISSUES: {
         "IMPROVE_SHORT_SID": "abc123",
-        "ISSUE_NUMBER": "1928",
-        "ISSUE_TITLE": "Title",
-        "ISSUE_BODY": "Body",
-        "ISSUE_COMMENTS": "",
+    },
+    PromptTemplate.IMPROVE_DRAFT_CORRECTION: {
+        "VALIDATION_ERRORS": "- Error 1",
     },
     PromptTemplate.DIVERGENCE_RESOLVE: {"BRANCH": "pycastle/issue-1928"},
     PromptTemplate.FAILURE_REPORT: {
@@ -123,6 +125,7 @@ _TEMPLATE_SPECIFIC_PROTOCOL_CASES = (
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_PRD),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_ISSUES),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_NO_CANDIDATE),
+    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_DRAFT_CORRECTION),
     (AgentRole.FAILURE_REPORT, PromptTemplate.FAILURE_REPORT),
     (AgentRole.DIVERGENCE_RESOLVER, PromptTemplate.DIVERGENCE_RESOLVE),
 )
@@ -367,7 +370,7 @@ def test_plan_protocol_reprompt_preserves_exact_improve_phase_invocations():
     for template, expected_scope_fragment in (
         (PromptTemplate.IMPROVE_SCAN, "RECENT_IMPROVE_PRD_TITLES=[]"),
         (PromptTemplate.IMPROVE_PRD, "RECENT_IMPROVE_PRDS=[]"),
-        (PromptTemplate.IMPROVE_ISSUES, "ISSUE_NUMBER=1928"),
+        (PromptTemplate.IMPROVE_ISSUES, "IMPROVE_SHORT_SID=abc123"),
         (PromptTemplate.IMPROVE_NO_CANDIDATE, "RECENT_IMPROVE_PRDS=[]"),
     ):
         plan = plan_protocol_reprompt(

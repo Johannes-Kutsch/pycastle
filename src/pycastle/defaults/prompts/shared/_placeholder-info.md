@@ -69,6 +69,7 @@ Used by: diagnostics/host-check-issue.md
 
 Used by: improve/01-scan.md
 
+- `{{CANDIDATE_BUDGET}}` — Number of candidates the scan is asked to nominate; the minimum of the configured width and the run's remaining improve budget.
 - `{{RECENT_IMPROVE_PRD_TITLES}}` — Plain-text recent Improve PRD title history for novelty checking, or `No recent improve PRDs found.` when the lookup is empty.
 
 ## Scope: IMPROVE_SESSION
@@ -83,10 +84,12 @@ Used by: improve/02-prd.md, improve/04-no-candidate-report.md
 Used by: improve/03-issues.md
 
 - `{{IMPROVE_SHORT_SID}}` — Short session ID for the improve session.
-- `{{ISSUE_NUMBER}}` — The GitHub issue number.
-- `{{ISSUE_TITLE}}` — The issue title.
-- `{{ISSUE_BODY}}` — The issue body markdown.
-- `{{ISSUE_COMMENTS}}` — Formatted issue comments.
+
+## Scope: IMPROVE_DRAFT_CORRECTION
+
+Used by: improve/_draft-correction.md
+
+- `{{VALIDATION_ERRORS}}` — Bullet list of validation errors found in the draft set.
 
 ## Scope: DIVERGE
 

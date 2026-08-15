@@ -63,6 +63,8 @@ from tests.support import (
     RecordingLogger,
     RecordingStatusDisplay,
     StubPreflightCache,
+    functional_git_svc,
+    make_scan_output,
 )
 from tests.support import (
     _make_deps as _make_test_deps,
@@ -1096,10 +1098,21 @@ def test_run_iteration_improve_chains_into_planning_on_success(
     # Second call (re-fetch after improve): one new issue filed by improve
     github_svc.get_open_issues.side_effect = [[], [filed_issue]]
     github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.repo = "test/repo"
+    github_svc.create_issue_in.return_value = (0, 0)
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([filed_issue])
+        if request.name == "Scan Agent":
+            return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
         return CompletionOutput()
 
     deps = dataclasses.replace(
@@ -2234,10 +2247,19 @@ def _make_improve_deps(
     """Return Deps wired for an improve-mode test (0 open AFK issues)."""
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.return_value = []
+    github_svc.repo = "test/repo"
+    github_svc.create_issue_in.return_value = (0, 0)
 
     response_queue = list(agent_responses)
 
     async def _agent(request: RunRequest):
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
         return response_queue.pop(0)
 
     return dataclasses.replace(
@@ -2262,7 +2284,7 @@ def test_run_iteration_endless_dispatches_improve_when_idle(tmp_path, git_svc, l
         logger,
         improve_mode="endless",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
@@ -2296,7 +2318,7 @@ def test_run_iteration_until_sleep_resumes_interrupted_cycle_when_slept(
         logger,
         improve_mode="until_sleep",
         slept_once=True,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
     )
     deps.improve_cycle_interrupted = True
 
@@ -2320,7 +2342,7 @@ def test_run_iteration_until_sleep_dispatches_improve_before_first_sleep(
         logger,
         improve_mode="until_sleep",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
@@ -2336,7 +2358,7 @@ def test_run_iteration_endless_dispatches_improve_even_after_sleep(
         logger,
         improve_mode="endless",
         slept_once=True,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
@@ -2405,7 +2427,7 @@ def test_run_iteration_successful_improve_still_returns_continue(
         logger,
         improve_mode="endless",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
     )
     result = asyncio.run(run_iteration(deps))
     assert isinstance(result, Continue)
@@ -2422,7 +2444,7 @@ def test_run_iteration_improve_dispatch_runs_preflight_checks_with_no_open_issue
         logger,
         improve_mode="endless",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
     )
     asyncio.run(run_iteration(deps))
 
@@ -2442,7 +2464,7 @@ def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger
         logger,
         improve_mode="endless",
         slept_once=False,
-        agent_responses=[CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
     )
     asyncio.run(run_iteration(deps))
 
@@ -3120,7 +3142,7 @@ def test_run_iteration_files_fallback_issue_when_failure_report_mount_is_invalid
     github_svc.repo = "owner/consuming-project"
     github_svc.get_open_issues.return_value = []
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 321
+    github_svc.create_issue_in.return_value = (321, 10321)
 
     observed_requests: list[RunRequest] = []
 
@@ -4213,10 +4235,21 @@ def test_improve_continue_increments_dispatched_count_by_one(tmp_path, git_svc, 
     github_svc = MagicMock(spec=GithubService)
     github_svc.get_open_issues.side_effect = [[], [filed_issue]]
     github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.repo = "test/repo"
+    github_svc.create_issue_in.return_value = (0, 0)
 
     async def _fake_agent(request: RunRequest):
         if request.name == "Plan Agent":
             return _plan_output([filed_issue])
+        if request.name == "Scan Agent":
+            return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
         return CompletionOutput()
 
     deps = dataclasses.replace(
@@ -4355,6 +4388,108 @@ def test_improve_max_cap_not_consumed_by_usage_limit_abort(tmp_path, git_svc, lo
         "improve_phase must be dispatched again on iteration 2 since the slot was not consumed"
     )
     assert deps.improve_dispatched_count == 0
+
+
+def _seed_improve_progress(worktree_path: Path, phase_id: str) -> None:
+    import json as _json
+
+    role_session_dir = worktree_path / ".pycastle-session" / "improve"
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    if phase_id == "01-scan:picked":
+        # Simulate scan done with one candidate, cursor at 0 (no record → PRD phase)
+        data = {"candidates": [{"rank": 1, "title": "Seeded candidate"}]}
+        (role_session_dir / "_candidate_list").write_text(
+            _json.dumps(data), encoding="utf-8"
+        )
+        (role_session_dir / "_candidate_cursor").write_text("0", encoding="utf-8")
+    (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
+
+
+def _improve_restart_git_svc():
+    # No-ops remove_worktree/list_worktrees so REUSABLE_SANDBOX cleanup doesn't delete pre-seeded session files.
+    svc = functional_git_svc()
+    svc.get_head_sha.return_value = "abc123"
+    svc.is_working_tree_clean.return_value = True
+    svc.list_worktrees.side_effect = None
+    svc.list_worktrees.return_value = []
+    svc.remove_worktree.side_effect = None
+    return svc
+
+
+def test_phase1_restart_leaves_improve_dispatched_count_unchanged(tmp_path, logger):
+    """When improve_phase restarts from phase 1 due to missing transcript handoff,
+    improve_dispatched_count must NOT increment — no improvement was completed."""
+    git_svc = _improve_restart_git_svc()
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_improve_progress(wt, "01-scan:picked")
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    # setup_worktrees=False so that _wire_worktrees is not called again, which
+    # would overwrite the no-op remove_worktree we need to preserve session files.
+    deps = dataclasses.replace(
+        _make_test_deps(
+            tmp_path,
+            FakeAgentRunner([], preflight_responses=[[]]),
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_cache=StubPreflightCache(),
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert deps.improve_dispatched_count == 0, (
+        "A phase-1 restart must not consume an improve slot — "
+        "only a completed improvement (PRD + sub-issues filed) increments the counter"
+    )
+
+
+def test_improve_cap_not_consumed_by_phase1_restart(tmp_path, logger):
+    """With improve_max=1, a phase-1 restart does not consume the improve cap.
+    A second run_iteration call dispatches improve again (not Done)."""
+    git_svc = _improve_restart_git_svc()
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_improve_progress(wt, "01-scan:picked")
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    runner = FakeAgentRunner(
+        # First run: restart — no agents called.
+        # Second run: fresh phase-1 scan → no-candidate → report (2 agents).
+        [NoCandidateOutput(), CompletionOutput()],
+        preflight_responses=[[], []],
+    )
+    # setup_worktrees=False so that _wire_worktrees is not called again.
+    deps = dataclasses.replace(
+        _make_test_deps(
+            tmp_path,
+            runner,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(improve_max=1),
+            preflight_cache=StubPreflightCache(),
+        ),
+        improve_mode="endless",
+        improve_dispatched_count=0,
+    )
+    # First run: phase-1 restart, cap slot not consumed
+    asyncio.run(run_iteration(deps))
+    assert deps.improve_dispatched_count == 0
+
+    # Second run: cap not reached (0 < 1), improve is dispatched again
+    result2 = asyncio.run(run_iteration(deps))
+    assert not isinstance(result2, Done), (
+        "After a phase-1 restart the cap slot must remain available; "
+        "a second run must dispatch improve, not return Done(improve_cap_reached=True)"
+    )
 
 
 # ── TransientAgentError: iteration boundary continues without sleeping ────────

@@ -225,7 +225,7 @@ def test_get_safe_sha_files_fallback_issue_when_preflight_reporter_mount_is_inva
     )
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 654
+    github_svc.create_issue_in.return_value = (654, 10654)
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 

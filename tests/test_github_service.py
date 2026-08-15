@@ -2678,7 +2678,7 @@ def test_create_issue_in_with_scripted_transport_returns_number_for_normal_paylo
                     "body": "body",
                     "labels": ["bug", "needs-triage"],
                 },
-                payload={"number": 42, "html_url": "https://x"},
+                payload={"number": 42, "id": 1001, "html_url": "https://x"},
             )
         ]
     )
@@ -2691,7 +2691,7 @@ def test_create_issue_in_with_scripted_transport_returns_number_for_normal_paylo
         ["bug", "needs-triage"],
     )
 
-    assert result == 42
+    assert result == (42, 1001)
     assert transport.requests == [
         _GithubTransportRequest(
             "POST",
@@ -2713,7 +2713,7 @@ def test_create_issue_in_with_scripted_transport_uses_owner_repo_arg_not_self_re
                 "POST",
                 "/repos/target-owner/target-repo/issues",
                 data={"title": "t", "body": "b", "labels": []},
-                payload={"number": 1},
+                payload={"number": 1, "id": 1002},
             )
         ]
     )
@@ -2721,7 +2721,7 @@ def test_create_issue_in_with_scripted_transport_uses_owner_repo_arg_not_self_re
 
     result = svc.create_issue_in("target-owner/target-repo", "t", "b", [])
 
-    assert result == 1
+    assert result == (1, 1002)
     assert transport.requests == [
         _GithubTransportRequest(
             "POST",
@@ -2807,6 +2807,36 @@ def test_create_issue_in_with_scripted_transport_raises_api_error_when_number_mi
 
     assert exc_info.value.status == 200
     assert exc_info.value.body == "{'html_url': 'https://x'}"
+    assert exc_info.value.method == "POST"
+    assert exc_info.value.path == "/repos/Johannes-Kutsch/pycastle/issues"
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/Johannes-Kutsch/pycastle/issues",
+            {"title": "title", "body": "body", "labels": ["bug"]},
+        )
+    ]
+    transport.assert_exhausted()
+
+
+def test_create_issue_in_with_scripted_transport_raises_api_error_when_id_missing():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/Johannes-Kutsch/pycastle/issues",
+                data={"title": "title", "body": "body", "labels": ["bug"]},
+                payload={"number": 42, "html_url": "https://x"},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAPIError) as exc_info:
+        svc.create_issue_in("Johannes-Kutsch/pycastle", "title", "body", ["bug"])
+
+    assert exc_info.value.status == 200
+    assert exc_info.value.body == "{'number': 42, 'html_url': 'https://x'}"
     assert exc_info.value.method == "POST"
     assert exc_info.value.path == "/repos/Johannes-Kutsch/pycastle/issues"
     assert transport.requests == [
@@ -2923,6 +2953,82 @@ def test_search_open_issues_by_title_returns_empty_list_when_items_missing():
     ]
     transport.assert_exhausted()
     assert result == []
+
+
+# ── add_issue_dependency ─────────────────────────────────────────────────────
+
+
+def test_add_issue_dependency_posts_blocker_database_id_to_correct_endpoint():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/issue_dependencies",
+                data={"blocked_by_id": 999},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.add_issue_dependency(child_number=42, blocker_database_id=999)
+
+    assert transport.requests == [
+        _GithubTransportRequest(
+            "POST",
+            "/repos/owner/repo/issues/42/issue_dependencies",
+            {"blocked_by_id": 999},
+        )
+    ]
+    transport.assert_exhausted()
+
+
+def test_add_issue_dependency_surfaces_api_error_as_github_service_error():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/issue_dependencies",
+                data={"blocked_by_id": 999},
+                error=GithubHttpTransportAPIError(
+                    "server error",
+                    status=500,
+                    body="server error",
+                    method="POST",
+                    path="/repos/owner/repo/issues/42/issue_dependencies",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubServiceError):
+        svc.add_issue_dependency(child_number=42, blocker_database_id=999)
+
+    transport.assert_exhausted()
+
+
+def test_add_issue_dependency_does_not_fail_when_dependency_already_exists():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/issue_dependencies",
+                data={"blocked_by_id": 999},
+                error=GithubHttpTransportAPIError(
+                    "dependency already exists",
+                    status=422,
+                    body='{"message":"dependency already exists"}',
+                    method="POST",
+                    path="/repos/owner/repo/issues/42/issue_dependencies",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    svc.add_issue_dependency(child_number=42, blocker_database_id=999)
+
+    transport.assert_exhausted()
 
 
 # ── No real network ──────────────────────────────────────────────────────────

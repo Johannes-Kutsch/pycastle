@@ -30,6 +30,7 @@ from pycastle.iteration.orchestrator import (
     ensure_session_excludes,
     run,
 )
+from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -51,6 +52,7 @@ from tests.support import (
     RecordingStatusDisplay,
     _make_deps,
     functional_git_svc,
+    make_scan_output,
 )
 
 if TYPE_CHECKING:
@@ -143,7 +145,7 @@ def _make_github_svc(numbers: list[int] | None = None):
     mock.get_all_open_issues_lightweight.return_value = []
     mock.repo = "test/repo"
     mock.search_open_issues_by_title.return_value = []
-    mock.create_issue_in.return_value = 999
+    mock.create_issue_in.return_value = (999, 10999)
     return mock
 
 
@@ -1676,7 +1678,14 @@ def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
             scan_call_count += 1
             if scan_call_count == 1:
                 raise UsageLimitError(reset_time=None)
-            return CompletionOutput()
+            return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
         return CompletionOutput()
 
     with patch("time.sleep"):
@@ -2831,21 +2840,22 @@ def test_improve_and_plan_share_preflight_cache(tmp_path):
         ],  # after improve
     ]
     mock_github.get_all_open_issues_lightweight.return_value = []
-    mock_github.get_issue.return_value = {
-        "number": 5,
-        "title": "PRD",
-        "body": "x" * 100,
-        "comments": [],
-    }
-    mock_github.get_issue_comments.return_value = []
+    mock_github.repo = "test/repo"
+    mock_github.create_issue_in.return_value = (0, 0)
 
     async def _fake_run_agent(request: RunRequest):
         if "Scan Agent" in request.name:
-            return IssueOutput(number=5, labels=[])  # 01-scan picks a candidate
+            return make_scan_output()  # 01-scan nominates candidates
         if "PRD Agent" in request.name:
-            return IssueOutput(number=5, labels=[])  # 02-prd
+            return CompletionOutput()  # 02-prd writes spec draft
         if "Slice Agent" in request.name:
-            return CompletionOutput()  # 03-issues files sub-issues
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
+            return CompletionOutput()  # 03-issues writes slice drafts
         if "Implement Agent" in request.name:
             return CompletionOutput()
         return CompletionOutput()
@@ -3433,7 +3443,7 @@ def test_orchestrator_files_setup_failure_via_api_when_auto_file_bugs_is_enabled
         ),
         patch(
             "pycastle.services.github_service.GithubService.create_issue_in",
-            return_value=321,
+            return_value=(321, 10321),
         ) as mock_create,
         pytest.raises(SystemExit),
     ):
@@ -3623,7 +3633,7 @@ def test_orchestrator_files_issue_on_consuming_repo_when_no_existing_match(tmp_p
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 99
+    github_svc.create_issue_in.return_value = (99, 10099)
 
     with pytest.raises(SystemExit) as exc_info:
         _run(tmp_path, git_service=git_svc, github_service=github_svc)
@@ -3679,7 +3689,7 @@ def test_orchestrator_filed_issue_body_contains_diagnostic_info(tmp_path):
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 99
+    github_svc.create_issue_in.return_value = (99, 10099)
 
     with pytest.raises(SystemExit):
         _run(tmp_path, git_service=git_svc, github_service=github_svc)
@@ -3709,7 +3719,7 @@ def test_orchestrator_operator_actionable_never_routes_to_pycastle_upstream(tmp_
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 5
+    github_svc.create_issue_in.return_value = (5, 10005)
 
     auto_file_calls: list = []
 

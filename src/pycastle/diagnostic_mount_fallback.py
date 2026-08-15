@@ -27,7 +27,7 @@ class DiagnosticMountFallbackIssueTracker(Protocol):
         title: str,
         body: str,
         labels: list[str],
-    ) -> int: ...
+    ) -> tuple[int, int]: ...
 
 
 @dataclass(frozen=True)
@@ -85,7 +85,7 @@ def decide_diagnostic_mount_dispatch(
         original_failure_summary=original_failure_summary,
         rejection=decision,
     )
-    issue_number = github_svc.create_issue_in(
+    issue_number, _ = github_svc.create_issue_in(
         github_svc.repo,
         title,
         body,

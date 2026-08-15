@@ -22,7 +22,7 @@ def test_route_agent_credential_failure_returns_terminal_route_result_for_shared
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
 
     err = AgentCredentialFailureError(
         message="OpenCode request failed: 401 invalid API key for provider opencode-go",
@@ -47,7 +47,7 @@ def test_route_agent_credential_failure_interprets_codex_auth_lineage_exhaustion
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
 
     err = AgentCredentialFailureError(
         message=(
@@ -89,7 +89,7 @@ def test_route_agent_credential_failure_builds_redacted_issue_body_in_routing_mo
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
     raw_result = (
         '{"type":"error","code":"refresh_token_reused","apiKey":"plain-secret-123456",'
         '"message":"The access token sk-live-abc123SECRET could not be refreshed."}'
@@ -130,7 +130,7 @@ def test_route_agent_credential_failure_files_stable_codex_issue_contract_at_mod
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
     raw_result = (
         '{"type":"error","code":"refresh_token_reused","apiKey":"plain-secret-123456",'
         '"message":"The access token sk-live-abc123SECRET could not be refreshed."}'
@@ -181,7 +181,7 @@ def test_route_agent_credential_failure_renders_dataclass_style_source_observati
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
 
     err = AgentCredentialFailureError(
         message="Codex authentication missing: run `codex login` on the host.",
@@ -209,7 +209,7 @@ def test_route_agent_credential_failure_selects_codex_reseed_remediation_from_ad
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
 
     err = AgentCredentialFailureError(
         message="Codex request failed with credential failure.",
@@ -231,7 +231,7 @@ def test_route_agent_credential_failure_interprets_claude_subscription_access_de
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
     message = (
         "Your organization has disabled Claude subscription access for Claude Code. "
         "Please ask your admin to enable Claude subscription access for Claude Code."
@@ -265,7 +265,7 @@ def test_route_agent_credential_failure_uses_shared_claude_subscription_remediat
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
     message = (
         "Your organization has disabled Claude subscription access for Claude Code. "
         "Please ask your admin to enable Claude subscription access for Claude Code."
@@ -293,7 +293,7 @@ def test_route_agent_credential_failure_selects_claude_access_remediation_from_a
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
 
     err = AgentCredentialFailureError(
         message="Claude request failed with credential failure.",
@@ -505,7 +505,7 @@ def test_route_agent_credential_failure_selects_opencode_api_key_remediation_fro
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 42
+    github_svc.create_issue_in.return_value = (42, 10042)
 
     err = AgentCredentialFailureError(
         message="OpenCode request failed with credential failure.",
@@ -612,7 +612,7 @@ def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issu
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = 88
+    github_svc.create_issue_in.return_value = (88, 10088)
 
     err = AgentCredentialFailureError(
         message="OpenCode request failed: 401 invalid API key for provider opencode-go",

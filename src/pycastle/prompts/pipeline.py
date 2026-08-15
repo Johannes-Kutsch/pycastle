@@ -86,7 +86,7 @@ class Scope(enum.Enum):
     )
     IMPROVE_SCAN = (
         "IMPROVE_SCAN",
-        frozenset({"RECENT_IMPROVE_PRD_TITLES"}),
+        frozenset({"RECENT_IMPROVE_PRD_TITLES", "CANDIDATE_BUDGET"}),
     )
     IMPROVE_SESSION = (
         "IMPROVE_SESSION",
@@ -94,15 +94,11 @@ class Scope(enum.Enum):
     )
     IMPROVE_ISSUES = (
         "IMPROVE_ISSUES",
-        frozenset(
-            {
-                "IMPROVE_SHORT_SID",
-                "ISSUE_NUMBER",
-                "ISSUE_TITLE",
-                "ISSUE_BODY",
-                "ISSUE_COMMENTS",
-            }
-        ),
+        frozenset({"IMPROVE_SHORT_SID"}),
+    )
+    IMPROVE_DRAFT_CORRECTION = (
+        "IMPROVE_DRAFT_CORRECTION",
+        frozenset({"VALIDATION_ERRORS"}),
     )
     DIVERGE = ("DIVERGE", frozenset({"BRANCH"}))
     RESUME = ("RESUME", frozenset[str]())
@@ -136,6 +132,10 @@ class PromptTemplate(enum.Enum):
     IMPROVE_SCAN = ("improve/01-scan.md", Scope.IMPROVE_SCAN)
     IMPROVE_PRD = ("improve/02-prd.md", Scope.IMPROVE_SESSION)
     IMPROVE_ISSUES = ("improve/03-issues.md", Scope.IMPROVE_ISSUES)
+    IMPROVE_DRAFT_CORRECTION = (
+        "improve/_draft-correction.md",
+        Scope.IMPROVE_DRAFT_CORRECTION,
+    )
     IMPROVE_NO_CANDIDATE = ("improve/04-no-candidate-report.md", Scope.IMPROVE_SESSION)
     RESUME = ("shared/resume.md", Scope.RESUME)
     DIVERGENCE_RESOLVE = ("coordination/diverge.md", Scope.DIVERGE)
@@ -233,6 +233,9 @@ class PromptRenderer:
             "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-02-prd.md"
         ),
         PromptTemplate.IMPROVE_ISSUES: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-03-issues.md"
+        ),
+        PromptTemplate.IMPROVE_DRAFT_CORRECTION: PromptReference(
             "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-03-issues.md"
         ),
         PromptTemplate.DIVERGENCE_RESOLVE: PromptReference(
