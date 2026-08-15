@@ -16,7 +16,7 @@ from pycastle.session.agent import (
 )
 from pycastle.session.agent._planning import plan_run_session
 from pycastle.session.role import RoleSession
-from pycastle.session.service_session_store import store_for_role_session
+from pycastle.session.service_session_store import ServiceSessionStore
 from pycastle.session_planning import (
     ProviderRunStatePlanRequest,
     plan_provider_run_state,
@@ -186,7 +186,9 @@ class AgentRunSessionState:
             )
         return self._plan.service.provider_session_state(
             ProviderSessionStateRequest(
-                role_session=store_for_role_session(self.role_session),
+                role_session=ServiceSessionStore(
+                    self.role_session.path, self.role_session
+                ),
                 provider_state_dir=self.service_state_dir_path,
                 has_resumable_provider_state=(
                     self.service_state_dir_path is not None
@@ -321,8 +323,8 @@ def has_exact_transcript_match(
             role=role,
             namespace=session_namespace,
             service=service,
-            role_session=store_for_role_session(
-                RoleSession(worktree, role, session_namespace)
+            role_session=ServiceSessionStore(
+                RoleSession(worktree, role, session_namespace).path
             ),
             provider_session_adapter=provider_session_adapter_for_service(service),
         )
