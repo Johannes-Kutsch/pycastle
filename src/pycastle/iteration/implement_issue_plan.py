@@ -357,16 +357,16 @@ def _prompt_run_state_for_role(
     role_session = RoleSession(mount_path, role)
     service_name = _resolved_stage_service_name(deps.cfg, role)
     has_resumable_state = role_session.is_resumable()
-    _service = (
+    service = (
         deps.service_registry[service_name]
         if deps.service_registry is not None and service_name
         else None
     )
-    has_exact_transcript_handoff = _service is not None and has_exact_transcript(
+    has_exact_transcript_handoff = service is not None and has_exact_transcript(
         worktree=mount_path,
         role=role,
         namespace="",
-        service=_service,
+        service=service,
     )
     run_kind = (
         role_session.run_kind()
