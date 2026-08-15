@@ -151,12 +151,12 @@ labels:
   - behavior-slice
 blocked_by:
   - 01-some-prerequisite
-files_touched:
-  - src/pycastle/some/module.py
 ---
 
 <issue body here>
 ```
+
+The frontmatter is wiring instructions for the host. The host renders the `## Parent` and `## Blocked by` sections automatically from the frontmatter handles — do not write those sections in the body.
 
 Write in dependency order (blockers first) so you can reference draft handles in `blocked_by`. The CONTEXT.md issue from step 2, if any, is written first; refactor slices land before the behavior slices that depend on them.
 
@@ -176,12 +176,6 @@ A concise description of this vertical slice. Describe the end-to-end behavior, 
 - [ ] Criterion 3
 
 Use the shape that matches the slice mode (see step 4). Never use the banned sentence shapes.
-
-## Blocked by
-
-- A reference to the blocking ticket (if any)
-
-Or "None - can start immediately" if no blockers.
 
 ## Files touched (tentative)
 
