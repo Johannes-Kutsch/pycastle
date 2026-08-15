@@ -44,12 +44,10 @@ Use this novelty context to avoid filing a duplicate or near-duplicate PRD:
 ```
 ---
 title: [improve-PRD] <concise title>
-labels:
-  - behavior-slice
 ---
 ```
 
-Do NOT apply any triage label — PRDs are parent/tracking issues; only phase 3 sub-issues carry a ready-for-agent label.
+Do NOT apply any state label or slice-mode label — the spec is a tracking parent and carries neither a state label nor a slice-mode label; only phase 3 sub-issues carry a ready-for-agent label.
 
 ## Issue body template
 
