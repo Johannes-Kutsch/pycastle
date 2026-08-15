@@ -3059,8 +3059,8 @@ def test_add_issue_dependency_posts_blocker_database_id_to_correct_endpoint():
         [
             _script_step(
                 "POST",
-                "/repos/owner/repo/issues/42/issue_dependencies",
-                data={"blocked_by_id": 999},
+                "/repos/owner/repo/issues/42/dependencies/blocked_by",
+                data={"issue_id": 999},
             )
         ]
     )
@@ -3071,8 +3071,8 @@ def test_add_issue_dependency_posts_blocker_database_id_to_correct_endpoint():
     assert transport.requests == [
         _GithubTransportRequest(
             "POST",
-            "/repos/owner/repo/issues/42/issue_dependencies",
-            {"blocked_by_id": 999},
+            "/repos/owner/repo/issues/42/dependencies/blocked_by",
+            {"issue_id": 999},
         )
     ]
     transport.assert_exhausted()
@@ -3083,14 +3083,14 @@ def test_add_issue_dependency_surfaces_api_error_as_github_service_error():
         [
             _script_step(
                 "POST",
-                "/repos/owner/repo/issues/42/issue_dependencies",
-                data={"blocked_by_id": 999},
+                "/repos/owner/repo/issues/42/dependencies/blocked_by",
+                data={"issue_id": 999},
                 error=GithubHttpTransportAPIError(
                     "server error",
                     status=500,
                     body="server error",
                     method="POST",
-                    path="/repos/owner/repo/issues/42/issue_dependencies",
+                    path="/repos/owner/repo/issues/42/dependencies/blocked_by",
                 ),
             )
         ]
@@ -3108,14 +3108,14 @@ def test_add_issue_dependency_does_not_fail_when_dependency_already_exists():
         [
             _script_step(
                 "POST",
-                "/repos/owner/repo/issues/42/issue_dependencies",
-                data={"blocked_by_id": 999},
+                "/repos/owner/repo/issues/42/dependencies/blocked_by",
+                data={"issue_id": 999},
                 error=GithubHttpTransportAPIError(
-                    "dependency already exists",
+                    "Target issue has already been taken",
                     status=422,
-                    body='{"message":"dependency already exists"}',
+                    body='{"message":"Target issue has already been taken"}',
                     method="POST",
-                    path="/repos/owner/repo/issues/42/issue_dependencies",
+                    path="/repos/owner/repo/issues/42/dependencies/blocked_by",
                 ),
             )
         ]
@@ -3124,6 +3124,32 @@ def test_add_issue_dependency_does_not_fail_when_dependency_already_exists():
 
     svc.add_issue_dependency(child_number=42, blocker_database_id=999)
 
+    transport.assert_exhausted()
+
+
+def test_add_issue_dependency_surfaces_not_found_as_error():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "POST",
+                "/repos/owner/repo/issues/42/dependencies/blocked_by",
+                data={"issue_id": 9999},
+                error=GithubHttpTransportAPIError(
+                    "Not Found",
+                    status=404,
+                    body='{"message":"Not Found"}',
+                    method="POST",
+                    path="/repos/owner/repo/issues/42/dependencies/blocked_by",
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.raises(GithubAPIError) as exc_info:
+        svc.add_issue_dependency(child_number=42, blocker_database_id=9999)
+
+    assert exc_info.value.status == 404
     transport.assert_exhausted()
 
 
