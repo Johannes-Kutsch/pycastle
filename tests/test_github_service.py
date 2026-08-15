@@ -1974,6 +1974,7 @@ def test_get_open_issues_with_scripted_transport_returns_projection_and_comment_
             "body": "do it",
             "labels": ["bug"],
             "comments": [],
+            "open_blockers_count": 0,
         },
         {
             "number": 2,
@@ -1987,6 +1988,7 @@ def test_get_open_issues_with_scripted_transport_returns_projection_and_comment_
                     "body": "hi",
                 }
             ],
+            "open_blockers_count": 0,
         },
     ]
     transport.assert_exhausted()
@@ -2174,6 +2176,7 @@ def test_get_open_issues_with_scripted_transport_normalizes_mixed_open_issue_pay
             "body": "",
             "labels": ["bug"],
             "comments": [],
+            "open_blockers_count": 0,
         },
         {
             "number": 3,
@@ -2187,8 +2190,101 @@ def test_get_open_issues_with_scripted_transport_normalizes_mixed_open_issue_pay
                     "body": "hi",
                 }
             ],
+            "open_blockers_count": 0,
         },
     ]
+    transport.assert_exhausted()
+
+
+def test_get_open_issues_includes_open_blockers_count_from_dependency_summary():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=bug&per_page=100",
+                payload=[
+                    {
+                        "number": 5,
+                        "title": "Blocked",
+                        "body": "details",
+                        "labels": [{"name": "bug"}],
+                        "comments": 0,
+                        "issue_dependencies_summary": {"blocked_by": 3},
+                    }
+                ],
+                headers={"Link": ""},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_open_issues("bug")
+
+    assert result == [
+        {
+            "number": 5,
+            "title": "Blocked",
+            "body": "details",
+            "labels": ["bug"],
+            "comments": [],
+            "open_blockers_count": 3,
+        }
+    ]
+    transport.assert_exhausted()
+
+
+def test_get_open_issues_defaults_open_blockers_count_to_zero_when_dependency_summary_absent():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=bug&per_page=100",
+                payload=[
+                    {
+                        "number": 7,
+                        "title": "No deps",
+                        "body": "details",
+                        "labels": [{"name": "bug"}],
+                        "comments": 0,
+                    }
+                ],
+                headers={"Link": ""},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_open_issues("bug")
+
+    assert result[0]["open_blockers_count"] == 0
+    transport.assert_exhausted()
+
+
+def test_get_open_issues_defaults_open_blockers_count_to_zero_when_dependency_summary_null():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=bug&per_page=100",
+                payload=[
+                    {
+                        "number": 8,
+                        "title": "Null deps",
+                        "body": "details",
+                        "labels": [{"name": "bug"}],
+                        "comments": 0,
+                        "issue_dependencies_summary": None,
+                    }
+                ],
+                headers={"Link": ""},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_open_issues("bug")
+
+    assert result[0]["open_blockers_count"] == 0
     transport.assert_exhausted()
 
 

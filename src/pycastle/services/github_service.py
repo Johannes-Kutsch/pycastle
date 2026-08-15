@@ -408,12 +408,17 @@ class GithubService:
     def _normalize_open_issue_item(item: Any) -> dict[str, Any] | None:  # noqa: ANN401  # raw JSON payload from GitHub API; type checked via isinstance before access
         if not isinstance(item, dict) or "pull_request" in item or "number" not in item:
             return None
+        dep_summary = item.get("issue_dependencies_summary") or {}
+        blocked_by = (
+            dep_summary.get("blocked_by") if isinstance(dep_summary, dict) else None
+        )
         return {
             "number": int(item["number"]),
             "title": str(item.get("title") or ""),
             "body": item.get("body") or "",
             "labels": GithubService._extract_label_names(item),
             "comments_count": int(item.get("comments") or 0),
+            "open_blockers_count": int(blocked_by or 0),
         }
 
     @staticmethod
@@ -441,6 +446,7 @@ class GithubService:
                 "comments": self.get_issue_comments(issue["number"])
                 if issue["comments_count"]
                 else [],
+                "open_blockers_count": issue["open_blockers_count"],
             }
             for issue in issues
         ]
