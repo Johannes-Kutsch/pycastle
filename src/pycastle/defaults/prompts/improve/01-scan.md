@@ -85,7 +85,7 @@ If you keep a same-theme candidate in the shortlist, include a `Novelty Check` c
 
 ### 3. Rank
 
-After grilling, produce an ordered list of candidates by strength. For each candidate you keep, answer:
+Produce an ordered list of candidates by strength. For each candidate you keep, answer:
 
 1. Why this candidate over those ranked below it?
 2. What is the strongest argument *against* this candidate?
