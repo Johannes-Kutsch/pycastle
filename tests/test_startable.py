@@ -5,7 +5,7 @@ def _issue(number: int, blocked_by: int = 0) -> dict:
     return {
         "number": number,
         "title": f"Issue {number}",
-        "issue_dependencies_summary": {"blocked_by": blocked_by},
+        "open_blockers_count": blocked_by,
     }
 
 
@@ -64,13 +64,13 @@ def test_all_blocked_returns_empty():
     assert result == []
 
 
-def test_missing_issue_dependencies_summary_treats_issue_as_startable():
+def test_missing_open_blockers_count_treats_issue_as_startable():
     issue = {"number": 1, "title": "Issue 1"}
     result = startable_issues([issue], in_flight=set())
     assert [i["number"] for i in result] == [1]
 
 
-def test_missing_blocked_by_field_treats_issue_as_startable():
-    issue = {"number": 1, "title": "Issue 1", "issue_dependencies_summary": {}}
+def test_zero_open_blockers_count_treats_issue_as_startable():
+    issue = {"number": 1, "title": "Issue 1", "open_blockers_count": 0}
     result = startable_issues([issue], in_flight=set())
     assert [i["number"] for i in result] == [1]

@@ -33,6 +33,7 @@ from pycastle.iteration.planning_issue_intake import (
     apply_slice_classifier_verdicts,
 )
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.iteration.startable import startable_issues
 from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
@@ -270,7 +271,9 @@ async def planning_phase(
             return verdict
         sha = verdict.sha
 
-        well_formed = list(issue_set.ready_candidates)
+        well_formed = startable_issues(
+            list(issue_set.ready_candidates), in_flight=set()
+        )
         _use_worktree = _classification_work_exists(issue_set) or len(well_formed) > 1
 
         if not _use_worktree:
@@ -293,9 +296,10 @@ async def planning_phase(
             deps=deps,
         ) as wt:
             _plan_sandbox_session.write_fingerprint(fingerprint)
-            issue_set, well_formed = await _relabel_issue_set(
+            issue_set, relabeled = await _relabel_issue_set(
                 deps, wt, issue_set, _classify_fn
             )
+            well_formed = startable_issues(relabeled, in_flight=set())
             _sync_labels(deps, issue_set)
 
             if len(well_formed) <= 1:

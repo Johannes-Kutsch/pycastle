@@ -5055,3 +5055,200 @@ def test_planning_phase_fingerprint_gate_preserves_session_on_match(tmp_path):
 
     assert session.is_resumable()
     assert session.read_fingerprint() is not None
+
+
+# ── Startable filter (ADR 0059) ───────────────────────────────────────────────
+
+
+def test_issues_with_open_blockers_are_excluded_from_planner_candidate_set(
+    tmp_path, git_svc, logger
+):
+    """An issue with open_blockers_count > 0 must not appear in the ready-for-agent list
+    the Planner receives. When all ready candidates are blocked, Done is returned and the
+    Plan Agent is never dispatched."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Blocked issue A",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "open_blockers_count": 1,
+        },
+        {
+            "number": 2,
+            "title": "Blocked issue B",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "open_blockers_count": 2,
+        },
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    plan_agent_called = False
+
+    async def _fake_agent(request: RunRequest):
+        nonlocal plan_agent_called
+        if request.name == "Plan Agent":
+            plan_agent_called = True
+            return _plan_output(
+                [
+                    {
+                        "number": 1,
+                        "title": "Blocked issue A",
+                        "body": "x" * 100,
+                        "comments": [],
+                        "labels": ["behavior-slice"],
+                    }
+                ]
+            )
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Done), f"expected Done, got {result!r}"
+    assert not plan_agent_called, (
+        "Plan Agent must not be called when all candidates have open blockers"
+    )
+
+
+def test_fully_blocked_backlog_does_not_dispatch_improve_mode(
+    tmp_path, git_svc, logger
+):
+    """When all ready-for-agent issues have open blockers, improve mode must not be
+    dispatched even when improve_mode='endless'. The iteration ends with Done, not
+    NoCandidate or Continue."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": 1,
+            "title": "Blocked issue",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "open_blockers_count": 1,
+        }
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    improve_agent_called = False
+
+    async def _fake_agent(request: RunRequest):
+        nonlocal improve_agent_called
+        if request.name == "Scan Agent":
+            improve_agent_called = True
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[[]],
+        ),
+        improve_mode="endless",
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Done), f"expected Done, got {result!r}"
+    assert not improve_agent_called, (
+        "improve mode must not be dispatched for a blocked backlog"
+    )
+
+
+def test_in_flight_issue_with_open_blocker_is_still_resumed(tmp_path, git_svc, logger):
+    """An issue carrying preserved work (continuation file) must be resumed even when
+    its open_blockers_count > 0. The startable filter applies only to fresh candidates,
+    not to already-started work."""
+    from pycastle.agents.output_protocol import AgentRole as _AgentRole
+    from pycastle.infrastructure.worktree import worktree_identity
+    from pycastle.iteration.implement import branch_for
+    from pycastle.session import SESSION_DIR_NAME
+
+    issue_number = 1
+    branch = branch_for(issue_number)
+    worktree_path = worktree_identity(branch, tmp_path).path
+    continuation_path = (
+        worktree_path
+        / SESSION_DIR_NAME
+        / _AgentRole.IMPLEMENTER.value
+        / "_continuation"
+    )
+    continuation_path.parent.mkdir(parents=True)
+    continuation_path.write_text("resume-token", encoding="utf-8")
+
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [
+        {
+            "number": issue_number,
+            "title": "In-flight blocked issue",
+            "body": "x" * 100,
+            "comments": [],
+            "labels": ["behavior-slice"],
+            "open_blockers_count": 1,
+        }
+    ]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    async def _fake_agent(request: RunRequest):
+        return CompletionOutput()
+
+    deps = _make_deps(
+        tmp_path,
+        _fake_agent,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        logger=logger,
+        preflight_responses=[[]],
+    )
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue), (
+        "An in-flight blocked issue must be resumed, yielding Continue"
+    )
+
+
+def test_empty_backlog_still_dispatches_improve_mode(tmp_path, git_svc, logger):
+    """When there are no ready-for-agent issues at all (truly empty), improve mode is
+    still dispatched as before. The startable filter must not affect the improve gate."""
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = []
+    github_svc.get_all_open_issues_lightweight.return_value = []
+
+    improve_agent_called = False
+
+    async def _fake_agent(request: RunRequest):
+        nonlocal improve_agent_called
+        if request.name == "Scan Agent":
+            improve_agent_called = True
+            return NoCandidateOutput()
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            preflight_responses=[[]],
+        ),
+        improve_mode="endless",
+    )
+    asyncio.run(run_iteration(deps))
+
+    assert improve_agent_called, (
+        "improve mode must be dispatched when the backlog is truly empty"
+    )
