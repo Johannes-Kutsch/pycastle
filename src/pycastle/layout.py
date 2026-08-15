@@ -34,6 +34,7 @@ class PycastleLayout:
     global_env_file: Path
     local_env_file: Path
     global_run_lock_path: Path
+    run_holder_record_path: Path
     run_markers_dir: Path
     project_run_marker_path: Path
     _display_os_name: str | None = dataclasses.field(
@@ -90,6 +91,7 @@ def resolve_layout(
         global_env_file=resolved_pycastle_home / ".env",
         local_env_file=resolved_pycastle_dir / ".env",
         global_run_lock_path=resolved_pycastle_home / ".run.lock",
+        run_holder_record_path=resolved_pycastle_home / ".run-holder.json",
         run_markers_dir=run_markers_dir,
         project_run_marker_path=project_run_marker_path,
         _display_os_name=os_name,

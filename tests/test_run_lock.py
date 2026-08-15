@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import threading
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
@@ -9,6 +10,8 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+
+from datetime import UTC
 
 from pycastle.errors import RunAlreadyInProgressError, RunSlotTimeoutError
 from pycastle.layout import resolve_layout
@@ -361,6 +364,236 @@ def test_lock_respecting_reports_already_in_progress_when_queue_jumper_holds_mar
         run_slot(layout, timeout=0.1, poll_interval=0.01),
     ):
         pass
+
+
+# ── B11: Run holder record lifecycle ─────────────────────────────────────────
+
+
+def test_lock_respecting_run_writes_holder_record_on_lock_acquire(
+    tmp_path: Path,
+) -> None:
+    import json
+    import os
+
+    layout = _layout(tmp_path)
+    with run_slot(layout):
+        data = json.loads(layout.run_holder_record_path.read_text())
+    assert data["project"] == "myproject"
+    assert data["pid"] == os.getpid()
+    assert "started_at" in data
+
+
+def test_lock_respecting_run_removes_holder_record_after_releasing_lock(
+    tmp_path: Path,
+) -> None:
+    layout = _layout(tmp_path)
+    with run_slot(layout):
+        pass
+    assert not layout.run_holder_record_path.exists()
+
+
+def test_lock_respecting_run_removes_holder_record_on_exception(
+    tmp_path: Path,
+) -> None:
+    layout = _layout(tmp_path)
+    with pytest.raises(ValueError, match="boom"), run_slot(layout):
+        raise ValueError("boom")
+    assert not layout.run_holder_record_path.exists()
+
+
+def test_holder_record_present_while_waiting_for_other_project_markers(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    layout_a = _layout(tmp_path, repo_name="project-alpha")
+    layout_b = resolve_layout(
+        repo_root=tmp_path / "project-beta",
+        pycastle_home=tmp_path / "pycastle-home",
+    )
+    (tmp_path / "project-beta").mkdir(exist_ok=True)
+
+    record_while_waiting: dict = {}
+    waiting = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        if "project run markers" in msg.lower():
+            with contextlib.suppress(OSError, ValueError):
+                record_while_waiting.update(
+                    json.loads(layout_b.run_holder_record_path.read_text())
+                )
+            waiting.set()
+
+    with _hold_lock_in_thread(layout_a, ignore_global_lock=True) as release:
+
+        def _run():
+            with run_slot(layout_b, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        waiting.wait(timeout=5)
+        release.set()
+        t.join(timeout=5)
+
+    assert record_while_waiting.get("project") == "project-beta"
+
+
+# ── B13: Waiting run reports holder info from record ─────────────────────────
+
+
+def test_waiting_run_reports_holder_project_pid_and_elapsed(tmp_path: Path) -> None:
+    import os
+    import re
+
+    layout = _layout(tmp_path)
+    notifications: list[str] = []
+    waiting_started = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        waiting_started.set()
+
+    holder_pid = os.getpid()
+
+    with _hold_lock_in_thread(layout) as release:
+        done = threading.Event()
+
+        def _run():
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+            done.set()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        waiting_started.wait(timeout=5)
+        release.set()
+        done.wait(timeout=5)
+        t.join(timeout=5)
+
+    wait_msg = next(n for n in notifications if "global run lock" in n.lower())
+    assert "myproject" in wait_msg
+    assert str(holder_pid) in wait_msg
+    assert re.search(r"\d+s", wait_msg)
+
+
+# ── B14: Fallback to cannot-identify-holder ───────────────────────────────────
+
+
+def test_waiting_run_reports_cannot_identify_when_no_record(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    notifications: list[str] = []
+    waiting_started = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        waiting_started.set()
+
+    with _hold_lock_in_thread(layout) as release:
+        layout.run_holder_record_path.unlink(missing_ok=True)
+        done = threading.Event()
+
+        def _run():
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+            done.set()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        waiting_started.wait(timeout=5)
+        release.set()
+        done.wait(timeout=5)
+        t.join(timeout=5)
+
+    wait_msg = next(n for n in notifications if "global run lock" in n.lower())
+    assert wait_msg == "Waiting for global run lock (cannot identify holder)"
+
+
+def test_waiting_run_reports_cannot_identify_when_record_is_truncated(
+    tmp_path: Path,
+) -> None:
+    layout = _layout(tmp_path)
+    notifications: list[str] = []
+    waiting_started = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        waiting_started.set()
+
+    with _hold_lock_in_thread(layout) as release:
+        layout.run_holder_record_path.parent.mkdir(parents=True, exist_ok=True)
+        layout.run_holder_record_path.write_text("{truncated", encoding="utf-8")
+        done = threading.Event()
+
+        def _run():
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+            done.set()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        waiting_started.wait(timeout=5)
+        release.set()
+        done.wait(timeout=5)
+        t.join(timeout=5)
+
+    wait_msg = next(n for n in notifications if "global run lock" in n.lower())
+    assert wait_msg == "Waiting for global run lock (cannot identify holder)"
+
+
+def test_waiting_run_reports_cannot_identify_when_record_names_dead_process(
+    tmp_path: Path,
+) -> None:
+    import json as _json
+    from datetime import datetime
+
+    layout = _layout(tmp_path)
+    notifications: list[str] = []
+    waiting_started = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        waiting_started.set()
+
+    with _hold_lock_in_thread(layout) as release:
+        dead_pid = 2**22 - 1  # near-max pid, almost certainly unused
+        layout.run_holder_record_path.parent.mkdir(parents=True, exist_ok=True)
+        layout.run_holder_record_path.write_text(
+            _json.dumps(
+                {
+                    "project": "ghost",
+                    "pid": dead_pid,
+                    "started_at": datetime.now(tz=UTC).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        done = threading.Event()
+
+        def _run():
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+            done.set()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        waiting_started.wait(timeout=5)
+        release.set()
+        done.wait(timeout=5)
+        t.join(timeout=5)
+
+    wait_msg = next(n for n in notifications if "global run lock" in n.lower())
+    assert wait_msg == "Waiting for global run lock (cannot identify holder)"
+
+
+# ── B12: Queue-jumping run leaves no holder record ───────────────────────────
+
+
+def test_queue_jumping_run_leaves_no_holder_record(tmp_path: Path) -> None:
+    layout = _layout(tmp_path)
+    with run_slot(layout, ignore_global_lock=True):
+        assert not layout.run_holder_record_path.exists()
+    assert not layout.run_holder_record_path.exists()
 
 
 # ── B10: Markers created on first use, never deleted ─────────────────────────

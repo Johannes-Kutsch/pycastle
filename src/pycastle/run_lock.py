@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import contextlib
+import json
+import os
 import sys
 import time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pycastle.errors import RunAlreadyInProgressError, RunSlotTimeoutError
@@ -79,6 +82,41 @@ def _notify(on_wait: Callable[[str], None] | None, message: str) -> None:
         on_wait(message)
 
 
+def _waiting_message(record_path: Path) -> str:
+    default = "Waiting for global run lock (cannot identify holder)"
+    try:
+        data = json.loads(record_path.read_text(encoding="utf-8"))
+        project = str(data["project"])
+        pid = int(data["pid"])
+        started_at = datetime.fromisoformat(data["started_at"])
+    except (OSError, KeyError, ValueError, TypeError):
+        return default
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return default
+    elapsed = int((datetime.now(tz=UTC) - started_at).total_seconds())
+    return (
+        f"Waiting for global run lock held by {project}"
+        f" (pid {pid}, started {started_at.isoformat()}, {elapsed}s ago)"
+    )
+
+
+def _write_holder_record(record_path: Path, project: str, started_at: str) -> None:
+    record = json.dumps(
+        {"project": project, "pid": os.getpid(), "started_at": started_at}
+    )
+    tmp = record_path.with_suffix(".tmp")
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_text(record, encoding="utf-8")
+    tmp.replace(record_path)
+
+
+def _remove_holder_record(record_path: Path) -> None:
+    with contextlib.suppress(OSError):
+        record_path.unlink()
+
+
 @contextlib.contextmanager
 def _queue_jumping_slot(marker_path: Path, project_name: str) -> Iterator[None]:
     with marker_path.open("r+b") as marker_fh:
@@ -151,33 +189,39 @@ def run_slot(
 
     # Lock-respecting: token → scan all markers → own marker.
     global_lock_path = layout.global_run_lock_path
+    record_path = layout.run_holder_record_path
     _ensure_file(global_lock_path)
 
     with global_lock_path.open("r+b") as global_fh:
         # Step 1: acquire global run lock.
         if not _try_lock(global_fh.fileno()):
-            _notify(on_wait, "Waiting for global run lock (cannot identify holder)")
+            _notify(on_wait, _waiting_message(record_path))
             while not _try_lock(global_fh.fileno()):
                 if time.monotonic() >= deadline:
                     raise RunSlotTimeoutError("Timed out waiting for global run lock")
                 time.sleep(poll_interval)
             _notify(on_wait, "Global run lock acquired")
 
-        # Step 2: wait until all *other* project markers are free.
-        _wait_for_other_markers(
-            markers_dir,
-            marker_path,
-            project_name,
-            deadline=deadline,
-            poll_interval=poll_interval,
-            on_wait=on_wait,
-        )
+        started_at = datetime.now(tz=UTC).isoformat()
+        _write_holder_record(record_path, project_name, started_at)
+        try:
+            # Step 2: wait until all *other* project markers are free.
+            _wait_for_other_markers(
+                markers_dir,
+                marker_path,
+                project_name,
+                deadline=deadline,
+                poll_interval=poll_interval,
+                on_wait=on_wait,
+            )
 
-        # Step 3: take own project marker.
-        with marker_path.open("r+b") as marker_fh:
-            if not _try_lock(marker_fh.fileno()):
-                raise RunAlreadyInProgressError(project_name)
-            try:
-                yield
-            finally:
-                _unlock(marker_fh.fileno())
+            # Step 3: take own project marker.
+            with marker_path.open("r+b") as marker_fh:
+                if not _try_lock(marker_fh.fileno()):
+                    raise RunAlreadyInProgressError(project_name)
+                try:
+                    yield
+                finally:
+                    _unlock(marker_fh.fileno())
+        finally:
+            _remove_holder_record(record_path)

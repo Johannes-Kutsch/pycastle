@@ -143,3 +143,11 @@ def test_resolve_global_dir_prefers_explicit_arg_over_env(
         )
         == explicit_pycastle_home
     )
+
+
+def test_layout_exposes_run_holder_record_path_in_pycastle_home(
+    tmp_path: Path,
+) -> None:
+    pycastle_home = tmp_path / "pycastle-home"
+    layout = resolve_layout(repo_root=tmp_path, pycastle_home=pycastle_home)
+    assert layout.run_holder_record_path == pycastle_home / ".run-holder.json"
