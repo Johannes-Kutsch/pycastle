@@ -45,7 +45,6 @@ class _CandidateRecord:
     spec_title: str
     filed_slices: list[_FiledIssue]
     labels_applied: bool
-    prd_number: int | None = None
 
 
 def _load_record(role_dir: Path) -> _CandidateRecord | None:
@@ -69,7 +68,6 @@ def _load_record(role_dir: Path) -> _CandidateRecord | None:
             spec_title=data.get("spec_title", ""),
             filed_slices=filed_slices,
             labels_applied=data.get("labels_applied", False),
-            prd_number=data.get("prd_number"),
         )
     except (KeyError, json.JSONDecodeError):
         return None
@@ -92,8 +90,6 @@ def _save_record(role_dir: Path, record: _CandidateRecord) -> None:
         ],
         "labels_applied": record.labels_applied,
     }
-    if record.prd_number is not None:
-        data["prd_number"] = record.prd_number
     (role_dir / _CANDIDATE_RECORD_FILE).write_text(json.dumps(data), encoding="utf-8")
 
 
@@ -153,14 +149,12 @@ def file_draft_set(
             title=spec_draft.title,
         )
         handle_to_filed[spec_draft.handle] = spec_filed
-        prd_number = record.prd_number if record is not None else None
         record = _CandidateRecord(
             spec_number=spec_number,
             spec_database_id=spec_db_id,
             spec_title=spec_draft.title,
             filed_slices=[],
             labels_applied=False,
-            prd_number=prd_number,
         )
         _save_record(role_dir, record)
     else:

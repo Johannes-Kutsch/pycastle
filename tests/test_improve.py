@@ -407,7 +407,6 @@ def _seed_candidate_record(
     worktree_path: Path,
     idx: int,
     *,
-    prd_number: int | None = None,
     spec_number: int | None = None,
     labels_applied: bool = False,
 ) -> None:
@@ -416,7 +415,6 @@ def _seed_candidate_record(
     candidate_dir = role_session_dir / "candidates" / str(idx)
     candidate_dir.mkdir(parents=True, exist_ok=True)
     record = _CandidateRecord(
-        prd_number=prd_number,
         spec_number=spec_number,
         spec_database_id=42 if spec_number is not None else None,
         spec_title="Seeded" if spec_number is not None else "",
@@ -672,7 +670,7 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     """Candidate with a record (PRD done) and in-flight='03-issues' resumes at Issues phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
-    _seed_candidate_record(wt, 0, prd_number=None)
+    _seed_candidate_record(wt, 0)
     role_session_dir = wt / ".pycastle-session" / "improve"
     (role_session_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
     runner = _make_runner_with_drafts(CompletionOutput())
