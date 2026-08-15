@@ -2260,6 +2260,34 @@ def test_get_open_issues_defaults_open_blockers_count_to_zero_when_dependency_su
     transport.assert_exhausted()
 
 
+def test_get_open_issues_defaults_open_blockers_count_to_zero_when_dependency_summary_null():
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=open&labels=bug&per_page=100",
+                payload=[
+                    {
+                        "number": 8,
+                        "title": "Null deps",
+                        "body": "details",
+                        "labels": [{"name": "bug"}],
+                        "comments": 0,
+                        "issue_dependencies_summary": None,
+                    }
+                ],
+                headers={"Link": ""},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_open_issues("bug")
+
+    assert result[0]["open_blockers_count"] == 0
+    transport.assert_exhausted()
+
+
 # ── get_all_open_issues_lightweight ─────────────────────────────────────────
 
 
