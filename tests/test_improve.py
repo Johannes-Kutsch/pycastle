@@ -1114,12 +1114,10 @@ def test_malformed_drafts_reprompt_agent_before_filing(tmp_path, git_svc):
         if call_count[0] == 1:
             return make_scan_output()
         if call_count[0] == 3:
-            # Issues phase: agent writes invalid drafts (body too short)
+            # Issues phase: agent writes invalid drafts (slice body too short)
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-            draft_dir.mkdir(parents=True, exist_ok=True)
-            (draft_dir / "spec.md").write_text(
-                "---\ntitle: Spec\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\nToo short."
-            )
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-foo", body="Too short.")
         return CompletionOutput()
 
     github_svc = _make_filing_github_svc()
@@ -1144,11 +1142,9 @@ def test_valid_reprompt_gets_filed(tmp_path, git_svc):
         if call_count[0] == 1:
             return make_scan_output()
         if call_count[0] == 3:
-            # Issues phase: agent writes invalid drafts initially
-            draft_dir.mkdir(parents=True, exist_ok=True)
-            (draft_dir / "spec.md").write_text(
-                "---\ntitle: Spec\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\nToo short."
-            )
+            # Issues phase: agent writes invalid drafts initially (slice body too short)
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
         if call_count[0] == 4:
             # Correction call: fix the drafts
             _write_spec_draft(draft_dir)

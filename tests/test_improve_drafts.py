@@ -125,25 +125,63 @@ def test_multiple_malformed_drafts_reports_all_problems(
 
 
 def test_short_body_rejects_set(tmp_path: Path, cfg: Config) -> None:
-    (tmp_path / "spec.md").write_text(
-        "---\ntitle: Spec\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\nToo short."
+    _spec_draft(tmp_path)
+    (tmp_path / "01-foo.md").write_text(
+        "---\ntitle: Foo Slice\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\nToo short."
     )
 
     with pytest.raises(DraftSetValidationError) as exc_info:
         read_draft_set(tmp_path, cfg)
 
-    assert any("readiness" in p and "spec" in p for p in exc_info.value.problems)
+    assert any("readiness" in p and "01-foo" in p for p in exc_info.value.problems)
 
 
 def test_missing_slice_mode_label_rejects_set(tmp_path: Path, cfg: Config) -> None:
-    (tmp_path / "spec.md").write_text(
-        f"---\ntitle: Spec\nlabels:\n  - ready-for-agent\n---\n\n{_VALID_BODY}"
+    _spec_draft(tmp_path)
+    (tmp_path / "01-foo.md").write_text(
+        f"---\ntitle: Foo Slice\nlabels:\n  - ready-for-agent\n---\n\n{_VALID_BODY}"
     )
 
     with pytest.raises(DraftSetValidationError) as exc_info:
         read_draft_set(tmp_path, cfg)
 
-    assert any("readiness" in p and "spec" in p for p in exc_info.value.problems)
+    assert any("readiness" in p and "01-foo" in p for p in exc_info.value.problems)
+
+
+# ---------------------------------------------------------------------------
+# Behavior 7: spec draft is exempt from readiness classification
+# ---------------------------------------------------------------------------
+
+
+def test_spec_draft_with_no_labels_validates_successfully(
+    tmp_path: Path, cfg: Config
+) -> None:
+    (tmp_path / "spec.md").write_text(
+        f"---\ntitle: Improve Spec\nlabels: []\n---\n\n{_VALID_BODY}"
+    )
+    _slice_draft(tmp_path, "01-foo")
+
+    result = read_draft_set(tmp_path, cfg)
+
+    assert [d.handle for d in result] == ["spec", "01-foo"]
+
+
+def test_spec_draft_with_no_labels_still_classifies_slice_drafts(
+    tmp_path: Path, cfg: Config
+) -> None:
+    (tmp_path / "spec.md").write_text(
+        f"---\ntitle: Improve Spec\nlabels: []\n---\n\n{_VALID_BODY}"
+    )
+    (tmp_path / "01-foo.md").write_text(
+        f"---\ntitle: Foo Slice\nlabels:\n  - ready-for-agent\n---\n\n{_VALID_BODY}"
+    )
+
+    with pytest.raises(DraftSetValidationError) as exc_info:
+        read_draft_set(tmp_path, cfg)
+
+    problems = exc_info.value.problems
+    assert any("01-foo" in p and "readiness" in p for p in problems)
+    assert not any("spec" in p and "readiness" in p for p in problems)
 
 
 # ---------------------------------------------------------------------------

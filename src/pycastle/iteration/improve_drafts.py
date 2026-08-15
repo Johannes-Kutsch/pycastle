@@ -62,6 +62,8 @@ def read_draft_set(directory: Path, cfg: Config) -> list[IssueDraft]:
         )
 
     for draft in drafts:
+        if not _SLICE_RE.match(draft.handle):
+            continue
         issue = {"labels": draft.labels, "body": draft.body}
         readiness = classify_issue_readiness(issue, cfg)
         if not readiness.is_ready:
