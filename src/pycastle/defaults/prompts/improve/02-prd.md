@@ -47,7 +47,7 @@ title: [improve-PRD] <concise title>
 ---
 ```
 
-Do NOT apply any triage label or slice-mode label — the spec is a tracking parent and carries neither; only phase 3 sub-issues carry a ready-for-agent label.
+Do NOT apply any state label or slice-mode label — the spec is a tracking parent and carries neither a state label nor a slice-mode label; only phase 3 sub-issues carry a ready-for-agent label.
 
 ## Issue body template
 
