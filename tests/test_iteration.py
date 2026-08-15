@@ -3947,7 +3947,7 @@ def test_run_iteration_routes_merge_time_preflight_afk_at_iteration_boundary(
             implemented_issue_numbers.append(int(request.name.split("#")[1]))
         return CompletionOutput()
 
-    def _push(repo_root: Path, resolver):
+    def _push(repo_root: Path, branch: str, resolver):
         action_log.append(("push", repo_root))
 
     git_svc.push.side_effect = _push
@@ -4034,7 +4034,7 @@ def test_run_iteration_aborts_on_merge_time_preflight_hitl_at_iteration_boundary
     git_svc.delete_branch.side_effect = lambda branch, repo_root: action_log.append(
         ("delete_branch", branch)
     )
-    git_svc.push.side_effect = lambda repo_root, resolver: action_log.append(
+    git_svc.push.side_effect = lambda repo_root, branch, resolver: action_log.append(
         ("push", repo_root)
     )
     git_svc.try_merge.side_effect = [True, False]

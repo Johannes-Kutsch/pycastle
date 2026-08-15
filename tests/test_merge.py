@@ -1593,14 +1593,27 @@ def test_merger_run_call_passes_work_body_with_branch_name(
 def test_auto_push_calls_push_after_clean_merges(deps, git_svc):
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    git_svc.push.assert_called_once_with(deps.repo_root, resolver=ANY)
+    git_svc.push.assert_called_once_with(deps.repo_root, "main", resolver=ANY)
+
+
+def test_auto_push_pushes_working_branch_not_dev_branch(
+    tmp_path, git_svc, github_svc, agent_runner
+):
+    """When working_branch is set, push sends that branch to origin, never dev_branch."""
+    cfg = Config(dev_branch="main", working_branch="my-work")
+    local_deps = _make_deps(
+        tmp_path, agent_runner, git_svc=git_svc, github_svc=github_svc, cfg=cfg
+    )
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, local_deps)
+    git_svc.push.assert_called_once_with(tmp_path, "my-work", resolver=ANY)
 
 
 def test_auto_push_calls_push_after_merger_fast_forward(deps, git_svc):
     git_svc.try_merge.return_value = False
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    git_svc.push.assert_called_once_with(deps.repo_root, resolver=ANY)
+    git_svc.push.assert_called_once_with(deps.repo_root, "main", resolver=ANY)
 
 
 def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
@@ -1617,7 +1630,9 @@ def test_auto_push_calls_push_in_preflight_skip_when_clean_issues_exist(
     )
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
     _run(issues, local_deps)
-    local_deps.git_svc.push.assert_called_once_with(local_deps.repo_root, resolver=ANY)
+    local_deps.git_svc.push.assert_called_once_with(
+        local_deps.repo_root, "main", resolver=ANY
+    )
 
 
 def test_auto_push_does_not_call_push_in_preflight_skip_when_no_clean_issues(

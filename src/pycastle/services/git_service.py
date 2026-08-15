@@ -439,7 +439,9 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
 
-    def pull_with_merge_fallback(self, repo_path: Path) -> None:
+    def pull_with_merge_fallback(
+        self, repo_path: Path, *, branch: str | None = None
+    ) -> None:
         try:
             self._run_or_raise_with_retry(
                 ["git", "pull", "--ff-only"],
@@ -452,11 +454,13 @@ class GitService(_SubprocessService):
                 raise
         else:
             return
-        branch = self.get_current_branch(repo_path)
-        merged = self.try_merge(repo_path, f"origin/{branch}")
+        effective_branch = (
+            branch if branch is not None else self.get_current_branch(repo_path)
+        )
+        merged = self.try_merge(repo_path, f"origin/{effective_branch}")
         if not merged:
             raise GitCommandError(
-                f"git merge origin/{branch} failed due to conflicts",
+                f"git merge origin/{effective_branch} failed due to conflicts",
                 returncode=1,
                 stderr="",
             )
@@ -492,11 +496,16 @@ class GitService(_SubprocessService):
     async def push(
         self,
         repo_path: Path,
+        branch: str,
         resolver: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         for attempt in range(1, self._remote_retry_policy.max_attempts + 1):
             try:
-                self._run_or_raise(["git", "push"], "git push failed", cwd=repo_path)
+                self._run_or_raise(
+                    ["git", "push", "origin", branch],
+                    "git push failed",
+                    cwd=repo_path,
+                )
             except GitCommandError as exc:
                 decision = self._remote_retry_policy.classify_remote_failure(
                     "push", exc.stderr, attempt
@@ -510,7 +519,7 @@ class GitService(_SubprocessService):
                         self._remote_retry_policy.max_attempts,
                     )
                     try:
-                        self.pull_with_merge_fallback(repo_path)
+                        self.pull_with_merge_fallback(repo_path, branch=branch)
                     except GitCommandError as pull_err:
                         if resolver is None or "conflict" not in str(pull_err).lower():
                             raise
