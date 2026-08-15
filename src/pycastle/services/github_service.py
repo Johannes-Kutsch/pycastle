@@ -513,8 +513,8 @@ class GithubService:
         try:
             self._request(
                 "POST",
-                f"/repos/{self.repo}/issues/{child_number}/issue_dependencies",
-                data={"blocked_by_id": blocker_database_id},
+                f"/repos/{self.repo}/issues/{child_number}/dependencies/blocked_by",
+                data={"issue_id": blocker_database_id},
             )
         except GithubAPIError as exc:
             if exc.status != _HTTP_UNPROCESSABLE:
