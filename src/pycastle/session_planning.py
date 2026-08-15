@@ -20,10 +20,7 @@ from pycastle.runtime_session import (
     session_uuid,
 )
 from pycastle.session.role import session_uuid_for_role_session_path
-from pycastle.session.service_session_store import (
-    clear_service_session_metadata,
-    save_service_session_metadata,
-)
+from pycastle.session.service_session_store import ServiceSessionStore
 
 if TYPE_CHECKING:
     from pycastle.agents.output_protocol import AgentRole
@@ -215,24 +212,18 @@ class ProviderRunStatePlan:
         )
 
     def record_successful_run(self, provider_session_id: str | None) -> None:
-        legacy_record_successful_metadata = getattr(
-            self.role_session,
-            "record_successful_provider_session_metadata",
-            None,
-        )
-        if callable(legacy_record_successful_metadata):
-            legacy_record_successful_metadata(self.service_name, provider_session_id)
-
         role_session_path = getattr(self.role_session, "path", None)
         if not isinstance(role_session_path, Path):
+            legacy_fn = getattr(
+                self.role_session,
+                "record_successful_provider_session_metadata",
+                None,
+            )
+            if callable(legacy_fn):
+                legacy_fn(self.service_name, provider_session_id)
             return
-        if provider_session_id is None:
-            clear_service_session_metadata(role_session_path, self.service_name)
-            return
-        save_service_session_metadata(
-            role_session_path,
-            self.service_name,
-            provider_session_id,
+        ServiceSessionStore(role_session_path, self.role_session).record_successful_run(
+            self.service_name, provider_session_id
         )
 
 
