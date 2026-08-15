@@ -226,6 +226,7 @@ async def _handle_preflight_blocked_conflicts(
     if deps.cfg.auto_push and ctx.clean_issues:
         await deps.git_svc.push(
             deps.repo_root,
+            deps.cfg.operating_branch,
             resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
         )
     return _build_merge_result(
@@ -289,6 +290,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             ):
                 await deps.git_svc.push(
                     deps.repo_root,
+                    deps.cfg.operating_branch,
                     resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
                 )
             return _build_merge_result(
@@ -337,6 +339,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         ):
             await deps.git_svc.push(
                 deps.repo_root,
+                deps.cfg.operating_branch,
                 resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
             )
         return _build_merge_result(

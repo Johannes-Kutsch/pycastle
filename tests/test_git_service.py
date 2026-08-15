@@ -41,7 +41,7 @@ def _run_fetch(svc: GitService, repo_path: Path) -> None:
 
 
 def _run_push(svc: GitService, repo_path: Path) -> None:
-    asyncio.run(svc.push(repo_path))
+    asyncio.run(svc.push(repo_path, "main"))
 
 
 _PERMISSION_DENIED_STDERR = b"Permission denied (publickey)."
@@ -1358,18 +1358,33 @@ def test_push_runs_git_push(tmp_path):
         return MagicMock(returncode=0, stdout=b"", stderr=b"")
 
     with patch("subprocess.run", side_effect=fake_run):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
 
     assert len(captured) == 1
     cmd, cwd = captured[0]
-    assert cmd == ["git", "push"]
+    assert cmd == ["git", "push", "origin", "main"]
     assert cwd == tmp_path
+
+
+def test_push_sends_named_branch_to_origin(tmp_path):
+    """push() explicitly names the branch so origin receives the right ref."""
+    svc = GitService(_cfg)
+    captured: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        captured.append(list(cmd))
+        return MagicMock(returncode=0, stdout=b"", stderr=b"")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        asyncio.run(svc.push(tmp_path, "my-work-branch"))
+
+    assert captured == [["git", "push", "origin", "my-work-branch"]]
 
 
 def test_push_succeeds_on_zero_exit(tmp_path):
     svc = GitService(_cfg)
     with patch("subprocess.run", return_value=_git_result()):
-        asyncio.run(svc.push(tmp_path))  # must not raise
+        asyncio.run(svc.push(tmp_path, "main"))  # must not raise
 
 
 def test_push_raises_operator_actionable_error_after_exhausting_retries(tmp_path):
@@ -1382,7 +1397,7 @@ def test_push_raises_operator_actionable_error_after_exhausting_retries(tmp_path
         patch("time.sleep"),
         pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
     assert exc_info.value.op == "push"
     assert exc_info.value.attempt_count == 4
 
@@ -1396,7 +1411,7 @@ def test_push_raises_git_timeout_error_on_timeout(tmp_path):
         ),
         pytest.raises(GitTimeoutError),
     ):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
 
 
 # ── retry behaviour (pull / push / fetch) ─────────────────────────────────────
@@ -1572,7 +1587,7 @@ def test_push_retries_on_transient_failure(tmp_path):
         patch("subprocess.run", side_effect=lambda *a, **kw: next(responses)),
         patch("time.sleep") as mock_sleep,
     ):
-        asyncio.run(svc.push(tmp_path))  # must not raise
+        asyncio.run(svc.push(tmp_path, "main"))  # must not raise
 
     assert mock_sleep.call_count == 1
 
@@ -1591,7 +1606,7 @@ def test_push_successful_retry_emits_warning(tmp_path, caplog):
         patch("time.sleep"),
         caplog.at_level(logging.WARNING, logger="pycastle.services.git_service"),
     ):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
 
     assert any(
         "push" in record.message and "2" in record.message for record in caplog.records
@@ -1605,7 +1620,7 @@ def test_push_raises_after_four_non_fast_forward_rejections(tmp_path):
 
     def fake_run(cmd, **kwargs):
         nonlocal push_count
-        if cmd == ["git", "push"]:
+        if cmd[:3] == ["git", "push", "origin"]:
             push_count += 1
             return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
         return _git_result()
@@ -1614,7 +1629,7 @@ def test_push_raises_after_four_non_fast_forward_rejections(tmp_path):
         patch("subprocess.run", side_effect=fake_run),
         pytest.raises(GitCommandError) as exc_info,
     ):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
 
     assert push_count == 4
     assert "[rejected]" in exc_info.value.stderr
@@ -1634,15 +1649,17 @@ def test_push_pulls_with_merge_fallback_on_rejection_then_succeeds(tmp_path):
 
     def fake_run(cmd, **kwargs):
         captured.append(list(cmd))
-        push_count = sum(1 for c in captured if c == ["git", "push"])
-        if cmd == ["git", "push"] and push_count == 1:
+        push_count = sum(1 for c in captured if c[:3] == ["git", "push", "origin"])
+        if cmd[:3] == ["git", "push", "origin"] and push_count == 1:
             return _git_failure(nff_stderr)
         return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
-        asyncio.run(svc.push(tmp_path))  # must not raise
+        asyncio.run(svc.push(tmp_path, "main"))  # must not raise
 
-    push_indices = [i for i, c in enumerate(captured) if c == ["git", "push"]]
+    push_indices = [
+        i for i, c in enumerate(captured) if c[:3] == ["git", "push", "origin"]
+    ]
     assert len(push_indices) == 2, f"Expected 2 push calls, got: {captured}"
     between = captured[push_indices[0] + 1 : push_indices[1]]
     assert any(c == ["git", "pull", "--ff-only"] for c in between), (
@@ -1658,7 +1675,7 @@ def test_push_raises_when_pull_with_merge_fallback_fails_on_conflict(tmp_path):
     svc = GitService(_cfg)
 
     def fake_run(cmd, **kwargs):
-        if cmd == ["git", "push"]:
+        if cmd[:3] == ["git", "push", "origin"]:
             return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
         if cmd == ["git", "pull", "--ff-only"]:
             return _git_failure(b"fatal: Not possible to fast-forward, aborting.")
@@ -1670,7 +1687,7 @@ def test_push_raises_when_pull_with_merge_fallback_fails_on_conflict(tmp_path):
         patch("subprocess.run", side_effect=fake_run),
         pytest.raises(GitCommandError),
     ):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
 
 
 def test_push_does_not_fetch_rebase_on_transient_failure(tmp_path):
@@ -1681,8 +1698,8 @@ def test_push_does_not_fetch_rebase_on_transient_failure(tmp_path):
     def fake_run(cmd, **kwargs):
         captured.append(list(cmd))
         if (
-            cmd == ["git", "push"]
-            and sum(1 for c in captured if c == ["git", "push"]) == 1
+            cmd[:3] == ["git", "push", "origin"]
+            and sum(1 for c in captured if c[:3] == ["git", "push", "origin"]) == 1
         ):
             return MagicMock(
                 returncode=1, stdout=b"", stderr=b"RPC failed; connection reset"
@@ -1693,7 +1710,7 @@ def test_push_does_not_fetch_rebase_on_transient_failure(tmp_path):
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
     ):
-        asyncio.run(svc.push(tmp_path))  # must not raise
+        asyncio.run(svc.push(tmp_path, "main"))  # must not raise
 
     assert mock_sleep.call_count == 1
     assert not any("fetch" in c for c in captured)
@@ -1707,13 +1724,13 @@ def test_push_uses_pull_with_merge_fallback_on_nff_rejection(tmp_path):
 
     def fake_run(cmd, **kwargs):
         captured.append(list(cmd))
-        push_count = sum(1 for c in captured if c == ["git", "push"])
-        if cmd == ["git", "push"] and push_count == 1:
+        push_count = sum(1 for c in captured if c[:3] == ["git", "push", "origin"])
+        if cmd[:3] == ["git", "push", "origin"] and push_count == 1:
             return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
         return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
-        asyncio.run(svc.push(tmp_path))  # must not raise
+        asyncio.run(svc.push(tmp_path, "main"))  # must not raise
 
     assert not any("rebase" in c for c in captured), "git rebase must not be called"
     assert any(c == ["git", "pull", "--ff-only"] for c in captured), (
@@ -1727,7 +1744,7 @@ def test_push_retries_non_fast_forward_recovery_without_sleep(tmp_path):
 
     def fake_run(cmd, **kwargs):
         nonlocal push_attempt
-        if cmd == ["git", "push"]:
+        if cmd[:3] == ["git", "push", "origin"]:
             push_attempt += 1
             if push_attempt == 1:
                 return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
@@ -1738,7 +1755,7 @@ def test_push_retries_non_fast_forward_recovery_without_sleep(tmp_path):
         patch("subprocess.run", side_effect=fake_run),
         patch("time.sleep") as mock_sleep,
     ):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
 
     assert push_attempt == 2
     mock_sleep.assert_not_called()
@@ -1756,21 +1773,19 @@ def test_push_calls_async_resolver_on_textual_conflict_and_retries(tmp_path):
 
     def fake_run(cmd, **kwargs):
         nonlocal push_attempt
-        if cmd == ["git", "push"]:
+        if cmd[:3] == ["git", "push", "origin"]:
             push_attempt += 1
             if push_attempt == 1:
                 return _git_failure(_NON_FAST_FORWARD_PUSH_STDERR)
             return _git_result()
         if cmd == ["git", "pull", "--ff-only"]:
             return _git_failure(b"fatal: Not possible to fast-forward, aborting.")
-        if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
-            return _git_result(stdout=b"main\n")
         if len(cmd) >= 4 and cmd[:3] == ["git", "merge", "--no-edit"]:
             return _git_failure(b"CONFLICT (content): Merge conflict in file.py")
         return _git_result()
 
     with patch("subprocess.run", side_effect=fake_run):
-        asyncio.run(svc.push(tmp_path, resolver=resolver))
+        asyncio.run(svc.push(tmp_path, "main", resolver=resolver))
 
     assert resolver_called, "async resolver must be called on textual conflict"
     assert push_attempt == 2, f"push must be retried after resolver, got {push_attempt}"
@@ -1861,7 +1876,7 @@ def test_push_preserves_merge_commits_after_nff_rejection(tmp_path):
     local, remote, merge_sha = _make_push_scenario(tmp_path)
     svc = GitService(_cfg)
 
-    asyncio.run(svc.push(local))  # must not raise
+    asyncio.run(svc.push(local, "main"))  # must not raise
 
     # verify the merge commit is present in local main history
     log = subprocess.run(
@@ -2258,7 +2273,7 @@ def test_push_raises_operator_actionable_error_after_four_permission_denied_atte
         patch("time.sleep"),
         pytest.raises(OperatorActionableGitError) as exc_info,
     ):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
 
     assert attempts == 4
     assert exc_info.value.op == "push"
@@ -2280,7 +2295,7 @@ def test_push_non_nff_divergence_raises_git_command_error(tmp_path):
         patch("time.sleep") as mock_sleep,
         pytest.raises(GitCommandError) as exc_info,
     ):
-        asyncio.run(svc.push(tmp_path))
+        asyncio.run(svc.push(tmp_path, "main"))
 
     assert attempts == 1
     assert exc_info.value.stderr == stderr.decode()
