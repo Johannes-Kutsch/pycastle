@@ -3,7 +3,7 @@
 import json
 import shutil
 from pathlib import Path
-from unittest.mock import MagicMock, call
+from unittest.mock import ANY, MagicMock, call
 
 import pytest
 
@@ -87,10 +87,10 @@ def test_sub_issue_and_blockers_wired_before_next_slice(
         call.create_issue("Spec Issue", _BODY, ["behavior-slice"])
     )
     create_foo_idx = ops.index(
-        call.create_issue("01-foo Slice", _BODY, ["behavior-slice"])
+        call.create_issue("01-foo Slice", ANY, ["behavior-slice"])
     )
     create_bar_idx = ops.index(
-        call.create_issue("02-bar Slice", _BODY, ["behavior-slice"])
+        call.create_issue("02-bar Slice", ANY, ["behavior-slice"])
     )
     register_foo_idx = ops.index(call.register_sub_issue(100, 1001))
     register_bar_idx = ops.index(call.register_sub_issue(100, 1002))
@@ -113,7 +113,8 @@ def test_blocked_slice_body_contains_blocked_by_line(
     file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
 
     _, body, _ = port.create_issue.call_args_list[1].args
-    assert "Blocked by #100" in body
+    assert "## Blocked by" in body
+    assert "#100" in body
 
 
 def test_blocked_slice_native_dependency_wired(tmp_path: Path, port: MagicMock) -> None:
@@ -132,7 +133,8 @@ def test_unblocked_slice_has_no_blocked_by_in_body(
     file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
 
     _, body, _ = port.create_issue.call_args_list[1].args
-    assert "Blocked by" not in body
+    assert "## Blocked by" in body
+    assert "None" in body
     port.add_issue_dependency.assert_not_called()
 
 
@@ -149,7 +151,8 @@ def test_slice_blocked_by_earlier_slice_resolves_to_real_number(
     file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
 
     _, bar_body, _ = port.create_issue.call_args_list[2].args
-    assert "Blocked by #101" in bar_body
+    assert "## Blocked by" in bar_body
+    assert "#101" in bar_body
     # native dep: child=102, blocker_db_id=1001
     port.add_issue_dependency.assert_called_once_with(102, 1001)
 
@@ -437,7 +440,8 @@ def test_second_candidate_slices_blocked_by_prev_spec_in_body(
     )
 
     _, slice_body, _ = port.create_issue.call_args_list[1].args
-    assert "Blocked by #100" in slice_body
+    assert "## Blocked by" in slice_body
+    assert "#100" in slice_body
 
 
 def test_second_candidate_slices_have_native_dep_on_prev_spec(
@@ -473,7 +477,8 @@ def test_first_candidate_slices_carry_no_cross_candidate_blocker(
     )
 
     _, slice_body, _ = port.create_issue.call_args_list[1].args
-    assert "Blocked by" not in slice_body
+    assert "## Blocked by" in slice_body
+    assert "None" in slice_body
     port.add_issue_dependency.assert_not_called()
 
 
@@ -533,7 +538,8 @@ def test_single_candidate_unchanged_behavior(tmp_path: Path) -> None:
 
     assert port.create_issue.call_count == 2
     _, slice_body, _ = port.create_issue.call_args_list[1].args
-    assert "Blocked by" not in slice_body
+    assert "## Blocked by" in slice_body
+    assert "None" in slice_body
     port.add_issue_dependency.assert_not_called()
 
 
@@ -569,3 +575,122 @@ def test_old_record_with_prd_number_still_loads(tmp_path: Path) -> None:
     # spec must not be re-created — it was already present in the old record
     titles = [c.args[0] for c in port.create_issue.call_args_list]
     assert "Spec Issue" not in titles
+
+
+# ---------------------------------------------------------------------------
+# Behavior 11: ## Parent section in every filed slice body
+# ---------------------------------------------------------------------------
+
+# Canonical body matching the sub-issue template structure from the improve prompt.
+_CANONICAL_SLICE_BODY = (
+    "## What to build\n\nDo the thing.\n\n"
+    "## Acceptance criteria\n\n- [ ] It works.\n\n"
+    "## Blocked by\n\nPlaceholder.\n\n"
+    "## Files touched (tentative)\n\n- src/some/module.py"
+)
+
+
+def test_filed_slice_body_has_parent_section_naming_spec(
+    tmp_path: Path, port: MagicMock
+) -> None:
+    """Every filed slice body contains a ## Parent section with the spec issue number."""
+    drafts = [_spec(), _slice("01-foo")]
+
+    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    _, body, _ = port.create_issue.call_args_list[1].args
+    assert "## Parent" in body
+    assert "#100" in body
+
+
+# ---------------------------------------------------------------------------
+# Behavior 12: ## Blocked by section always present (with refs or "None")
+# ---------------------------------------------------------------------------
+
+
+def test_blocked_slice_body_has_blocked_by_section_with_issue_refs(
+    tmp_path: Path, port: MagicMock
+) -> None:
+    """A slice with blockers has a ## Blocked by section containing the issue refs."""
+    drafts = [_spec(), _slice("01-foo", blocked_by=["spec"])]
+
+    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    _, body, _ = port.create_issue.call_args_list[1].args
+    assert "## Blocked by" in body
+    assert "#100" in body
+
+
+def test_unblocked_slice_body_has_blocked_by_section_stating_none(
+    tmp_path: Path, port: MagicMock
+) -> None:
+    """An unblocked slice still has a ## Blocked by section stating there are none."""
+    drafts = [_spec(), _slice("01-foo")]
+
+    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    _, body, _ = port.create_issue.call_args_list[1].args
+    assert "## Blocked by" in body
+    assert "None" in body
+
+
+# ---------------------------------------------------------------------------
+# Behavior 13: canonical positions — not appended after the last section
+# ---------------------------------------------------------------------------
+
+
+def test_parent_section_precedes_what_to_build_in_canonical_body(
+    tmp_path: Path,
+) -> None:
+    """## Parent appears before ## What to build when the body has canonical structure."""
+    port = MagicMock(spec=FilingPort)
+    port.create_issue.side_effect = [(100, 1000), (101, 1001)]
+
+    drafts = [
+        _spec(body=_CANONICAL_SLICE_BODY),
+        IssueDraft(
+            handle="01-foo",
+            title="01-foo Slice",
+            labels=["behavior-slice", _STATE_LABEL],
+            body=_CANONICAL_SLICE_BODY,
+        ),
+    ]
+
+    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    _, body, _ = port.create_issue.call_args_list[1].args
+    parent_pos = body.index("## Parent")
+    what_pos = body.index("## What to build")
+    assert parent_pos < what_pos
+
+
+def test_blocked_by_section_precedes_files_touched_in_canonical_body(
+    tmp_path: Path,
+) -> None:
+    """Resolved refs appear within ## Blocked by, before ## Files touched.
+
+    The old appended approach leaves refs after ## Files touched; the canonical
+    approach places them inside the ## Blocked by section.
+    """
+    port = MagicMock(spec=FilingPort)
+    port.create_issue.side_effect = [(100, 1000), (101, 1001)]
+
+    drafts = [
+        _spec(body=_CANONICAL_SLICE_BODY),
+        IssueDraft(
+            handle="01-foo",
+            title="01-foo Slice",
+            labels=["behavior-slice", _STATE_LABEL],
+            body=_CANONICAL_SLICE_BODY,
+            blocked_by=["spec"],
+        ),
+    ]
+
+    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    _, body, _ = port.create_issue.call_args_list[1].args
+    blocked_pos = body.index("## Blocked by")
+    files_pos = body.index("## Files touched")
+    assert blocked_pos < files_pos
+    # Ref must be inside the ## Blocked by section, not appended after ## Files touched
+    assert "#100" in body[blocked_pos:files_pos]

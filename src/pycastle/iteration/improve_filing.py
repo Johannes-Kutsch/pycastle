@@ -93,8 +93,42 @@ def _save_record(role_dir: Path, record: _CandidateRecord) -> None:
     (role_dir / _CANDIDATE_RECORD_FILE).write_text(json.dumps(data), encoding="utf-8")
 
 
-def _body_with_blockers(
+def _parse_sections(body: str) -> list[tuple[str | None, str]]:
+    sections: list[tuple[str | None, str]] = []
+    current_heading: str | None = None
+    current_lines: list[str] = []
+
+    for line in body.split("\n"):
+        if line.startswith("## "):
+            sections.append((current_heading, "\n".join(current_lines)))
+            current_heading = line
+            current_lines = []
+        else:
+            current_lines.append(line)
+
+    sections.append((current_heading, "\n".join(current_lines)))
+
+    if sections and sections[0] == (None, ""):
+        sections = sections[1:]
+
+    return sections
+
+
+def _reconstruct_sections(sections: list[tuple[str | None, str]]) -> str:
+    parts: list[str] = []
+    for heading, content in sections:
+        stripped = content.strip()
+        if heading is None:
+            if stripped:
+                parts.append(stripped)
+        else:
+            parts.append(heading + ("\n\n" + stripped if stripped else ""))
+    return "\n\n".join(parts)
+
+
+def _render_slice_body(
     base_body: str,
+    spec_number: int,
     blocked_by: list[str],
     handle_to_filed: dict[str, _FiledIssue],
     extra_blocker_numbers: list[int] | None = None,
@@ -102,10 +136,46 @@ def _body_with_blockers(
     intra = [f"#{handle_to_filed[h].number}" for h in blocked_by]
     extra = [f"#{n}" for n in (extra_blocker_numbers or [])]
     all_refs = intra + extra
-    if not all_refs:
-        return base_body
-    refs = ", ".join(all_refs)
-    return base_body.rstrip() + f"\n\nBlocked by {refs}"
+
+    sections = _parse_sections(base_body)
+
+    # Remove any existing ## Parent section.
+    sections = [(h, c) for h, c in sections if h != "## Parent"]
+
+    parent_section: tuple[str | None, str] = ("## Parent", f"#{spec_number}")
+    what_idx = next(
+        (i for i, (h, _) in enumerate(sections) if h == "## What to build"), -1
+    )
+    if what_idx >= 0:
+        sections.insert(what_idx, parent_section)
+    else:
+        sections.insert(0, parent_section)
+
+    blocked_content = (
+        ", ".join(all_refs) if all_refs else "None — can start immediately."
+    )
+    blocked_section: tuple[str | None, str] = ("## Blocked by", blocked_content)
+
+    # Remove any existing ## Blocked by section.
+    sections = [(h, c) for h, c in sections if h != "## Blocked by"]
+
+    ac_idx = next(
+        (i for i, (h, _) in enumerate(sections) if h == "## Acceptance criteria"),
+        -1,
+    )
+    if ac_idx >= 0:
+        sections.insert(ac_idx + 1, blocked_section)
+    else:
+        files_idx = next(
+            (i for i, (h, _) in enumerate(sections) if h and "Files touched" in h),
+            -1,
+        )
+        if files_idx >= 0:
+            sections.insert(files_idx, blocked_section)
+        else:
+            sections.append(blocked_section)
+
+    return _reconstruct_sections(sections)
 
 
 def _strip_state_label(labels: list[str], state_label: str) -> list[str]:
@@ -179,8 +249,12 @@ def file_draft_set(
 
         slice_labels = _strip_state_label(slice_draft.labels, state_label)
         extra = [prev_spec[0]] if prev_spec is not None else []
-        body = _body_with_blockers(
-            slice_draft.body, slice_draft.blocked_by, handle_to_filed, extra
+        body = _render_slice_body(
+            slice_draft.body,
+            spec_number,
+            slice_draft.blocked_by,
+            handle_to_filed,
+            extra,
         )
         slice_number, slice_db_id = port.create_issue(
             slice_draft.title, body, slice_labels
