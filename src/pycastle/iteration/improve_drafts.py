@@ -29,7 +29,6 @@ class IssueDraft:
     labels: list[str]
     body: str
     blocked_by: list[str] = dataclasses.field(default_factory=list)
-    files_touched: list[str] = dataclasses.field(default_factory=list)
 
 
 def read_draft_set(directory: Path, cfg: Config) -> list[IssueDraft]:
@@ -100,8 +99,6 @@ def _parse_draft(path: Path) -> tuple[IssueDraft | None, list[str]]:
 
     raw_blocked = fm.get("blocked_by")
     blocked_by: list[object] = raw_blocked if isinstance(raw_blocked, list) else []
-    raw_touched = fm.get("files_touched")
-    files_touched: list[object] = raw_touched if isinstance(raw_touched, list) else []
 
     return (
         IssueDraft(
@@ -110,7 +107,6 @@ def _parse_draft(path: Path) -> tuple[IssueDraft | None, list[str]]:
             labels=[str(lbl) for lbl in labels],
             body=body,
             blocked_by=[str(b) for b in blocked_by],
-            files_touched=[str(ft) for ft in files_touched],
         ),
         [],
     )

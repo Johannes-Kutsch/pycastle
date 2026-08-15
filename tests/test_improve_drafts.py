@@ -232,7 +232,9 @@ def test_valid_blocked_by_reference_is_accepted(tmp_path: Path, cfg: Config) -> 
     assert result[1].blocked_by == ["spec"]
 
 
-def test_files_touched_is_populated_in_result(tmp_path: Path, cfg: Config) -> None:
+def test_files_touched_in_frontmatter_parses_without_error(
+    tmp_path: Path, cfg: Config
+) -> None:
     (tmp_path / "spec.md").write_text(
         f"---\ntitle: Spec\nlabels:\n  - behavior-slice\n  - ready-for-agent\n"
         f"files_touched:\n  - src/foo.py\n  - src/bar.py\n---\n\n{_VALID_BODY}"
@@ -240,7 +242,7 @@ def test_files_touched_is_populated_in_result(tmp_path: Path, cfg: Config) -> No
 
     result = read_draft_set(tmp_path, cfg)
 
-    assert result[0].files_touched == ["src/foo.py", "src/bar.py"]
+    assert result[0].handle == "spec"
 
 
 def test_returned_draft_carries_correct_handle_title_labels_body(
