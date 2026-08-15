@@ -535,3 +535,37 @@ def test_single_candidate_unchanged_behavior(tmp_path: Path) -> None:
     _, slice_body, _ = port.create_issue.call_args_list[1].args
     assert "Blocked by" not in slice_body
     port.add_issue_dependency.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Behavior 10: backward compatibility — old records with prd_number load cleanly
+# ---------------------------------------------------------------------------
+
+
+def test_old_record_with_prd_number_still_loads(tmp_path: Path) -> None:
+    """A candidate record written before prd_number was removed loads without error.
+
+    The extra key is silently ignored; the spec is recognized as already filed
+    so file_draft_set does not create a duplicate.
+    """
+    old_record = {
+        "spec_number": 100,
+        "spec_database_id": 1000,
+        "spec_title": "Spec Issue",
+        "filed_slices": [],
+        "labels_applied": False,
+        "prd_number": 42,
+    }
+    (tmp_path / "_candidate_record").write_text(
+        json.dumps(old_record), encoding="utf-8"
+    )
+
+    port = MagicMock(spec=FilingPort)
+    port.create_issue.side_effect = [(101, 1001)]
+
+    drafts = [_spec(), _slice("01-foo")]
+    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+
+    # spec must not be re-created — it was already present in the old record
+    titles = [c.args[0] for c in port.create_issue.call_args_list]
+    assert "Spec Issue" not in titles
