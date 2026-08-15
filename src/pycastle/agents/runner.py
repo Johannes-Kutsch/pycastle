@@ -95,10 +95,7 @@ from pycastle.session.run_dispatch import (
     RunSessionRequest,
     prepare_run_session,
 )
-from pycastle.session.service_session_store import (
-    load_exact_transcript_service_name,
-    store_for_role_session,
-)
+from pycastle.session.service_session_store import ServiceSessionStore
 from pycastle.session_planning import ProviderRunStatePlan
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
@@ -628,7 +625,7 @@ class AgentRunner:
             )
         _seed_state = service.provider_session_state(
             ProviderSessionStateRequest(
-                role_session=store_for_role_session(role_session),
+                role_session=ServiceSessionStore(role_session.path, role_session),
                 provider_state_dir=provider_state_dir,
                 has_resumable_provider_state=role_session.is_resumable(),
             )
@@ -722,7 +719,9 @@ class AgentRunner:
 
         for attempt in range(3):
             _saved_service = (
-                load_exact_transcript_service_name(ctx.role_session.path)
+                ServiceSessionStore(
+                    ctx.role_session.path
+                ).exact_transcript_service_name()
                 if current_run_kind is RunKind.RESUME
                 and ctx.role_session.is_resumable()
                 else None
