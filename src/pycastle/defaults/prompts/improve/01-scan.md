@@ -83,18 +83,9 @@ Drop any candidate that fails the novelty gate, but keep it in the shortlist wit
 
 If you keep a same-theme candidate in the shortlist, include a `Novelty Check` covering matching recent PRDs, material remaining friction, and why prior PRDs did not cover it.
 
-### 3. Self-grilling
+### 3. Rank
 
-Walk the design tree for your top candidate:
-
-- Constraints any new interface would need to satisfy
-- Dependency category (in-process / local-substitutable / remote-owned / true-external) and the testing strategy that follows
-- The shape of the deepened module (interface, what sits behind the seam)
-- Which existing tests survive the change, which become waste
-
-### 4. Rank
-
-After grilling, produce an ordered list of candidates by strength. For each candidate you keep, answer:
+Produce an ordered list of candidates by strength. For each candidate you keep, answer:
 
 1. Why this candidate over those ranked below it?
 2. What is the strongest argument *against* this candidate?

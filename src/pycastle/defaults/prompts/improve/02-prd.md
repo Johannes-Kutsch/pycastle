@@ -28,7 +28,14 @@ Use this novelty context to avoid filing a duplicate or near-duplicate PRD:
 
 ## Process
 
-1. Reuse the codebase exploration and design-tree grilling from phase 1 — don't re-scan. Use `CONTEXT.md` vocabulary throughout. Consult `docs/adr/README.md` if present, then check any ADRs in the area you're touching.
+1. Reuse the codebase exploration you inherit from phase 1 — don't re-explore the codebase. Walk the design tree for your candidate:
+
+   - Constraints any new interface would need to satisfy
+   - Dependency category (in-process / local-substitutable / remote-owned / true-external) and the testing strategy that follows
+   - The shape of the deepened module (interface, what sits behind the seam)
+   - Which existing tests survive the change, which become waste
+
+   Use `CONTEXT.md` vocabulary throughout. Consult `docs/adr/README.md` if present, then check any ADRs in the area you're touching.
 
 2. Sketch out the seams at which the change will be tested. Prefer existing seams; if a new one is needed, place it at the highest point you can. The fewer seams this change tests at, the better — ideally one.
 
