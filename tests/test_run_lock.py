@@ -545,6 +545,8 @@ def test_waiting_run_reports_cannot_identify_when_record_names_dead_process(
     tmp_path: Path,
 ) -> None:
     import json as _json
+    import subprocess
+    import sys
     from datetime import datetime
 
     layout = _layout(tmp_path)
@@ -555,8 +557,11 @@ def test_waiting_run_reports_cannot_identify_when_record_names_dead_process(
         notifications.append(msg)
         waiting_started.set()
 
+    proc = subprocess.Popen([sys.executable, "-c", ""])
+    proc.wait()
+    dead_pid = proc.pid
+
     with _hold_lock_in_thread(layout) as release:
-        dead_pid = 2**22 - 1  # near-max pid, almost certainly unused
         layout.run_holder_record_path.parent.mkdir(parents=True, exist_ok=True)
         layout.run_holder_record_path.write_text(
             _json.dumps(

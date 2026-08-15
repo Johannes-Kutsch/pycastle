@@ -93,8 +93,10 @@ def _waiting_message(record_path: Path) -> str:
         return default
     try:
         os.kill(pid, 0)
-    except (ProcessLookupError, PermissionError):
+    except ProcessLookupError:
         return default
+    except PermissionError:
+        pass  # process exists but is owned by another user — still a live holder
     elapsed = int((datetime.now(tz=UTC) - started_at).total_seconds())
     return (
         f"Waiting for global run lock held by {project}"
