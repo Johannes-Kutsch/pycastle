@@ -51,8 +51,7 @@ from tests.support import (
 def git_svc():
     svc = functional_git_svc(try_merge=True, is_ancestor=True, start_merge=False)
     svc.is_working_tree_clean.return_value = True
-    svc.get_current_branch.return_value = "main"
-    svc.get_head_sha.return_value = "abc123"
+    svc.get_branch_sha.return_value = "abc123"
     svc.list_worktrees.side_effect = None
     svc.list_worktrees.return_value = []
     svc.remove_worktree.side_effect = None
@@ -249,22 +248,28 @@ def test_merge_repo_setup_does_not_assume_master_default_branch(tmp_path, monkey
 @pytest.fixture
 def conflicting_repo(tmp_path):
     """Repo with pycastle/issue-1 conflicting against main on conflict.txt."""
-    return _init_conflicting_merge_repo(
+    repo = _init_conflicting_merge_repo(
         tmp_path,
         [("pycastle/issue-1", "branch change\n")],
     )
+    # advance_branch_ref uses `git fetch . src:main` which fails when main is
+    # checked out; switch away so the operating branch ref is not active.
+    _git(repo, "checkout", "-b", "operator")
+    return repo
 
 
 @pytest.fixture
 def two_conflicting_branches_repo(tmp_path):
     """Repo with two issue branches that both conflict against main on one file."""
-    return _init_conflicting_merge_repo(
+    repo = _init_conflicting_merge_repo(
         tmp_path,
         [
             ("pycastle/issue-1", "branch one\n"),
             ("pycastle/issue-2", "branch two\n"),
         ],
     )
+    _git(repo, "checkout", "-b", "operator")
+    return repo
 
 
 def test_conflict_starts_merge_before_invoking_merger(
@@ -325,7 +330,7 @@ def test_conflict_creates_host_owned_merge_commit_from_merger_message(
     _run([{"number": 1, "title": "Conflict"}], deps)
 
     subject = subprocess.run(
-        ["git", "log", "-1", "--pretty=%s"],
+        ["git", "log", "main", "-1", "--pretty=%s"],
         cwd=tmp_path,
         check=True,
         capture_output=True,
@@ -333,7 +338,7 @@ def test_conflict_creates_host_owned_merge_commit_from_merger_message(
     ).stdout.strip()
     parents = (
         subprocess.run(
-            ["git", "log", "-1", "--pretty=%P"],
+            ["git", "log", "main", "-1", "--pretty=%P"],
             cwd=tmp_path,
             check=True,
             capture_output=True,
@@ -449,7 +454,7 @@ def test_later_conflict_failure_returns_partial_success_for_earlier_verified_bra
     tmp_path, git_svc, github_svc
 ):
     git_svc.try_merge.return_value = False
-    git_svc.get_head_sha.side_effect = ["sha-1", "sha-2"]
+    git_svc.get_branch_sha.side_effect = ["sha-batch", "sha-1", "sha-2"]
 
     async def _resolve_then_fail(request: RunRequest):
         branch = _requested_merge_branch(request)
@@ -516,13 +521,19 @@ def test_later_conflict_failure_keeps_earlier_verified_merge_commit_on_target_br
     )
 
     head_subject = subprocess.run(
-        ["git", "log", "-1", "--pretty=%s"],
+        ["git", "log", "main", "-1", "--pretty=%s"],
         cwd=two_conflicting_branches_repo,
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
-    resolved_text = (two_conflicting_branches_repo / "conflict.txt").read_text()
+    resolved_text = subprocess.run(
+        ["git", "show", "main:conflict.txt"],
+        cwd=two_conflicting_branches_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
     preserved_marker = (
         _merge_sandbox_path(two_conflicting_branches_repo, deps.cfg, 2)
         / ".pycastle-session"
@@ -538,7 +549,9 @@ def test_later_conflict_failure_keeps_earlier_verified_merge_commit_on_target_br
 
 def test_each_conflict_recovery_uses_current_target_head(deps, git_svc):
     git_svc.try_merge.return_value = False
-    git_svc.get_head_sha.side_effect = ["sha-1", "sha-2"]
+    # First SHA is consumed by the batch classify sandbox; subsequent ones by
+    # each per-issue conflict recovery sandbox.
+    git_svc.get_branch_sha.side_effect = ["sha-batch", "sha-1", "sha-2"]
     issues = [
         {"number": 1, "title": "Conflict one"},
         {"number": 2, "title": "Conflict two"},
@@ -547,8 +560,9 @@ def test_each_conflict_recovery_uses_current_target_head(deps, git_svc):
     _run(issues, deps)
 
     create_calls = git_svc.create_worktree.call_args_list
-    assert create_calls[0].args[2:] == (_merge_sandbox_branch(1), "sha-1")
-    assert create_calls[1].args[2:] == (_merge_sandbox_branch(2), "sha-2")
+    # Index 0 is the batch classify sandbox; 1 and 2 are per-issue.
+    assert create_calls[1].args[2:] == (_merge_sandbox_branch(1), "sha-1")
+    assert create_calls[2].args[2:] == (_merge_sandbox_branch(2), "sha-2")
 
 
 def test_conflict_recovery_leaves_other_branch_preserved_sandbox_untouched(
@@ -594,7 +608,8 @@ def test_non_ancestor_branch_not_deleted(deps, git_svc):
     git_svc.is_ancestor.return_value = False
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    git_svc.delete_branch.assert_not_called()
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" not in deleted
 
 
 def test_non_ancestor_branch_skipped_while_ancestor_is_deleted(deps, git_svc):
@@ -613,9 +628,12 @@ def test_non_ancestor_branch_skipped_while_ancestor_is_deleted(deps, git_svc):
 
 
 def test_branch_deletion_error_does_not_abort_merge(deps, git_svc):
+    # The batch-sandbox branch is deleted first; per-issue deletions follow.
+    # A failure on one per-issue deletion must not abort the overall merge.
     git_svc.delete_branch.side_effect = [
-        GitCommandError("fail", returncode=1, stderr=""),
-        None,
+        None,  # pycastle/merge-batch-sandbox teardown
+        GitCommandError("fail", returncode=1, stderr=""),  # issue-1 deletion fails
+        None,  # issue-2 deletion succeeds
     ]
     issues = [{"number": 1, "title": "Fix A"}, {"number": 2, "title": "Fix B"}]
     result = _run(issues, deps)
@@ -625,12 +643,11 @@ def test_branch_deletion_error_does_not_abort_merge(deps, git_svc):
 # ── Merger fast-forward behaviour ─────────────────────────────────────────────
 
 
-def test_successful_merger_fast_forwards_target_branch(deps, git_svc):
+def test_successful_merger_advances_target_branch_ref(deps, git_svc):
     git_svc.try_merge.return_value = False
-    git_svc.get_current_branch.return_value = "main"
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
-    git_svc.fast_forward_branch.assert_called_once_with(
+    git_svc.advance_branch_ref.assert_called_with(
         deps.repo_root, "main", _merge_sandbox_branch(1)
     )
 
@@ -643,7 +660,7 @@ def test_incomplete_merger_leaves_conflict_branch_pending_and_does_not_fast_forw
     local_deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     issues = [{"number": 1, "title": "Conflict"}]
     result = _run(issues, local_deps)
-    git_svc.fast_forward_branch.assert_not_called()
+    git_svc.advance_branch_ref.assert_not_called()
     assert result.pending_conflicts == issues
 
 
@@ -661,7 +678,7 @@ def test_merger_without_active_branch_ancestry_leaves_branch_pending(
     issues = [{"number": 1, "title": "Conflict"}]
 
     result = _run(issues, local_deps)
-    git_svc.fast_forward_branch.assert_not_called()
+    git_svc.advance_branch_ref.assert_not_called()
     assert result.pending_conflicts == issues
 
 
@@ -832,7 +849,7 @@ def test_preflight_skip_does_not_fast_forward(tmp_path, git_svc, github_svc):
     local_deps = _make_preflight_skip_deps(tmp_path, git_svc, github_svc, verdict)
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, local_deps)
-    local_deps.git_svc.fast_forward_branch.assert_not_called()
+    local_deps.git_svc.advance_branch_ref.assert_not_called()
 
 
 def test_preflight_skip_prints_merge_caller_message(tmp_path, git_svc, github_svc):
@@ -1000,7 +1017,7 @@ def test_conflict_creates_worktree_at_merge_sandbox(deps, git_svc):
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
     expected_path = _merge_sandbox_path(deps.repo_root, deps.cfg, 1)
-    git_svc.create_worktree.assert_called_once_with(
+    git_svc.create_worktree.assert_any_call(
         deps.repo_root,
         expected_path,
         _merge_sandbox_branch(1),
@@ -1023,7 +1040,7 @@ def test_worktree_removed_after_merger(deps, git_svc):
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
     expected_path = _merge_sandbox_path(deps.repo_root, deps.cfg, 1)
-    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, expected_path)
+    git_svc.remove_worktree.assert_any_call(deps.repo_root, expected_path)
 
 
 def test_worktree_preserved_when_run_agent_fails_pending(tmp_path, git_svc, github_svc):
@@ -1033,7 +1050,8 @@ def test_worktree_preserved_when_run_agent_fails_pending(tmp_path, git_svc, gith
     issues = [{"number": 1, "title": "Conflict"}]
     result = _run(issues, local_deps)
     expected_path = _merge_sandbox_path(local_deps.repo_root, local_deps.cfg, 1)
-    git_svc.remove_worktree.assert_not_called()
+    removed = [call.args[1] for call in git_svc.remove_worktree.call_args_list]
+    assert expected_path not in removed
     marker = expected_path / ".pycastle-session" / ".preserved-failure"
     assert marker.is_file()
     assert result.pending_conflicts == issues
@@ -1051,6 +1069,16 @@ def test_empty_completed_list_returns_empty_result(deps, github_svc, agent_runne
     assert agent_runner.calls == []
 
 
+def _fail_remove_for_path(target_path, exc):
+    """Return a side_effect callable that raises exc only for the given path."""
+
+    def _side_effect(_repo, path):
+        if path == target_path:
+            raise exc
+
+    return _side_effect
+
+
 # ── Active worktree removal before branch deletion ────────────────────────────
 
 
@@ -1059,7 +1087,7 @@ def test_active_worktree_removed_when_merged_branch_is_cleaned_up(deps, git_svc)
     git_svc.list_worktrees.return_value = [worktree_path]
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, worktree_path)
+    git_svc.remove_worktree.assert_any_call(deps.repo_root, worktree_path)
     deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
     assert "pycastle/issue-1" in deleted
 
@@ -1094,13 +1122,20 @@ def test_merged_branch_without_active_worktree_is_deleted_without_worktree_remov
 ):
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
-    git_svc.remove_worktree.assert_not_called()
+    issue_worktree = worktree_identity("pycastle/issue-1", deps.repo_root).path
+    removed = [call.args[1] for call in git_svc.remove_worktree.call_args_list]
+    assert issue_worktree not in removed
 
 
 def test_worktree_removal_failure_does_not_abort_branch_deletion(deps, git_svc):
     worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]
-    git_svc.remove_worktree.side_effect = GitCommandError("git worktree remove failed")
+
+    def _fail_for_issue_path(_repo, path):
+        if path == worktree_path:
+            raise GitCommandError("git worktree remove failed")
+
+    git_svc.remove_worktree.side_effect = _fail_for_issue_path
     issues = [{"number": 1, "title": "Fix A"}]
     result = _run(issues, deps)
     git_svc.delete_branch.assert_called()
@@ -1116,13 +1151,14 @@ def test_unregistered_durable_issue_worktree_cleanup_is_a_quiet_no_op(
     worktree_path.mkdir(parents=True)
     (worktree_path / "pyproject.toml").write_text("[project]\nname='t'\n")
     git_svc.list_worktrees.return_value = []
-    git_svc.remove_worktree.side_effect = GitCommandError(
-        "not a registered worktree", returncode=128, stderr=""
+    git_svc.remove_worktree.side_effect = _fail_remove_for_path(
+        worktree_path,
+        GitCommandError("not a registered worktree", returncode=128, stderr=""),
     )
 
     result = _run([issue], deps)
 
-    git_svc.delete_branch.assert_called_once_with("pycastle/issue-1", deps.repo_root)
+    git_svc.delete_branch.assert_any_call("pycastle/issue-1", deps.repo_root)
     print_msgs = [c[2] for c in recording.calls if c[0] == "print"]
     assert all("could not remove worktree" not in str(msg) for msg in print_msgs)
     assert result.clean == [issue]
@@ -1135,8 +1171,9 @@ def test_stale_registered_durable_issue_worktree_cleanup_is_quiet_after_merge(
     issue = {"number": 1, "title": "Fix A"}
     worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]
-    git_svc.remove_worktree.side_effect = GitCommandError(
-        "not a registered worktree", returncode=128, stderr=""
+    git_svc.remove_worktree.side_effect = _fail_remove_for_path(
+        worktree_path,
+        GitCommandError("not a registered worktree", returncode=128, stderr=""),
     )
 
     result = _run([issue], deps)
@@ -1147,7 +1184,7 @@ def test_stale_registered_durable_issue_worktree_cleanup_is_quiet_after_merge(
         if call[0] == "print" and call[3] == "warning"
     ]
 
-    git_svc.delete_branch.assert_called_once_with("pycastle/issue-1", deps.repo_root)
+    git_svc.delete_branch.assert_any_call("pycastle/issue-1", deps.repo_root)
     assert all("could not remove worktree" not in msg for msg in warning_messages)
     assert result.clean == [issue]
 
@@ -1169,7 +1206,7 @@ def test_missing_registered_durable_issue_worktree_is_pruned_quietly_after_merge
     ]
 
     git_svc.prune_worktrees.assert_called_once_with(deps.repo_root)
-    git_svc.delete_branch.assert_called_once_with("pycastle/issue-1", deps.repo_root)
+    git_svc.delete_branch.assert_any_call("pycastle/issue-1", deps.repo_root)
     assert all("could not remove worktree" not in msg for msg in warning_messages)
     assert result.clean == [issue]
 
@@ -1181,8 +1218,9 @@ def test_stale_registered_durable_issue_worktree_prune_failure_warns(
     issue = {"number": 1, "title": "Fix A"}
     worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]
-    git_svc.remove_worktree.side_effect = GitCommandError(
-        "not a registered worktree", returncode=128, stderr=""
+    git_svc.remove_worktree.side_effect = _fail_remove_for_path(
+        worktree_path,
+        GitCommandError("not a registered worktree", returncode=128, stderr=""),
     )
     git_svc.prune_worktrees.side_effect = GitCommandError(
         "git worktree prune failed", returncode=1, stderr="locked"
@@ -1196,7 +1234,7 @@ def test_stale_registered_durable_issue_worktree_prune_failure_warns(
         if call[0] == "print" and call[3] == "warning"
     ]
 
-    git_svc.delete_branch.assert_called_once_with("pycastle/issue-1", deps.repo_root)
+    git_svc.delete_branch.assert_any_call("pycastle/issue-1", deps.repo_root)
     assert any("could not remove worktree" in msg for msg in warning_messages)
 
 
@@ -1261,7 +1299,7 @@ def test_merge_phase_close_summary_distinguishes_completed_and_pending_conflicts
 ):
     recording = RecordingStatusDisplay()
     git_svc.try_merge.return_value = False
-    git_svc.get_head_sha.side_effect = ["sha-1", "sha-2"]
+    git_svc.get_branch_sha.side_effect = ["sha-batch", "sha-1", "sha-2"]
 
     async def _resolve_then_fail(request: RunRequest):
         branch = _requested_merge_branch(request)
@@ -1320,7 +1358,8 @@ def test_merge_phase_routes_dirty_tree_message_through_status_display(
 ):
     """merge_phase must route the dirty-tree wait message through status_display.print()."""
     deps, recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, True]
+    # [False, True] for _wait_for_clean_working_tree; extra True for batch sandbox teardown
+    git_svc.is_working_tree_clean.side_effect = [False, True, True]
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
@@ -1332,7 +1371,7 @@ def test_merge_phase_routes_dirty_tree_message_through_status_display(
 def test_merge_phase_dirty_tree_message_uses_error_style(recording_deps, git_svc):
     """The dirty-tree wait message must use style='error', caller='Merge', and contain no [red] markup."""
     deps, recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, True]
+    git_svc.is_working_tree_clean.side_effect = [False, True, True]
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
@@ -1355,7 +1394,7 @@ def test_merge_phase_dirty_tree_message_uses_error_style(recording_deps, git_svc
 def test_merge_phase_dirty_tree_message_references_merge_phase(recording_deps, git_svc):
     """The dirty-tree wait message must name the merge phase, not another phase."""
     deps, recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, True]
+    git_svc.is_working_tree_clean.side_effect = [False, True, True]
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
@@ -1381,7 +1420,7 @@ def test_merge_phase_completes_normally_after_polling_through_multiple_dirty_sta
 ):
     """merge_phase must complete normally when the working tree becomes clean after multiple polls."""
     deps, _recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, False, True]
+    git_svc.is_working_tree_clean.side_effect = [False, False, True, True]
     issues = [{"number": 1, "title": "Fix A"}]
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
         result = _run(issues, deps)
@@ -1393,7 +1432,7 @@ def test_merge_phase_polls_dirty_tree_every_10_seconds(recording_deps, git_svc):
     """merge_phase must sleep exactly 10 s between dirty-tree polls."""
     deps, _recording = recording_deps
     # Initial: dirty → print; loop: dirty → sleep, dirty → sleep, clean → exit
-    git_svc.is_working_tree_clean.side_effect = [False, False, False, True]
+    git_svc.is_working_tree_clean.side_effect = [False, False, False, True, True]
     issues = [{"number": 1, "title": "Fix A"}]
     with patch(
         "pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock
@@ -1406,7 +1445,7 @@ def test_merge_phase_polls_dirty_tree_every_10_seconds(recording_deps, git_svc):
 def test_dirty_tree_message_printed_once_across_multiple_polls(recording_deps, git_svc):
     """The 'Working tree has uncommitted changes' message must be printed exactly once, not once per poll."""
     deps, recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, False, False, True]
+    git_svc.is_working_tree_clean.side_effect = [False, False, False, True, True]
     issues = [{"number": 1, "title": "Fix A"}]
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
         _run(issues, deps)
@@ -1775,7 +1814,7 @@ def test_merge_phase_tears_down_sandbox_after_merger_session_cleanup(
     issues = [{"number": 1, "title": "Conflict"}]
     _run(issues, deps)
 
-    git_svc.remove_worktree.assert_called_once_with(deps.repo_root, sandbox_path)
+    git_svc.remove_worktree.assert_any_call(deps.repo_root, sandbox_path)
 
 
 # ── Merger session resume parity ──────────────────────────────────────────────
@@ -1895,7 +1934,6 @@ def test_merge_phase_rebuilds_sandbox_at_sha_even_when_merger_session_dir_presen
     session_dir = sandbox_path / ".pycastle-session" / "merger"
     session_dir.mkdir(parents=True)
     (session_dir / "session.json").write_text("{}")
-    git_svc.get_current_branch.return_value = _merge_sandbox_branch(1)
 
     fake = FakeAgentRunner([CompletionOutput()])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -1918,23 +1956,27 @@ def test_merge_phase_recreates_preserved_issue_sandbox_from_current_safe_sha(
     """A preserved failed issue sandbox must not resume from its obsolete branch tip."""
     real_git = GitService(Config())
     old_safe_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        ["git", "rev-parse", "refs/heads/main"],
         cwd=conflicting_repo,
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
 
+    # Commit to main (not the checked-out operator branch) so get_branch_sha("main")
+    # returns a new sha that differs from the stale sandbox sha.
+    _git(conflicting_repo, "checkout", "main")
     (conflicting_repo / "repair.txt").write_text("manual repair\n")
     _git(conflicting_repo, "add", "repair.txt")
     _git(conflicting_repo, "commit", "-m", "manual repair")
     current_safe_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        ["git", "rev-parse", "refs/heads/main"],
         cwd=conflicting_repo,
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
+    _git(conflicting_repo, "checkout", "operator")
 
     sandbox_path = _merge_sandbox_path(conflicting_repo, Config(), 1)
     _git(
@@ -2003,7 +2045,9 @@ def test_worktree_removal_warning_routed_to_status_display_not_stderr(
     deps, recording = recording_deps
     wt_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [wt_path]
-    git_svc.remove_worktree.side_effect = GitCommandError("git worktree remove failed")
+    git_svc.remove_worktree.side_effect = _fail_remove_for_path(
+        wt_path, GitCommandError("git worktree remove failed")
+    )
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
@@ -2017,7 +2061,15 @@ def test_branch_deletion_warning_routed_to_status_display_not_stderr(
 ):
     """When delete_branch fails, warning must go to status_display.print, not stderr."""
     deps, recording = recording_deps
-    git_svc.delete_branch.side_effect = GitCommandError("fail", returncode=1, stderr="")
+    issue_branch = "pycastle/issue-1"
+    # Only fail for the issue branch; let the batch-sandbox branch deletion succeed.
+    exc = GitCommandError("fail", returncode=1, stderr="")
+
+    def _fail_for_issue(branch, _repo):
+        if branch == issue_branch:
+            raise exc
+
+    git_svc.delete_branch.side_effect = _fail_for_issue
     issues = [{"number": 1, "title": "Fix A"}]
     _run(issues, deps)
 
@@ -2382,14 +2434,16 @@ def test_merge_phase_keeps_merged_branch_progress_when_conflict_close_fails(
     assert "merging 2/2 branches, closing 1/2 issues" in merge_updates
 
 
-def test_conflict_branch_stays_incomplete_until_target_branch_is_verified_merged(
+def test_conflict_branch_stays_incomplete_until_it_is_verified_merged_in_sandbox(
     recording_deps, git_svc, github_svc
 ):
     deps, recording = recording_deps
     git_svc.try_merge.side_effect = _conflict_on([2])
+    sandbox_path = _merge_sandbox_path(deps.repo_root, deps.cfg, 2)
 
     def _is_ancestor(branch, repo_path):
-        return not (branch == "pycastle/issue-2" and repo_path == deps.repo_root)
+        # Simulate the agent failing to merge issue-2 into its sandbox.
+        return not (branch == "pycastle/issue-2" and repo_path == sandbox_path)
 
     git_svc.is_ancestor.side_effect = _is_ancestor
     issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
@@ -2493,8 +2547,7 @@ def _make_functional_git_svc(tmp_path) -> MagicMock:
     svc.is_working_tree_clean.return_value = True
     svc.try_merge.return_value = True
     svc.is_ancestor.return_value = True
-    svc.get_current_branch.return_value = "main"
-    svc.get_head_sha.return_value = "abc123"
+    svc.get_branch_sha.return_value = "abc123"
     svc.verify_ref_exists.return_value = False
     svc.start_merge.return_value = False
 
@@ -2571,7 +2624,7 @@ def test_sha_change_starts_fresh_merger_session(tmp_path, github_svc):
     git_svc = _make_functional_git_svc(tmp_path)
     git_svc.try_merge.return_value = False
     _pre_seed_sandbox(tmp_path, "old-sha", 1, with_continuation=True)
-    git_svc.get_head_sha.return_value = "new-sha"
+    git_svc.get_branch_sha.return_value = "new-sha"
 
     seen = _continuation_present_in_sandbox(tmp_path, git_svc, github_svc)
 
@@ -2584,7 +2637,7 @@ def test_branch_change_starts_fresh_merger_session(tmp_path, github_svc):
     git_svc.try_merge.return_value = False
     # Seed fingerprint computed against issue-2's branch, but we run issue-1
     _pre_seed_sandbox(tmp_path, "sha-abc", 2, with_continuation=True)
-    git_svc.get_head_sha.return_value = "sha-abc"
+    git_svc.get_branch_sha.return_value = "sha-abc"
 
     seen = _continuation_present_in_sandbox(tmp_path, git_svc, github_svc)
 
@@ -2598,7 +2651,7 @@ def test_fingerprint_match_without_continuation_starts_fresh_merger_session(
     git_svc = _make_functional_git_svc(tmp_path)
     git_svc.try_merge.return_value = False
     _pre_seed_sandbox(tmp_path, "sha-abc", 1, with_continuation=False)
-    git_svc.get_head_sha.return_value = "sha-abc"
+    git_svc.get_branch_sha.return_value = "sha-abc"
 
     seen = _continuation_present_in_sandbox(tmp_path, git_svc, github_svc)
 
@@ -2615,7 +2668,7 @@ def test_fingerprint_match_with_continuation_resumes_merger_session(
     # Mark as preserved-failure so _cleanup_stale_named_worktree skips removal for REUSABLE
     sandbox_path = _merge_sandbox_path(tmp_path, Config(), 1)
     (sandbox_path / ".pycastle-session" / ".preserved-failure").write_text("")
-    git_svc.get_head_sha.return_value = "sha-abc"
+    git_svc.get_branch_sha.return_value = "sha-abc"
     # Register sandbox so _create_worktree returns early (skips fresh create)
     git_svc.list_worktrees.side_effect = lambda repo: [sandbox_path]
 
@@ -2628,7 +2681,7 @@ def test_fingerprint_written_to_sandbox_before_agent_runs(tmp_path, github_svc):
     """`write_fingerprint` is called inside the worktree context before the agent runs."""
     git_svc = _make_functional_git_svc(tmp_path)
     git_svc.try_merge.return_value = False
-    git_svc.get_head_sha.return_value = "sha-abc"
+    git_svc.get_branch_sha.return_value = "sha-abc"
     fingerprint_seen: list[str | None] = []
 
     async def _check(request: RunRequest):
@@ -2665,8 +2718,7 @@ def test_recover_conflicts_propagates_non_git_os_error_from_conflict_worktree_te
     a non-OSError, non-GitCommandError propagates from recover_conflicts."""
     git_svc = functional_git_svc(is_ancestor=True)
     git_svc.is_working_tree_clean.return_value = True
-    git_svc.get_current_branch.return_value = "main"
-    git_svc.get_head_sha.return_value = "abc123"
+    git_svc.get_branch_sha.return_value = "abc123"
     git_svc.start_merge.return_value = (
         True  # already-merged fast path — no agent needed
     )
@@ -2706,8 +2758,7 @@ def test_recover_conflicts_propagates_non_github_service_error_from_close_issue(
     propagates from recover_conflicts rather than being routed to file_merge_close_failure_issue."""
     git_svc = functional_git_svc(is_ancestor=True)
     git_svc.is_working_tree_clean.return_value = True
-    git_svc.get_current_branch.return_value = "main"
-    git_svc.get_head_sha.return_value = "abc123"
+    git_svc.get_branch_sha.return_value = "abc123"
     git_svc.start_merge.return_value = True  # already-merged fast path
     git_svc.list_worktrees.side_effect = None
     git_svc.list_worktrees.return_value = []  # no conflict-branch worktree; skip teardown
@@ -2739,8 +2790,7 @@ def test_recover_conflicts_propagates_unexpected_exception_from_merge_block(
     being treated as a pending conflict."""
     git_svc = functional_git_svc(is_ancestor=True)
     git_svc.is_working_tree_clean.return_value = True
-    git_svc.get_current_branch.return_value = "main"
-    git_svc.get_head_sha.return_value = "abc123"
+    git_svc.get_branch_sha.return_value = "abc123"
     git_svc.start_merge.side_effect = KeyError("missing key")
     git_svc.list_worktrees.side_effect = None
     git_svc.list_worktrees.return_value = []

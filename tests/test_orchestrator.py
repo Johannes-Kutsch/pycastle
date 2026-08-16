@@ -1288,7 +1288,8 @@ def test_non_ancestor_branch_not_deleted(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    mock_git.delete_branch.assert_not_called()
+    deleted = [call.args[0] for call in mock_git.delete_branch.call_args_list]
+    assert "pycastle/issue-1" not in deleted
 
 
 def test_delete_branch_error_does_not_abort_run(tmp_path):
@@ -1302,9 +1303,13 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
         )
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
-    mock_git.delete_branch.side_effect = GitCommandError(
-        "fail", returncode=1, stderr=""
-    )
+    exc = GitCommandError("fail", returncode=1, stderr="")
+
+    def _fail_for_issue(branch, _repo):
+        if branch.startswith("pycastle/issue-"):
+            raise exc
+
+    mock_git.delete_branch.side_effect = _fail_for_issue
     _run(
         tmp_path,
         _fake_run_agent,
@@ -2366,13 +2371,8 @@ def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess
 
-    branch = "pycastle/issue-1"
-    subprocess.run(
-        ["git", "-C", str(git_repo), "checkout", "-b", branch],
-        check=True,
-        capture_output=True,
-    )
-    (git_repo / "feature.txt").write_text("feature")
+    # pyproject.toml must exist on main so the batch merge sandbox (created from
+    # main's SHA) passes _create_worktree's project-files validation.
     (git_repo / "pyproject.toml").write_text(
         "[project]\nname = 't'\nversion = '0.0.1'\n"
     )
@@ -2380,7 +2380,28 @@ def test_run_full_iteration_cold_path(git_repo):
         ["git", "-C", str(git_repo), "add", "."], check=True, capture_output=True
     )
     subprocess.run(
+        ["git", "-C", str(git_repo), "commit", "-m", "add pyproject"],
+        check=True,
+        capture_output=True,
+    )
+
+    branch = "pycastle/issue-1"
+    subprocess.run(
+        ["git", "-C", str(git_repo), "checkout", "-b", branch],
+        check=True,
+        capture_output=True,
+    )
+    (git_repo / "feature.txt").write_text("feature")
+    subprocess.run(
+        ["git", "-C", str(git_repo), "add", "."], check=True, capture_output=True
+    )
+    subprocess.run(
         ["git", "-C", str(git_repo), "commit", "-m", "add feature"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(git_repo), "checkout", "main"],
         check=True,
         capture_output=True,
     )
