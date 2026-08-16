@@ -9,7 +9,9 @@ from pycastle.bug_reporter import file_merge_close_failure_issue
 from pycastle.config import Config
 from pycastle.display.status_display import StatusDisplay
 from pycastle.infrastructure.worktree import (
+    BranchWorktreeLifecycle,
     cleanup_durable_issue_worktree_after_success,
+    managed_worktree,
     worktree_identity,
 )
 from pycastle.iteration._merge_conflict_recovery import recover_conflicts
@@ -22,6 +24,8 @@ from pycastle.iteration._utils import _wait_for_clean_working_tree
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
 from pycastle.services import GitCommandError, GithubService, GitService
+
+_MERGE_BATCH_SANDBOX_BRANCH = "pycastle/merge-batch-sandbox"
 
 
 class _MergeDeps(Protocol):
@@ -44,16 +48,34 @@ class MergeResult:
     close_failure_issue_numbers: list[int] = dataclasses.field(default_factory=list)
 
 
-def _classify_merge_candidates(
-    completed: list[dict], deps: _MergeDeps
+async def _classify_merge_candidates(
+    completed: list[dict], safe_sha: str, deps: _MergeDeps
 ) -> tuple[list[dict], list[dict]]:
+    """Merge each completed issue into a sandbox at the operating branch tip.
+
+    Clean issues are fast-forward merged; conflict issues are aborted. After this
+    call, the operating branch ref is advanced to include all clean merges.
+    """
     clean_issues: list[dict] = []
     conflict_issues: list[dict] = []
-    for issue in completed:
-        if deps.git_svc.try_merge(deps.repo_root, branch_for(issue["number"])):
-            clean_issues.append(issue)
-        else:
-            conflict_issues.append(issue)
+    batch_identity = worktree_identity(_MERGE_BATCH_SANDBOX_BRANCH, deps.repo_root)
+    async with managed_worktree(
+        identity=batch_identity,
+        sha=safe_sha,
+        lifecycle=BranchWorktreeLifecycle.REPLACEABLE_MERGE_SANDBOX,
+        deps=deps,
+    ) as sandbox_path:
+        for issue in completed:
+            if deps.git_svc.try_merge(sandbox_path, branch_for(issue["number"])):
+                clean_issues.append(issue)
+            else:
+                conflict_issues.append(issue)
+        if clean_issues:
+            deps.git_svc.advance_branch_ref(
+                deps.repo_root,
+                deps.cfg.operating_branch,
+                _MERGE_BATCH_SANDBOX_BRANCH,
+            )
     return clean_issues, conflict_issues
 
 
@@ -248,7 +270,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
     ) as row:
         await _wait_for_clean_working_tree(deps, "Merge")
         completed_total = len(completed)
-        clean_issues, conflict_issues = _classify_merge_candidates(completed, deps)
+        safe_sha = deps.git_svc.get_branch_sha(
+            deps.repo_root, deps.cfg.operating_branch
+        )
+        clean_issues, conflict_issues = await _classify_merge_candidates(
+            completed, safe_sha, deps
+        )
 
         progress = MergeProgressReporter(
             status_display=deps.status_display,

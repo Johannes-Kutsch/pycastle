@@ -12,7 +12,6 @@ class BranchFacts:
     dev_branch_on_origin: bool
     working_branch_on_local: bool
     working_branch_on_origin: bool
-    working_tree_clean: bool
 
 
 @dataclasses.dataclass(frozen=True)
@@ -27,16 +26,11 @@ class Seed:
 
 
 @dataclasses.dataclass(frozen=True)
-class Checkout:
-    branch: str
-
-
-@dataclasses.dataclass(frozen=True)
 class PushUpstream:
     branch: str
 
 
-type BranchSetupStep = Fetch | Seed | Checkout | PushUpstream
+type BranchSetupStep = Fetch | Seed | PushUpstream
 
 
 @dataclasses.dataclass(frozen=True)
@@ -51,12 +45,7 @@ class DevBranchMissing:
     message: str
 
 
-@dataclasses.dataclass(frozen=True)
-class UncleanWorkingTree:
-    pass
-
-
-type BranchResolutionResult = BranchSetupPlan | DevBranchMissing | UncleanWorkingTree
+type BranchResolutionResult = BranchSetupPlan | DevBranchMissing
 
 
 def resolve_branch_setup(cfg: Config, facts: BranchFacts) -> BranchResolutionResult:
@@ -66,12 +55,9 @@ def resolve_branch_setup(cfg: Config, facts: BranchFacts) -> BranchResolutionRes
             message=f"dev_branch '{cfg.dev_branch}' not found on origin",
         )
 
-    if not facts.working_tree_clean:
-        return UncleanWorkingTree()
-
     if cfg.working_branch is None:
         return BranchSetupPlan(
-            steps=(Checkout(branch=cfg.dev_branch),),
+            steps=(),
             operating_branch=cfg.dev_branch,
         )
 
@@ -82,10 +68,9 @@ def resolve_branch_setup(cfg: Config, facts: BranchFacts) -> BranchResolutionRes
         steps: tuple[BranchSetupStep, ...] = (
             Fetch(),
             Seed(source=f"origin/{cfg.dev_branch}", target=working_branch),
-            Checkout(branch=working_branch),
             PushUpstream(branch=working_branch),
         )
     else:
-        steps = (Checkout(branch=working_branch),)
+        steps = ()
 
     return BranchSetupPlan(steps=steps, operating_branch=working_branch)

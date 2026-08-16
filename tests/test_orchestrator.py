@@ -90,6 +90,7 @@ def _make_git_svc(try_merge_side_effect=None, is_ancestor=True):
         start_merge=False,
     )
     mock_svc.get_head_sha.return_value = "abc1234"
+    mock_svc.get_branch_sha.return_value = "abc1234"
     mock_svc.is_working_tree_clean.return_value = True
 
     def _verify_ref(ref, repo_path):
@@ -1287,7 +1288,8 @@ def test_non_ancestor_branch_not_deleted(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    mock_git.delete_branch.assert_not_called()
+    deleted = [call.args[0] for call in mock_git.delete_branch.call_args_list]
+    assert "pycastle/issue-1" not in deleted
 
 
 def test_delete_branch_error_does_not_abort_run(tmp_path):
@@ -1301,9 +1303,13 @@ def test_delete_branch_error_does_not_abort_run(tmp_path):
         )
 
     mock_git = _make_git_svc(try_merge_side_effect=[True], is_ancestor=True)
-    mock_git.delete_branch.side_effect = GitCommandError(
-        "fail", returncode=1, stderr=""
-    )
+    exc = GitCommandError("fail", returncode=1, stderr="")
+
+    def _fail_for_issue(branch, _repo):
+        if branch.startswith("pycastle/issue-"):
+            raise exc
+
+    mock_git.delete_branch.side_effect = _fail_for_issue
     _run(
         tmp_path,
         _fake_run_agent,
@@ -1441,6 +1447,7 @@ def test_safe_sha_pinned_and_passed_to_implementer_after_preplanning_preflight(
 
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_git.get_head_sha.return_value = fake_sha
+    mock_git.get_branch_sha.return_value = fake_sha
 
     async def _fake_run_agent(request: RunRequest):
         if "Implement Agent" in request.name:
@@ -1493,6 +1500,7 @@ def test_pinned_sha_is_passed_to_each_implementer(tmp_path):
 
     mock_git = _make_git_svc(try_merge_side_effect=[True, True])
     mock_git.get_head_sha.return_value = fake_sha
+    mock_git.get_branch_sha.return_value = fake_sha
 
     issues = [
         {
@@ -2269,19 +2277,19 @@ def test_run_passes_plan_override_model_and_effort_to_planner(tmp_path):
 
 
 def test_worktree_sha_set_at_iteration_start(tmp_path):
-    """get_head_sha must be called before the Planner agent fires each iteration."""
+    """get_branch_sha must be called before the Planner agent fires each iteration."""
     call_order: list[str] = []
 
     mock_git = _make_git_svc(try_merge_side_effect=[True])
-    original_get_head_sha = mock_git.get_head_sha.side_effect
+    original_get_branch_sha = mock_git.get_branch_sha.side_effect
 
-    def _tracking_get_head_sha(repo_path):
-        call_order.append("get_head_sha")
-        if original_get_head_sha is not None:
-            return original_get_head_sha(repo_path)
+    def _tracking_get_branch_sha(repo_path, branch):
+        call_order.append("get_branch_sha")
+        if original_get_branch_sha is not None:
+            return original_get_branch_sha(repo_path, branch)
         return "abc123"
 
-    mock_git.get_head_sha.side_effect = _tracking_get_head_sha
+    mock_git.get_branch_sha.side_effect = _tracking_get_branch_sha
 
     async def _fake_run_agent(request: RunRequest):
         if request.name == "Plan Agent":
@@ -2300,28 +2308,28 @@ def test_worktree_sha_set_at_iteration_start(tmp_path):
         github_service=_make_github_svc(),
     )
 
-    assert "get_head_sha" in call_order, "get_head_sha must be called"
+    assert "get_branch_sha" in call_order, "get_branch_sha must be called"
     assert "Planner" in call_order, "Planner must be called"
-    first_sha = call_order.index("get_head_sha")
+    first_sha = call_order.index("get_branch_sha")
     first_planner = call_order.index("Planner")
     assert first_sha < first_planner, (
-        f"get_head_sha must be called before Planner; order={call_order}"
+        f"get_branch_sha must be called before Planner; order={call_order}"
     )
 
 
 def test_worktree_sha_refreshed_each_iteration(tmp_path):
-    """get_head_sha must be called before each Planner call across multiple iterations.
+    """get_branch_sha must be called before each Planner call across multiple iterations.
 
-    run_issue also calls get_safe_sha() (and thus get_head_sha) for its implementer
+    run_issue also calls get_safe_sha() (and thus get_branch_sha) for its implementer
     worktree, so there are more calls than one per iteration — the ordering invariant
-    is what matters: every Planner call must be preceded by at least one get_head_sha.
+    is what matters: every Planner call must be preceded by at least one get_branch_sha.
     """
     call_order: list[str] = []
     planner_count = [0]
 
     mock_git = _make_git_svc(try_merge_side_effect=[True])
-    mock_git.get_head_sha.side_effect = lambda _: (
-        call_order.append("get_head_sha") or "sha"
+    mock_git.get_branch_sha.side_effect = lambda _, __: (
+        call_order.append("get_branch_sha") or "sha"
     )
 
     async def _fake_run_agent(request: RunRequest):
@@ -2351,9 +2359,9 @@ def test_worktree_sha_refreshed_each_iteration(tmp_path):
     )
     for planner_idx in planner_indices:
         preceding_sha = any(
-            e == "get_head_sha" and i < planner_idx for i, e in enumerate(call_order)
+            e == "get_branch_sha" and i < planner_idx for i, e in enumerate(call_order)
         )
-        assert preceding_sha, f"get_head_sha must precede Planner; order={call_order}"
+        assert preceding_sha, f"get_branch_sha must precede Planner; order={call_order}"
 
 
 # ── Issue-206: worktree SHA + full iteration path ─────────────────────────────
@@ -2363,6 +2371,20 @@ def test_run_full_iteration_cold_path(git_repo):
     """run() executes a full iteration: preflight→plan→implement→merge, and closes the issue."""
     import subprocess
 
+    # pyproject.toml must exist on main so the batch merge sandbox (created from
+    # main's SHA) passes _create_worktree's project-files validation.
+    (git_repo / "pyproject.toml").write_text(
+        "[project]\nname = 't'\nversion = '0.0.1'\n"
+    )
+    subprocess.run(
+        ["git", "-C", str(git_repo), "add", "."], check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "-C", str(git_repo), "commit", "-m", "add pyproject"],
+        check=True,
+        capture_output=True,
+    )
+
     branch = "pycastle/issue-1"
     subprocess.run(
         ["git", "-C", str(git_repo), "checkout", "-b", branch],
@@ -2370,9 +2392,6 @@ def test_run_full_iteration_cold_path(git_repo):
         capture_output=True,
     )
     (git_repo / "feature.txt").write_text("feature")
-    (git_repo / "pyproject.toml").write_text(
-        "[project]\nname = 't'\nversion = '0.0.1'\n"
-    )
     subprocess.run(
         ["git", "-C", str(git_repo), "add", "."], check=True, capture_output=True
     )
@@ -2383,6 +2402,13 @@ def test_run_full_iteration_cold_path(git_repo):
     )
     subprocess.run(
         ["git", "-C", str(git_repo), "checkout", "main"],
+        check=True,
+        capture_output=True,
+    )
+    # ADR 0060: repo root must be on a non-operating branch so that
+    # fetch_branch can update refs/heads/main without a checkout restriction.
+    subprocess.run(
+        ["git", "-C", str(git_repo), "checkout", "-b", "operator-work"],
         check=True,
         capture_output=True,
     )
@@ -2719,32 +2745,32 @@ def test_ensure_session_excludes_noop_when_git_dir_absent(tmp_path):
 
 
 def test_idle_iteration_skips_preflight_gate(tmp_path):
-    """When there are no open issues and improve_mode is None, git pull must never be called."""
+    """When there are no open issues and improve_mode is None, git fetch must never be called."""
     mock_git = _make_git_svc()
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
 
     _run(tmp_path, github_service=mock_github, git_service=mock_git)
 
-    mock_git.pull_with_merge_fallback.assert_not_called()
+    mock_git.fetch_branch.assert_not_called()
 
 
 def test_in_flight_only_iteration_planning_runs_preflight_gate_once(tmp_path):
     """When all open issues are in-flight, planning runs the preflight gate once
     and still skips spawning the Planner."""
-    pull_call_count = [0]
+    fetch_call_count = [0]
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_git.verify_ref_exists.return_value = True  # branch exists → in-flight
 
-    original_pull = mock_git.pull_with_merge_fallback.side_effect
+    original_fetch = mock_git.fetch_branch.side_effect
 
-    def _tracking_pull(repo_path):
-        pull_call_count[0] += 1
-        if original_pull is not None:
-            return original_pull(repo_path)
+    def _tracking_fetch(repo_path, branch):
+        fetch_call_count[0] += 1
+        if original_fetch is not None:
+            return original_fetch(repo_path, branch)
         return None
 
-    mock_git.pull_with_merge_fallback.side_effect = _tracking_pull
+    mock_git.fetch_branch.side_effect = _tracking_fetch
     mock_github = _make_github_svc(numbers=[1])
 
     async def _fake_run_agent(request: RunRequest):
@@ -2757,8 +2783,8 @@ def test_in_flight_only_iteration_planning_runs_preflight_gate_once(tmp_path):
         github_service=mock_github,
     )
 
-    assert pull_call_count[0] == 1, (
-        "In-flight planning path must call pull_with_merge_fallback exactly once"
+    assert fetch_call_count[0] == 1, (
+        "In-flight planning path must call fetch_branch exactly once"
     )
 
 
@@ -3621,13 +3647,13 @@ def test_orchestrator_files_issue_on_consuming_repo_when_no_existing_match(tmp_p
     from pycastle.services import OperatorActionableGitError
 
     err = OperatorActionableGitError(
-        "git pull failed",
+        "git fetch origin main:main failed",
         stderr="ssh: connect to host github.com port 22: Connection timed out",
-        op="pull",
+        op="fetch",
         attempt_count=4,
     )
     git_svc = _make_git_svc()
-    git_svc.pull_with_merge_fallback.side_effect = err
+    git_svc.fetch_branch.side_effect = err
     git_svc.get_github_remote_repo.return_value = ("consuming-owner", "consuming-repo")
 
     github_svc = _make_github_svc()
@@ -3653,13 +3679,13 @@ def test_orchestrator_skips_filing_when_matching_open_issue_exists(tmp_path):
     from pycastle.services import OperatorActionableGitError
 
     err = OperatorActionableGitError(
-        "git pull failed",
+        "git fetch origin main:main failed",
         stderr="remote: Repository not found",
-        op="pull",
+        op="fetch",
         attempt_count=1,
     )
     git_svc = _make_git_svc()
-    git_svc.pull_with_merge_fallback.side_effect = err
+    git_svc.fetch_branch.side_effect = err
     git_svc.get_github_remote_repo.return_value = ("consuming-owner", "consuming-repo")
 
     github_svc = _make_github_svc()
@@ -3678,13 +3704,13 @@ def test_orchestrator_filed_issue_body_contains_diagnostic_info(tmp_path):
     from pycastle.services import OperatorActionableGitError
 
     err = OperatorActionableGitError(
-        "git pull failed",
+        "git fetch origin main:main failed",
         stderr="ssh: connect to host github.com port 22: Connection timed out",
-        op="pull",
+        op="fetch",
         attempt_count=4,
     )
     git_svc = _make_git_svc()
-    git_svc.pull_with_merge_fallback.side_effect = err
+    git_svc.fetch_branch.side_effect = err
 
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"
@@ -3698,7 +3724,7 @@ def test_orchestrator_filed_issue_body_contains_diagnostic_info(tmp_path):
     _owner_repo, _title, body, _labels = call_args[0]
     assert "Connection timed out" in body
     assert "4" in body
-    assert "pull" in body
+    assert "fetch" in body
     assert "pycastle" in body.lower() or "Python" in body or "OS" in body
 
 
@@ -3708,13 +3734,13 @@ def test_orchestrator_operator_actionable_never_routes_to_pycastle_upstream(tmp_
     from pycastle.services import OperatorActionableGitError
 
     err = OperatorActionableGitError(
-        "git pull failed",
+        "git fetch origin main:main failed",
         stderr="remote: Repository not found",
-        op="pull",
+        op="fetch",
         attempt_count=1,
     )
     git_svc = _make_git_svc()
-    git_svc.pull_with_merge_fallback.side_effect = err
+    git_svc.fetch_branch.side_effect = err
 
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"

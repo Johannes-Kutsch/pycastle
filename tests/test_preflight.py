@@ -59,9 +59,9 @@ def _conflict_git_svc(sha: str, branch: str) -> MagicMock:
     svc = MagicMock(spec=GitService)
     svc.is_working_tree_clean.return_value = True
     svc.get_head_sha.return_value = sha
-    svc.get_current_branch.return_value = branch
-    svc.pull_with_merge_fallback.side_effect = GitCommandError(
-        "git merge origin/main failed due to conflicts"
+    svc.get_branch_sha.return_value = sha
+    svc.fetch_branch.side_effect = GitCommandError(
+        f"! [rejected] {branch} -> {branch} (non-fast-forward)"
     )
     return svc
 
@@ -70,6 +70,7 @@ def _conflict_git_svc(sha: str, branch: str) -> MagicMock:
 def git_svc():
     svc = functional_git_svc()
     svc.get_head_sha.return_value = "abc123"
+    svc.get_branch_sha.return_value = "abc123"
     svc.is_working_tree_clean.return_value = True
     return svc
 
@@ -87,6 +88,28 @@ def _preflight_failure(
         command=command,
         output=output,
     )
+
+
+# ── get_safe_sha: operating branch SHA ────────────────────────────────────────
+
+
+def test_get_safe_sha_resolves_sha_from_operating_branch_not_repo_root(
+    tmp_path, github_svc
+):
+    """Safe SHA must come from the operating branch ref, not repo root HEAD."""
+    git_svc = functional_git_svc()
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.get_branch_sha.return_value = "branch-tip-sha"
+    git_svc.get_head_sha.return_value = "root-head-sha"  # different from branch SHA
+
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert result.sha == "branch-tip-sha"
 
 
 # ── get_safe_sha: basic return variants ──────────────────────────────────────
@@ -639,7 +662,7 @@ def test_get_safe_sha_failure_cached_on_second_call_at_same_sha(
 
 
 def test_get_safe_sha_reruns_checks_when_head_advances(tmp_path, git_svc, github_svc):
-    git_svc.get_head_sha.side_effect = ["sha-v1", "sha-v2"]
+    git_svc.get_branch_sha.side_effect = ["sha-v1", "sha-v2"]
     fake = FakeAgentRunner([], preflight_responses=[[], []])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
@@ -654,14 +677,29 @@ def test_get_safe_sha_reruns_checks_when_head_advances(tmp_path, git_svc, github
     assert len(fake.preflight_calls) == 2
 
 
+# ── get_safe_sha: preflight pull via fetch ────────────────────────────────────
+
+
+def test_get_safe_sha_uses_fetch_not_pull_on_repo_root(tmp_path, git_svc, github_svc):
+    """Preflight pull must call fetch_branch, not pull_with_merge_fallback at repo root."""
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    asyncio.run(cache.get_safe_sha(deps))
+
+    git_svc.fetch_branch.assert_called_once_with(tmp_path, deps.cfg.operating_branch)
+    git_svc.pull_with_merge_fallback.assert_not_called()
+
+
 # ── get_safe_sha: pull failure ────────────────────────────────────────────────
 
 
 def test_get_safe_sha_propagates_git_command_error_on_pull_failure(
     tmp_path, git_svc, github_svc
 ):
-    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
-        "git pull --ff-only failed"
+    git_svc.fetch_branch.side_effect = GitCommandError(
+        "git fetch origin main:main failed"
     )
     fake = FakeAgentRunner([], preflight_responses=[])
     deps = _make_deps(
@@ -676,13 +714,11 @@ def test_get_safe_sha_propagates_git_command_error_on_pull_failure(
     with pytest.raises(GitCommandError):
         asyncio.run(cache.get_safe_sha(deps))
 
-    git_svc.get_head_sha.assert_not_called()
-
 
 def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
     tmp_path, git_svc, github_svc
 ):
-    """Pull failure must not corrupt the cache slot."""
+    """Fetch failure must not corrupt the cache slot."""
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
@@ -691,17 +727,17 @@ def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
     result1 = asyncio.run(cache.get_safe_sha(deps))
     assert isinstance(result1, PreflightReady)
 
-    # Second call: pull fails
-    git_svc.pull_with_merge_fallback.side_effect = GitCommandError("diverged")
+    # Second call: fetch fails
+    git_svc.fetch_branch.side_effect = GitCommandError("fetch failed")
     # Different SHA so it would invalidate cache
-    git_svc.get_head_sha.return_value = "sha-new"
+    git_svc.get_branch_sha.return_value = "sha-new"
 
     with pytest.raises(GitCommandError):
         asyncio.run(cache.get_safe_sha(deps))
 
     # The slot still holds the original verdict
-    git_svc.pull_with_merge_fallback.side_effect = None
-    git_svc.get_head_sha.return_value = "abc123"
+    git_svc.fetch_branch.side_effect = None
+    git_svc.get_branch_sha.return_value = "abc123"
     result3 = asyncio.run(cache.get_safe_sha(deps))
     assert result3 is result1
 
@@ -752,14 +788,13 @@ def test_get_safe_sha_parallel_callers_run_preflight_once(
 def test_get_safe_sha_resolves_divergence_via_agent_and_returns_ready(
     tmp_path, git_svc, github_svc
 ):
-    """When pull_with_merge_fallback raises a textual-conflict error, get_safe_sha
-    spawns the divergence-resolution agent; on success it fast-forwards main and
+    """When fetch raises a non-fast-forward error, get_safe_sha spawns the
+    divergence-resolution agent; on success it advances the branch ref and
     returns PreflightReady with the post-merge SHA."""
-    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
-        "git merge origin/main failed due to conflicts"
+    git_svc.fetch_branch.side_effect = GitCommandError(
+        "! [rejected] main -> main (non-fast-forward)"
     )
-    git_svc.get_current_branch.return_value = "main"
-    git_svc.get_head_sha.side_effect = ["abc123", "merged-sha"]
+    git_svc.get_branch_sha.return_value = "merged-sha"
 
     fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -769,18 +804,16 @@ def test_get_safe_sha_resolves_divergence_via_agent_and_returns_ready(
 
     assert isinstance(result, PreflightReady)
     assert result.sha == "merged-sha"
-    git_svc.fast_forward_branch.assert_called_once()
+    git_svc.advance_branch_ref.assert_called_once()
 
 
 def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
     tmp_path, git_svc, github_svc
 ):
     """The divergence-resolver RunRequest uses the merge stage override's service."""
-    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
-        "git merge origin/main failed due to conflicts"
+    git_svc.fetch_branch.side_effect = GitCommandError(
+        "! [rejected] main -> main (non-fast-forward)"
     )
-    git_svc.get_current_branch.return_value = "main"
-    git_svc.get_head_sha.side_effect = ["abc123", "merged-sha"]
 
     fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(
@@ -802,17 +835,21 @@ def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
     assert fake.calls[0].service == "codex"
 
 
-def test_get_safe_sha_dispatches_divergence_resolver_for_current_branch(
+def test_get_safe_sha_dispatches_divergence_resolver_for_operating_branch(
     tmp_path, git_svc, github_svc
 ):
-    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
-        "git merge origin/main failed due to conflicts"
+    git_svc.fetch_branch.side_effect = GitCommandError(
+        "! [rejected] pycastle/issue-1484 -> pycastle/issue-1484 (non-fast-forward)"
     )
-    git_svc.get_current_branch.return_value = "pycastle/issue-1484"
-    git_svc.get_head_sha.side_effect = ["abc123", "merged-sha"]
 
     fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=Config(working_branch="pycastle/issue-1484"),
+    )
     cache = PreflightCache()
 
     result = asyncio.run(cache.get_safe_sha(deps))
@@ -821,17 +858,15 @@ def test_get_safe_sha_dispatches_divergence_resolver_for_current_branch(
     assert fake.calls[0].prompt.template == PromptTemplate.DIVERGENCE_RESOLVE
     assert fake.calls[0].role == AgentRole.DIVERGENCE_RESOLVER
     assert fake.calls[0].work_body == "Resolving divergence"
-    git_svc.get_current_branch.assert_called_once_with(tmp_path)
+    git_svc.get_current_branch.assert_not_called()
 
 
 def test_get_safe_sha_routes_divergence_recovery_through_sandbox_identity(
     tmp_path, git_svc, github_svc
 ):
-    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
-        "git merge origin/main failed due to conflicts"
+    git_svc.fetch_branch.side_effect = GitCommandError(
+        "! [rejected] main -> main (non-fast-forward)"
     )
-    git_svc.get_current_branch.return_value = "main"
-    git_svc.get_head_sha.side_effect = ["abc123", "merged-sha"]
 
     async def _resolve(request):
         RoleSession(request.mount_path, AgentRole.DIVERGENCE_RESOLVER).start_fresh()
@@ -847,7 +882,7 @@ def test_get_safe_sha_routes_divergence_recovery_through_sandbox_identity(
 
     assert isinstance(result, PreflightReady)
     assert fake.calls[0].mount_path == expected_identity.path
-    git_svc.fast_forward_branch.assert_called_once_with(
+    git_svc.advance_branch_ref.assert_called_once_with(
         tmp_path,
         "main",
         "pycastle/diverge-sandbox",
@@ -861,17 +896,15 @@ def test_get_safe_sha_routes_divergence_recovery_through_sandbox_identity(
     )
 
 
-def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(
+def test_get_safe_sha_propagates_fetch_error_when_divergence_agent_fails(
     tmp_path, git_svc, github_svc
 ):
     """When the divergence agent fails (FailedOutput), the original GitCommandError
     propagates and no PreflightReady is returned."""
     from pycastle.agents.output_protocol import FailedOutput
 
-    pull_err = GitCommandError("git merge origin/main failed due to conflicts")
-    git_svc.pull_with_merge_fallback.side_effect = pull_err
-    git_svc.get_current_branch.return_value = "main"
-    git_svc.get_head_sha.return_value = "abc123"
+    fetch_err = GitCommandError("! [rejected] main -> main (non-fast-forward)")
+    git_svc.fetch_branch.side_effect = fetch_err
 
     fake = FakeAgentRunner([FailedOutput()], preflight_responses=[])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -880,16 +913,16 @@ def test_get_safe_sha_propagates_pull_error_when_divergence_agent_fails(
     with pytest.raises(GitCommandError) as exc_info:
         asyncio.run(cache.get_safe_sha(deps))
 
-    assert exc_info.value is pull_err
+    assert exc_info.value is fetch_err
 
 
-def test_get_safe_sha_propagates_non_conflict_pull_error_without_spawning_agent(
+def test_get_safe_sha_propagates_non_divergence_fetch_error_without_spawning_agent(
     tmp_path, git_svc, github_svc
 ):
-    """Auth/unreachable pull errors are propagated immediately without spawning
+    """Auth/unreachable fetch errors are propagated immediately without spawning
     the divergence-resolution agent."""
-    git_svc.pull_with_merge_fallback.side_effect = GitCommandError(
-        "git pull --ff-only failed", stderr="authentication failed"
+    git_svc.fetch_branch.side_effect = GitCommandError(
+        "git fetch origin main:main failed", stderr="authentication failed"
     )
 
     fake = FakeAgentRunner([], preflight_responses=[])
@@ -938,10 +971,9 @@ def _unrelated_histories_error() -> UnrelatedHistoriesError:
 def test_get_safe_sha_auto_recovers_when_unrelated_histories_and_no_local_commits(
     tmp_path, git_svc, github_svc
 ):
-    """When pull fails with unrelated histories and local has 0 commits ahead of
+    """When fetch fails with unrelated histories and local has 0 commits ahead of
     origin, get_safe_sha hard-resets to origin/<branch> and returns PreflightReady."""
-    git_svc.pull_with_merge_fallback.side_effect = _unrelated_histories_error()
-    git_svc.get_current_branch.return_value = "main"
+    git_svc.fetch_branch.side_effect = _unrelated_histories_error()
     git_svc.count_commits_ahead.return_value = 0
 
     fake = FakeAgentRunner([], preflight_responses=[[]])
@@ -957,10 +989,9 @@ def test_get_safe_sha_auto_recovers_when_unrelated_histories_and_no_local_commit
 def test_get_safe_sha_halts_with_guidance_when_unrelated_histories_and_local_commits(
     tmp_path, git_svc, github_svc, capsys
 ):
-    """When pull fails with unrelated histories and local has commits not on origin,
+    """When fetch fails with unrelated histories and local has commits not on origin,
     get_safe_sha raises and the error message contains the recovery command."""
-    git_svc.pull_with_merge_fallback.side_effect = _unrelated_histories_error()
-    git_svc.get_current_branch.return_value = "main"
+    git_svc.fetch_branch.side_effect = _unrelated_histories_error()
     git_svc.count_commits_ahead.return_value = 2
     git_svc.get_local_only_commit_subjects.return_value = [
         "fix: something",
@@ -991,8 +1022,7 @@ def test_get_safe_sha_reports_commit_count_when_unrelated_histories_has_no_subje
 ):
     """When local-only subjects are unavailable, the recovery guidance falls back
     to the local commit count."""
-    git_svc.pull_with_merge_fallback.side_effect = _unrelated_histories_error()
-    git_svc.get_current_branch.return_value = "main"
+    git_svc.fetch_branch.side_effect = _unrelated_histories_error()
     git_svc.count_commits_ahead.return_value = 2
     git_svc.get_local_only_commit_subjects.return_value = []
 
@@ -1018,8 +1048,7 @@ def test_get_safe_sha_does_not_spawn_divergence_resolver_on_unrelated_histories(
     tmp_path, git_svc, github_svc
 ):
     """Unrelated-histories failure must never route to the divergence-resolver agent."""
-    git_svc.pull_with_merge_fallback.side_effect = _unrelated_histories_error()
-    git_svc.get_current_branch.return_value = "main"
+    git_svc.fetch_branch.side_effect = _unrelated_histories_error()
     git_svc.count_commits_ahead.return_value = 3
     git_svc.get_local_only_commit_subjects.return_value = ["fix: something"]
 
@@ -1210,9 +1239,7 @@ def test_divergence_resolver_non_narrowed_exception_propagates_not_pull_exc(
     ).path
     sandbox_path.mkdir(parents=True, exist_ok=True)
 
-    pull_err = GitCommandError("git merge origin/main failed due to conflicts")
     git_svc = _conflict_git_svc(sha, branch)
-    git_svc.pull_with_merge_fallback.side_effect = pull_err
 
     cred_err = AgentCredentialFailureError(
         "credentials expired",

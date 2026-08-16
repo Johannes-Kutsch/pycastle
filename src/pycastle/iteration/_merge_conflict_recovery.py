@@ -157,8 +157,8 @@ async def _recover_active_conflict(
         _merge_sandbox_branch(active_issue["number"]),
         deps.repo_root,
     )
-    target_branch = deps.git_svc.get_current_branch(deps.repo_root)
-    safe_sha = deps.git_svc.get_head_sha(deps.repo_root)
+    target_branch = deps.cfg.operating_branch
+    safe_sha = deps.git_svc.get_branch_sha(deps.repo_root, target_branch)
     conflict_branch = branch_for(active_issue["number"])
     fingerprint = hashlib.sha256((safe_sha + conflict_branch).encode()).hexdigest()
     role_session = RoleSession(sandbox_identity.path, AgentRole.MERGER)
@@ -181,10 +181,10 @@ async def _recover_active_conflict(
             already_merged = deps.git_svc.start_merge(sandbox_path, conflict_branch)
             if already_merged:
                 _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
-                deps.git_svc.fast_forward_branch(
+                deps.git_svc.advance_branch_ref(
                     deps.repo_root, target_branch, sandbox_identity.branch
                 )
-                _ensure_conflict_branch_is_merged(active_issue, deps.repo_root, deps)
+                _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
                 RoleSession(sandbox_path, AgentRole.MERGER).discard()
                 return None
             mount_decision = decide_managed_worktree_mount(
@@ -226,10 +226,10 @@ async def _recover_active_conflict(
                     result.message or active_issue["title"],
                 )
             _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
-            deps.git_svc.fast_forward_branch(
+            deps.git_svc.advance_branch_ref(
                 deps.repo_root, target_branch, sandbox_identity.branch
             )
-            _ensure_conflict_branch_is_merged(active_issue, deps.repo_root, deps)
+            _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
             RoleSession(sandbox_path, AgentRole.MERGER).discard()
     except (
         AgentTimeoutError,

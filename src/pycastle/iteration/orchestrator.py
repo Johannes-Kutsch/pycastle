@@ -26,12 +26,10 @@ from pycastle.iteration._service_summary import render_service_summary_line
 from pycastle.iteration.branch_resolution import (
     BranchFacts,
     BranchSetupPlan,
-    Checkout,
     DevBranchMissing,
     Fetch,
     PushUpstream,
     Seed,
-    UncleanWorkingTree,
     resolve_branch_setup,
 )
 from pycastle.iteration.outcome_routing import (
@@ -185,7 +183,6 @@ def _collect_branch_facts(
             dev_branch_on_origin=dev_branch_on_origin,
             working_branch_on_local=False,
             working_branch_on_origin=False,
-            working_tree_clean=git_svc.is_working_tree_clean(repo_root),
         )
     working_branch_on_local = git_svc.verify_ref_exists(cfg.working_branch, repo_root)
     working_branch_on_origin = git_svc.verify_ref_exists(
@@ -195,7 +192,6 @@ def _collect_branch_facts(
         dev_branch_on_origin=dev_branch_on_origin,
         working_branch_on_local=working_branch_on_local,
         working_branch_on_origin=working_branch_on_origin,
-        working_tree_clean=git_svc.is_working_tree_clean(repo_root),
     )
 
 
@@ -207,8 +203,6 @@ def _apply_branch_setup_plan(
             git_svc.fetch(repo_root)
         elif isinstance(step, Seed):
             git_svc.create_branch_from(repo_root, step.target, step.source)
-        elif isinstance(step, Checkout):
-            git_svc.checkout_branch(repo_root, step.branch)
         elif isinstance(step, PushUpstream):
             git_svc.push_upstream(repo_root, step.branch)
 
@@ -225,10 +219,6 @@ def _setup_branch(git_svc: GitService, repo_root: Path, cfg: Config) -> None:
     result = resolve_branch_setup(cfg, facts)
     if isinstance(result, DevBranchMissing):
         raise click.UsageError(result.message)
-    if isinstance(result, UncleanWorkingTree):
-        raise click.UsageError(
-            "Working tree is not clean. Commit or stash changes before running."
-        )
     _apply_branch_setup_plan(git_svc, repo_root, result)
 
 

@@ -322,6 +322,14 @@ class GitService(_SubprocessService):
         )
         return self._decode(result.stdout)
 
+    def get_branch_sha(self, repo_path: Path, branch: str) -> str:
+        result = self._run_or_raise(
+            ["git", "rev-parse", f"refs/heads/{branch}"],
+            f"git rev-parse refs/heads/{branch!r} failed",
+            cwd=repo_path,
+        )
+        return self._decode(result.stdout)
+
     def get_current_branch(self, repo_path: Path) -> str:
         result = self._run_or_raise(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -329,6 +337,18 @@ class GitService(_SubprocessService):
             cwd=repo_path,
         )
         return self._decode(result.stdout)
+
+    def advance_branch_ref(self, repo_path: Path, target: str, source: str) -> None:
+        """Advance a local branch ref to source without checking out either branch.
+
+        Uses 'git fetch . source:target' — a local fast-forward ref update that
+        succeeds regardless of what is currently checked out in repo_path.
+        """
+        self._run_or_raise(
+            ["git", "fetch", ".", f"{source}:{target}"],
+            f"git fetch . {source}:{target} failed",
+            cwd=repo_path,
+        )
 
     def fast_forward_branch(self, repo_path: Path, target: str, source: str) -> None:
         self._run_or_raise(
@@ -489,6 +509,19 @@ class GitService(_SubprocessService):
         self._run_or_raise_with_retry(
             ["git", "fetch"],
             "git fetch failed",
+            operation="fetch",
+            cwd=repo_path,
+        )
+
+    def fetch_branch(self, repo_path: Path, branch: str) -> None:
+        """Fetch and fast-forward a local branch ref from origin without checkout.
+
+        Raises GitCommandError when the fetch cannot fast-forward (diverged histories).
+        Retries transient remote failures per the operator-actionable retry profile.
+        """
+        self._run_or_raise_with_retry(
+            ["git", "fetch", "origin", f"{branch}:{branch}"],
+            f"git fetch origin {branch}:{branch} failed",
             operation="fetch",
             cwd=repo_path,
         )

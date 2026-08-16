@@ -107,6 +107,7 @@ def _plan_output(issues: list[dict]) -> PlannerOutput:
 def git_svc():
     svc = MagicMock(spec=GitService)
     svc.get_head_sha.return_value = "abc123"
+    svc.get_branch_sha.return_value = "abc123"
     svc.is_working_tree_clean.return_value = True
     svc.try_merge.return_value = True
     svc.is_ancestor.return_value = True
@@ -2458,6 +2459,7 @@ def test_run_iteration_improve_uses_sha_from_preflight(tmp_path, git_svc, logger
     PreflightCache.get_safe_sha) using the SHA obtained after pull — not via a
     SHA arg to create_worktree."""
     git_svc.get_head_sha.return_value = "safe-sha-from-preflight"
+    git_svc.get_branch_sha.return_value = "safe-sha-from-preflight"
     deps = _make_improve_deps(
         tmp_path,
         git_svc,
@@ -3982,7 +3984,8 @@ def test_run_iteration_routes_merge_time_preflight_afk_at_iteration_boundary(
     ]
     assert closed_issue_numbers == [1, 181]
     deleted_branches = [call.args[0] for call in git_svc.delete_branch.call_args_list]
-    assert deleted_branches == ["pycastle/issue-1", "pycastle/issue-181"]
+    assert "pycastle/issue-1" in deleted_branches
+    assert "pycastle/issue-181" in deleted_branches
     assert ("push", tmp_path) in action_log
     assert action_log.index(("push", tmp_path)) < action_log.index(("get_issue", 181))
 
@@ -4070,7 +4073,7 @@ def test_run_iteration_aborts_on_merge_time_preflight_hitl_at_iteration_boundary
     ]
     assert closed_issue_numbers == [1]
     deleted_branches = [call.args[0] for call in git_svc.delete_branch.call_args_list]
-    assert deleted_branches == ["pycastle/issue-1"]
+    assert "pycastle/issue-1" in deleted_branches
     assert ("push", tmp_path) in action_log
 
 
@@ -4409,6 +4412,7 @@ def _improve_restart_git_svc():
     # No-ops remove_worktree/list_worktrees so REUSABLE_SANDBOX cleanup doesn't delete pre-seeded session files.
     svc = functional_git_svc()
     svc.get_head_sha.return_value = "abc123"
+    svc.get_branch_sha.return_value = "abc123"
     svc.is_working_tree_clean.return_value = True
     svc.list_worktrees.side_effect = None
     svc.list_worktrees.return_value = []
@@ -4645,12 +4649,12 @@ def test_run_iteration_returns_aborted_operator_actionable_on_operator_actionabl
     from pycastle.services import OperatorActionableGitError
 
     err = OperatorActionableGitError(
-        "git pull failed after 4 attempts",
+        "git fetch origin main:main failed after 4 attempts",
         stderr="ssh: connect to host github.com port 22: Connection timed out",
-        op="pull",
+        op="fetch",
         attempt_count=4,
     )
-    git_svc.pull_with_merge_fallback.side_effect = err
+    git_svc.fetch_branch.side_effect = err
 
     async def _noop_agent(request: RunRequest):
         return CompletionOutput()
@@ -4661,7 +4665,7 @@ def test_run_iteration_returns_aborted_operator_actionable_on_operator_actionabl
     result = asyncio.run(run_iteration(deps))
 
     assert isinstance(result, AbortedOperatorActionable)
-    assert result.op == "pull"
+    assert result.op == "fetch"
     assert result.attempt_count == 4
     assert "timed out" in result.stderr
 
@@ -4675,12 +4679,12 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
     from pycastle.services import OperatorActionableGitError
 
     err = OperatorActionableGitError(
-        "git pull failed",
+        "git fetch origin main:main failed",
         stderr="remote: Repository not found",
-        op="pull",
+        op="fetch",
         attempt_count=1,
     )
-    git_svc.pull_with_merge_fallback.side_effect = err
+    git_svc.fetch_branch.side_effect = err
 
     auto_file_calls: list = []
 

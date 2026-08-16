@@ -1,4 +1,4 @@
-"""Tests for branch setup applied at run startup (issue #2076)."""
+"""Tests for branch setup applied at run startup."""
 
 import asyncio
 from pathlib import Path
@@ -45,6 +45,7 @@ def _make_git_svc(
 ) -> Any:
     git_svc = cast("Any", functional_git_svc())
     git_svc.get_head_sha.return_value = "abc1234"
+    git_svc.get_branch_sha.return_value = "abc1234"
     git_svc.try_merge.return_value = True
     git_svc.is_ancestor.return_value = True
     git_svc.is_working_tree_clean.return_value = clean
@@ -86,7 +87,37 @@ def _do_run(
     )
 
 
-# ── Behavior 1: new working branch created from origin/dev ────────────────────
+# ── Behavior 1: startup never checks out any branch ──────────────────────────
+
+
+def test_startup_does_not_checkout_any_branch(tmp_path: Path) -> None:
+    """Starting a run must never call checkout_branch — the repo root belongs to the operator."""
+    git_svc = _make_git_svc()
+
+    _do_run(tmp_path, git_svc, working_branch="feature-x", dev_branch="main")
+
+    git_svc.checkout_branch.assert_not_called()
+
+
+def test_startup_does_not_checkout_when_no_working_branch(tmp_path: Path) -> None:
+    """Without a working_branch, run must also never checkout the dev branch."""
+    git_svc = _make_git_svc(working_branch=None)
+
+    _do_run(tmp_path, git_svc, dev_branch="main", working_branch=None)
+
+    git_svc.checkout_branch.assert_not_called()
+
+
+def test_startup_does_not_checkout_existing_working_branch(tmp_path: Path) -> None:
+    """When working_branch already exists, run must not checkout it."""
+    git_svc = _make_git_svc(working_on_local=True)
+
+    _do_run(tmp_path, git_svc, working_branch="feature-x", dev_branch="main")
+
+    git_svc.checkout_branch.assert_not_called()
+
+
+# ── Behavior 2: new working branch created from origin/dev ────────────────────
 
 
 def test_new_working_branch_triggers_fetch(tmp_path: Path) -> None:
@@ -107,15 +138,6 @@ def test_new_working_branch_created_from_origin_dev(tmp_path: Path) -> None:
     git_svc.create_branch_from.assert_called_with(tmp_path, "feature-x", "origin/main")
 
 
-def test_new_working_branch_is_checked_out(tmp_path: Path) -> None:
-    """When working_branch does not exist, run must check it out."""
-    git_svc = _make_git_svc()
-
-    _do_run(tmp_path, git_svc, working_branch="feature-x", dev_branch="main")
-
-    git_svc.checkout_branch.assert_called_with(tmp_path, "feature-x")
-
-
 def test_new_working_branch_is_pushed_upstream(tmp_path: Path) -> None:
     """When working_branch does not exist, run must push it with upstream set."""
     git_svc = _make_git_svc()
@@ -125,16 +147,7 @@ def test_new_working_branch_is_pushed_upstream(tmp_path: Path) -> None:
     git_svc.push_upstream.assert_called_with(tmp_path, "feature-x")
 
 
-# ── Behavior 2: existing working branch reused without reseeding ──────────────
-
-
-def test_existing_local_working_branch_is_checked_out(tmp_path: Path) -> None:
-    """When working_branch already exists locally, run must check it out."""
-    git_svc = _make_git_svc(working_on_local=True)
-
-    _do_run(tmp_path, git_svc, working_branch="feature-x", dev_branch="main")
-
-    git_svc.checkout_branch.assert_called_with(tmp_path, "feature-x")
+# ── Behavior 3: existing working branch reused without reseeding ──────────────
 
 
 def test_existing_local_working_branch_not_reseeded(tmp_path: Path) -> None:
@@ -165,7 +178,7 @@ def test_existing_remote_working_branch_reused_without_seed(tmp_path: Path) -> N
     git_svc.push_upstream.assert_not_called()
 
 
-# ── Behavior 3: missing dev branch aborts before agent work ──────────────────
+# ── Behavior 4: missing dev branch aborts before agent work ──────────────────
 
 
 def test_missing_dev_branch_raises_usage_error(tmp_path: Path) -> None:
@@ -216,47 +229,7 @@ def test_missing_dev_branch_no_agent_work(tmp_path: Path) -> None:
     assert agent_runner.calls == []
 
 
-# ── Behavior 4: unclean working tree aborts without switching branches ─────────
-
-
-def test_unclean_tree_raises_usage_error(tmp_path: Path) -> None:
-    """When working tree is unclean, run must raise UsageError."""
-    git_svc = _make_git_svc(clean=False)
-
-    with pytest.raises(click.UsageError):
-        _do_run(tmp_path, git_svc, dev_branch="main", working_branch=None)
-
-
-def test_unclean_tree_does_not_checkout(tmp_path: Path) -> None:
-    """When working tree is unclean, no branch checkout must happen."""
-    git_svc = _make_git_svc(clean=False)
-
-    with pytest.raises(click.UsageError):
-        _do_run(tmp_path, git_svc, dev_branch="main", working_branch=None)
-
-    git_svc.checkout_branch.assert_not_called()
-
-
-def test_unclean_tree_with_working_branch_set_raises_usage_error(
-    tmp_path: Path,
-) -> None:
-    """Unclean tree aborts even when working_branch is configured."""
-    git_svc = _make_git_svc(clean=False)
-
-    with pytest.raises(click.UsageError):
-        _do_run(tmp_path, git_svc, dev_branch="main", working_branch="feature-x")
-
-
 # ── Behavior 5: no working_branch → anchored to dev branch ───────────────────
-
-
-def test_no_working_branch_checks_out_dev_branch(tmp_path: Path) -> None:
-    """When working_branch is unset, run must check out dev branch."""
-    git_svc = _make_git_svc(working_branch=None)
-
-    _do_run(tmp_path, git_svc, dev_branch="main", working_branch=None)
-
-    git_svc.checkout_branch.assert_called_with(tmp_path, "main")
 
 
 def test_no_working_branch_does_not_create_branch(tmp_path: Path) -> None:
@@ -313,25 +286,6 @@ def test_startup_announcement_omits_working_when_unset(tmp_path: Path) -> None:
     )
 
     assert "Branches: dev=main" in _printed_lines(display)
-
-
-def test_startup_announces_branches_before_aborting_on_unclean_tree(
-    tmp_path: Path,
-) -> None:
-    """The line must survive the abort paths — that is when it is most needed."""
-    display = RecordingStatusDisplay()
-    git_svc = _make_git_svc(clean=False)
-
-    with pytest.raises(click.UsageError):
-        _do_run(
-            tmp_path,
-            git_svc,
-            status_display=display,
-            dev_branch="main",
-            working_branch="feature-x",
-        )
-
-    assert "Branches: dev=main, working=feature-x" in _printed_lines(display)
 
 
 def test_startup_announces_branches_before_aborting_on_missing_dev(
