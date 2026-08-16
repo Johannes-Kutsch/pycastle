@@ -90,7 +90,14 @@ class Scope(enum.Enum):
     )
     IMPROVE_SESSION = (
         "IMPROVE_SESSION",
-        frozenset({"IMPROVE_SHORT_SID", "RECENT_IMPROVE_PRDS"}),
+        frozenset(
+            {
+                "IMPROVE_SHORT_SID",
+                "RECENT_IMPROVE_PRDS",
+                "CANDIDATE_RANK",
+                "CANDIDATE_TITLE",
+            }
+        ),
     )
     IMPROVE_ISSUES = (
         "IMPROVE_ISSUES",

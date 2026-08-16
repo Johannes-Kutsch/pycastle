@@ -111,6 +111,8 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
         "RECENT_IMPROVE_PRDS": (
             "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
         ),
+        "CANDIDATE_RANK": "1",
+        "CANDIDATE_TITLE": "Refactor",
     }
     assert github_port.recent_prd_calls == 1
     assert github_port.issue_calls == []
@@ -151,6 +153,8 @@ def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driv
         "RECENT_IMPROVE_PRDS": (
             "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
         ),
+        "CANDIDATE_RANK": "",
+        "CANDIDATE_TITLE": "",
     }
     assert github_port.recent_prd_calls == 1
     assert github_port.issue_calls == []
@@ -173,6 +177,7 @@ def test_prepare_improve_step_builds_exact_prd_payload_without_lookup_policy_fla
             work_body="writing PRD",
             send_role_prompt_on_resume=True,
             short_sid="abcd1234",
+            candidate=ImproveCandidate(rank=1, title="Refactor"),
         ),
         github_port=github_port,
     )
@@ -187,27 +192,45 @@ def test_prepare_improve_step_builds_exact_prd_payload_without_lookup_policy_fla
         "RECENT_IMPROVE_PRDS": (
             "#12 OPEN - First candidate\n#11 CLOSED - Second candidate"
         ),
+        "CANDIDATE_RANK": "1",
+        "CANDIDATE_TITLE": "Refactor",
     }
     assert github_port.recent_prd_calls == 1
 
 
-@pytest.mark.parametrize(
-    ("template", "display_name"),
-    [
-        (PromptTemplate.IMPROVE_PRD, "PRD Agent"),
-        (PromptTemplate.IMPROVE_NO_CANDIDATE, "Rejection Report Agent"),
-    ],
-)
-def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_session_templates(
-    template: PromptTemplate, display_name: str
-):
+def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_prd_template():
     github_port = _GithubPortStandIn(recent_prds=[])
 
     prepared = prepare_improve_step(
         ImproveStepPreparationRequest(
-            prompt_template=template,
+            prompt_template=PromptTemplate.IMPROVE_PRD,
             session_namespace="main",
-            display_name=display_name,
+            display_name="PRD Agent",
+            work_body="body",
+            send_role_prompt_on_resume=True,
+            short_sid="abcd1234",
+            candidate=ImproveCandidate(rank=2, title="Deepen module"),
+        ),
+        github_port=github_port,
+    )
+
+    assert prepared.prompt.scope_args == {
+        "IMPROVE_SHORT_SID": "abcd1234",
+        "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+        "CANDIDATE_RANK": "2",
+        "CANDIDATE_TITLE": "Deepen module",
+    }
+    assert github_port.recent_prd_calls == 1
+
+
+def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_no_candidate_template():
+    github_port = _GithubPortStandIn(recent_prds=[])
+
+    prepared = prepare_improve_step(
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_NO_CANDIDATE,
+            session_namespace="main",
+            display_name="Rejection Report Agent",
             work_body="body",
             send_role_prompt_on_resume=True,
             short_sid="abcd1234",
@@ -218,6 +241,8 @@ def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_session_te
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+        "CANDIDATE_RANK": "",
+        "CANDIDATE_TITLE": "",
     }
     assert github_port.recent_prd_calls == 1
 
@@ -491,6 +516,24 @@ def test_prepare_improve_step_accepts_request_with_candidate(tmp_path: Path) -> 
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
     assert prepared.prompt.scope_args == {"IMPROVE_SHORT_SID": "abcd1234"}
+
+
+def test_prepare_improve_step_prd_without_candidate_fails_loudly():
+    github_port = _GithubPortStandIn(recent_prds=[])
+
+    with pytest.raises(PromptRenderError):
+        prepare_improve_step(
+            ImproveStepPreparationRequest(
+                prompt_template=PromptTemplate.IMPROVE_PRD,
+                session_namespace="main",
+                display_name="PRD Agent",
+                work_body="writing PRD",
+                send_role_prompt_on_resume=True,
+                short_sid="abcd1234",
+                # candidate intentionally omitted
+            ),
+            github_port=github_port,
+        )
 
 
 def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render(

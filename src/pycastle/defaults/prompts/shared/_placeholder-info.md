@@ -78,6 +78,8 @@ Used by: improve/02-prd.md, improve/04-no-candidate-report.md
 
 - `{{IMPROVE_SHORT_SID}}` — Short session ID for the improve session.
 - `{{RECENT_IMPROVE_PRDS}}` — Plain-text recent Improve PRD history for novelty checking, or `No recent improve PRDs found.` when the lookup is empty.
+- `{{CANDIDATE_RANK}}` — Rank of the candidate this fork is writing up (e.g. `1`, `2`); empty string for the no-candidate report.
+- `{{CANDIDATE_TITLE}}` — Title of the candidate this fork is writing up; empty string for the no-candidate report.
 
 ## Scope: IMPROVE_ISSUES
 

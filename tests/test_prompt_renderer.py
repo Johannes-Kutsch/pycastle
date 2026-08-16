@@ -85,6 +85,8 @@ def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
         "EVIDENCE_PATH": ".pycastle/failure-report-evidence/agent-invocation.log",
         "HAS_EVIDENCE_PATH": "yes",
         "CANDIDATE_BUDGET": "3",
+        "CANDIDATE_RANK": "1",
+        "CANDIDATE_TITLE": "Deepen the parser module",
         "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
         "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
         "SESSION_DIR": "/sessions/abc",
@@ -286,8 +288,18 @@ def test_scope_improve_scan_placeholders():
 
 def test_scope_improve_session_placeholders():
     assert Scope.IMPROVE_SESSION.placeholders == frozenset(
-        {"IMPROVE_SHORT_SID", "RECENT_IMPROVE_PRDS"}
+        {
+            "IMPROVE_SHORT_SID",
+            "RECENT_IMPROVE_PRDS",
+            "CANDIDATE_RANK",
+            "CANDIDATE_TITLE",
+        }
     )
+
+
+def test_scope_improve_session_includes_candidate_rank_and_title():
+    assert "CANDIDATE_RANK" in Scope.IMPROVE_SESSION.placeholders
+    assert "CANDIDATE_TITLE" in Scope.IMPROVE_SESSION.placeholders
 
 
 def test_scope_resume_is_empty():
@@ -665,6 +677,8 @@ def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
             {
                 "IMPROVE_SHORT_SID": "abc",
                 "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+                "CANDIDATE_RANK": "1",
+                "CANDIDATE_TITLE": "Deepen the parser module",
             },
             _noop_exec,
         )
@@ -937,6 +951,8 @@ def test_renderer_renders_local_issue_tracker_override_through_bundled_prompt(
             {
                 "IMPROVE_SHORT_SID": "abc",
                 "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+                "CANDIDATE_RANK": "",
+                "CANDIDATE_TITLE": "",
             },
             _noop_exec,
         )
@@ -960,6 +976,8 @@ def test_renderer_allows_empty_local_issue_tracker_override(tmp_path, monkeypatc
             {
                 "IMPROVE_SHORT_SID": "abc",
                 "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+                "CANDIDATE_RANK": "",
+                "CANDIDATE_TITLE": "",
             },
             _noop_exec,
         )
@@ -1459,6 +1477,40 @@ def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles()
     )
 
     assert "#12 OPEN - First candidate" in result
+
+
+def test_render_shipped_improve_prd_carries_candidate_rank_and_title():
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    scope_args = {
+        "IMPROVE_SHORT_SID": "abc",
+        "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+        "CANDIDATE_RANK": "3",
+        "CANDIDATE_TITLE": "Deepen the parser module",
+    }
+    result = _run(renderer.render(PromptTemplate.IMPROVE_PRD, scope_args, _noop_exec))
+    assert "3" in result
+    assert "Deepen the parser module" in result
+
+
+def test_render_improve_prd_without_candidate_rank_and_title_fails_loudly(
+    cfg, prompts_dir
+):
+    (prompts_dir / "improve" / "02-prd.md").write_text(
+        "Rank: {{CANDIDATE_RANK}} Title: {{CANDIDATE_TITLE}}"
+    )
+    renderer = PromptRenderer(cfg)
+
+    with pytest.raises(PromptRenderError):
+        _run(
+            renderer.render(
+                PromptTemplate.IMPROVE_PRD,
+                {
+                    "IMPROVE_SHORT_SID": "abc",
+                    "RECENT_IMPROVE_PRDS": "prds",
+                },
+                _noop_exec,
+            )
+        )
 
 
 # ── Shipped prompt contract checks now assert rendered behavior ─────────────
