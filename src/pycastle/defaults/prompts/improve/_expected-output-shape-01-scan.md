@@ -14,4 +14,4 @@ Example (two candidates):
 <promise>COMPLETE</promise>
 ```
 
-If every candidate fails the AFK-safety filter, emit `<promise>NO-CANDIDATE</promise>` with no `<candidates>` block.
+If every candidate fails the AFK-safety filter or novelty gate, emit `<promise>NO-CANDIDATE</promise>` with no `<candidates>` block.

@@ -2,7 +2,7 @@
 
 You are the Improve Agent — Phase 1: Scan and Nominate.
 
-Surface architectural friction in this codebase and nominate up to **{{CANDIDATE_BUDGET}}** deepening opportunities that are safe to implement autonomously, ordered from strongest to weakest. The aim is testability and AI-navigability.
+Surface architectural friction in this codebase and nominate up to **{{CANDIDATE_BUDGET}}** deepening opportunities that are safe to implement autonomously. The aim is testability and AI-navigability.
 
 </task>
 
@@ -35,7 +35,7 @@ If every candidate fails the filter, stop.
 Apply a novelty gate during candidate selection.
 Treat repeated domain terms, module names, and architectural themes in recent PRD titles as negative evidence, even when the titles are not exact matches.
 Allow same-theme work only when the candidate names materially unresolved friction that prior PRDs did not address.
-Do not pick a weaker unrelated candidate merely to avoid repeating a recent theme. If the strongest candidates fail AFK-safety or novelty, emit NO-CANDIDATE.
+Do not pick a weaker unrelated candidate merely to avoid repeating a recent theme.
 Keep novelty-rejected shortlist candidates visible with rejection reasons.
 
 Use this novelty context to avoid picking work that duplicates a recent Improve PRD:

@@ -124,7 +124,7 @@ Phrase verification as the system's observable behavior, not as test-code struct
 
 ## 5. Self-quiz
 
-Before filing, answer:
+Before drafting, answer:
 
 - Is the granularity right? (too coarse / too fine)
 - Did any of the seven split smells fire on a slice you left bundled?
@@ -191,7 +191,7 @@ The files this slice is expected to create or modify. A tentative planning/scopi
 
 Explicitly state that this slice is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
 
-_Filed by improve session_
+_Drafted by improve session_
 ```
 
 </workflow>
