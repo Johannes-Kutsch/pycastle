@@ -23,6 +23,7 @@ from pycastle.iteration import IterationOutcome, run_iteration
 from pycastle.iteration._deps import Deps as IterationDeps
 from pycastle.iteration._deps import ImproveMode
 from pycastle.iteration._service_summary import render_service_summary_line
+from pycastle.iteration._utils import _wait_for_operating_branch_release
 from pycastle.iteration.branch_resolution import (
     BranchFacts,
     BranchSetupPlan,
@@ -214,6 +215,14 @@ def _branch_summary_line(cfg: Config) -> str:
     return f"Branches: dev={cfg.dev_branch}, working={cfg.working_branch}"
 
 
+@dataclasses.dataclass
+class _StartupGateDeps:
+    git_svc: GitService
+    repo_root: Path
+    status_display: StatusDisplay
+    cfg: Config
+
+
 def _setup_branch(git_svc: GitService, repo_root: Path, cfg: Config) -> None:
     facts = _collect_branch_facts(git_svc, repo_root, cfg)
     result = resolve_branch_setup(cfg, facts)
@@ -329,6 +338,15 @@ async def run(
     status_display.print("", f"GitHub auth: authenticated as @{login}")  # type: ignore[union-attr]
 
     _setup_branch(git_svc, repo_root, cfg)
+    await _wait_for_operating_branch_release(
+        _StartupGateDeps(
+            git_svc=git_svc,
+            repo_root=repo_root,
+            status_display=status_display,
+            cfg=cfg,
+        ),
+        "Startup",
+    )
 
     service_registry = _opts.service_registry
     _print_service_registry_summary(service_registry, status_display)  # type: ignore[arg-type]

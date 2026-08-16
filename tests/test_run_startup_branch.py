@@ -3,7 +3,7 @@
 import asyncio
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
 import pytest
@@ -323,3 +323,62 @@ def test_startup_announces_branches_before_github_auth(tmp_path: Path) -> None:
     branches = lines.index("Branches: dev=main, working=feature-x")
     auth = next(i for i, line in enumerate(lines) if line.startswith("GitHub auth:"))
     assert branches < auth
+
+
+# ── Behavior: operating-branch checkout gate at startup ──────────────────────
+
+
+def test_startup_waits_when_operating_branch_is_checked_out(tmp_path: Path) -> None:
+    """Startup must wait (not abort) when the operating branch is checked out in a worktree."""
+    checkout_path = tmp_path / "some-worktree"
+    git_svc = _make_git_svc(working_branch=None)
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [(checkout_path, "main")],
+        [],
+    ]
+    display = RecordingStatusDisplay()
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        _do_run(
+            tmp_path,
+            git_svc,
+            status_display=display,
+            dev_branch="main",
+            working_branch=None,
+        )
+
+    lines = _printed_lines(display)
+    assert any(str(checkout_path) in line for line in lines)
+
+
+def test_startup_proceeds_when_repo_dirty_but_operating_branch_not_checked_out(
+    tmp_path: Path,
+) -> None:
+    """A dirty repo root must not block startup when the operating branch is free."""
+    git_svc = _make_git_svc(working_branch=None, clean=False)
+    git_svc.list_worktrees_with_branches.return_value = []
+
+    _do_run(tmp_path, git_svc, dev_branch="main", working_branch=None)
+
+
+def test_startup_checkout_gate_message_names_phase_and_path(tmp_path: Path) -> None:
+    """The startup checkout-gate message must name 'Startup' and the worktree path."""
+    checkout_path = tmp_path / "operator-worktree"
+    git_svc = _make_git_svc(working_branch=None)
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [(checkout_path, "main")],
+        [],
+    ]
+    display = RecordingStatusDisplay()
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        _do_run(
+            tmp_path,
+            git_svc,
+            status_display=display,
+            dev_branch="main",
+            working_branch=None,
+        )
+
+    printed = [call for call in display.calls if call[0] == "print"]
+    assert any("Startup" in str(c) and str(checkout_path) in str(c) for c in printed)

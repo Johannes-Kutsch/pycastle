@@ -1353,106 +1353,72 @@ def test_close_message_combines_clean_and_conflict_deleted_branches(
     assert "2 branch(es) merged and deleted" in summary_msg
 
 
-def test_merge_phase_routes_dirty_tree_message_through_status_display(
-    recording_deps, git_svc, capsys
-):
-    """merge_phase must route the dirty-tree wait message through status_display.print()."""
-    deps, recording = recording_deps
-    # [False, True] for _wait_for_clean_working_tree; extra True for batch sandbox teardown
-    git_svc.is_working_tree_clean.side_effect = [False, True, True]
-    issues = [{"number": 1, "title": "Fix A"}]
-    _run(issues, deps)
-
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    assert any("Working tree" in msg for msg in print_messages)
-    assert "Working tree" not in capsys.readouterr().out
-
-
-def test_merge_phase_dirty_tree_message_uses_error_style(recording_deps, git_svc):
-    """The dirty-tree wait message must use style='error', caller='Merge', and contain no [red] markup."""
-    deps, recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, True, True]
-    issues = [{"number": 1, "title": "Fix A"}]
-    _run(issues, deps)
-
-    dirty_calls = [
-        c for c in recording.calls if c[0] == "print" and "Working tree" in str(c[2])
-    ]
-    assert dirty_calls, "Dirty-tree message must be printed"
-    for call in dirty_calls:
-        assert call[1] == "Merge", (
-            f"Dirty-tree message must use caller='Merge'; got {call[1]!r}"
-        )
-        assert call[3] == "error", (
-            f"Dirty-tree message must use style='error'; got {call[3]!r}"
-        )
-        assert "[red]" not in str(call[2]), (
-            f"Message must not contain [red] markup: {call[2]!r}"
-        )
-
-
-def test_merge_phase_dirty_tree_message_references_merge_phase(recording_deps, git_svc):
-    """The dirty-tree wait message must name the merge phase, not another phase."""
-    deps, recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, True, True]
-    issues = [{"number": 1, "title": "Fix A"}]
-    _run(issues, deps)
-
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    dirty_msg = next((msg for msg in print_messages if "Working tree" in msg), None)
-    assert dirty_msg is not None
-    assert "merge" in dirty_msg
-
-
-def test_merge_phase_does_not_print_dirty_tree_message_when_working_tree_is_clean(
+def test_merge_phase_proceeds_when_working_tree_dirty_but_operating_branch_not_checked_out(
     recording_deps, git_svc
 ):
-    """merge_phase must not print a dirty-tree message when the working tree is already clean."""
-    deps, recording = recording_deps
-    issues = [{"number": 1, "title": "Fix A"}]
-    _run(issues, deps)
-    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
-    assert not any("Working tree" in msg for msg in print_messages)
-
-
-def test_merge_phase_completes_normally_after_polling_through_multiple_dirty_states(
-    recording_deps, git_svc
-):
-    """merge_phase must complete normally when the working tree becomes clean after multiple polls."""
+    """A dirty repo root must not block merge_phase when the operating branch is not checked out."""
     deps, _recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, False, True, True]
+    git_svc.is_working_tree_clean.return_value = False
+    git_svc.list_worktrees_with_branches.return_value = []
+    issues = [{"number": 1, "title": "Fix A"}]
+    result = _run(issues, deps)
+    assert result.clean == issues
+
+
+def test_merge_phase_waits_when_operating_branch_checked_out_in_worktree(
+    recording_deps, git_svc, tmp_path
+):
+    """When the operating branch is checked out in a worktree, merge_phase waits and reports phase+path."""
+    deps, recording = recording_deps
+    checkout_path = tmp_path / "some-worktree"
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [(checkout_path, "main")],
+        [],
+    ]
     issues = [{"number": 1, "title": "Fix A"}]
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
         result = _run(issues, deps)
+
     assert result.clean == issues
-    assert result.conflicts == []
+    printed = [call for call in recording.calls if call[0] == "print"]
+    assert any(
+        "Merge" in str(call) and str(checkout_path) in str(call) for call in printed
+    )
 
 
-def test_merge_phase_polls_dirty_tree_every_10_seconds(recording_deps, git_svc):
-    """merge_phase must sleep exactly 10 s between dirty-tree polls."""
-    deps, _recording = recording_deps
-    # Initial: dirty → print; loop: dirty → sleep, dirty → sleep, clean → exit
-    git_svc.is_working_tree_clean.side_effect = [False, False, False, True, True]
-    issues = [{"number": 1, "title": "Fix A"}]
-    with patch(
-        "pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock
-    ) as mock_sleep:
-        _run(issues, deps)
-    assert mock_sleep.call_count == 2
-    assert all(call.args[0] == 10 for call in mock_sleep.call_args_list)
-
-
-def test_dirty_tree_message_printed_once_across_multiple_polls(recording_deps, git_svc):
-    """The 'Working tree has uncommitted changes' message must be printed exactly once, not once per poll."""
+def test_merge_phase_checkout_gate_message_uses_error_style(
+    recording_deps, git_svc, tmp_path
+):
+    """The checkout-gate wait message must use style='error'."""
     deps, recording = recording_deps
-    git_svc.is_working_tree_clean.side_effect = [False, False, False, True, True]
+    checkout_path = tmp_path / "some-worktree"
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [(checkout_path, "main")],
+        [],
+    ]
     issues = [{"number": 1, "title": "Fix A"}]
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
         _run(issues, deps)
-    dirty_prints = [
-        c for c in recording.calls if c[0] == "print" and "Working tree" in str(c[2])
+
+    gate_calls = [
+        c
+        for c in recording.calls
+        if c[0] == "print" and str(checkout_path) in str(c[2])
     ]
-    assert len(dirty_prints) == 1
+    assert gate_calls
+    for call in gate_calls:
+        assert call[3] == "error"
+
+
+def test_merge_phase_does_not_wait_when_operating_branch_not_checked_out(
+    recording_deps, git_svc
+):
+    """merge_phase must not print a checkout-gate message when the operating branch is free."""
+    deps, recording = recording_deps
+    issues = [{"number": 1, "title": "Fix A"}]
+    _run(issues, deps)
+    print_messages = [c[2] for c in recording.calls if c[0] == "print"]
+    assert not any("is checked out at" in str(msg) for msg in print_messages)
 
 
 # ── Merge status row ──────────────────────────────────────────────────────────

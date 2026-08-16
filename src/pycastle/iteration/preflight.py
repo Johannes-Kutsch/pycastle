@@ -46,7 +46,7 @@ from pycastle.infrastructure.worktree import (
     reusable_sandbox_worktree_identity,
 )
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
-from pycastle.iteration._utils import _wait_for_clean_working_tree
+from pycastle.iteration._utils import _wait_for_operating_branch_release
 from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
@@ -342,7 +342,7 @@ class PreflightCache:
         from pycastle.infrastructure.worktree import detached_transient_worktree
 
         async with self._lock:
-            await _wait_for_clean_working_tree(deps, "Preflight")
+            await _wait_for_operating_branch_release(deps, "Preflight")
             try:
                 await self._branch_refresh.pull_with_resolution(deps)
             except UnrelatedHistoriesError:

@@ -20,7 +20,7 @@ from pycastle.iteration._merge_reporting import (
     build_merge_close_message,
 )
 from pycastle.iteration._rows import StatusRowConfig, status_row
-from pycastle.iteration._utils import _wait_for_clean_working_tree
+from pycastle.iteration._utils import _wait_for_operating_branch_release
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
 from pycastle.services import GitCommandError, GithubService, GitService
@@ -268,7 +268,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         must_close=True,
         config=StatusRowConfig(initial_phase="Merging"),
     ) as row:
-        await _wait_for_clean_working_tree(deps, "Merge")
+        await _wait_for_operating_branch_release(deps, "Merge")
         completed_total = len(completed)
         safe_sha = deps.git_svc.get_branch_sha(
             deps.repo_root, deps.cfg.operating_branch

@@ -120,6 +120,35 @@ class GitService(_SubprocessService):
             if line.startswith("worktree ")
         ]
 
+    def list_worktrees_with_branches(
+        self, repo_path: Path
+    ) -> list[tuple[Path, str | None]]:
+        """Return (path, branch_name) for each worktree.
+
+        branch_name is the short name (e.g. 'main') or None for detached HEADs.
+        """
+        result = self._run_or_raise(
+            ["git", "worktree", "list", "--porcelain"],
+            "git worktree list failed",
+            cwd=repo_path,
+        )
+        worktrees: list[tuple[Path, str | None]] = []
+        current_path: Path | None = None
+        current_branch: str | None = None
+        for line in self._decode(result.stdout).splitlines():
+            if line.startswith("worktree "):
+                if current_path is not None:
+                    worktrees.append((current_path, current_branch))
+                current_path = Path(line[len("worktree ") :])
+                current_branch = None
+            elif line.startswith("branch "):
+                ref = line[len("branch ") :]
+                prefix = "refs/heads/"
+                current_branch = ref.removeprefix(prefix)
+        if current_path is not None:
+            worktrees.append((current_path, current_branch))
+        return worktrees
+
     def prune_worktrees(self, repo_path: Path) -> None:
         self._run_or_raise(
             ["git", "worktree", "prune"],

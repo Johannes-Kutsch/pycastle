@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pycastle.config import Config
 from pycastle.iteration.branch_resolution import (
     BranchFacts,
@@ -6,6 +8,7 @@ from pycastle.iteration.branch_resolution import (
     Fetch,
     PushUpstream,
     Seed,
+    find_checked_out_worktrees,
     resolve_branch_setup,
 )
 
@@ -159,3 +162,42 @@ def test_missing_dev_branch_with_working_branch_configured_aborts():
     result = resolve_branch_setup(cfg, _facts(dev_branch_on_origin=False))
     assert isinstance(result, DevBranchMissing)
     assert result.dev_branch == "main"
+
+
+# ── find_checked_out_worktrees ────────────────────────────────────────────────
+
+
+def test_find_checked_out_worktrees_returns_path_when_branch_is_checked_out(
+    tmp_path: Path,
+) -> None:
+    wt1 = tmp_path / "wt1"
+    wt2 = tmp_path / "wt2"
+    result = find_checked_out_worktrees("main", [(wt1, "main"), (wt2, "feature")])
+    assert result == [wt1]
+
+
+def test_find_checked_out_worktrees_returns_empty_when_branch_not_checked_out(
+    tmp_path: Path,
+) -> None:
+    wt1 = tmp_path / "wt1"
+    result = find_checked_out_worktrees("main", [(wt1, "feature")])
+    assert result == []
+
+
+def test_find_checked_out_worktrees_excludes_detached_head(tmp_path: Path) -> None:
+    wt1 = tmp_path / "wt1"
+    wt2 = tmp_path / "wt2"
+    result = find_checked_out_worktrees("main", [(wt1, None), (wt2, "main")])
+    assert result == [wt2]
+
+
+def test_find_checked_out_worktrees_returns_multiple_paths(tmp_path: Path) -> None:
+    wt1 = tmp_path / "wt1"
+    wt2 = tmp_path / "wt2"
+    result = find_checked_out_worktrees("main", [(wt1, "main"), (wt2, "main")])
+    assert result == [wt1, wt2]
+
+
+def test_find_checked_out_worktrees_empty_list_returns_empty(tmp_path: Path) -> None:
+    result = find_checked_out_worktrees("main", [])
+    assert result == []
