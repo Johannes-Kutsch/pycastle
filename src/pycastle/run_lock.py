@@ -82,25 +82,44 @@ def _notify(on_wait: Callable[[str], None] | None, message: str) -> None:
         on_wait(message)
 
 
-def _waiting_message(record_path: Path) -> str:
-    default = "Waiting for global run lock (cannot identify holder)"
+def _read_holder_identity(
+    record_path: Path,
+) -> tuple[str, int, datetime] | None:
+    """Read (project, pid, started_at) from the holder record, or None."""
     try:
         data = json.loads(record_path.read_text(encoding="utf-8"))
         project = str(data["project"])
         pid = int(data["pid"])
         started_at = datetime.fromisoformat(data["started_at"])
     except (OSError, KeyError, ValueError, TypeError):
-        return default
+        return None
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return default
+        return None
     except PermissionError:
         pass  # process exists but is owned by another user — still a live holder
+    return (project, pid, started_at)
+
+
+def _format_waiting_message(identity: tuple[str, int, datetime] | None) -> str:
+    if identity is None:
+        return "Waiting for global run lock (cannot identify holder)"
+    project, pid, started_at = identity
     elapsed = int((datetime.now(tz=UTC) - started_at).total_seconds())
     return (
         f"Waiting for global run lock held by {project}"
         f" (pid {pid}, started {started_at.isoformat()}, {elapsed}s ago)"
+    )
+
+
+def _format_timeout_message(identity: tuple[str, int, datetime] | None) -> str:
+    if identity is None:
+        return "Timed out waiting for global run lock"
+    project, pid, started_at = identity
+    return (
+        f"Timed out waiting for global run lock held by {project}"
+        f" (pid {pid}, started {started_at.isoformat()})"
     )
 
 
@@ -194,14 +213,30 @@ def run_slot(
     record_path = layout.run_holder_record_path
     _ensure_file(global_lock_path)
 
+    _holder_unset: object = object()
+
     with global_lock_path.open("r+b") as global_fh:
         # Step 1: acquire global run lock.
         if not _try_lock(global_fh.fileno()):
-            _notify(on_wait, _waiting_message(record_path))
-            while not _try_lock(global_fh.fileno()):
+            last_identity: object = _holder_unset
+
+            def _notify_if_changed() -> None:
+                nonlocal last_identity
+                identity = _read_holder_identity(record_path)
+                if identity != last_identity:
+                    _notify(on_wait, _format_waiting_message(identity))
+                    last_identity = identity
+
+            _notify_if_changed()
+            while True:
                 if time.monotonic() >= deadline:
-                    raise RunSlotTimeoutError("Timed out waiting for global run lock")
+                    raise RunSlotTimeoutError(
+                        _format_timeout_message(_read_holder_identity(record_path))
+                    )
                 time.sleep(poll_interval)
+                if _try_lock(global_fh.fileno()):
+                    break
+                _notify_if_changed()
             _notify(on_wait, "Global run lock acquired")
 
         started_at = datetime.now(tz=UTC).isoformat()

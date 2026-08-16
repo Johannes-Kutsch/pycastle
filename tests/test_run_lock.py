@@ -591,6 +591,243 @@ def test_waiting_run_reports_cannot_identify_when_record_names_dead_process(
     assert wait_msg == "Waiting for global run lock (cannot identify holder)"
 
 
+# ── B15: Timeout error names the recorded holder ─────────────────────────────
+
+
+def test_timeout_error_names_holder_project_pid_and_started_at(
+    tmp_path: Path,
+) -> None:
+    import os
+
+    layout = _layout(tmp_path)
+    holder_pid = os.getpid()
+
+    with (
+        _hold_lock_in_thread(layout),
+        pytest.raises(RunSlotTimeoutError) as exc_info,
+        run_slot(layout, timeout=0.05, poll_interval=0.01),
+    ):
+        pass
+
+    msg = str(exc_info.value)
+    assert "myproject" in msg
+    assert str(holder_pid) in msg
+    assert "started" in msg.lower()
+
+
+# ── B16: Timeout without holder keeps current wording ────────────────────────
+
+
+def test_timeout_without_identifiable_holder_keeps_current_wording(
+    tmp_path: Path,
+) -> None:
+    layout = _layout(tmp_path)
+
+    with _hold_lock_in_thread(layout) as release:
+        layout.run_holder_record_path.unlink(missing_ok=True)
+        with (
+            pytest.raises(RunSlotTimeoutError) as exc_info,
+            run_slot(layout, timeout=0.05, poll_interval=0.01),
+        ):
+            pass
+        release.set()
+
+    assert str(exc_info.value) == "Timed out waiting for global run lock"
+
+
+# ── B17: Holder change during wait emits fresh notification ──────────────────
+
+
+def test_holder_change_during_wait_emits_fresh_notification(
+    tmp_path: Path,
+) -> None:
+    import json
+    import os
+    from datetime import UTC, datetime
+
+    layout = _layout(tmp_path)
+    notifications: list[str] = []
+    got_first = threading.Event()
+    got_second = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        if len(notifications) == 1:
+            got_first.set()
+        elif len(notifications) == 2 and "global run lock" in msg.lower():
+            got_second.set()
+
+    with _hold_lock_in_thread(layout) as release:
+        done = threading.Event()
+
+        def _run() -> None:
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+            done.set()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        got_first.wait(timeout=5)
+
+        # Overwrite holder record to simulate a different holder identity.
+        layout.run_holder_record_path.write_text(
+            json.dumps(
+                {
+                    "project": "different-project",
+                    "pid": os.getpid(),
+                    "started_at": datetime.now(tz=UTC).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        got_second.wait(timeout=5)
+        release.set()
+        done.wait(timeout=5)
+        t.join(timeout=5)
+
+    wait_msgs = [n for n in notifications if "global run lock" in n.lower()]
+    assert any("myproject" in m for m in wait_msgs)
+    assert any("different-project" in m for m in wait_msgs)
+
+
+# ── B18: Stable holder produces exactly one holder notification ───────────────
+
+
+def test_stable_holder_produces_exactly_one_holder_notification(
+    tmp_path: Path,
+) -> None:
+    layout = _layout(tmp_path)
+    notifications: list[str] = []
+    waiting_started = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        waiting_started.set()
+
+    with _hold_lock_in_thread(layout) as release:
+        done = threading.Event()
+
+        def _run() -> None:
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+            done.set()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        waiting_started.wait(timeout=5)
+        # Let several polls happen before releasing.
+        import time as _time
+
+        _time.sleep(0.05)
+        release.set()
+        done.wait(timeout=5)
+        t.join(timeout=5)
+
+    holder_msgs = [
+        n
+        for n in notifications
+        if "global run lock" in n.lower() and "acquired" not in n.lower()
+    ]
+    assert len(holder_msgs) == 1
+
+
+# ── B19: Late-written holder record is named without restart ─────────────────
+
+
+def test_late_written_holder_record_named_without_restart(tmp_path: Path) -> None:
+    import json
+    import os
+    from datetime import UTC, datetime
+
+    layout = _layout(tmp_path)
+    notifications: list[str] = []
+    got_cannot_identify = threading.Event()
+    got_named = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        if "cannot identify" in msg:
+            got_cannot_identify.set()
+        elif "held by" in msg.lower():
+            got_named.set()
+
+    with _hold_lock_in_thread(layout) as release:
+        # Remove record so waiter sees "cannot identify" first.
+        layout.run_holder_record_path.unlink(missing_ok=True)
+        done = threading.Event()
+
+        def _run() -> None:
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+            done.set()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        got_cannot_identify.wait(timeout=5)
+
+        # Write the record now (simulating late holder record publication).
+        layout.run_holder_record_path.write_text(
+            json.dumps(
+                {
+                    "project": "myproject",
+                    "pid": os.getpid(),
+                    "started_at": datetime.now(tz=UTC).isoformat(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        got_named.wait(timeout=5)
+        release.set()
+        done.wait(timeout=5)
+        t.join(timeout=5)
+
+    assert got_cannot_identify.is_set()
+    assert got_named.is_set()
+    named_msgs = [n for n in notifications if "held by" in n.lower()]
+    assert any("myproject" in m for m in named_msgs)
+
+
+# ── B20: Holder disappears mid-wait degrades to cannot-identify ──────────────
+
+
+def test_holder_disappears_mid_wait_degrades_to_cannot_identify(
+    tmp_path: Path,
+) -> None:
+    layout = _layout(tmp_path)
+    notifications: list[str] = []
+    got_named = threading.Event()
+    got_cannot_identify = threading.Event()
+
+    def _on_wait(msg: str) -> None:
+        notifications.append(msg)
+        if "held by" in msg.lower():
+            got_named.set()
+        elif "cannot identify" in msg:
+            got_cannot_identify.set()
+
+    with _hold_lock_in_thread(layout) as release:
+        done = threading.Event()
+
+        def _run() -> None:
+            with run_slot(layout, timeout=10, poll_interval=0.01, on_wait=_on_wait):
+                pass
+            done.set()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        got_named.wait(timeout=5)
+
+        # Remove the record while the holder still holds the lock.
+        layout.run_holder_record_path.unlink(missing_ok=True)
+        got_cannot_identify.wait(timeout=5)
+        release.set()
+        done.wait(timeout=5)
+        t.join(timeout=5)
+
+    assert got_named.is_set()
+    assert got_cannot_identify.is_set()
+
+
 # ── B12: Queue-jumping run leaves no holder record ───────────────────────────
 
 
