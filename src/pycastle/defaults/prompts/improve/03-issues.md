@@ -46,7 +46,7 @@ In improve mode every slice must be AFK by construction — the AFK-safety filte
 
 **Blocking edges.** Give each issue its blocking edges — the other issues that must complete before it can start. An issue with no blockers can start immediately. Blocking comes only from a **genuine dependency** (an issue needing another's output), decided independently of file overlap.
 
-**Files touched.** Record each slice's tentative set of files (see the template's *Files touched* field) — a planning/scoping signal so the planner can see where slices overlap. Overlap alone does **not** create a blocking edge, and slices sharing files may still run in parallel.
+**Files touched.** Record each slice's tentative set of files (see the template's *Files touched* field) — a planning/scoping signal so the planner can see where slices overlap. Overlap alone does **not** create a blocking edge, and slices sharing files may still run in parallel. List `tests/` paths only for a slice that has testable criteria — naming them for a slice built of refactor steps or prose artifacts primes the implement agent to write tests that guard nothing.
 
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own issue blocked by the expand, keeping the suite green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in an issue blocked by every migrate batch. When even the batches can't stay green alone, the wide refactor is too big to slice — narrow the batches until each lands green.
 
@@ -97,6 +97,12 @@ Acceptance criteria are how the implement agent learns what "done" looks like. T
 > _Good:_ "The parser log file contains `http_get_start` for the attempt and does not contain a matching `http_get_ok`."
 >
 > _Bad:_ "A test asserts the log contains `http_get_start` with no matching `http_get_ok`."
+
+A `behavior-slice` may also carry **prose artifacts** — `.md` files outside `tests/` whose wording no caller observes: documentation, ADRs, README, and shipped prompt or template text. Give those criteria the file-state shape `docs-slice` uses, so the implement agent reads at a glance which criteria carry a test obligation and which are plain edits.
+
+> _Good:_ "`coordination/plan.md` states that an implementation child is not blocked by its own parent PRD."
+>
+> _Bad:_ "The rendered planner prompt states that an implementation child is not blocked by its own parent PRD." — file state dressed as observable behavior; it invites a test that string-matches the wording.
 
 **`refactor-slice`** — outcome-shaped. State the new structural fact plus "no behavior change."
 

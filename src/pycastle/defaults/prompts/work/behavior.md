@@ -10,7 +10,10 @@ Fix issue #{{ISSUE_NUMBER}}: {{ISSUE_TITLE}}
 
 Explore only the files mentioned in the issue and the test files that directly touch those files.
 
-From the issue's acceptance criteria, derive an ordered list of behaviors to implement. Most critical paths first, edge cases last.
+Sort the issue's acceptance criteria into two lists:
+
+- **Behaviors** — criteria naming an observable surface. Order them most critical paths first, edge cases last; they run the loop below.
+- **Prose artifacts** — criteria naming the content of a `.md` file outside `tests/`. Apply these as plain edits at any point in the session. See *Prose artifacts* in the standards below for what stays testable.
 
 The seams under test were agreed at PRD time: test only at the observable surfaces the issue's acceptance criteria name. Do not invent new seams in-session.
 
@@ -28,9 +31,9 @@ Write **one** failing test that confirms the behavior works end-to-end:
 RED: Write test → run {{FEEDBACK_COMMANDS}} → test fails
 ```
 
-**Gate rule — forbidden until the first `<behavior>` tag is emitted:**
-- `Edit` or `Write` on any non-test file is forbidden.
-- Do not touch production source files until the first `<behavior>` tag has been emitted with a real failing-test paste.
+**Gate rule — until the first `<behavior>` tag is emitted:**
+- Test files and the prose artifacts listed in *Explore* are open to `Edit` and `Write` for the whole session.
+- Every other file stays untouched until that tag has been emitted with a real failing-test paste.
 
 ### 2. Emit `<behavior>`
 
