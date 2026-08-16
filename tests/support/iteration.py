@@ -233,6 +233,7 @@ def functional_git_svc(
 ) -> GitService:
     git_svc = MagicMock(spec=GitService)
     git_svc.verify_ref_exists.return_value = False
+    git_svc.list_worktrees_with_branches.return_value = []
     _wire_worktrees(git_svc)
     if head_sha is not None:
         git_svc.head_sha.return_value = head_sha

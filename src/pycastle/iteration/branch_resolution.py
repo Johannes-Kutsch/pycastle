@@ -4,6 +4,8 @@ import dataclasses
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pycastle.config import Config
 
 
@@ -46,6 +48,14 @@ class DevBranchMissing:
 
 
 type BranchResolutionResult = BranchSetupPlan | DevBranchMissing
+
+
+def find_checked_out_worktrees(
+    branch: str,
+    worktrees: list[tuple[Path, str | None]],
+) -> list[Path]:
+    """Return paths of worktrees where the given branch is currently checked out."""
+    return [path for path, checked_out in worktrees if checked_out == branch]
 
 
 def resolve_branch_setup(cfg: Config, facts: BranchFacts) -> BranchResolutionResult:

@@ -35,7 +35,12 @@ from pycastle.services import (
 )
 from pycastle.services.runtime_services import AgentService
 from pycastle.session import RoleSession
-from tests.support import FakeAgentRunner, _make_deps, functional_git_svc
+from tests.support import (
+    FakeAgentRunner,
+    RecordingStatusDisplay,
+    _make_deps,
+    functional_git_svc,
+)
 
 
 def _diverge_fingerprint(safe_sha: str, branch: str) -> str:
@@ -742,19 +747,82 @@ def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
     assert result3 is result1
 
 
-# ── get_safe_sha: clean tree wait ────────────────────────────────────────────
+# ── get_safe_sha: operating-branch checkout gate ──────────────────────────────
 
 
-def test_get_safe_sha_waits_for_clean_working_tree(tmp_path, git_svc, github_svc):
-    git_svc.is_working_tree_clean.side_effect = [False, True]
+def test_get_safe_sha_proceeds_when_working_tree_dirty_but_operating_branch_not_checked_out(
+    tmp_path, github_svc
+):
+    """A dirty repo root must not block preflight when the operating branch is not checked out."""
+    git_svc = functional_git_svc()
+    git_svc.get_branch_sha.return_value = "abc123"
+    git_svc.is_working_tree_clean.return_value = False
+    git_svc.list_worktrees_with_branches.return_value = []
+
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+
+
+def test_get_safe_sha_waits_when_operating_branch_checked_out_in_worktree(
+    tmp_path, github_svc
+):
+    """When the operating branch is checked out in a worktree, preflight waits and reports phase+path."""
+    checkout_path = tmp_path / "some-worktree"
+    git_svc = functional_git_svc()
+    git_svc.get_branch_sha.return_value = "abc123"
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [(checkout_path, "main")],
+        [],
+    ]
+
+    display = RecordingStatusDisplay()
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, status_display=display
+    )
     cache = PreflightCache()
 
     with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
         result = asyncio.run(cache.get_safe_sha(deps))
 
     assert isinstance(result, PreflightReady)
+    printed = [call for call in display.calls if call[0] == "print"]
+    assert any(
+        "Preflight" in str(call) and str(checkout_path) in str(call) for call in printed
+    )
+
+
+def test_get_safe_sha_clean_checkout_of_operating_branch_blocks_preflight(
+    tmp_path, github_svc
+):
+    """A clean checkout of the operating branch blocks preflight — cleanliness is irrelevant."""
+    checkout_path = tmp_path / "clean-worktree"
+    git_svc = functional_git_svc()
+    git_svc.get_branch_sha.return_value = "abc123"
+    git_svc.is_working_tree_clean.return_value = True
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [(checkout_path, "main")],
+        [],
+    ]
+
+    display = RecordingStatusDisplay()
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, status_display=display
+    )
+    cache = PreflightCache()
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    printed = [call for call in display.calls if call[0] == "print"]
+    assert any(str(checkout_path) in str(call) for call in printed)
 
 
 # ── get_safe_sha: parallel callers serialise ─────────────────────────────────
