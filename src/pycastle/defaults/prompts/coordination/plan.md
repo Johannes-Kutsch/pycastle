@@ -37,6 +37,11 @@ Blocking comes only from a **genuine dependency** — B needing A's output. File
 
 ## Blocker rules
 
+The {{READY_FOR_AGENT_LABEL}} candidate list above has already been filtered: any issue with a recorded GitHub dependency edge pointing to an open issue has been removed before you see it. Your task is to determine blocking from the cases that mechanical pre-filtering cannot see:
+
+- **Parent/child rules.** A sub-issue edge is not a dependency edge, so the parent/child unit rule is invisible to the pre-filter.
+- **Blockers stated only in prose.** A body that names a blocker without a registered native edge.
+
 **Cross-label blockers apply.** Any open issue is a hard blocker regardless of label. A {{READY_FOR_AGENT_LABEL}} issue can be blocked by `{{READY_FOR_HUMAN_LABEL}}`, `{{NEEDS_INFO_LABEL}}`, or `{{NEEDS_TRIAGE_LABEL}}` issues.
 
 Only `{{WONTFIX_LABEL}}` issues are treated as effectively closed. Do not treat `{{WONTFIX_LABEL}}` issues as blockers.
