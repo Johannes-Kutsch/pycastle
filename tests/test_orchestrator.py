@@ -2384,6 +2384,11 @@ def test_run_full_iteration_cold_path(git_repo):
         check=True,
         capture_output=True,
     )
+    subprocess.run(
+        ["git", "-C", str(git_repo), "push", "origin", "main"],
+        check=True,
+        capture_output=True,
+    )
 
     branch = "pycastle/issue-1"
     subprocess.run(
