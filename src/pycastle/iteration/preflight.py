@@ -114,7 +114,7 @@ class BranchRefreshBoundary:
         Returns True when recovery succeeded and the caller should treat the pull
         as if it had succeeded. Returns False to signal the caller must re-raise.
         """
-        branch = deps.git_svc.get_current_branch(deps.repo_root)
+        branch = deps.cfg.operating_branch
         remote_ref = f"origin/{branch}"
         ahead = deps.git_svc.count_commits_ahead(deps.repo_root, remote_ref)
         if ahead == 0:
@@ -148,19 +148,19 @@ class BranchRefreshBoundary:
         return False
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
-        """Pull from origin, escalating to the divergence-resolver agent on textual conflict."""
+        """Fetch operating branch from origin, escalating to the divergence-resolver agent on non-fast-forward."""
 
         try:
-            deps.git_svc.pull_with_merge_fallback(deps.repo_root)
+            deps.git_svc.fetch_branch(deps.repo_root, deps.cfg.operating_branch)
         except UnrelatedHistoriesError:
             if self._try_recover_unrelated_histories(deps):
                 return
             raise
         except GitCommandError as pull_exc:
-            if "conflict" not in str(pull_exc).lower():
+            if "non-fast-forward" not in str(pull_exc).lower():
                 raise
-            branch = deps.git_svc.get_current_branch(deps.repo_root)
-            current_sha = deps.git_svc.get_head_sha(deps.repo_root)
+            branch = deps.cfg.operating_branch
+            current_sha = deps.git_svc.get_branch_sha(deps.repo_root, branch)
             sandbox_identity = reusable_sandbox_worktree_identity(
                 self._DIVERGE_SANDBOX_INTENT,
                 deps.repo_root,
@@ -204,7 +204,7 @@ class BranchRefreshBoundary:
                             work_body="Resolving divergence",
                         )
                     )
-                    deps.git_svc.fast_forward_branch(
+                    deps.git_svc.advance_branch_ref(
                         deps.repo_root, branch, sandbox_identity.branch
                     )
                     role_session.discard()
@@ -348,15 +348,15 @@ class PreflightCache:
             except UnrelatedHistoriesError:
                 raise
             except GitCommandError as pull_exc:
-                if "conflict" not in str(pull_exc).lower():
+                if "non-fast-forward" not in str(pull_exc).lower():
                     deps.status_display.print(
                         "Preflight",
-                        "git pull failed — remote branch is unreachable or has irreconcilable conflicts. "
+                        "git fetch failed — remote branch is unreachable or has irreconcilable conflicts. "
                         "Resolve manually and retry.",
                         style="error",
                     )
                 raise
-            sha = deps.git_svc.get_head_sha(deps.repo_root)
+            sha = deps.git_svc.get_branch_sha(deps.repo_root, deps.cfg.operating_branch)
 
             if self._verdict is not None and self._verdict.sha == sha:
                 return self._verdict
