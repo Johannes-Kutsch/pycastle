@@ -297,11 +297,6 @@ def test_scope_improve_session_placeholders():
     )
 
 
-def test_scope_improve_session_includes_candidate_rank_and_title():
-    assert "CANDIDATE_RANK" in Scope.IMPROVE_SESSION.placeholders
-    assert "CANDIDATE_TITLE" in Scope.IMPROVE_SESSION.placeholders
-
-
 def test_scope_resume_is_empty():
     assert Scope.RESUME.placeholders == frozenset()
 
