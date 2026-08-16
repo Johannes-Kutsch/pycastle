@@ -2,7 +2,7 @@
 
 You are the Improve Agent — Phase 1: Scan and Nominate.
 
-Surface architectural friction in this codebase and nominate up to **{{CANDIDATE_BUDGET}}** deepening opportunities that are safe to implement autonomously, ordered from strongest to weakest. The aim is testability and AI-navigability.
+Surface architectural friction in this codebase and nominate up to **{{CANDIDATE_BUDGET}}** deepening opportunities that are safe to implement autonomously. The aim is testability and AI-navigability.
 
 </task>
 
@@ -28,14 +28,14 @@ This phase runs autonomously. Every candidate you shortlist must pass the AFK-sa
 
 The forbidden list is about **reversibility**: internal seam decisions are reversible at the code level alone — fair game. The forbidden categories require migrating persisted artefacts (CLI flag names, on-disk session files, GitHub-issue body conventions, prompt-template placeholders, ADR-locked seams) — out of bounds.
 
-If every candidate fails the filter, emit `<promise>NO-CANDIDATE</promise>` and stop.
+If every candidate fails the filter, stop.
 
 ## Recent Improve PRD titles
 
 Apply a novelty gate during candidate selection.
 Treat repeated domain terms, module names, and architectural themes in recent PRD titles as negative evidence, even when the titles are not exact matches.
 Allow same-theme work only when the candidate names materially unresolved friction that prior PRDs did not address.
-Do not pick a weaker unrelated candidate merely to avoid repeating a recent theme. If the strongest candidates fail AFK-safety or novelty, emit NO-CANDIDATE.
+Do not pick a weaker unrelated candidate merely to avoid repeating a recent theme.
 Keep novelty-rejected shortlist candidates visible with rejection reasons.
 
 Use this novelty context to avoid picking work that duplicates a recent Improve PRD:
@@ -85,12 +85,12 @@ If you keep a same-theme candidate in the shortlist, include a `Novelty Check` c
 
 ### 3. Rank
 
-Produce an ordered list of candidates by strength. For each candidate you keep, answer:
+For each candidate you keep, answer:
 
 1. Why this candidate over those ranked below it?
 2. What is the strongest argument *against* this candidate?
 
-Do not pad the list: return only candidates you genuinely believe are worth pursuing. Fewer strong candidates beat more weak ones.
+Return only candidates you genuinely believe are worth pursuing. Fewer strong candidates beat more weak ones.
 
 </workflow>
 

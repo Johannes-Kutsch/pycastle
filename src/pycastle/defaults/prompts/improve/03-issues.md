@@ -10,13 +10,13 @@ Break the PRD you wrote in phase 2 (saved as `.pycastle-session/improve/_drafts/
 
 Read `.pycastle-session/improve/_drafts/spec.md` to get the PRD content you will slice.
 
+## Safety net
+
+You must NOT modify any files in the worktree. Your only outputs are the draft files and the `<promise>` tag. CONTEXT.md additions/edits are drafted as a dedicated issue (see step 2 below) — never edited in place from this phase.
+
 </context>
 
 <workflow>
-
-## Safety net
-
-You must NOT modify any files in the worktree. Your only outputs are the draft files and the `<promise>` tag. CONTEXT.md additions/edits are filed as a dedicated issue (see step 1 below) — never edited in place from this phase.
 
 ## 1. Explore
 
@@ -66,7 +66,7 @@ Every slice is exactly one of three **slice modes**. The mode determines which i
 
 ### Slicing rule
 
-**If a step cannot be verified by a new test of observable behavior, file it as its own `refactor-slice`. Refactor steps never ride along inside a `behavior-slice`.**
+**If a step cannot be verified by a new test of observable behavior, draft it as its own `refactor-slice`. Refactor steps never ride along inside a `behavior-slice`.**
 
 By default, each refactor step is its own slice. Multiple refactor steps bundle into one `refactor-slice` only when they form a single atomic ripple — e.g., a rename propagating through call sites — that cannot land independently without leaving the tree inconsistent. Mixing refactor and behavior in the same slice is never allowed.
 
@@ -130,7 +130,7 @@ Phrase verification as the system's observable behavior, not as test-code struct
 
 ## 5. Self-quiz
 
-Before filing, answer:
+Before drafting, answer:
 
 - Is the granularity right? (too coarse / too fine)
 - Did any of the seven split smells fire on a slice you left bundled?
@@ -191,7 +191,7 @@ The files this slice is expected to create or modify. A tentative planning/scopi
 
 Explicitly state that this slice is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
 
-_Filed by improve session_
+_Drafted by improve session_
 ```
 
 </workflow>
