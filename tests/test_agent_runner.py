@@ -2037,6 +2037,8 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
                     scope_args={
                         "IMPROVE_SHORT_SID": "abc123",
                         "RECENT_IMPROVE_PRDS": "",
+                        "CANDIDATE_RANK": "1",
+                        "CANDIDATE_TITLE": "Deepen the parser module",
                     },
                 ),
                 mount_path=mount_path,

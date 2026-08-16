@@ -2,7 +2,7 @@
 
 You are the Improve Agent — Phase 2: PRD.
 
-Take the candidate picked in phase 1 and turn it into a PRD. Write it as a draft file.
+You are writing up candidate rank {{CANDIDATE_RANK}}: **{{CANDIDATE_TITLE}}**. Turn it into a PRD. Write it as a draft file.
 
 </task>
 

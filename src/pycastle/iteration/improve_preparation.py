@@ -192,10 +192,9 @@ def _build_improve_scope_args(
             recent_prds=github_port.get_recent_improve_prds(),
         )
 
-    if template in {
-        PromptTemplate.IMPROVE_PRD,
-        PromptTemplate.IMPROVE_NO_CANDIDATE,
-    }:
+    if template is PromptTemplate.IMPROVE_PRD:
+        if request.candidate is None:
+            raise PromptRenderError("candidate is required to render the spec prompt")
         return validated_scope_args_for_template(
             template,
             {
@@ -203,6 +202,21 @@ def _build_improve_scope_args(
                 "RECENT_IMPROVE_PRDS": _format_recent_improve_prds(
                     github_port.get_recent_improve_prds()
                 ),
+                "CANDIDATE_RANK": str(request.candidate.rank),
+                "CANDIDATE_TITLE": request.candidate.title,
+            },
+        )
+
+    if template is PromptTemplate.IMPROVE_NO_CANDIDATE:
+        return validated_scope_args_for_template(
+            template,
+            {
+                "IMPROVE_SHORT_SID": request.short_sid,
+                "RECENT_IMPROVE_PRDS": _format_recent_improve_prds(
+                    github_port.get_recent_improve_prds()
+                ),
+                "CANDIDATE_RANK": "",
+                "CANDIDATE_TITLE": "",
             },
         )
 

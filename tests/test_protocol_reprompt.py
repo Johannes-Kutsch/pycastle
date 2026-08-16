@@ -52,6 +52,8 @@ _ISSUE_SCOPE_ARGS: dict[str, str] = {
 _IMPROVE_PRD_SCOPE_ARGS: dict[str, str] = {
     "IMPROVE_SHORT_SID": "abc123",
     "RECENT_IMPROVE_PRDS": "[]",
+    "CANDIDATE_RANK": "1",
+    "CANDIDATE_TITLE": "Deepen the parser module",
 }
 
 _SCOPE_ARGS_BY_TEMPLATE: dict[PromptTemplate, dict[str, str]] = {
