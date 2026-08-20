@@ -29,7 +29,6 @@ if TYPE_CHECKING:
         GithubServiceError,
         OperatorActionableGithubError,
     )
-    from pycastle.services.reset_time_parser import ResetTimeSyntaxMode
     from pycastle.services.service_registry import ServiceRegistry
 
 __all__ = [
@@ -50,11 +49,9 @@ __all__ = [
     "OpenCodeService",
     "OperatorActionableGitError",
     "OperatorActionableGithubError",
-    "ResetTimeSyntaxMode",
     "ServiceRegistry",
     "ToolPolicy",
     "UnrelatedHistoriesError",
-    "parse_reset_time",
 ]
 
 
@@ -86,10 +83,6 @@ def __getattr__(name: str) -> object:
         from pycastle.services import github_service
 
         return getattr(github_service, name)
-    if name in {"ResetTimeSyntaxMode", "parse_reset_time"}:
-        from pycastle.services import reset_time_parser
-
-        return getattr(reset_time_parser, name)
     if name in {"ClaudeService", "CodexService", "OpenCodeService", "ToolPolicy"}:
         from pycastle.services import runtime_services
 
