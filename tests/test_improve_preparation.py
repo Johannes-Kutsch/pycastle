@@ -15,6 +15,12 @@ from pycastle.iteration.improve_preparation import (
     ImproveStepPreparationRequest,
     prepare_improve_step,
 )
+from pycastle.iteration.improve_role_session_store import (
+    CandidateItem,
+    CandidateList,
+    CandidateRecord,
+    ImproveRoleSessionStore,
+)
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate
 from pycastle.services import GithubNetworkError
 
@@ -276,8 +282,6 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
 ):
     driver_dir = tmp_path / "improve"
     driver_dir.mkdir(parents=True, exist_ok=True)
-    from pycastle.iteration.improve_role_session_store import ImproveRoleSessionStore
-
     ImproveRoleSessionStore(driver_dir).write_in_flight("01-scan")
     driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
     step = driver.start()
@@ -373,20 +377,10 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
 def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_handoff(
     tmp_path: Path,
 ):
-    from pycastle.iteration.improve_role_session_store import (
-        CandidateRecord,
-        ImproveRoleSessionStore,
-    )
-
     driver_dir = tmp_path / "improve-issues-resume"
     driver_dir.mkdir(parents=True, exist_ok=True)
     # Seed candidate list + a candidate record (PRD done) + in-flight=03-issues
     store = ImproveRoleSessionStore(driver_dir)
-    from pycastle.iteration.improve_role_session_store import (
-        CandidateItem,
-        CandidateList,
-    )
-
     store.write_candidate_list(
         CandidateList(
             candidates=(CandidateItem(rank=1, title="Seeded"),),

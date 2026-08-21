@@ -366,7 +366,9 @@ def test_resume_applies_labels_to_all_issues_including_previously_filed(
 # ---------------------------------------------------------------------------
 
 
-def test_candidate_record_is_at_role_dir_root(tmp_path: Path, port: MagicMock) -> None:
+def test_candidate_record_is_durably_persisted_via_store(
+    tmp_path: Path, port: MagicMock
+) -> None:
     """The record is durably written and readable via the store after filing."""
     store = ImproveRoleSessionStore(tmp_path / "improve")
     drafts = [_spec(), _slice("01-foo")]

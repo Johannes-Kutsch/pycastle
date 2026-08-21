@@ -446,6 +446,22 @@ def _cap_reached(deps: "_ImproveDeps", completed_count: int) -> bool:
     )
 
 
+def _prev_spec(
+    store: ImproveRoleSessionStore, candidate_idx: int
+) -> tuple[int, int] | None:
+    """Return (spec_number, spec_database_id) from the previous candidate record, if available."""
+    if candidate_idx == 0:
+        return None
+    prev_record = store.read_candidate_record(candidate_idx - 1)
+    if (
+        prev_record is not None
+        and prev_record.spec_number is not None
+        and prev_record.spec_database_id is not None
+    ):
+        return (prev_record.spec_number, prev_record.spec_database_id)
+    return None
+
+
 async def _file_improve_drafts(
     *,
     deps: _ImproveDeps,
@@ -456,18 +472,7 @@ async def _file_improve_drafts(
 ) -> None:
     draft_dir = role_session_dir / _DRAFTS_SUBDIR
     store = ImproveRoleSessionStore(role_session_dir)
-
-    if candidate_idx == 0:
-        prev_spec = None
-    else:
-        prev_record = store.read_candidate_record(candidate_idx - 1)
-        prev_spec = (
-            (prev_record.spec_number, prev_record.spec_database_id)
-            if prev_record is not None
-            and prev_record.spec_number is not None
-            and prev_record.spec_database_id is not None
-            else None
-        )
+    prev_spec = _prev_spec(store, candidate_idx)
 
     try:
         drafts = read_draft_set(draft_dir, deps.cfg)
@@ -540,17 +545,6 @@ def _wind_down_partial_candidates(
             port.close_issue(record.spec_number)
         else:
             draft_dir = role_session_dir / _DRAFTS_SUBDIR
-            if idx == 0:
-                prev_spec = None
-            else:
-                prev_record = store.read_candidate_record(idx - 1)
-                prev_spec = (
-                    (prev_record.spec_number, prev_record.spec_database_id)
-                    if prev_record is not None
-                    and prev_record.spec_number is not None
-                    and prev_record.spec_database_id is not None
-                    else None
-                )
             try:
                 drafts = read_draft_set(draft_dir, cfg)
                 file_draft_set(
@@ -559,7 +553,7 @@ def _wind_down_partial_candidates(
                     store=store,
                     candidate_idx=idx,
                     state_label=cfg.issue_label,
-                    prev_spec=prev_spec,
+                    prev_spec=_prev_spec(store, idx),
                 )
             except DraftSetValidationError:
                 pass

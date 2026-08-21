@@ -14,6 +14,8 @@ from pycastle.agents.output_protocol import (
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import ImproveCandidate
 from pycastle.iteration.improve_role_session_store import (
+    CandidateItem,
+    CandidateList,
     CandidateRecord,
     ImproveRoleSessionStore,
 )
@@ -40,11 +42,6 @@ def _seed_candidate_list(
 ) -> None:
     """Pre-seed the candidate list and cursor to simulate a prior scan."""
     store = ImproveRoleSessionStore(driver_dir)
-    from pycastle.iteration.improve_role_session_store import (
-        CandidateItem,
-        CandidateList,
-    )
-
     store.write_candidate_list(
         CandidateList(
             candidates=tuple(
