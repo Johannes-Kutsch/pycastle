@@ -191,3 +191,41 @@ def test_claude_service_build_env_raises_permanent_usage_limit_error_when_pool_p
 
     assert exc_info.value.is_permanent is True
     assert exc_info.value.provider == "claude"
+
+
+# --- summary_line ---
+
+
+def test_codex_service_summary_line_returns_local_auth_message():
+    assert CodexService().summary_line() == "Codex auth: local auth available"
+
+
+def test_opencode_service_summary_line_returns_api_key_message():
+    assert (
+        OpenCodeService(api_key="key").summary_line()
+        == "OpenCode auth: API key configured"
+    )
+
+
+def test_claude_service_summary_line_returns_none_when_no_accounts():
+    assert ClaudeService().summary_line() is None
+
+
+def test_claude_service_summary_line_single_account():
+    svc = ClaudeService(accounts=[("alice", "tok-1")])
+    assert svc.summary_line() == "Claude accounts: alice (active)"
+
+
+def test_claude_service_summary_line_two_accounts():
+    svc = ClaudeService(accounts=[("alice", "tok-1"), ("bob", "tok-2")])
+    assert svc.summary_line() == "Claude accounts: alice (active), bob (standby)"
+
+
+def test_claude_service_summary_line_three_accounts():
+    svc = ClaudeService(
+        accounts=[("alice", "tok-1"), ("bob", "tok-2"), ("carol", "tok-3")]
+    )
+    assert (
+        svc.summary_line()
+        == "Claude accounts: alice (active), bob (standby), carol (standby)"
+    )

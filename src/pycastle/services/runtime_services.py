@@ -82,6 +82,8 @@ class AgentService(Protocol):
         request: ProviderSessionStateRequest,
     ) -> ProviderSessionState: ...
 
+    def summary_line(self) -> str | None: ...
+
 
 def _provider_session_preferences_for_request(
     request: ProviderSessionPreferencesRequest,
@@ -230,6 +232,15 @@ class ClaudeService:
         if self._pool is None:
             return []
         return self._pool.names()
+
+    def summary_line(self) -> str | None:
+        names = self.account_names()
+        if not names:
+            return None
+        if len(names) == 1:
+            return f"Claude accounts: {names[0]} (active)"
+        parts = [f"{names[0]} (active)"] + [f"{name} (standby)" for name in names[1:]]
+        return "Claude accounts: " + ", ".join(parts)
 
     def valid_models(self) -> frozenset[str]:
         return frozenset({"haiku", "sonnet", "opus"})
@@ -443,6 +454,9 @@ class CodexService:
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"low", "medium", "high", "xhigh"})
 
+    def summary_line(self) -> str | None:
+        return "Codex auth: local auth available"
+
     def build_env(
         self,
         state_dir_container_path: str | None = None,
@@ -654,6 +668,9 @@ class OpenCodeService:
 
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"medium"})
+
+    def summary_line(self) -> str | None:
+        return "OpenCode auth: API key configured"
 
 
 def _resolved_provider_session_id(

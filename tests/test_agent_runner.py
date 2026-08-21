@@ -98,6 +98,9 @@ class _FakeService:
             auth_seed_action=None,
         )
 
+    def summary_line(self) -> str | None:
+        return None
+
 
 class _RecordingService(_FakeService):
     def __init__(self, name: str) -> None:
