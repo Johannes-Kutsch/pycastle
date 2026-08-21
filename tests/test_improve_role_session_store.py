@@ -277,6 +277,29 @@ def test_non_integer_cursor_file_returns_none(
     assert store.read_cursor() is None
 
 
+def test_candidate_list_with_missing_item_key_returns_none(
+    store: ImproveRoleSessionStore, store_dir: Path
+) -> None:
+    store_dir.mkdir(parents=True, exist_ok=True)
+    (store_dir / "_candidate_list").write_text(
+        '{"candidates": [{"rank": 1}]}', encoding="utf-8"
+    )
+    assert store.read_candidate_list() is None
+
+
+def test_candidate_record_with_missing_filed_slice_key_returns_none(
+    store: ImproveRoleSessionStore, store_dir: Path
+) -> None:
+    candidate_dir = store_dir / "candidates" / "0"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    (candidate_dir / "_candidate_record").write_text(
+        '{"spec_number": 1, "spec_database_id": 2, "spec_title": "T",'
+        ' "filed_slices": [{"handle": "h"}], "labels_applied": false}',
+        encoding="utf-8",
+    )
+    assert store.read_candidate_record(0) is None
+
+
 # ── 8. Auto-mkdir for nested candidate directories ────────────────────────────
 
 
