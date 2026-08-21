@@ -91,7 +91,7 @@ from pycastle.session.agent import (
     run_session_plan_from_provider_run_state_plan,
 )
 from pycastle.session.run_dispatch import (
-    PreparedRunSession,
+    AgentRunSessionState,
     RunSessionRequest,
     prepare_run_session,
 )
@@ -411,7 +411,7 @@ class AgentRunner:
 
         def _prepare_session(
             run_session_plan: RuntimeRunSession,
-        ) -> PreparedRunSession:
+        ) -> AgentRunSessionState:
             plan_payload = run_session_plan.run_session_plan
             if isinstance(plan_payload, ProviderRunStatePlan):
                 return prepare_run_session(

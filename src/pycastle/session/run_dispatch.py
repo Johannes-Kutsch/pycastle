@@ -23,7 +23,6 @@ from pycastle.session_planning import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from pathlib import Path
 
     from pycastle.agents.output_protocol import AgentRole
@@ -44,25 +43,14 @@ class AgentRunSessionStateRequest:
 class PreparedAgentProviderRunSession:
     run_kind: RunKind
     provider_session_id: str | None
-    _provider_session_id_recorder: Callable[[str], None] | None = dataclasses.field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    _success_recorder: Callable[[], None] | None = dataclasses.field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
+    _state: AgentRunSessionState = dataclasses.field(repr=False, compare=False)
 
     def record_provider_session_id(self, provider_session_id: str) -> None:
-        object.__setattr__(self, "provider_session_id", provider_session_id)
-        if self._provider_session_id_recorder is not None:
-            self._provider_session_id_recorder(provider_session_id)
+        self.provider_session_id = provider_session_id
+        self._state.record_provider_session_id(provider_session_id)
 
     def record_successful_run(self) -> None:
-        if self._success_recorder is not None:
-            self._success_recorder()
+        self._state.record_successful_run()
 
 
 @dataclasses.dataclass
@@ -73,6 +61,7 @@ class AgentRunSessionState:
     service_state_dir_relpath: str | None
     service_state_dir_path: Path | None
     _plan: RunSessionPlan = dataclasses.field(repr=False)
+    provider_state_dir_container_path: str | None = None
     auth_seed_action: LocalAuthSeedAction | None = None
     exact_transcript_match: bool = False
     require_exact_transcript_for_strict_resume: bool = False
@@ -91,15 +80,14 @@ class AgentRunSessionState:
             return None
         return self.auth_seed_action.source
 
-    def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
+    def compute_container_path(self, container_workspace: str) -> str | None:
         return self._plan.provider_state_dir_container_path(container_workspace)
 
     def initial_provider_run_session(self) -> PreparedAgentProviderRunSession:
         return PreparedAgentProviderRunSession(
             run_kind=self.run_kind,
             provider_session_id=self.provider_session_id,
-            _provider_session_id_recorder=self.record_provider_session_id,
-            _success_recorder=self.record_successful_run,
+            _state=self,
         )
 
     def resumable_provider_run_session(self) -> PreparedAgentProviderRunSession:
@@ -107,8 +95,7 @@ class AgentRunSessionState:
         return PreparedAgentProviderRunSession(
             run_kind=provider_session_state.run_kind,
             provider_session_id=provider_session_state.provider_session_id,
-            _provider_session_id_recorder=self.record_provider_session_id,
-            _success_recorder=self.record_successful_run,
+            _state=self,
         )
 
     def protocol_reprompt_provider_run_session(
@@ -120,8 +107,7 @@ class AgentRunSessionState:
         return PreparedAgentProviderRunSession(
             run_kind=provider_session_state.run_kind,
             provider_session_id=provider_session_state.provider_session_id,
-            _provider_session_id_recorder=self.record_provider_session_id,
-            _success_recorder=self.record_successful_run,
+            _state=self,
         )
 
     def prepare_for_run(self) -> None:
@@ -212,56 +198,6 @@ class RunSessionRequest:
     require_exact_transcript_for_strict_resume: bool = False
 
 
-@dataclasses.dataclass
-class PreparedRunSession:
-    role_session: RoleSession
-    run_kind: RunKind
-    provider_session_id: str | None
-    service_state_dir_relpath: str | None
-    provider_state_dir_container_path: str | None
-    success_recorder: Callable[[], None] = dataclasses.field(repr=False)
-    on_provider_session_id: Callable[[str], None] = dataclasses.field(repr=False)
-    prepare_for_run: Callable[[], None] = dataclasses.field(repr=False)
-    _state: AgentRunSessionState = dataclasses.field(repr=False)
-    auth_seed_action: LocalAuthSeedAction | None = None
-    exact_transcript_match: bool = False
-
-    @property
-    def provider_state_dir_relpath(self) -> str | None:
-        return self.service_state_dir_relpath
-
-    def initial_provider_run_session(self) -> PreparedAgentProviderRunSession:
-        state_run_session = self._state.initial_provider_run_session()
-        return PreparedAgentProviderRunSession(
-            run_kind=state_run_session.run_kind,
-            provider_session_id=state_run_session.provider_session_id,
-            _provider_session_id_recorder=self.on_provider_session_id,
-            _success_recorder=self.success_recorder,
-        )
-
-    def resumable_provider_run_session(self) -> PreparedAgentProviderRunSession:
-        state_run_session = self._state.resumable_provider_run_session()
-        return PreparedAgentProviderRunSession(
-            run_kind=state_run_session.run_kind,
-            provider_session_id=state_run_session.provider_session_id,
-            _provider_session_id_recorder=self.on_provider_session_id,
-            _success_recorder=self.success_recorder,
-        )
-
-    def protocol_reprompt_provider_run_session(
-        self,
-    ) -> PreparedAgentProviderRunSession | None:
-        state_run_session = self._state.protocol_reprompt_provider_run_session()
-        if state_run_session is None:
-            return None
-        return PreparedAgentProviderRunSession(
-            run_kind=state_run_session.run_kind,
-            provider_session_id=state_run_session.provider_session_id,
-            _provider_session_id_recorder=self.on_provider_session_id,
-            _success_recorder=self.success_recorder,
-        )
-
-
 def prepare_agent_run_session_state(
     request: AgentRunSessionStateRequest,
 ) -> AgentRunSessionState:
@@ -305,9 +241,9 @@ def record_observed_provider_session_id(
 
 
 def record_successful_provider_session_metadata(
-    prepared_session: PreparedRunSession,
+    session_state: AgentRunSessionState,
 ) -> None:
-    prepared_session.success_recorder()
+    session_state.record_successful_run()
 
 
 def has_exact_transcript_match(
@@ -331,7 +267,7 @@ def has_exact_transcript_match(
     ).exact_transcript_match
 
 
-def prepare_run_session(request: RunSessionRequest) -> PreparedRunSession:
+def prepare_run_session(request: RunSessionRequest) -> AgentRunSessionState:
     session_state = prepare_agent_run_session_state(
         AgentRunSessionStateRequest(
             worktree=request.worktree,
@@ -344,43 +280,16 @@ def prepare_run_session(request: RunSessionRequest) -> PreparedRunSession:
             ),
         )
     )
-    session_ref: dict[str, PreparedRunSession] = {}
-
-    def prepare_for_run() -> None:
-        session_state.prepare_for_run()
-
-    def on_provider_session_id(provider_session_id: str) -> None:
-        prepared_session = session_ref["session"]
-        prepared_session.provider_session_id = provider_session_id
-        record_observed_provider_session_id(session_state, provider_session_id)
-
-    def success_recorder() -> None:
-        session_state.record_successful_run()
-
-    prepared_session = PreparedRunSession(
-        role_session=session_state.role_session,
-        run_kind=session_state.run_kind,
-        provider_session_id=session_state.provider_session_id,
-        service_state_dir_relpath=session_state.service_state_dir_relpath,
-        provider_state_dir_container_path=session_state.provider_state_dir_container_path(
-            request.container_workspace
-        ),
-        success_recorder=success_recorder,
-        on_provider_session_id=on_provider_session_id,
-        prepare_for_run=prepare_for_run,
-        auth_seed_action=session_state.auth_seed_action,
-        exact_transcript_match=session_state.exact_transcript_match,
-        _state=session_state,
+    session_state.provider_state_dir_container_path = (
+        session_state.compute_container_path(request.container_workspace)
     )
-    session_ref["session"] = prepared_session
-    return prepared_session
+    return session_state
 
 
 __all__ = [
     "AgentRunSessionState",
     "AgentRunSessionStateRequest",
     "PreparedAgentProviderRunSession",
-    "PreparedRunSession",
     "RunSessionRequest",
     "has_exact_transcript_match",
     "prepare_agent_run_session_state",

@@ -23,7 +23,6 @@ from pycastle.session.run_dispatch import (
     AgentRunSessionState,
     AgentRunSessionStateRequest,
     PreparedAgentProviderRunSession,
-    PreparedRunSession,
     RunSessionRequest,
     has_exact_transcript_match,
     prepare_agent_run_session_state,
@@ -71,7 +70,7 @@ class PreparedProviderSessionState:
         return self.service_state_dir_relpath
 
     def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
-        return self._state.provider_state_dir_container_path(container_workspace)
+        return self._state.compute_container_path(container_workspace)
 
     def initial_provider_run_session(self) -> PreparedAgentProviderRunSession:
         return self._state.initial_provider_run_session()
@@ -156,7 +155,6 @@ __all__ = [
     "AgentRunSessionStateRequest",
     "PreparedAgentProviderRunSession",
     "PreparedProviderSessionState",
-    "PreparedRunSession",
     "ProviderFreshFallbackReason",
     "ProviderRunState",
     "ProviderSessionStateRequest",

@@ -34,7 +34,7 @@ from pycastle.session import (
 )
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.run_dispatch import (
-    PreparedRunSession as PreparedAgentSession,
+    AgentRunSessionState as PreparedAgentSession,
 )
 from pycastle.session.run_dispatch import (
     RunSessionRequest as SessionDispatchRequest,
@@ -350,7 +350,7 @@ def test_session_package_public_interface_prepares_resumed_run_session(
     )
 
     from pycastle.session import (
-        PreparedRunSession,
+        AgentRunSessionState,
         RunSessionRequest,
         prepare_run_session,
     )
@@ -365,7 +365,7 @@ def test_session_package_public_interface_prepares_resumed_run_session(
         )
     )
 
-    assert isinstance(session, PreparedRunSession)
+    assert isinstance(session, AgentRunSessionState)
     assert session.run_kind is RunKind.RESUME
     assert session.provider_session_id == _role_session_session_uuid(
         RoleSession(
@@ -1389,7 +1389,7 @@ def test_prepare_agent_session_opencode_run_session_switches_from_fresh_to_resum
 
     initial_run = session.initial_provider_run_session()
     resumable_before_capture = session.resumable_provider_run_session()
-    session.on_provider_session_id("sess-opencode-runtime")
+    session.record_provider_session_id("sess-opencode-runtime")
     resumable_after_capture = session.resumable_provider_run_session()
 
     assert initial_run.run_kind is RunKind.FRESH
@@ -1610,7 +1610,7 @@ def test_remember_provider_session_id_updates_session_id(tmp_path: Path):
     _seed_codex_auth(tmp_path)
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
 
-    session.on_provider_session_id("thread-new-id")
+    session.record_provider_session_id("thread-new-id")
 
     assert session.provider_session_id == "thread-new-id"
 
@@ -1619,7 +1619,7 @@ def test_remember_provider_session_id_persists_sidecar_for_codex(tmp_path: Path)
     _seed_codex_auth(tmp_path)
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
 
-    session.on_provider_session_id("thread-sidecar-id")
+    session.record_provider_session_id("thread-sidecar-id")
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     assert (
@@ -1647,7 +1647,7 @@ def test_prepare_agent_session_does_not_write_metadata_before_prepared_success_r
 
     assert service_session_metadata_path(role_session.path).exists() is False
 
-    session.success_recorder()
+    session.record_successful_run()
 
     assert load_service_session_metadata(role_session.path, "claude") == {
         "service": "claude",
@@ -1668,7 +1668,7 @@ def test_prepared_success_recorder_without_provider_session_id_leaves_metadata_u
 
     assert session.provider_session_id is None
 
-    session.success_recorder()
+    session.record_successful_run()
 
     assert load_service_session_metadata(role_session.path, "claude") == {
         "service": "claude",
@@ -1736,9 +1736,9 @@ def test_prepared_success_recorder_preserves_metadata_for_other_services(
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     save_service_session_metadata(role_session.path, "claude", "thread-claude")
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-    session.on_provider_session_id("thread-codex")
+    session.record_provider_session_id("thread-codex")
 
-    session.success_recorder()
+    session.record_successful_run()
 
     assert load_service_session_metadata(role_session.path, "claude") == {
         "service": "claude",
@@ -1755,7 +1755,7 @@ def test_record_successful_provider_session_metadata_uses_updated_session_id(
 ):
     _seed_codex_auth(tmp_path)
     session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-    session.on_provider_session_id("thread-runtime-id")
+    session.record_provider_session_id("thread-runtime-id")
 
     record_successful_provider_session_metadata(session)
 
