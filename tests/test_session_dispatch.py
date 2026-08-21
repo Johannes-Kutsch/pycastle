@@ -25,7 +25,7 @@ from pycastle.runtime_session import (
 from pycastle.services import ClaudeService, CodexService
 from pycastle.services.runtime_services import AgentService, OpenCodeService
 from pycastle.session import (
-    ProviderSessionStateRequest as PreparedProviderSessionStateRequest,
+    ProviderSessionStateRequest as SessionProviderStateRequest,
 )
 from pycastle.session import (
     RoleSession,
@@ -293,8 +293,8 @@ def _provider_request(
     role: AgentRole = AgentRole.IMPLEMENTER,
     namespace: str = "",
     service: AgentService | None = None,
-) -> PreparedProviderSessionStateRequest:
-    return PreparedProviderSessionStateRequest(
+) -> SessionProviderStateRequest:
+    return SessionProviderStateRequest(
         worktree=tmp_path,
         role=role,
         session_namespace=namespace,
@@ -1312,7 +1312,7 @@ def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_wi
     service.fail_provider_session_state = True
 
     state = prepare_provider_session_state(
-        PreparedProviderSessionStateRequest(
+        SessionProviderStateRequest(
             tmp_path,
             AgentRole.IMPROVE,
             "main",
@@ -1358,7 +1358,7 @@ def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_fo
     )
 
     state = prepare_provider_session_state(
-        PreparedProviderSessionStateRequest(
+        SessionProviderStateRequest(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             session_namespace="main",
@@ -1690,7 +1690,7 @@ def test_prepared_provider_run_session_without_provider_session_id_clears_stale_
     save_service_session_metadata(role_session.path, "codex", "thread-stale")
 
     state = prepare_provider_session_state(
-        PreparedProviderSessionStateRequest(
+        SessionProviderStateRequest(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             session_namespace="",
@@ -1715,7 +1715,7 @@ def test_prepared_provider_run_session_without_provider_session_id_deletes_file_
     save_service_session_metadata(role_session.path, "codex", "thread-stale")
 
     state = prepare_provider_session_state(
-        PreparedProviderSessionStateRequest(
+        SessionProviderStateRequest(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             session_namespace="",
