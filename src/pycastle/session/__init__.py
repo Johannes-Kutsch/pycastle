@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 
 from pycastle.runtime_session import RunKind
 from pycastle.session.agent import (
-    AuthSeedingRequirement,
-    LocalAuthSeedAction,
     RunSessionPlan,
     RunSessionPlanRequest,
     plan_run_session,
@@ -49,56 +47,11 @@ class ProviderSessionStateRequest:
     require_exact_transcript_for_strict_resume: bool = False
 
 
-@dataclasses.dataclass
-class PreparedProviderSessionState:
-    role_session: object
-    run_kind: RunKind
-    provider_session_id: str | None
-    service_state_dir_relpath: str | None
-    service_state_dir_path: Path | None
-    auth_seeding_requirement: AuthSeedingRequirement
-    worktree: Path = dataclasses.field(repr=False)
-    role: AgentRole = dataclasses.field(repr=False)
-    session_namespace: str = dataclasses.field(repr=False)
-    service: AgentService = dataclasses.field(repr=False)
-    _state: AgentRunSessionState = dataclasses.field(repr=False)
-    auth_seed_action: LocalAuthSeedAction | None = None
-    exact_transcript_match: bool = False
-
-    @property
-    def provider_state_dir_relpath(self) -> str | None:
-        return self.service_state_dir_relpath
-
-    def provider_state_dir_container_path(self, container_workspace: str) -> str | None:
-        return self._state.compute_container_path(container_workspace)
-
-    def initial_provider_run_session(self) -> PreparedAgentProviderRunSession:
-        return self._state.initial_provider_run_session()
-
-    def resumable_provider_run_session(self) -> PreparedAgentProviderRunSession:
-        return self._state.resumable_provider_run_session()
-
-    def protocol_reprompt_provider_run_session(
-        self,
-    ) -> PreparedAgentProviderRunSession | None:
-        return self._state.protocol_reprompt_provider_run_session()
-
-    def prepare_for_run(self) -> None:
-        self._state.prepare_for_run()
-
-    def record_provider_session_id(self, provider_session_id: str) -> None:
-        self._state.record_provider_session_id(provider_session_id)
-        self.provider_session_id = self._state.provider_session_id
-
-    def record_successful_run(self) -> None:
-        self._state.record_successful_run()
-
-
 def prepare_provider_session_state(
     request: ProviderSessionStateRequest,
-) -> PreparedProviderSessionState:
+) -> AgentRunSessionState:
     run_session_plan = _run_session_plan_for_request(request)
-    state = prepare_agent_run_session_state(
+    return prepare_agent_run_session_state(
         AgentRunSessionStateRequest(
             worktree=request.worktree,
             role=request.role,
@@ -109,21 +62,6 @@ def prepare_provider_session_state(
                 request.require_exact_transcript_for_strict_resume
             ),
         )
-    )
-    return PreparedProviderSessionState(
-        role_session=state.role_session,
-        run_kind=state.run_kind,
-        provider_session_id=state.provider_session_id,
-        service_state_dir_relpath=state.service_state_dir_relpath,
-        service_state_dir_path=state.service_state_dir_path,
-        auth_seeding_requirement=run_session_plan.auth_seeding_requirement,
-        worktree=request.worktree,
-        role=request.role,
-        session_namespace=request.session_namespace,
-        service=request.service,
-        auth_seed_action=state.auth_seed_action,
-        exact_transcript_match=state.exact_transcript_match,
-        _state=state,
     )
 
 
@@ -154,7 +92,6 @@ __all__ = [
     "AgentRunSessionState",
     "AgentRunSessionStateRequest",
     "PreparedAgentProviderRunSession",
-    "PreparedProviderSessionState",
     "ProviderFreshFallbackReason",
     "ProviderRunState",
     "ProviderSessionStateRequest",

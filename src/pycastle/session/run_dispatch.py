@@ -10,6 +10,7 @@ from pycastle.runtime_session import (
     RunKind,
 )
 from pycastle.session.agent import (
+    AuthSeedingRequirement,
     LocalAuthSeedAction,
     RunSessionPlan,
     RunSessionPlanRequest,
@@ -69,6 +70,10 @@ class AgentRunSessionState:
         default=False,
         repr=False,
     )
+
+    @property
+    def auth_seeding_requirement(self) -> AuthSeedingRequirement:
+        return self._plan.auth_seeding_requirement
 
     @property
     def provider_state_dir_relpath(self) -> str | None:

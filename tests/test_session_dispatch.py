@@ -545,7 +545,7 @@ def test_prepare_provider_session_state_fresh_codex_uses_selected_state_dir_for_
 
     assert state.run_kind is RunKind.FRESH
     assert state.provider_session_id is None
-    assert state.provider_state_dir_container_path("/home/agent/workspace") == (
+    assert state.compute_container_path("/home/agent/workspace") == (
         "/home/agent/workspace/custom/codex-state/"
     )
     assert (selected_state_dir / "auth.json").read_text(encoding="utf-8") == (
@@ -1370,7 +1370,7 @@ def test_prepare_provider_session_state_uses_supplied_provider_run_state_plan_fo
     assert state.run_kind is RunKind.RESUME
     assert state.provider_session_id == "sess-planned"
     assert state.service_state_dir_path == selected_state_dir
-    assert state.provider_state_dir_container_path("/home/agent/workspace") == (
+    assert state.compute_container_path("/home/agent/workspace") == (
         "/home/agent/workspace/.pycastle-session/improve/main/opencode/"
     )
 
