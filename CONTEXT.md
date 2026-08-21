@@ -346,7 +346,6 @@
 | **Service** | Injectable abstraction encapsulating all subprocess calls for one external tool/domain (Git, Claude CLI, Docker); all live in `src/pycastle/services/` and are imported via `pycastle.services` | Provider, adapter, wrapper |
 | **service interface** | Public methods callers depend on; never exposes subprocess or tool-specific details | Contract, API |
 | **Custom exception hierarchy** | Domain-specific exception types raised by a Service (`GitCommandError`, `GitTimeoutError`); callers never see raw subprocess exceptions | Tool exceptions, system errors |
-| **`_SubprocessService`** | Private base in `services/_base.py` inherited by `GitService`; owns `_run` (exception translation), `_run_or_raise` (returncode + domain error), `_decode` (UTF-8 -> stripped str); not part of public `pycastle.services` API. `GithubService` does not inherit it because GitHub access is PAT-authenticated HTTP, not subprocess execution (ADR 0004). | - |
 | **Dependency injection** | Pattern of passing Service implementations to functions/classes that depend on them, enabling test mocks | Parameter injection, constructor injection |
 | **test fixture** | Pytest fixture providing Default implementations for all Services; individual tests override | Mock factory, test helper |
 | **test support module** | Tests-only Python module under `tests/support/` that owns shared fixtures, test adapters, and dependency factories. Production modules under `src/pycastle/` never import it; its import path makes test-only concepts explicit. | production helper, runtime helper |
