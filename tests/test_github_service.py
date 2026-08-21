@@ -192,12 +192,6 @@ def test_constructor_accepts_repo_token_and_cfg():
     assert svc.repo == "owner/repo"
 
 
-def test_github_service_does_not_inherit_from_subprocess_service():
-    from pycastle.services._base import _SubprocessService
-
-    assert not issubclass(GithubService, _SubprocessService)
-
-
 # ── check_auth (tracer) ───────────────────────────────────────────────────────
 
 

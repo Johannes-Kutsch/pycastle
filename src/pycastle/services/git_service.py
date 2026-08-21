@@ -1,11 +1,11 @@
 import logging
 import shutil
+import subprocess
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from pycastle.config import Config
-from pycastle.services._base import _SubprocessService
 from pycastle.services._git_remote_retry import (
     DEFAULT_REMOTE_GIT_RETRY_POLICY,
     EscalateOperatorActionableGitFailure,
@@ -64,14 +64,37 @@ class GitNotFoundError(GitServiceError):
     pass
 
 
-class GitService(_SubprocessService):
-    _timeout_error_class = GitTimeoutError
-    _not_found_error_class = GitNotFoundError
-    _command_error_class = GitCommandError
-
+class GitService:
     def __init__(self, cfg: Config) -> None:
-        super().__init__(cfg.worktree_timeout)
+        self.timeout = cfg.worktree_timeout
         self._remote_retry_policy = DEFAULT_REMOTE_GIT_RETRY_POLICY
+
+    def _run(
+        self, cmd: list[str], cwd: Path | None = None, **kwargs: object
+    ) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+        kwargs.setdefault("timeout", self.timeout)
+        try:
+            return subprocess.run(cmd, cwd=cwd, check=False, **kwargs)  # type: ignore[call-overload]  # noqa: S603  # callers control cmd contents
+        except subprocess.TimeoutExpired as exc:
+            raise GitTimeoutError(
+                f"command timed out after {exc.timeout}s: {exc.cmd}"
+            ) from exc
+        except FileNotFoundError as exc:
+            raise GitNotFoundError(f"executable not found: {cmd[0]}") from exc
+
+    def _run_or_raise(
+        self, cmd: list[str], message: str, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess:  # type: ignore[type-arg]
+        result = self._run(cmd, cwd=cwd, capture_output=True)
+        if result.returncode != 0:
+            raise GitCommandError(
+                message, result.returncode, self._decode(result.stderr)
+            )
+        return result
+
+    @staticmethod
+    def _decode(b: bytes) -> str:
+        return b.decode("utf-8", errors="replace").strip()
 
     def get_user_name(self, cwd: Path | None = None) -> str:
         result = self._run_or_raise(
