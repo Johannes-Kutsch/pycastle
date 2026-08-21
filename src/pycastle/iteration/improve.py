@@ -1,6 +1,4 @@
-import contextlib
 import dataclasses
-import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,15 +23,15 @@ from pycastle.infrastructure.worktree import (
 )
 from pycastle.iteration._rows import StatusRowConfig, status_row
 from pycastle.iteration.improve_drafts import DraftSetValidationError, read_draft_set
-from pycastle.iteration.improve_filing import (
-    _CandidateRecord,
-    _load_record,
-    _save_record,
-    file_draft_set,
-)
+from pycastle.iteration.improve_filing import file_draft_set
 from pycastle.iteration.improve_preparation import (
     ImproveCandidate,
     prepare_improve_step,
+)
+from pycastle.iteration.improve_role_session_store import (
+    CandidateItem,
+    CandidateList,
+    ImproveRoleSessionStore,
 )
 from pycastle.iteration.preflight import (
     PreflightAFK,
@@ -162,105 +160,21 @@ class ImprovePhaseDriver:
 
     Construction is side-effect-free; start() performs the first disk read.
 
-    State is held in three role-level files:
+    State is held in three role-level files (via ImproveRoleSessionStore):
     - _candidate_list: JSON with ordered scan candidates (and no_candidate flag).
     - _candidate_cursor: integer index of the candidate currently being processed.
-    - _phase_in_flight: key of the phase currently executing (for mid-phase resumption).
+    - _in_flight: key of the phase currently executing (for mid-phase resumption).
 
     Per-candidate state lives in candidates/<idx>/_candidate_record (written by the
     filing pass and the spec phase completion marker).
     """
 
-    _CANDIDATE_LIST_FILE = "_candidate_list"
-    _CANDIDATE_CURSOR_FILE = "_candidate_cursor"
-    _IN_FLIGHT_FILE = "_phase_in_flight"
-
     def __init__(self, role_session_dir: Path, *, no_candidate_report: bool) -> None:
-        self._dir = role_session_dir
+        self._store = ImproveRoleSessionStore(role_session_dir)
         self._no_candidate_report = no_candidate_report
         self._candidates: list[ScanCandidateItem] | None = None
         self._no_candidate: bool = False
         self._cursor: int = 0
-
-    # ── Disk I/O helpers ──────────────────────────────────────────────────────
-
-    def _candidate_list_path(self) -> Path:
-        return self._dir / self._CANDIDATE_LIST_FILE
-
-    def _candidate_cursor_path(self) -> Path:
-        return self._dir / self._CANDIDATE_CURSOR_FILE
-
-    def _in_flight_path(self) -> Path:
-        return self._dir / self._IN_FLIGHT_FILE
-
-    def _candidate_dir(self, idx: int) -> Path:
-        return self._dir / "candidates" / str(idx)
-
-    def _load_state(self) -> tuple[list[ScanCandidateItem] | None, bool, int]:
-        """Return (candidates, no_candidate, cursor). None candidates = scan not done."""
-        list_path = self._candidate_list_path()
-        if not list_path.is_file():
-            return None, False, 0
-        try:
-            data = json.loads(list_path.read_text(encoding="utf-8"))
-            no_candidate = data.get("no_candidate", False)
-            candidates = [
-                ScanCandidateItem(rank=c["rank"], title=c["title"])
-                for c in data.get("candidates", [])
-            ]
-        except (KeyError, json.JSONDecodeError):
-            return None, False, 0
-
-        cursor = 0
-        cursor_path = self._candidate_cursor_path()
-        if cursor_path.is_file():
-            with contextlib.suppress(ValueError, OSError):
-                cursor = int(cursor_path.read_text(encoding="utf-8").strip())
-        return candidates, no_candidate, cursor
-
-    def _save_candidate_list(
-        self, candidates: list[ScanCandidateItem], *, no_candidate: bool = False
-    ) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        data: dict = {
-            "candidates": [{"rank": c.rank, "title": c.title} for c in candidates],
-        }
-        if no_candidate:
-            data["no_candidate"] = True
-        self._candidate_list_path().write_text(json.dumps(data), encoding="utf-8")
-
-    def _save_cursor(self, cursor: int) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._candidate_cursor_path().write_text(str(cursor), encoding="utf-8")
-
-    def _write_in_flight(self, phase_key: str) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._in_flight_path().write_text(phase_key, encoding="utf-8")
-
-    def _load_in_flight(self) -> str | None:
-        p = self._in_flight_path()
-        return p.read_text(encoding="utf-8").strip() if p.is_file() else None
-
-    def _clear_in_flight(self) -> None:
-        self._in_flight_path().unlink(missing_ok=True)
-
-    def _load_candidate_record(self, idx: int) -> _CandidateRecord | None:
-        return _load_record(self._candidate_dir(idx))
-
-    def _write_prd_completion(self, idx: int) -> None:
-        """Record that the spec (PRD) phase completed for candidate idx."""
-        candidate_dir = self._candidate_dir(idx)
-        if _load_record(candidate_dir) is None:
-            _save_record(
-                candidate_dir,
-                _CandidateRecord(
-                    spec_number=None,
-                    spec_database_id=None,
-                    spec_title="",
-                    filed_slices=[],
-                    labels_applied=False,
-                ),
-            )
 
     # ── Step factories ────────────────────────────────────────────────────────
 
@@ -314,7 +228,7 @@ class ImprovePhaseDriver:
 
     def _step_for_candidate(self, idx: int, *, from_start: bool) -> Step | None:
         """Return the next step for candidate at idx, or None if already complete."""
-        record = self._load_candidate_record(idx)
+        record = self._store.read_candidate_record(idx)
 
         if record is not None and record.labels_applied:
             return None  # Candidate fully complete
@@ -330,14 +244,14 @@ class ImprovePhaseDriver:
 
         if record is None:
             # No record → spec (PRD) phase. Check in-flight for mid-PRD resume.
-            in_flight = self._load_in_flight() if from_start else None
+            in_flight = self._store.read_in_flight() if from_start else None
             is_mid_prd = in_flight == "02-prd"
             return self._make_prd_step(
                 send_role_prompt_on_resume=not is_mid_prd, idx=idx, candidate=candidate
             )
 
         # Record exists → slice (Issues) phase.
-        in_flight = self._load_in_flight() if from_start else None
+        in_flight = self._store.read_in_flight() if from_start else None
         is_mid_issues = in_flight == "03-issues"
         step = self._make_issues_step(idx=idx, candidate=candidate)
         # For mid-issues resume, override send_role_prompt_on_resume to False.
@@ -363,21 +277,28 @@ class ImprovePhaseDriver:
                 return step
             # labels_applied=True: auto-advance cursor for this completed candidate.
             cursor += 1
-            self._save_cursor(cursor)
+            self._store.write_cursor(cursor)
         return None  # All candidates done
 
     # ── Public interface ──────────────────────────────────────────────────────
 
     def start(self) -> "Step | None":
-        candidates, no_candidate, cursor = self._load_state()
+        candidate_list = self._store.read_candidate_list()
 
-        if candidates is None:
+        if candidate_list is None:
             # Scan not done → return scan step.
-            in_flight = self._load_in_flight()
+            in_flight = self._store.read_in_flight()
             is_mid_scan = in_flight == "01-scan"
             step = self._make_scan_step(fetch_recent_prd_titles=not is_mid_scan)
-            self._write_in_flight("01-scan")
+            self._store.write_in_flight("01-scan")
             return step
+
+        candidates = [
+            ScanCandidateItem(rank=c.rank, title=c.title)
+            for c in candidate_list.candidates
+        ]
+        no_candidate = candidate_list.no_candidate
+        cursor = self._store.read_cursor() or 0
 
         self._candidates = candidates
         self._no_candidate = no_candidate
@@ -385,18 +306,18 @@ class ImprovePhaseDriver:
 
         if no_candidate:
             if self._no_candidate_report and cursor == 0:
-                in_flight = self._load_in_flight()
+                in_flight = self._store.read_in_flight()
                 is_mid_report = in_flight == "04-no-candidate-report"
                 step = self._make_report_step(
                     send_role_prompt_on_resume=not is_mid_report
                 )
-                self._write_in_flight("04-no-candidate-report")
+                self._store.write_in_flight("04-no-candidate-report")
                 return step
             return None
 
         next_step: Step | None = self._next_step_from_cursor(cursor, from_start=True)
         if next_step is not None:
-            self._write_in_flight(next_step.prompt_key.removesuffix(".md"))
+            self._store.write_in_flight(next_step.prompt_key.removesuffix(".md"))
         return next_step
 
     def next(self) -> "Step | None":
@@ -407,7 +328,7 @@ class ImprovePhaseDriver:
         if self._no_candidate:
             if self._no_candidate_report and self._cursor == 0:
                 step = self._make_report_step(send_role_prompt_on_resume=True)
-                self._write_in_flight("04-no-candidate-report")
+                self._store.write_in_flight("04-no-candidate-report")
                 return step
             return None
 
@@ -415,7 +336,7 @@ class ImprovePhaseDriver:
             self._cursor, from_start=False
         )
         if next_step is not None:
-            self._write_in_flight(next_step.prompt_key.removesuffix(".md"))
+            self._store.write_in_flight(next_step.prompt_key.removesuffix(".md"))
         return next_step
 
     def record_outcome(self, step: "Step", output: AgentOutput) -> None:
@@ -425,28 +346,38 @@ class ImprovePhaseDriver:
                 self._candidates = candidates
                 self._no_candidate = False
                 self._cursor = 0
-                self._save_candidate_list(candidates)
-                self._save_cursor(0)
+                self._store.write_candidate_list(
+                    CandidateList(
+                        candidates=tuple(
+                            CandidateItem(rank=c.rank, title=c.title)
+                            for c in candidates
+                        ),
+                        no_candidate=False,
+                    )
+                )
+                self._store.write_cursor(0)
             elif isinstance(output, NoCandidateOutput):
                 self._candidates = []
                 self._no_candidate = True
                 self._cursor = 0
-                self._save_candidate_list([], no_candidate=True)
-                self._save_cursor(0)
+                self._store.write_candidate_list(
+                    CandidateList(candidates=(), no_candidate=True)
+                )
+                self._store.write_cursor(0)
 
         elif step.prompt_key == "02-prd.md":
-            self._write_prd_completion(self._cursor)
+            self._store.mark_prd_completion(self._cursor)
 
         elif step.prompt_key == "03-issues.md":
             self._cursor += 1
-            self._save_cursor(self._cursor)
+            self._store.write_cursor(self._cursor)
 
         elif step.prompt_key == "04-no-candidate-report.md":
             # cursor=1 marks report done; checked in start() and next().
             self._cursor = 1
-            self._save_cursor(1)
+            self._store.write_cursor(1)
 
-        self._clear_in_flight()
+        self._store.clear_in_flight()
 
     @property
     def no_candidate(self) -> bool:
@@ -508,23 +439,6 @@ def _candidate_transcript_ok(
     )
 
 
-def _prev_spec_for_candidate(
-    role_session_dir: Path, candidate_idx: int
-) -> tuple[int, int] | None:
-    """Return (spec_number, spec_database_id) from the previous candidate record, if available."""
-    if candidate_idx == 0:
-        return None
-    prev_dir = role_session_dir / "candidates" / str(candidate_idx - 1)
-    prev_record = _load_record(prev_dir)
-    if (
-        prev_record is not None
-        and prev_record.spec_number is not None
-        and prev_record.spec_database_id is not None
-    ):
-        return (prev_record.spec_number, prev_record.spec_database_id)
-    return None
-
-
 def _cap_reached(deps: "_ImproveDeps", completed_count: int) -> bool:
     return (
         deps.cfg.improve_max is not None
@@ -539,10 +453,22 @@ async def _file_improve_drafts(
     sandbox_path: Path,
     candidate_idx: int,
     candidate_namespace: str,
-    prev_spec: tuple[int, int] | None = None,
 ) -> None:
     draft_dir = role_session_dir / _DRAFTS_SUBDIR
-    candidate_dir = role_session_dir / "candidates" / str(candidate_idx)
+    store = ImproveRoleSessionStore(role_session_dir)
+
+    if candidate_idx == 0:
+        prev_spec = None
+    else:
+        prev_record = store.read_candidate_record(candidate_idx - 1)
+        prev_spec = (
+            (prev_record.spec_number, prev_record.spec_database_id)
+            if prev_record is not None
+            and prev_record.spec_number is not None
+            and prev_record.spec_database_id is not None
+            else None
+        )
+
     try:
         drafts = read_draft_set(draft_dir, deps.cfg)
     except DraftSetValidationError as exc:
@@ -576,7 +502,8 @@ async def _file_improve_drafts(
     file_draft_set(
         drafts,
         port=_GithubFilingPort(deps.github_svc),
-        role_dir=candidate_dir,
+        store=store,
+        candidate_idx=candidate_idx,
         state_label=deps.cfg.issue_label,
         prev_spec=prev_spec,
     )
@@ -593,42 +520,44 @@ def _wind_down_partial_candidates(
 ) -> None:
     """Handle partially-filed candidates when the safe SHA changes (AC2, AC3).
 
-    Reads the candidate list and cursor from disk.  For each candidate at or
-    after the cursor that has not yet been fully labelled:
+    Reads the candidate list and cursor from the store.  For each candidate at
+    or after the cursor that has not yet been fully labelled:
     - spec filed but no slices → close the spec (AC2)
     - some slices filed but not labelled → complete filing by host (AC3)
     """
-    list_path = role_session_dir / "_candidate_list"
-    if not list_path.is_file():
+    store = ImproveRoleSessionStore(role_session_dir)
+    candidate_list = store.read_candidate_list()
+    if candidate_list is None:
         return
-    try:
-        data = json.loads(list_path.read_text(encoding="utf-8"))
-        candidate_count = len(data.get("candidates", []))
-    except (KeyError, json.JSONDecodeError):
-        return
-
-    cursor = 0
-    cursor_path = role_session_dir / "_candidate_cursor"
-    if cursor_path.is_file():
-        with contextlib.suppress(ValueError, OSError):
-            cursor = int(cursor_path.read_text(encoding="utf-8").strip())
+    candidate_count = len(candidate_list.candidates)
+    cursor = store.read_cursor() or 0
 
     for idx in range(cursor, candidate_count):
-        candidate_dir = role_session_dir / "candidates" / str(idx)
-        record = _load_record(candidate_dir)
+        record = store.read_candidate_record(idx)
         if record is None or record.spec_number is None or record.labels_applied:
             continue
         if not record.filed_slices:
             port.close_issue(record.spec_number)
         else:
             draft_dir = role_session_dir / _DRAFTS_SUBDIR
-            prev_spec = _prev_spec_for_candidate(role_session_dir, idx)
+            if idx == 0:
+                prev_spec = None
+            else:
+                prev_record = store.read_candidate_record(idx - 1)
+                prev_spec = (
+                    (prev_record.spec_number, prev_record.spec_database_id)
+                    if prev_record is not None
+                    and prev_record.spec_number is not None
+                    and prev_record.spec_database_id is not None
+                    else None
+                )
             try:
                 drafts = read_draft_set(draft_dir, cfg)
                 file_draft_set(
                     drafts,
                     port=port,
-                    role_dir=candidate_dir,
+                    store=store,
+                    candidate_idx=idx,
                     state_label=cfg.issue_label,
                     prev_spec=prev_spec,
                 )
@@ -669,14 +598,12 @@ async def _complete_candidate(
     either the cap is reached or the safe SHA changed (AC1).
     """
     candidate_idx = int(step_namespace.split("/")[1])
-    prev_spec = _prev_spec_for_candidate(role_session_dir, candidate_idx)
     await _file_improve_drafts(
         deps=deps,
         role_session_dir=role_session_dir,
         sandbox_path=sandbox_path,
         candidate_idx=candidate_idx,
         candidate_namespace=step_namespace,
-        prev_spec=prev_spec,
     )
     new_count = completed_count + 1
     if _cap_reached(deps, new_count):

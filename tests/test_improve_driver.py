@@ -1,6 +1,5 @@
 """Tests for ImprovePhaseDriver at its three-method interface."""
 
-import json
 from pathlib import Path
 
 import pytest
@@ -13,8 +12,11 @@ from pycastle.agents.output_protocol import (
     ScanCandidatesOutput,
 )
 from pycastle.iteration.improve import ImprovePhaseDriver
-from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
 from pycastle.iteration.improve_preparation import ImproveCandidate
+from pycastle.iteration.improve_role_session_store import (
+    CandidateRecord,
+    ImproveRoleSessionStore,
+)
 from pycastle.prompts.pipeline import PromptTemplate
 
 
@@ -37,14 +39,21 @@ def _seed_candidate_list(
     cursor: int = 0,
 ) -> None:
     """Pre-seed the candidate list and cursor to simulate a prior scan."""
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    data: dict = {
-        "candidates": [{"rank": c.rank, "title": c.title} for c in candidates]
-    }
-    if no_candidate:
-        data["no_candidate"] = True
-    (driver_dir / "_candidate_list").write_text(json.dumps(data), encoding="utf-8")
-    (driver_dir / "_candidate_cursor").write_text(str(cursor), encoding="utf-8")
+    store = ImproveRoleSessionStore(driver_dir)
+    from pycastle.iteration.improve_role_session_store import (
+        CandidateItem,
+        CandidateList,
+    )
+
+    store.write_candidate_list(
+        CandidateList(
+            candidates=tuple(
+                CandidateItem(rank=c.rank, title=c.title) for c in candidates
+            ),
+            no_candidate=no_candidate,
+        )
+    )
+    store.write_cursor(cursor)
 
 
 def _seed_candidate_record(
@@ -55,16 +64,16 @@ def _seed_candidate_record(
     labels_applied: bool = False,
 ) -> None:
     """Pre-seed a per-candidate record."""
-    candidate_dir = driver_dir / "candidates" / str(idx)
-    candidate_dir.mkdir(parents=True, exist_ok=True)
-    record = _CandidateRecord(
+    driver_dir.mkdir(parents=True, exist_ok=True)
+    store = ImproveRoleSessionStore(driver_dir)
+    record = CandidateRecord(
         spec_number=spec_number,
         spec_database_id=42 if spec_number is not None else None,
         spec_title="Seeded" if spec_number is not None else "",
-        filed_slices=[],
+        filed_slices=(),
         labels_applied=labels_applied,
     )
-    _save_record(candidate_dir, record)
+    store.write_candidate_record(idx, record)
 
 
 # ── start() sequence ──────────────────────────────────────────────────────────
@@ -186,10 +195,10 @@ def test_candidate_list_written_to_role_dir_after_scan(driver_dir: Path) -> None
         ),
     )
 
-    list_file = driver_dir / "_candidate_list"
-    assert list_file.is_file(), "_candidate_list must be written at role level"
-    data = json.loads(list_file.read_text(encoding="utf-8"))
-    assert [c["title"] for c in data["candidates"]] == ["Alpha", "Beta"]
+    store = ImproveRoleSessionStore(driver_dir)
+    candidate_list = store.read_candidate_list()
+    assert candidate_list is not None
+    assert [c.title for c in candidate_list.candidates] == ["Alpha", "Beta"]
 
 
 def test_candidate_list_is_at_role_level_not_inside_namespace(driver_dir: Path) -> None:
@@ -271,7 +280,8 @@ def test_advancing_one_candidate_leaves_other_unchanged(driver_dir: Path) -> Non
     assert step3.prompt_key == "02-prd.md"
 
     # Candidate 0's record (written by driver) is separate from candidate 1.
-    assert not (driver_dir / "candidates" / "1" / "_candidate_record").exists()
+    store = ImproveRoleSessionStore(driver_dir)
+    assert store.read_candidate_record(1) is None
 
 
 # ── AC 6: All candidates complete → terminal ─────────────────────────────────
@@ -331,8 +341,8 @@ def test_prd_step_sends_role_prompt_after_scan(driver_dir: Path) -> None:
 def test_mid_prd_retry_does_not_send_role_prompt(driver_dir: Path) -> None:
     """In-flight=02-prd → PRD step has send_role_prompt_on_resume=False (mid-phase retry)."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
+    store = ImproveRoleSessionStore(driver_dir)
+    store.write_in_flight("02-prd")
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
@@ -359,9 +369,8 @@ def test_start_writes_in_flight_before_returning(driver_dir: Path) -> None:
     step = driver.start()
     assert step is not None
 
-    in_flight_file = driver_dir / "_phase_in_flight"
-    assert in_flight_file.exists()
-    assert in_flight_file.read_text(encoding="utf-8") == "01-scan"
+    store = ImproveRoleSessionStore(driver_dir)
+    assert store.read_in_flight() == "01-scan"
 
 
 def test_next_writes_in_flight_before_returning(driver_dir: Path) -> None:
@@ -376,9 +385,8 @@ def test_next_writes_in_flight_before_returning(driver_dir: Path) -> None:
     step2 = driver.next()
     assert step2 is not None
 
-    in_flight_file = driver_dir / "_phase_in_flight"
-    assert in_flight_file.exists()
-    assert in_flight_file.read_text(encoding="utf-8") == "02-prd"
+    store = ImproveRoleSessionStore(driver_dir)
+    assert store.read_in_flight() == "02-prd"
 
 
 # ── record_outcome disk effects ───────────────────────────────────────────────
@@ -394,7 +402,8 @@ def test_record_outcome_clears_in_flight_after_scan(driver_dir: Path) -> None:
         step, ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="A"),))
     )
 
-    assert not (driver_dir / "_phase_in_flight").exists()
+    store = ImproveRoleSessionStore(driver_dir)
+    assert store.read_in_flight() is None
 
 
 def test_record_outcome_advances_cursor_after_issues(driver_dir: Path) -> None:
@@ -411,8 +420,8 @@ def test_record_outcome_advances_cursor_after_issues(driver_dir: Path) -> None:
     assert step2.prompt_key == "03-issues.md"
     driver.record_outcome(step2, CompletionOutput())
 
-    cursor_file = driver_dir / "_candidate_cursor"
-    assert int(cursor_file.read_text(encoding="utf-8").strip()) == 1
+    store = ImproveRoleSessionStore(driver_dir)
+    assert store.read_cursor() == 1
 
 
 # ── ImproveCandidate threading ────────────────────────────────────────────────
@@ -486,8 +495,8 @@ def test_mid_issues_resume_preserves_candidate(driver_dir: Path) -> None:
     """Mid-issues resume keeps candidate intact when overriding send_role_prompt_on_resume."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=7, title="Resume Me")])
     _seed_candidate_record(driver_dir, 0, spec_number=99)
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
+    store = ImproveRoleSessionStore(driver_dir)
+    store.write_in_flight("03-issues")
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None

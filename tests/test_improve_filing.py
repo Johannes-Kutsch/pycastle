@@ -9,6 +9,7 @@ import pytest
 
 from pycastle.iteration.improve_drafts import IssueDraft
 from pycastle.iteration.improve_filing import FilingPort, file_draft_set
+from pycastle.iteration.improve_role_session_store import ImproveRoleSessionStore
 
 _BODY = "A" * 200
 
@@ -60,8 +61,11 @@ def test_spec_created_first_then_slices_in_order(
     tmp_path: Path, port: MagicMock
 ) -> None:
     drafts = [_spec(), _slice("01-foo"), _slice("02-bar")]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     titles = [c.args[0] for c in port.create_issue.call_args_list]
     assert titles == ["Spec Issue", "01-foo Slice", "02-bar Slice"]
@@ -79,8 +83,11 @@ def test_sub_issue_and_blockers_wired_before_next_slice(
     """register_sub_issue and add_issue_dependency for slice N happen
     before create_issue for slice N+1."""
     drafts = [_spec(), _slice("01-foo"), _slice("02-bar")]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     ops = port.method_calls
     create_spec_idx = ops.index(
@@ -109,8 +116,11 @@ def test_blocked_slice_body_contains_blocked_by_line(
     tmp_path: Path, port: MagicMock
 ) -> None:
     drafts = [_spec(), _slice("01-foo", blocked_by=["spec"])]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, body, _ = port.create_issue.call_args_list[1].args
     assert "## Blocked by" in body
@@ -119,8 +129,11 @@ def test_blocked_slice_body_contains_blocked_by_line(
 
 def test_blocked_slice_native_dependency_wired(tmp_path: Path, port: MagicMock) -> None:
     drafts = [_spec(), _slice("01-foo", blocked_by=["spec"])]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     port.add_issue_dependency.assert_called_once_with(101, 1000)
 
@@ -129,8 +142,11 @@ def test_unblocked_slice_has_no_blocked_by_in_body(
     tmp_path: Path, port: MagicMock
 ) -> None:
     drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, body, _ = port.create_issue.call_args_list[1].args
     assert "## Blocked by" in body
@@ -147,8 +163,11 @@ def test_slice_blocked_by_earlier_slice_resolves_to_real_number(
     tmp_path: Path, port: MagicMock
 ) -> None:
     drafts = [_spec(), _slice("01-foo"), _slice("02-bar", blocked_by=["01-foo"])]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, bar_body, _ = port.create_issue.call_args_list[2].args
     assert "## Blocked by" in bar_body
@@ -166,8 +185,11 @@ def test_slice_blocked_by_spec_and_earlier_slice(
         _slice("01-foo"),
         _slice("02-bar", blocked_by=["spec", "01-foo"]),
     ]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, bar_body, _ = port.create_issue.call_args_list[2].args
     assert "#100" in bar_body
@@ -182,8 +204,11 @@ def test_slice_blocked_by_spec_and_earlier_slice(
 
 def test_state_label_absent_from_create_calls(tmp_path: Path, port: MagicMock) -> None:
     drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     for c in port.create_issue.call_args_list:
         labels = c.args[2]
@@ -194,8 +219,11 @@ def test_state_label_applied_to_all_issues_after_creation(
     tmp_path: Path, port: MagicMock
 ) -> None:
     drafts = [_spec(), _slice("01-foo"), _slice("02-bar")]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     apply_calls = port.apply_label.call_args_list
     applied_numbers = {c.args[0] for c in apply_calls}
@@ -222,7 +250,10 @@ def test_state_label_not_applied_until_all_issues_exist(
     port.apply_label.side_effect = _apply
 
     drafts = [_spec(), _slice("01-foo"), _slice("02-bar")]
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    store = ImproveRoleSessionStore(tmp_path)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     create_positions = [i for i, op in enumerate(ops) if op[0] == "create"]
     apply_positions = [i for i, op in enumerate(ops) if op[0] == "apply"]
@@ -244,16 +275,17 @@ def test_failure_after_spec_leaves_record_with_spec_and_no_label(
     ]
 
     drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
 
     with pytest.raises(RuntimeError, match="network failure"):
-        file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+        file_draft_set(
+            drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+        )
 
-    record_file = tmp_path / "_candidate_record"
-    assert record_file.is_file()
-
-    data = json.loads(record_file.read_text(encoding="utf-8"))
-    assert data["spec_number"] == 100
-    assert data["labels_applied"] is False
+    record = store.read_candidate_record(0)
+    assert record is not None
+    assert record.spec_number == 100
+    assert record.labels_applied is False
     port.apply_label.assert_not_called()
 
 
@@ -271,17 +303,22 @@ def test_resume_does_not_create_second_spec(tmp_path: Path) -> None:
     ]
 
     drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
 
     with pytest.raises(RuntimeError):
         file_draft_set(
-            drafts, port=port_first, role_dir=tmp_path, state_label=_STATE_LABEL
+            drafts,
+            port=port_first,
+            store=store,
+            candidate_idx=0,
+            state_label=_STATE_LABEL,
         )
 
     port_second = MagicMock(spec=FilingPort)
     port_second.create_issue.side_effect = [(101, 1001)]
 
     file_draft_set(
-        drafts, port=port_second, role_dir=tmp_path, state_label=_STATE_LABEL
+        drafts, port=port_second, store=store, candidate_idx=0, state_label=_STATE_LABEL
     )
 
     # Second run must have created exactly one issue (the slice, not the spec)
@@ -301,17 +338,22 @@ def test_resume_applies_labels_to_all_issues_including_previously_filed(
     ]
 
     drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
 
     with pytest.raises(RuntimeError):
         file_draft_set(
-            drafts, port=port_first, role_dir=tmp_path, state_label=_STATE_LABEL
+            drafts,
+            port=port_first,
+            store=store,
+            candidate_idx=0,
+            state_label=_STATE_LABEL,
         )
 
     port_second = MagicMock(spec=FilingPort)
     port_second.create_issue.side_effect = [(101, 1001)]
 
     file_draft_set(
-        drafts, port=port_second, role_dir=tmp_path, state_label=_STATE_LABEL
+        drafts, port=port_second, store=store, candidate_idx=0, state_label=_STATE_LABEL
     )
 
     applied_numbers = {c.args[0] for c in port_second.apply_label.call_args_list}
@@ -320,40 +362,43 @@ def test_resume_applies_labels_to_all_issues_including_previously_filed(
 
 
 # ---------------------------------------------------------------------------
-# Behavior 8: candidate record lives at role_dir root
+# Behavior 8: candidate record is durably persisted and readable via the store
 # ---------------------------------------------------------------------------
 
 
 def test_candidate_record_is_at_role_dir_root(tmp_path: Path, port: MagicMock) -> None:
-    """The record file lives directly under role_dir, not in any sub-directory."""
-    role_dir = tmp_path / "improve"
+    """The record is durably written and readable via the store after filing."""
+    store = ImproveRoleSessionStore(tmp_path / "improve")
     drafts = [_spec(), _slice("01-foo")]
 
-    file_draft_set(drafts, port=port, role_dir=role_dir, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
-    record_file = role_dir / "_candidate_record"
-    assert record_file.is_file()
-    # No nested directories (beyond role_dir itself) should hold the record
-    nested = [p for p in role_dir.rglob("_candidate_record") if p != record_file]
-    assert not nested
+    record = store.read_candidate_record(0)
+    assert record is not None
+    assert record.spec_number == 100
 
 
 def test_candidate_record_survives_nested_dir_removal(
     tmp_path: Path, port: MagicMock
 ) -> None:
-    """The record at role_dir is not affected when a sub-directory is removed."""
+    """The record is not affected when an unrelated sub-directory is removed."""
     role_dir = tmp_path / "improve"
     namespace_dir = role_dir / "main"
     namespace_dir.mkdir(parents=True, exist_ok=True)
 
+    store = ImproveRoleSessionStore(role_dir)
     drafts = [_spec(), _slice("01-foo")]
-    file_draft_set(drafts, port=port, role_dir=role_dir, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     # Simulate namespace discard
     shutil.rmtree(namespace_dir)
 
-    record_file = role_dir / "_candidate_record"
-    assert record_file.is_file()
+    record = store.read_candidate_record(0)
+    assert record is not None
 
 
 # ---------------------------------------------------------------------------
@@ -363,8 +408,11 @@ def test_candidate_record_survives_nested_dir_removal(
 
 def test_empty_drafts_is_no_op(tmp_path: Path) -> None:
     port = MagicMock(spec=FilingPort)
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set([], port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        [], port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     port.create_issue.assert_not_called()
     port.apply_label.assert_not_called()
@@ -373,8 +421,11 @@ def test_empty_drafts_is_no_op(tmp_path: Path) -> None:
 def test_spec_only_draft_gets_state_label_applied(tmp_path: Path) -> None:
     port = MagicMock(spec=FilingPort)
     port.create_issue.side_effect = [(100, 1000)]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set([_spec()], port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        [_spec()], port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     port.create_issue.assert_called_once()
     assert _STATE_LABEL not in port.create_issue.call_args.args[2]
@@ -389,22 +440,28 @@ def test_full_resume_with_labels_pending_only_applies_labels(tmp_path: Path) -> 
     port_first.apply_label.side_effect = RuntimeError("network failure during label")
 
     drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
 
     with pytest.raises(RuntimeError, match="network failure during label"):
         file_draft_set(
-            drafts, port=port_first, role_dir=tmp_path, state_label=_STATE_LABEL
+            drafts,
+            port=port_first,
+            store=store,
+            candidate_idx=0,
+            state_label=_STATE_LABEL,
         )
 
     # Record has both issues filed; labels_applied still False
-    data = json.loads((tmp_path / "_candidate_record").read_text(encoding="utf-8"))
-    assert data["spec_number"] == 100
-    assert len(data["filed_slices"]) == 1
-    assert data["labels_applied"] is False
+    record = store.read_candidate_record(0)
+    assert record is not None
+    assert record.spec_number == 100
+    assert len(record.filed_slices) == 1
+    assert record.labels_applied is False
 
     port_second = MagicMock(spec=FilingPort)
 
     file_draft_set(
-        drafts, port=port_second, role_dir=tmp_path, state_label=_STATE_LABEL
+        drafts, port=port_second, store=store, candidate_idx=0, state_label=_STATE_LABEL
     )
 
     port_second.create_issue.assert_not_called()
@@ -430,11 +487,13 @@ def test_second_candidate_slices_blocked_by_prev_spec_in_body(
     """Slices of the second candidate have 'Blocked by #prev_spec' in their body."""
     port = _make_port((200, 2000), (201, 2001))
     drafts = [_spec(), _slice("01-alpha")]
+    store = ImproveRoleSessionStore(tmp_path / "c2")
 
     file_draft_set(
         drafts,
         port=port,
-        role_dir=tmp_path / "c2",
+        store=store,
+        candidate_idx=0,
         state_label=_STATE_LABEL,
         prev_spec=(100, 1000),
     )
@@ -450,11 +509,13 @@ def test_second_candidate_slices_have_native_dep_on_prev_spec(
     """Slices of the second candidate wire add_issue_dependency to prev spec db_id."""
     port = _make_port((200, 2000), (201, 2001))
     drafts = [_spec(), _slice("01-alpha")]
+    store = ImproveRoleSessionStore(tmp_path / "c2")
 
     file_draft_set(
         drafts,
         port=port,
-        role_dir=tmp_path / "c2",
+        store=store,
+        candidate_idx=0,
         state_label=_STATE_LABEL,
         prev_spec=(100, 1000),
     )
@@ -468,11 +529,13 @@ def test_first_candidate_slices_carry_no_cross_candidate_blocker(
     """When prev_spec is None (first candidate), slices have no cross-candidate blocker."""
     port = _make_port((100, 1000), (101, 1001))
     drafts = [_spec(), _slice("01-alpha")]
+    store = ImproveRoleSessionStore(tmp_path / "c1")
 
     file_draft_set(
         drafts,
         port=port,
-        role_dir=tmp_path / "c1",
+        store=store,
+        candidate_idx=0,
         state_label=_STATE_LABEL,
     )
 
@@ -488,11 +551,13 @@ def test_second_candidate_spec_not_blocked_by_prev_spec(
     """The spec issue of a later candidate is NOT blocked by the previous spec."""
     port = _make_port((200, 2000), (201, 2001))
     drafts = [_spec(), _slice("01-alpha")]
+    store = ImproveRoleSessionStore(tmp_path / "c2")
 
     file_draft_set(
         drafts,
         port=port,
-        role_dir=tmp_path / "c2",
+        store=store,
+        candidate_idx=0,
         state_label=_STATE_LABEL,
         prev_spec=(100, 1000),
     )
@@ -507,11 +572,13 @@ def test_cross_candidate_blocker_alongside_intra_set_blockers(
     """Cross-candidate blocker appears in same 'Blocked by' line as intra-set blockers."""
     port = _make_port((200, 2000), (201, 2001), (202, 2002))
     drafts = [_spec(), _slice("01-alpha"), _slice("02-beta", blocked_by=["01-alpha"])]
+    store = ImproveRoleSessionStore(tmp_path / "c2")
 
     file_draft_set(
         drafts,
         port=port,
-        role_dir=tmp_path / "c2",
+        store=store,
+        candidate_idx=0,
         state_label=_STATE_LABEL,
         prev_spec=(100, 1000),
     )
@@ -528,11 +595,13 @@ def test_single_candidate_unchanged_behavior(tmp_path: Path) -> None:
     """Filing one candidate without prev_spec produces the same output as before."""
     port = _make_port((100, 1000), (101, 1001))
     drafts = [_spec(), _slice("01-alpha")]
+    store = ImproveRoleSessionStore(tmp_path / "c1")
 
     file_draft_set(
         drafts,
         port=port,
-        role_dir=tmp_path / "c1",
+        store=store,
+        candidate_idx=0,
         state_label=_STATE_LABEL,
     )
 
@@ -562,7 +631,11 @@ def test_old_record_with_prd_number_still_loads(tmp_path: Path) -> None:
         "labels_applied": False,
         "prd_number": 42,
     }
-    (tmp_path / "_candidate_record").write_text(
+    store = ImproveRoleSessionStore(tmp_path)
+    # Write old-format JSON directly to the path that the store reads from
+    candidate_dir = tmp_path / "candidates" / "0"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    (candidate_dir / "_candidate_record").write_text(
         json.dumps(old_record), encoding="utf-8"
     )
 
@@ -570,7 +643,9 @@ def test_old_record_with_prd_number_still_loads(tmp_path: Path) -> None:
     port.create_issue.side_effect = [(101, 1001)]
 
     drafts = [_spec(), _slice("01-foo")]
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     # spec must not be re-created — it was already present in the old record
     titles = [c.args[0] for c in port.create_issue.call_args_list]
@@ -595,8 +670,11 @@ def test_filed_slice_body_has_parent_section_naming_spec(
 ) -> None:
     """Every filed slice body contains a ## Parent section with the spec issue number."""
     drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, body, _ = port.create_issue.call_args_list[1].args
     assert "## Parent" in body
@@ -613,8 +691,11 @@ def test_blocked_slice_body_has_blocked_by_section_with_issue_refs(
 ) -> None:
     """A slice with blockers has a ## Blocked by section containing the issue refs."""
     drafts = [_spec(), _slice("01-foo", blocked_by=["spec"])]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, body, _ = port.create_issue.call_args_list[1].args
     assert "## Blocked by" in body
@@ -626,8 +707,11 @@ def test_unblocked_slice_body_has_blocked_by_section_stating_none(
 ) -> None:
     """An unblocked slice still has a ## Blocked by section stating there are none."""
     drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, body, _ = port.create_issue.call_args_list[1].args
     assert "## Blocked by" in body
@@ -645,6 +729,7 @@ def test_parent_section_precedes_what_to_build_in_canonical_body(
     """## Parent appears before ## What to build when the body has canonical structure."""
     port = MagicMock(spec=FilingPort)
     port.create_issue.side_effect = [(100, 1000), (101, 1001)]
+    store = ImproveRoleSessionStore(tmp_path)
 
     drafts = [
         _spec(body=_CANONICAL_SLICE_BODY),
@@ -656,7 +741,9 @@ def test_parent_section_precedes_what_to_build_in_canonical_body(
         ),
     ]
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, body, _ = port.create_issue.call_args_list[1].args
     parent_pos = body.index("## Parent")
@@ -674,6 +761,7 @@ def test_blocked_by_section_precedes_files_touched_in_canonical_body(
     """
     port = MagicMock(spec=FilingPort)
     port.create_issue.side_effect = [(100, 1000), (101, 1001)]
+    store = ImproveRoleSessionStore(tmp_path)
 
     drafts = [
         _spec(body=_CANONICAL_SLICE_BODY),
@@ -686,7 +774,9 @@ def test_blocked_by_section_precedes_files_touched_in_canonical_body(
         ),
     ]
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, body, _ = port.create_issue.call_args_list[1].args
     blocked_pos = body.index("## Blocked by")
@@ -711,8 +801,11 @@ def test_draft_body_with_existing_parent_section_is_overwritten(
         "## Acceptance criteria\n\n- [ ] It works."
     )
     drafts = [_spec(), _slice("01-foo", body=stale_body)]
+    store = ImproveRoleSessionStore(tmp_path)
 
-    file_draft_set(drafts, port=port, role_dir=tmp_path, state_label=_STATE_LABEL)
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
 
     _, body, _ = port.create_issue.call_args_list[1].args
     assert body.count("## Parent") == 1

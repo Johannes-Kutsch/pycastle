@@ -27,7 +27,11 @@ from pycastle.iteration.improve import (
     improve_phase,
 )
 from pycastle.iteration.improve_drafts import DraftSetValidationError
-from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
+from pycastle.iteration.improve_role_session_store import (
+    CandidateRecord,
+    FiledSlice,
+    ImproveRoleSessionStore,
+)
 from pycastle.iteration.preflight import PreflightReady
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubNetworkError, ServiceRegistry
@@ -412,16 +416,16 @@ def _seed_candidate_record(
 ) -> None:
     """Pre-seed a per-candidate record (simulates the filing pass having run)."""
     role_session_dir = worktree_path / ".pycastle-session" / "improve"
-    candidate_dir = role_session_dir / "candidates" / str(idx)
-    candidate_dir.mkdir(parents=True, exist_ok=True)
-    record = _CandidateRecord(
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    store = ImproveRoleSessionStore(role_session_dir)
+    record = CandidateRecord(
         spec_number=spec_number,
         spec_database_id=42 if spec_number is not None else None,
         spec_title="Seeded" if spec_number is not None else "",
-        filed_slices=[],
+        filed_slices=(),
         labels_applied=labels_applied,
     )
-    _save_record(candidate_dir, record)
+    store.write_candidate_record(idx, record)
 
 
 _DEFAULT_CANDIDATE = ScanCandidateItem(rank=1, title="Seeded candidate")
@@ -672,7 +676,7 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     _seed_candidate_record(wt, 0)
     role_session_dir = wt / ".pycastle-session" / "improve"
-    (role_session_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
+    ImproveRoleSessionStore(role_session_dir).write_in_flight("03-issues")
     runner = _make_runner_with_drafts(CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -686,7 +690,7 @@ def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc)
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
-    (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
+    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-prd")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
@@ -726,7 +730,7 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
-    (role_session_dir / "_phase_in_flight").write_text("02-prd", encoding="utf-8")
+    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-prd")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -1511,8 +1515,6 @@ def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
     tmp_path, git_svc
 ):
     """AC3: When some slices are filed but not labeled, host completes filing without agent."""
-    from pycastle.iteration.improve_filing import _FiledIssue, _save_record
-
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     two_candidates = [
         ScanCandidateItem(rank=1, title="First"),
@@ -1523,20 +1525,18 @@ def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
     _seed_candidate_record(wt, 0, spec_number=100, labels_applied=True)
 
     role_session_dir = wt / ".pycastle-session" / "improve"
-    candidate_dir = role_session_dir / "candidates" / "1"
-    candidate_dir.mkdir(parents=True, exist_ok=True)
-    from pycastle.iteration.improve_filing import _CandidateRecord as CR
-
-    record = CR(
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    store = ImproveRoleSessionStore(role_session_dir)
+    record = CandidateRecord(
         spec_number=200,
         spec_database_id=2000,
         spec_title="Spec",
-        filed_slices=[
-            _FiledIssue(handle="slice-a", number=201, database_id=2001, title="Slice A")
-        ],
+        filed_slices=(
+            FiledSlice(handle="slice-a", number=201, database_id=2001, title="Slice A"),
+        ),
         labels_applied=False,
     )
-    _save_record(candidate_dir, record)
+    store.write_candidate_record(1, record)
 
     # Write draft files with spec + 2 slices (slice-a already filed, slice-b not yet)
     draft_dir = role_session_dir / "_drafts"

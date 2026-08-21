@@ -276,7 +276,9 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
 ):
     driver_dir = tmp_path / "improve"
     driver_dir.mkdir(parents=True, exist_ok=True)
-    (driver_dir / "_phase_in_flight").write_text("01-scan", encoding="utf-8")
+    from pycastle.iteration.improve_role_session_store import ImproveRoleSessionStore
+
+    ImproveRoleSessionStore(driver_dir).write_in_flight("01-scan")
     driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
     step = driver.start()
 
@@ -371,29 +373,38 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
 def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_handoff(
     tmp_path: Path,
 ):
-    import json as _json
-
-    from pycastle.iteration.improve_filing import _CandidateRecord, _save_record
+    from pycastle.iteration.improve_role_session_store import (
+        CandidateRecord,
+        ImproveRoleSessionStore,
+    )
 
     driver_dir = tmp_path / "improve-issues-resume"
     driver_dir.mkdir(parents=True, exist_ok=True)
     # Seed candidate list + a candidate record (PRD done) + in-flight=03-issues
-    data = {"candidates": [{"rank": 1, "title": "Seeded"}]}
-    (driver_dir / "_candidate_list").write_text(_json.dumps(data), encoding="utf-8")
-    (driver_dir / "_candidate_cursor").write_text("0", encoding="utf-8")
-    candidate_dir = driver_dir / "candidates" / "0"
-    candidate_dir.mkdir(parents=True, exist_ok=True)
-    _save_record(
-        candidate_dir,
-        _CandidateRecord(
+    store = ImproveRoleSessionStore(driver_dir)
+    from pycastle.iteration.improve_role_session_store import (
+        CandidateItem,
+        CandidateList,
+    )
+
+    store.write_candidate_list(
+        CandidateList(
+            candidates=(CandidateItem(rank=1, title="Seeded"),),
+            no_candidate=False,
+        )
+    )
+    store.write_cursor(0)
+    store.write_candidate_record(
+        0,
+        CandidateRecord(
             spec_number=None,
             spec_database_id=None,
             spec_title="",
-            filed_slices=[],
+            filed_slices=(),
             labels_applied=False,
         ),
     )
-    (driver_dir / "_phase_in_flight").write_text("03-issues", encoding="utf-8")
+    store.write_in_flight("03-issues")
     driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
     step = driver.start()
 
