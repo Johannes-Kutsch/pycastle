@@ -22,7 +22,6 @@ from pycastle.infrastructure.worktree import prune_orphan_worktrees
 from pycastle.iteration import IterationOutcome, run_iteration
 from pycastle.iteration._deps import Deps as IterationDeps
 from pycastle.iteration._deps import ImproveMode
-from pycastle.iteration._service_summary import render_service_summary_line
 from pycastle.iteration._utils import _wait_for_operating_branch_release
 from pycastle.iteration.branch_resolution import (
     BranchFacts,
@@ -245,7 +244,7 @@ def _print_service_registry_summary(
     status_display: StatusDisplay,
 ) -> None:
     if service_registry:
-        for line in service_registry.summary_lines(render_service_summary_line):
+        for line in service_registry.summary_lines():
             status_display.print("", line)  # type: ignore[union-attr]
 
 

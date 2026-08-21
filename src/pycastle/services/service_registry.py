@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
-from pycastle.services.runtime_services import AgentService
 from pycastle.stage_priority_chain import (
     ConfiguredCandidateAvailability,
     StageOverrideChain,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import datetime
 
     from pycastle.config.types import StageOverride
-
-ServiceSummaryRenderer = Callable[[str, AgentService], str | None]
+    from pycastle.services.runtime_services import AgentService
 
 
 def _try_next_wake_time(service: AgentService) -> datetime | None:
@@ -103,17 +101,12 @@ class ServiceRegistry:
     def __getitem__(self, key: str) -> AgentService | None:
         return self._services.get(key)
 
-    def summary_lines(
-        self,
-        render_summary_line: ServiceSummaryRenderer,
-    ) -> list[str]:
-        lines = []
-        for name, svc in self._services.items():
-            line = render_summary_line(name, svc)
-            if line is None:
-                continue
-            lines.append(line)
-        return lines
+    def summary_lines(self) -> list[str]:
+        return [
+            line
+            for svc in self._services.values()
+            if (line := svc.summary_line()) is not None
+        ]
 
 
-__all__ = ["ServiceRegistry", "ServiceSummaryRenderer"]
+__all__ = ["ServiceRegistry"]

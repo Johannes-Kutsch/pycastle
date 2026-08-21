@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from pycastle.config.types import StageOverride
+from pycastle.services import ClaudeService
 from pycastle.services.runtime_services import (
     AgentService,
     CodexService,
@@ -412,58 +413,28 @@ def test_next_wake_time_for_returns_none_when_all_chain_candidates_permanently_e
 # --- summary_lines ---
 
 
-def _make_svc_with_accounts(names: list[str]) -> MagicMock:
-    svc = MagicMock()
-    svc.account_names.return_value = names
-    return svc
-
-
-def test_summary_lines_single_account() -> None:
-    svc = _make_svc_with_accounts(["primary"])
-    registry = runtime.ServiceRegistry(services={"claude": svc})
-
-    assert registry.summary_lines(
-        lambda name, service: (
-            f"{name}:{','.join(service.account_names())}"  # type: ignore[attr-defined]
-        )
-    ) == ["claude:primary"]
-
-
-def test_summary_lines_multiple_accounts() -> None:
-    svc = _make_svc_with_accounts(["primary", "secondary"])
-    registry = runtime.ServiceRegistry(services={"claude": svc})
-
-    assert registry.summary_lines(
-        lambda name, service: (
-            f"{name}:{','.join(service.account_names())}"  # type: ignore[attr-defined]
-        )
-    ) == ["claude:primary,secondary"]
-
-
-def test_summary_lines_prints_codex_auth_message() -> None:
-    svc = MagicMock(spec=AgentService)
-    registry = runtime.ServiceRegistry(services={"codex": svc})
-
-    assert registry.summary_lines(lambda name, _service: f"configured:{name}") == [
-        "configured:codex"
-    ]
-
-
-def test_summary_lines_prints_opencode_auth_message_when_configured() -> None:
+def test_summary_lines_collects_non_none_results_in_insertion_order() -> None:
+    claude = ClaudeService(accounts=[("account-A", "key-A"), ("account-B", "key-B")])
+    codex = CodexService()
+    opencode = OpenCodeService(api_key="go-key")
+    no_line_svc = MagicMock(spec=AgentService)
+    no_line_svc.summary_line.return_value = None
     registry = runtime.ServiceRegistry(
-        services={"opencode": OpenCodeService(api_key="go-key")}
+        services={
+            "claude": claude,
+            "codex": codex,
+            "opencode": opencode,
+            "silent": no_line_svc,
+        }
     )
 
-    assert registry.summary_lines(lambda name, _service: f"configured:{name}") == [
-        "configured:opencode"
+    lines = registry.summary_lines()
+
+    assert lines == [
+        "Claude accounts: account-A (active), account-B (standby)",
+        "Codex auth: local auth available",
+        "OpenCode auth: API key configured",
     ]
-
-
-def test_summary_lines_skips_services_with_empty_account_names() -> None:
-    svc = _make_svc_with_accounts([])
-    registry = runtime.ServiceRegistry(services={"claude": svc})
-
-    assert registry.summary_lines(lambda _name, _service: None) == []
 
 
 # --- lookup by name ---

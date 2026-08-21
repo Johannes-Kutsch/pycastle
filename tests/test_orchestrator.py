@@ -236,6 +236,9 @@ class _FakeService:
     def valid_models(self) -> frozenset[str]:
         return frozenset({"fake"})
 
+    def summary_line(self) -> str | None:
+        return None
+
 
 class _SequencedAvailabilityService(_FakeService):
     def __init__(
@@ -2657,6 +2660,8 @@ def test_pool_summary_printed_at_startup_with_primary_only(tmp_path):
 
 
 def test_codex_auth_summary_printed_at_startup(tmp_path):
+    from pycastle.services.runtime_services import CodexService
+
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
     recording = RecordingStatusDisplay()
@@ -2668,7 +2673,7 @@ def test_codex_auth_summary_printed_at_startup(tmp_path):
         tmp_path,
         _fake_run_agent,
         github_service=mock_github,
-        service_registry=ServiceRegistry({"codex": _FakeService()}),
+        service_registry=ServiceRegistry({"codex": CodexService()}),
         status_display=recording,
     )
 
