@@ -410,6 +410,7 @@ def test_planning_blocker_summary_uses_plural_label_noun_for_multiple_slice_issu
 
     assert summary == "Planning blockers: 2 missing exactly one slice-mode labels."
 
+
 def test_prepare_planning_issue_set_strips_stale_blocker_lines():
     from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
 
