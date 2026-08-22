@@ -484,7 +484,7 @@ async def _file_improve_drafts(
                 PromptTemplate.IMPROVE_DRAFT_CORRECTION,
                 {"VALIDATION_ERRORS": validation_errors},
             ),
-            send_role_prompt_on_resume=False,
+            send_role_prompt_on_resume=True,
         )
         await deps.agent_runner.run(
             RunRequest(

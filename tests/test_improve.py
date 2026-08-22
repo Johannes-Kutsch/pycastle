@@ -1137,6 +1137,35 @@ def test_malformed_drafts_reprompt_agent_before_filing(tmp_path, git_svc):
     assert github_svc.create_issue_in.call_count == 0
 
 
+def test_draft_correction_dispatch_sends_role_prompt_on_resume(tmp_path, git_svc):
+    """Draft-correction RunRequest carries send_role_prompt_on_resume=True."""
+    call_count = [0]
+
+    def side_effect(request):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return make_scan_output()
+        if call_count[0] == 3:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-foo", body="Too short.")
+        return CompletionOutput()
+
+    github_svc = _make_filing_github_svc()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    with pytest.raises(DraftSetValidationError):
+        _run(deps)
+
+    correction_request = next(
+        c
+        for c in runner.calls
+        if c.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
+    )
+    assert correction_request.prompt.send_role_prompt_on_resume is True
+
+
 def test_valid_reprompt_gets_filed(tmp_path, git_svc):
     """After a correction reprompt produces valid drafts, the issues are filed."""
     call_count = [0]
