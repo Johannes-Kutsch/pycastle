@@ -1556,11 +1556,11 @@ def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
 
     _run(deps)
 
-    # Host completed the partial candidate: spec and existing slice must be labelled
-    # without any agent dispatched against the old "candidate/1" session namespace.
+    # Host completed the partial candidate: existing slice must be labelled;
+    # the spec carries no state label (tracking parent, not implementable work).
     label_calls = github_svc.add_label_to_issue.call_args_list
     labeled_numbers = {call.args[0] for call in label_calls}
-    assert 200 in labeled_numbers  # spec labelled by host
+    assert 200 not in labeled_numbers  # spec must not receive state label
     assert 201 in labeled_numbers  # slice-a labelled by host
     github_svc.close_issue.assert_not_called()  # completed normally, not closed
     # No agent was dispatched to handle the partial candidate — wind-down is host-only
