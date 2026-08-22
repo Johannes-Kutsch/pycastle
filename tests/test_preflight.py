@@ -1211,3 +1211,67 @@ def test_divergence_resolver_non_narrowed_exception_propagates_not_pull_exc(
         pytest.raises(AgentCredentialFailureError),
     ):
         asyncio.run(PreflightCache().get_safe_sha(deps))
+
+
+# ── Criterion 4: no issue on consuming project's tracker ─────────────────────
+
+
+def test_diverged_operating_branch_does_not_file_issue_on_consuming_tracker(
+    tmp_path, git_svc, github_svc
+):
+    """When divergence is detected and the divergence-resolver runs successfully,
+    no issue agent is spawned for the divergence itself; only PreflightReady is returned."""
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
+
+    fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    # only the divergence-resolver, no preflight-issue agent
+    assert len(fake.calls) == 1
+    github_svc.create_issue_in.assert_not_called()
+
+
+def test_divergence_resolver_failure_does_not_escalate_to_operator_actionable(
+    tmp_path, git_svc, github_svc
+):
+    """When the divergence-resolver fails, a GitCommandError propagates — not an
+    OperatorActionableGitError, which would cause the consuming tracker to receive an issue."""
+    from pycastle.agents.output_protocol import FailedOutput
+    from pycastle.services import OperatorActionableGitError
+
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
+
+    fake = FakeAgentRunner([FailedOutput()], preflight_responses=[])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with pytest.raises(GitCommandError) as exc_info:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    assert not isinstance(exc_info.value, OperatorActionableGitError)
+    assert "diverged" in str(exc_info.value).lower()
+
+
+# ── Criterion 5: no backoff before the resolver is spawned ───────────────────
+
+
+def test_divergence_resolver_spawned_without_prior_backoff(
+    tmp_path, git_svc, github_svc
+):
+    """When divergence is detected, the resolver is spawned without any sleep/backoff
+    from the old non-fast-forward classification path (10s/60s/300s)."""
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
+
+    fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with patch("pycastle.iteration._utils.asyncio.sleep") as mock_sleep:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    mock_sleep.assert_not_called()
+    assert len(fake.calls) == 1
