@@ -35,3 +35,9 @@ def test_diverged_when_each_side_has_exclusive_commits():
     decision = classify_ref_relation(upstream_ref_exists=True, ancestry="diverged")
 
     assert decision == OperatingBranchDiverged()
+
+
+def test_diverged_when_upstream_present_but_ancestry_unknown():
+    decision = classify_ref_relation(upstream_ref_exists=True, ancestry=None)
+
+    assert decision == OperatingBranchDiverged()
