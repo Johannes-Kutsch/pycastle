@@ -63,6 +63,14 @@ class UnrelatedHistoriesError(GitCommandError):
     pass
 
 
+class OperatingBranchCheckedOutError(GitServiceError):
+    """Raised when git refuses to update a ref because the branch is checked out."""
+
+    def __init__(self, branch: str) -> None:
+        self.branch = branch
+        super().__init__(f"branch {branch!r} is currently checked out")
+
+
 class GitTimeoutError(GitServiceError, TimeoutError):
     pass
 
@@ -388,13 +396,24 @@ class GitService:
         """Advance a local branch ref to source without checking out either branch.
 
         Uses 'git fetch . source:target' — a local fast-forward ref update that
-        succeeds regardless of what is currently checked out in repo_path.
+        succeeds regardless of what is currently checked out in repo_path, unless
+        the target branch itself is checked out, in which case raises
+        OperatingBranchCheckedOutError.
         """
-        self._run_or_raise(
+        result = self._run(
             ["git", "fetch", ".", f"{source}:{target}"],
-            f"git fetch . {source}:{target} failed",
             cwd=repo_path,
+            capture_output=True,
         )
+        if result.returncode != 0:
+            stderr = self._decode(result.stderr)
+            if "refusing to fetch into branch" in stderr.lower():
+                raise OperatingBranchCheckedOutError(target)
+            raise GitCommandError(
+                f"git fetch . {source}:{target} failed",
+                result.returncode,
+                stderr,
+            )
 
     def fast_forward_branch(self, repo_path: Path, target: str, source: str) -> None:
         self._run_or_raise(

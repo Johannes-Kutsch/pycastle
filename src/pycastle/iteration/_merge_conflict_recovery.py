@@ -31,6 +31,7 @@ from pycastle.infrastructure.worktree import (
 )
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration._merge_reporting import MergeProgressReporter
+from pycastle.iteration._utils import _advance_branch_ref_through_gate
 from pycastle.iteration.implement import branch_for
 from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountRejected,
@@ -181,8 +182,8 @@ async def _recover_active_conflict(
             already_merged = deps.git_svc.start_merge(sandbox_path, conflict_branch)
             if already_merged:
                 _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
-                deps.git_svc.advance_branch_ref(
-                    deps.repo_root, target_branch, sandbox_identity.branch
+                await _advance_branch_ref_through_gate(
+                    deps, "Merge", target_branch, sandbox_identity.branch
                 )
                 _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
                 RoleSession(sandbox_path, AgentRole.MERGER).discard()
@@ -226,8 +227,8 @@ async def _recover_active_conflict(
                     result.message or active_issue["title"],
                 )
             _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
-            deps.git_svc.advance_branch_ref(
-                deps.repo_root, target_branch, sandbox_identity.branch
+            await _advance_branch_ref_through_gate(
+                deps, "Merge", target_branch, sandbox_identity.branch
             )
             _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
             RoleSession(sandbox_path, AgentRole.MERGER).discard()

@@ -6,6 +6,7 @@ from pycastle.config import Config
 from pycastle.display.status_display import StatusDisplay
 from pycastle.iteration.branch_resolution import find_checked_out_worktrees
 from pycastle.services import GitService
+from pycastle.services.git_service import OperatingBranchCheckedOutError
 
 
 class _UtilDeps(Protocol):
@@ -35,4 +36,20 @@ async def _wait_for_operating_branch_release(deps: _UtilDeps, caller: str) -> No
             branch, deps.git_svc.list_worktrees_with_branches(deps.repo_root)
         )
         if not blocking:
+            return
+
+
+async def _advance_branch_ref_through_gate(
+    deps: _UtilDeps,
+    caller: str,
+    target: str,
+    source: str,
+) -> None:
+    """Advance target ref to source, re-entering the checkout gate on conflict."""
+    while True:
+        try:
+            deps.git_svc.advance_branch_ref(deps.repo_root, target, source)
+        except OperatingBranchCheckedOutError:
+            await _wait_for_operating_branch_release(deps, caller)
+        else:
             return

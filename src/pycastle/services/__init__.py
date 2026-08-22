@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         GitService,
         GitServiceError,
         GitTimeoutError,
+        OperatingBranchCheckedOutError,
         OperatorActionableGitError,
         UnrelatedHistoriesError,
     )
@@ -47,6 +48,7 @@ __all__ = [
     "GithubService",
     "GithubServiceError",
     "OpenCodeService",
+    "OperatingBranchCheckedOutError",
     "OperatorActionableGitError",
     "OperatorActionableGithubError",
     "ServiceRegistry",
@@ -66,6 +68,7 @@ def __getattr__(name: str) -> object:
         "GitService",
         "GitServiceError",
         "GitTimeoutError",
+        "OperatingBranchCheckedOutError",
         "OperatorActionableGitError",
         "UnrelatedHistoriesError",
     }:
