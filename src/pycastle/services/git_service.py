@@ -15,6 +15,13 @@ from pycastle.services._git_remote_retry import (
     RemoteGitRetryDecision,
     RetryTransientRemoteFailure,
 )
+from pycastle.services._operating_branch_refresh import (
+    FastForwardLocalRef,
+    NoUpstreamYet,
+    OperatingBranchRefRelation,
+    RefAncestry,
+    classify_ref_relation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -564,6 +571,76 @@ class GitService:
             operation="fetch",
             cwd=repo_path,
         )
+
+    def refresh_operating_branch(
+        self, repo_path: Path, branch: str
+    ) -> OperatingBranchRefRelation:
+        """Two-step operating-branch refresh per ADR 0062.
+
+        Step 1: forced fetch updates refs/remotes/origin/<branch> (cannot be rejected).
+        Step 2: classify the ref relation and fast-forward the local ref if appropriate.
+        Returns the OperatingBranchRefRelation outcome.
+        """
+        refspec = f"+refs/heads/{branch}:refs/remotes/origin/{branch}"
+        try:
+            self._run_or_raise_with_retry(
+                ["git", "fetch", "origin", refspec],
+                f"git fetch origin {refspec} failed",
+                operation="fetch",
+                cwd=repo_path,
+            )
+        except OperatorActionableGitError as exc:
+            if "couldn't find remote ref" in exc.stderr.lower():
+                return NoUpstreamYet()
+            raise
+
+        local_ref = f"refs/heads/{branch}"
+        remote_ref = f"refs/remotes/origin/{branch}"
+
+        local_sha = self._decode(
+            self._run(
+                ["git", "rev-parse", local_ref], cwd=repo_path, capture_output=True
+            ).stdout
+        )
+        remote_sha = self._decode(
+            self._run(
+                ["git", "rev-parse", remote_ref], cwd=repo_path, capture_output=True
+            ).stdout
+        )
+
+        ancestry: RefAncestry
+        if local_sha == remote_sha:
+            ancestry = "equal"
+        else:
+            is_remote_ancestor = (
+                self._run(
+                    ["git", "merge-base", "--is-ancestor", remote_ref, local_ref],
+                    cwd=repo_path,
+                    capture_output=True,
+                ).returncode
+                == 0
+            )
+            if is_remote_ancestor:
+                ancestry = "local_ahead"
+            else:
+                is_local_ancestor = (
+                    self._run(
+                        ["git", "merge-base", "--is-ancestor", local_ref, remote_ref],
+                        cwd=repo_path,
+                        capture_output=True,
+                    ).returncode
+                    == 0
+                )
+                ancestry = "remote_ahead" if is_local_ancestor else "diverged"
+
+        relation: OperatingBranchRefRelation = classify_ref_relation(
+            upstream_ref_exists=True, ancestry=ancestry
+        )
+
+        if isinstance(relation, FastForwardLocalRef):
+            self.advance_branch_ref(repo_path, branch, f"origin/{branch}")
+
+        return relation
 
     async def push(
         self,

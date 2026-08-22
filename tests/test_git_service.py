@@ -2334,3 +2334,201 @@ def test_pull_with_merge_fallback_retries_transient_blip_on_inner_pull(tmp_path)
         svc.pull_with_merge_fallback(tmp_path)  # must not raise
 
     mock_sleep.assert_called_once()
+
+
+# ── refresh_operating_branch() ────────────────────────────────────────────────
+
+
+def _get_sha(repo: Path, ref: str) -> str:
+    return (
+        subprocess.run(
+            ["git", "rev-parse", ref],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        .stdout.decode()
+        .strip()
+    )
+
+
+def test_refresh_operating_branch_returns_already_current_when_local_ahead(tmp_path):
+    remote = tmp_path / "remote"
+    _init_repo(remote)
+    local = tmp_path / "local"
+    _clone_with_user(remote, local)
+
+    (local / "local_work.txt").write_text("work\n")
+    subprocess.run(["git", "add", "."], cwd=local, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "local work"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    local_tip = _get_sha(local, "main")
+
+    from pycastle.services._operating_branch_refresh import AlreadyCurrent
+
+    svc = GitService(_cfg)
+    result = svc.refresh_operating_branch(local, "main")
+
+    assert isinstance(result, AlreadyCurrent)
+    assert _get_sha(local, "main") == local_tip
+    assert _get_sha(local, "refs/remotes/origin/main") == _get_sha(remote, "main")
+
+
+def test_refresh_operating_branch_returns_already_current_when_equal(tmp_path):
+    remote = tmp_path / "remote"
+    _init_repo(remote)
+    local = tmp_path / "local"
+    _clone_with_user(remote, local)
+
+    shared_tip = _get_sha(local, "main")
+
+    from pycastle.services._operating_branch_refresh import AlreadyCurrent
+
+    svc = GitService(_cfg)
+    result = svc.refresh_operating_branch(local, "main")
+
+    assert isinstance(result, AlreadyCurrent)
+    assert _get_sha(local, "main") == shared_tip
+    assert _get_sha(local, "refs/remotes/origin/main") == shared_tip
+
+
+def test_refresh_operating_branch_advances_local_ref_when_remote_ahead(tmp_path):
+    remote = tmp_path / "remote"
+    _init_repo(remote)
+    local = tmp_path / "local"
+    _clone_with_user(remote, local)
+
+    # Switch off 'main' so it is not checked out — advance_branch_ref requires this
+    subprocess.run(
+        ["git", "checkout", "-b", "other"], cwd=local, check=True, capture_output=True
+    )
+
+    local_tip_before = _get_sha(local, "main")
+
+    (remote / "remote_work.txt").write_text("new\n")
+    subprocess.run(["git", "add", "."], cwd=remote, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remote work"],
+        cwd=remote,
+        check=True,
+        capture_output=True,
+    )
+    remote_tip = _get_sha(remote, "main")
+
+    from pycastle.services._operating_branch_refresh import FastForwardLocalRef
+
+    svc = GitService(_cfg)
+    result = svc.refresh_operating_branch(local, "main")
+
+    assert isinstance(result, FastForwardLocalRef)
+    assert _get_sha(local, "main") == remote_tip
+    assert _get_sha(local, "refs/remotes/origin/main") == remote_tip
+    assert local_tip_before != remote_tip
+
+
+def test_refresh_operating_branch_returns_no_upstream_when_branch_absent_on_origin(
+    tmp_path,
+):
+    remote = tmp_path / "remote"
+    _init_repo(remote)
+    local = tmp_path / "local"
+    _clone_with_user(remote, local)
+
+    subprocess.run(
+        ["git", "checkout", "-b", "feature/new"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    (local / "feature.txt").write_text("feature\n")
+    subprocess.run(["git", "add", "."], cwd=local, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "feature work"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    local_tip = _get_sha(local, "feature/new")
+
+    from pycastle.services._operating_branch_refresh import NoUpstreamYet
+
+    svc = GitService(_cfg)
+    result = svc.refresh_operating_branch(local, "feature/new")
+
+    assert isinstance(result, NoUpstreamYet)
+    assert _get_sha(local, "feature/new") == local_tip
+
+
+def test_refresh_operating_branch_returns_diverged_and_updates_tracking_ref(tmp_path):
+    remote = tmp_path / "remote"
+    _init_repo(remote)
+    local = tmp_path / "local"
+    _clone_with_user(remote, local)
+
+    (local / "local_change.txt").write_text("local\n")
+    subprocess.run(["git", "add", "."], cwd=local, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "local commit"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    local_tip = _get_sha(local, "main")
+
+    (remote / "remote_change.txt").write_text("remote\n")
+    subprocess.run(["git", "add", "."], cwd=remote, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "remote commit"],
+        cwd=remote,
+        check=True,
+        capture_output=True,
+    )
+    remote_tip = _get_sha(remote, "main")
+
+    from pycastle.services._operating_branch_refresh import OperatingBranchDiverged
+
+    svc = GitService(_cfg)
+    result = svc.refresh_operating_branch(local, "main")
+
+    assert isinstance(result, OperatingBranchDiverged)
+    assert _get_sha(local, "main") == local_tip
+    assert _get_sha(local, "refs/remotes/origin/main") == remote_tip
+
+
+def test_refresh_operating_branch_local_ref_never_moved_backward(tmp_path):
+    remote = tmp_path / "remote"
+    _init_repo(remote)
+    local = tmp_path / "local"
+    _clone_with_user(remote, local)
+
+    (local / "local_work.txt").write_text("ahead\n")
+    subprocess.run(["git", "add", "."], cwd=local, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "advance local"],
+        cwd=local,
+        check=True,
+        capture_output=True,
+    )
+    local_tip = _get_sha(local, "main")
+    origin_tip = _get_sha(remote, "main")
+
+    svc = GitService(_cfg)
+    svc.refresh_operating_branch(local, "main")
+
+    new_local_tip = _get_sha(local, "main")
+    assert new_local_tip == local_tip
+
+    is_origin_ancestor = (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", origin_tip, new_local_tip],
+            cwd=local,
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
+    assert is_origin_ancestor

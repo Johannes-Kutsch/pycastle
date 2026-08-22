@@ -64,7 +64,6 @@ from pycastle.services import (
     GithubService,
     GitService,
     ServiceRegistry,
-    UnrelatedHistoriesError,
 )
 from pycastle.session import RoleSession
 
@@ -103,127 +102,84 @@ class _PreflightDeps(Protocol):
 
 
 class BranchRefreshBoundary:
-    """Refresh the current branch, preserving preflight's existing recovery flow."""
-
     _DIVERGE_SANDBOX_INTENT = SandboxWorktreeIntent.DIVERGENCE
 
-    @staticmethod
-    def _try_recover_unrelated_histories(deps: _PreflightDeps) -> bool:
-        """Resync to origin if local has no commits ahead; otherwise emit guidance.
-
-        Returns True when recovery succeeded and the caller should treat the pull
-        as if it had succeeded. Returns False to signal the caller must re-raise.
-        """
-        branch = deps.cfg.operating_branch
-        remote_ref = f"origin/{branch}"
-        ahead = deps.git_svc.count_commits_ahead(deps.repo_root, remote_ref)
-        if ahead == 0:
-            deps.git_svc.hard_reset_to(deps.repo_root, remote_ref)
-            deps.status_display.print(
-                "Preflight",
-                f"Upstream history was rewritten. Local branch resynced to {remote_ref}.",
-            )
-            return True
-        subjects = deps.git_svc.get_local_only_commit_subjects(
-            deps.repo_root, remote_ref
-        )
-        if subjects:
-            shown = subjects[:10]
-            commit_list = "\n".join(f"  • {s}" for s in shown)
-            if len(subjects) > len(shown):
-                commit_list += f"\n  … and {len(subjects) - len(shown)} more"
-        else:
-            commit_list = f"  ({ahead} commit(s))"
-        deps.status_display.print(
-            "Preflight",
-            f"Upstream history was rewritten but local branch has {ahead} "
-            f"commit(s) not present on {remote_ref}.\n"
-            f"Pycastle cannot determine whether these are lost work or "
-            f"logically-equivalent pre-rewrite copies.\n"
-            f"Local-only commits:\n{commit_list}\n"
-            f"To recover manually once you have confirmed nothing is lost:\n"
-            f"  git fetch origin && git reset --hard {remote_ref}",
-            style="error",
-        )
-        return False
-
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
-        """Fetch operating branch from origin, escalating to the divergence-resolver agent on non-fast-forward."""
+        """Operating-branch refresh per ADR 0062, escalating to the divergence-resolver on divergence."""
+        from pycastle.services._operating_branch_refresh import OperatingBranchDiverged
 
+        relation = deps.git_svc.refresh_operating_branch(
+            deps.repo_root, deps.cfg.operating_branch
+        )
+        if not isinstance(relation, OperatingBranchDiverged):
+            return
+
+        branch = deps.cfg.operating_branch
+        pull_exc = GitCommandError(
+            f"operating branch {branch!r} has diverged from origin", returncode=1
+        )
+        current_sha = deps.git_svc.get_branch_sha(deps.repo_root, branch)
+        sandbox_identity = reusable_sandbox_worktree_identity(
+            self._DIVERGE_SANDBOX_INTENT,
+            deps.repo_root,
+        )
+        fingerprint = _diverge_sandbox_fingerprint(current_sha, branch)
+        role_session = RoleSession(sandbox_identity.path, AgentRole.DIVERGENCE_RESOLVER)
+        prepare_fingerprint_gate(role_session, fingerprint)
         try:
-            deps.git_svc.fetch_branch(deps.repo_root, deps.cfg.operating_branch)
-        except UnrelatedHistoriesError:
-            if self._try_recover_unrelated_histories(deps):
-                return
-            raise
-        except GitCommandError as pull_exc:
-            if "non-fast-forward" not in str(pull_exc).lower():
-                raise
-            branch = deps.cfg.operating_branch
-            current_sha = deps.git_svc.get_branch_sha(deps.repo_root, branch)
-            sandbox_identity = reusable_sandbox_worktree_identity(
+            async with reusable_sandbox_worktree(
                 self._DIVERGE_SANDBOX_INTENT,
-                deps.repo_root,
-            )
-            fingerprint = _diverge_sandbox_fingerprint(current_sha, branch)
-            role_session = RoleSession(
-                sandbox_identity.path, AgentRole.DIVERGENCE_RESOLVER
-            )
-            prepare_fingerprint_gate(role_session, fingerprint)
-            try:
-                async with reusable_sandbox_worktree(
-                    self._DIVERGE_SANDBOX_INTENT,
-                    sha=current_sha,
-                    deps=deps,
-                ) as sandbox_path:
-                    mount_decision = decide_managed_worktree_mount(
-                        repo_root=deps.repo_root,
+                sha=current_sha,
+                deps=deps,
+            ) as sandbox_path:
+                mount_decision = decide_managed_worktree_mount(
+                    repo_root=deps.repo_root,
+                    mount_path=sandbox_path,
+                    caller="Divergence Resolver",
+                    role=AgentRole.DIVERGENCE_RESOLVER.value,
+                )
+                if isinstance(
+                    mount_decision, ManagedWorktreeMountRejected
+                ) and should_reject_managed_worktree_mount(mount_decision):
+                    raise SetupPhaseError(  # noqa: TRY301  # raise inside try is intentional: exits async-with resource cleanup
+                        AgentRole.DIVERGENCE_RESOLVER.value,
+                        describe_managed_worktree_mount_rejection(mount_decision),
+                    )
+                role_session.write_fingerprint(fingerprint)
+                await deps.agent_runner.run(
+                    RunRequest(
+                        name="Divergence Resolver",
+                        prompt=build_prompt_invocation(
+                            PromptTemplate.DIVERGENCE_RESOLVE,
+                            build_divergence_scope_args(branch=branch),
+                        ),
                         mount_path=sandbox_path,
-                        caller="Divergence Resolver",
-                        role=AgentRole.DIVERGENCE_RESOLVER.value,
+                        role=AgentRole.DIVERGENCE_RESOLVER,
+                        service=deps.cfg.merge_override.service,
+                        status_display=deps.status_display,
+                        work_body="Resolving divergence",
                     )
-                    if isinstance(
-                        mount_decision, ManagedWorktreeMountRejected
-                    ) and should_reject_managed_worktree_mount(mount_decision):
-                        raise SetupPhaseError(  # noqa: TRY301  # raise inside try is intentional: exits async-with resource cleanup
-                            AgentRole.DIVERGENCE_RESOLVER.value,
-                            describe_managed_worktree_mount_rejection(mount_decision),
-                        )
-                    role_session.write_fingerprint(fingerprint)
-                    await deps.agent_runner.run(
-                        RunRequest(
-                            name="Divergence Resolver",
-                            prompt=build_prompt_invocation(
-                                PromptTemplate.DIVERGENCE_RESOLVE,
-                                build_divergence_scope_args(branch=branch),
-                            ),
-                            mount_path=sandbox_path,
-                            role=AgentRole.DIVERGENCE_RESOLVER,
-                            service=deps.cfg.merge_override.service,
-                            status_display=deps.status_display,
-                            work_body="Resolving divergence",
-                        )
-                    )
-                    deps.git_svc.advance_branch_ref(
-                        deps.repo_root, branch, sandbox_identity.branch
-                    )
-                    role_session.discard()
-            except AgentCredentialFailureError:
-                raise
-            except (
-                SetupPhaseError,
-                WorktreeError,
-                WorktreeTimeoutError,
-                AgentTimeoutError,
-                TransientAgentError,
-                HardAgentError,
-                AgentFailedError,
-                UsageLimitError,
-                ModelNotAvailableError,
-                GitCommandError,
-                OSError,
-            ):
-                raise pull_exc from None
+                )
+                deps.git_svc.advance_branch_ref(
+                    deps.repo_root, branch, sandbox_identity.branch
+                )
+                role_session.discard()
+        except AgentCredentialFailureError:
+            raise
+        except (
+            SetupPhaseError,
+            WorktreeError,
+            WorktreeTimeoutError,
+            AgentTimeoutError,
+            TransientAgentError,
+            HardAgentError,
+            AgentFailedError,
+            UsageLimitError,
+            ModelNotAvailableError,
+            GitCommandError,
+            OSError,
+        ):
+            raise pull_exc from None
 
 
 class PreflightCache:
@@ -345,10 +301,8 @@ class PreflightCache:
             await _wait_for_operating_branch_release(deps, "Preflight")
             try:
                 await self._branch_refresh.pull_with_resolution(deps)
-            except UnrelatedHistoriesError:
-                raise
             except GitCommandError as pull_exc:
-                if "non-fast-forward" not in str(pull_exc).lower():
+                if "diverged" not in str(pull_exc).lower():
                     deps.status_display.print(
                         "Preflight",
                         "git fetch failed — remote branch is unreachable or has irreconcilable conflicts. "

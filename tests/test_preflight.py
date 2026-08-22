@@ -31,8 +31,8 @@ from pycastle.services import (
     GithubService,
     GitService,
     ServiceRegistry,
-    UnrelatedHistoriesError,
 )
+from pycastle.services._operating_branch_refresh import OperatingBranchDiverged
 from pycastle.services.runtime_services import AgentService
 from pycastle.session import RoleSession
 from tests.support import (
@@ -65,9 +65,7 @@ def _conflict_git_svc(sha: str, branch: str) -> MagicMock:
     svc.is_working_tree_clean.return_value = True
     svc.get_head_sha.return_value = sha
     svc.get_branch_sha.return_value = sha
-    svc.fetch_branch.side_effect = GitCommandError(
-        f"! [rejected] {branch} -> {branch} (non-fast-forward)"
-    )
+    svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
     return svc
 
 
@@ -685,26 +683,28 @@ def test_get_safe_sha_reruns_checks_when_head_advances(tmp_path, git_svc, github
 # ── get_safe_sha: preflight pull via fetch ────────────────────────────────────
 
 
-def test_get_safe_sha_uses_fetch_not_pull_on_repo_root(tmp_path, git_svc, github_svc):
-    """Preflight pull must call fetch_branch, not pull_with_merge_fallback at repo root."""
+def test_get_safe_sha_uses_refresh_not_pull_on_repo_root(tmp_path, git_svc, github_svc):
+    """Preflight must call refresh_operating_branch, not pull_with_merge_fallback at repo root."""
     fake = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
     asyncio.run(cache.get_safe_sha(deps))
 
-    git_svc.fetch_branch.assert_called_once_with(tmp_path, deps.cfg.operating_branch)
+    git_svc.refresh_operating_branch.assert_called_once_with(
+        tmp_path, deps.cfg.operating_branch
+    )
     git_svc.pull_with_merge_fallback.assert_not_called()
 
 
 # ── get_safe_sha: pull failure ────────────────────────────────────────────────
 
 
-def test_get_safe_sha_propagates_git_command_error_on_pull_failure(
+def test_get_safe_sha_propagates_git_command_error_on_refresh_failure(
     tmp_path, git_svc, github_svc
 ):
-    git_svc.fetch_branch.side_effect = GitCommandError(
-        "git fetch origin main:main failed"
+    git_svc.refresh_operating_branch.side_effect = GitCommandError(
+        "git fetch origin failed"
     )
     fake = FakeAgentRunner([], preflight_responses=[])
     deps = _make_deps(
@@ -732,8 +732,8 @@ def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
     result1 = asyncio.run(cache.get_safe_sha(deps))
     assert isinstance(result1, PreflightReady)
 
-    # Second call: fetch fails
-    git_svc.fetch_branch.side_effect = GitCommandError("fetch failed")
+    # Second call: refresh fails
+    git_svc.refresh_operating_branch.side_effect = GitCommandError("fetch failed")
     # Different SHA so it would invalidate cache
     git_svc.get_branch_sha.return_value = "sha-new"
 
@@ -741,7 +741,7 @@ def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
         asyncio.run(cache.get_safe_sha(deps))
 
     # The slot still holds the original verdict
-    git_svc.fetch_branch.side_effect = None
+    git_svc.refresh_operating_branch.side_effect = None
     git_svc.get_branch_sha.return_value = "abc123"
     result3 = asyncio.run(cache.get_safe_sha(deps))
     assert result3 is result1
@@ -856,12 +856,10 @@ def test_get_safe_sha_parallel_callers_run_preflight_once(
 def test_get_safe_sha_resolves_divergence_via_agent_and_returns_ready(
     tmp_path, git_svc, github_svc
 ):
-    """When fetch raises a non-fast-forward error, get_safe_sha spawns the
+    """When operating branch has diverged, get_safe_sha spawns the
     divergence-resolution agent; on success it advances the branch ref and
     returns PreflightReady with the post-merge SHA."""
-    git_svc.fetch_branch.side_effect = GitCommandError(
-        "! [rejected] main -> main (non-fast-forward)"
-    )
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
     git_svc.get_branch_sha.return_value = "merged-sha"
 
     fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
@@ -879,9 +877,7 @@ def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
     tmp_path, git_svc, github_svc
 ):
     """The divergence-resolver RunRequest uses the merge stage override's service."""
-    git_svc.fetch_branch.side_effect = GitCommandError(
-        "! [rejected] main -> main (non-fast-forward)"
-    )
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
 
     fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(
@@ -906,9 +902,7 @@ def test_get_safe_sha_divergence_resolver_uses_merge_override_service(
 def test_get_safe_sha_dispatches_divergence_resolver_for_operating_branch(
     tmp_path, git_svc, github_svc
 ):
-    git_svc.fetch_branch.side_effect = GitCommandError(
-        "! [rejected] pycastle/issue-1484 -> pycastle/issue-1484 (non-fast-forward)"
-    )
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
 
     fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(
@@ -932,9 +926,7 @@ def test_get_safe_sha_dispatches_divergence_resolver_for_operating_branch(
 def test_get_safe_sha_routes_divergence_recovery_through_sandbox_identity(
     tmp_path, git_svc, github_svc
 ):
-    git_svc.fetch_branch.side_effect = GitCommandError(
-        "! [rejected] main -> main (non-fast-forward)"
-    )
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
 
     async def _resolve(request):
         RoleSession(request.mount_path, AgentRole.DIVERGENCE_RESOLVER).start_fresh()
@@ -964,15 +956,14 @@ def test_get_safe_sha_routes_divergence_recovery_through_sandbox_identity(
     )
 
 
-def test_get_safe_sha_propagates_fetch_error_when_divergence_agent_fails(
+def test_get_safe_sha_propagates_git_command_error_when_divergence_agent_fails(
     tmp_path, git_svc, github_svc
 ):
-    """When the divergence agent fails (FailedOutput), the original GitCommandError
+    """When the divergence agent fails (FailedOutput), a GitCommandError
     propagates and no PreflightReady is returned."""
     from pycastle.agents.output_protocol import FailedOutput
 
-    fetch_err = GitCommandError("! [rejected] main -> main (non-fast-forward)")
-    git_svc.fetch_branch.side_effect = fetch_err
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
 
     fake = FakeAgentRunner([FailedOutput()], preflight_responses=[])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
@@ -981,16 +972,16 @@ def test_get_safe_sha_propagates_fetch_error_when_divergence_agent_fails(
     with pytest.raises(GitCommandError) as exc_info:
         asyncio.run(cache.get_safe_sha(deps))
 
-    assert exc_info.value is fetch_err
+    assert "diverged" in str(exc_info.value).lower()
 
 
-def test_get_safe_sha_propagates_non_divergence_fetch_error_without_spawning_agent(
+def test_get_safe_sha_propagates_refresh_error_without_spawning_agent(
     tmp_path, git_svc, github_svc
 ):
-    """Auth/unreachable fetch errors are propagated immediately without spawning
+    """Refresh errors are propagated immediately without spawning
     the divergence-resolution agent."""
-    git_svc.fetch_branch.side_effect = GitCommandError(
-        "git fetch origin main:main failed", stderr="authentication failed"
+    git_svc.refresh_operating_branch.side_effect = GitCommandError(
+        "git fetch origin failed", stderr="authentication failed"
     )
 
     fake = FakeAgentRunner([], preflight_responses=[])
@@ -1023,111 +1014,6 @@ def test_get_safe_sha_does_not_reclassify_non_setup_runner_failures_as_setup(
 
     with pytest.raises(DockerError, match="preflight container stream broke"):
         asyncio.run(cache.get_safe_sha(deps))
-
-
-# ── get_safe_sha: unrelated histories auto-recovery ──────────────────────────
-
-
-def _unrelated_histories_error() -> UnrelatedHistoriesError:
-    return UnrelatedHistoriesError(
-        "git merge --no-edit 'origin/main' failed",
-        returncode=128,
-        stderr="fatal: refusing to merge unrelated histories",
-    )
-
-
-def test_get_safe_sha_auto_recovers_when_unrelated_histories_and_no_local_commits(
-    tmp_path, git_svc, github_svc
-):
-    """When fetch fails with unrelated histories and local has 0 commits ahead of
-    origin, get_safe_sha hard-resets to origin/<branch> and returns PreflightReady."""
-    git_svc.fetch_branch.side_effect = _unrelated_histories_error()
-    git_svc.count_commits_ahead.return_value = 0
-
-    fake = FakeAgentRunner([], preflight_responses=[[]])
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    cache = PreflightCache()
-
-    result = asyncio.run(cache.get_safe_sha(deps))
-
-    assert isinstance(result, PreflightReady)
-    git_svc.hard_reset_to.assert_called_once_with(tmp_path, "origin/main")
-
-
-def test_get_safe_sha_halts_with_guidance_when_unrelated_histories_and_local_commits(
-    tmp_path, git_svc, github_svc, capsys
-):
-    """When fetch fails with unrelated histories and local has commits not on origin,
-    get_safe_sha raises and the error message contains the recovery command."""
-    git_svc.fetch_branch.side_effect = _unrelated_histories_error()
-    git_svc.count_commits_ahead.return_value = 2
-    git_svc.get_local_only_commit_subjects.return_value = [
-        "fix: something",
-        "feat: another thing",
-    ]
-
-    fake = FakeAgentRunner([], preflight_responses=[])
-    deps = _make_deps(
-        tmp_path,
-        fake,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        status_display=PlainStatusDisplay(),
-    )
-    cache = PreflightCache()
-
-    with pytest.raises(UnrelatedHistoriesError):
-        asyncio.run(cache.get_safe_sha(deps))
-
-    git_svc.hard_reset_to.assert_not_called()
-    output = capsys.readouterr().out
-    assert "git fetch origin && git reset --hard origin/main" in output
-    assert "fix: something" in output
-
-
-def test_get_safe_sha_reports_commit_count_when_unrelated_histories_has_no_subjects(
-    tmp_path, git_svc, github_svc, capsys
-):
-    """When local-only subjects are unavailable, the recovery guidance falls back
-    to the local commit count."""
-    git_svc.fetch_branch.side_effect = _unrelated_histories_error()
-    git_svc.count_commits_ahead.return_value = 2
-    git_svc.get_local_only_commit_subjects.return_value = []
-
-    fake = FakeAgentRunner([], preflight_responses=[])
-    deps = _make_deps(
-        tmp_path,
-        fake,
-        git_svc=git_svc,
-        github_svc=github_svc,
-        status_display=PlainStatusDisplay(),
-    )
-    cache = PreflightCache()
-
-    with pytest.raises(UnrelatedHistoriesError):
-        asyncio.run(cache.get_safe_sha(deps))
-
-    output = capsys.readouterr().out
-    assert "Local-only commits:" in output
-    assert "(2 commit(s))" in output
-
-
-def test_get_safe_sha_does_not_spawn_divergence_resolver_on_unrelated_histories(
-    tmp_path, git_svc, github_svc
-):
-    """Unrelated-histories failure must never route to the divergence-resolver agent."""
-    git_svc.fetch_branch.side_effect = _unrelated_histories_error()
-    git_svc.count_commits_ahead.return_value = 3
-    git_svc.get_local_only_commit_subjects.return_value = ["fix: something"]
-
-    fake = FakeAgentRunner([], preflight_responses=[])
-    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
-    cache = PreflightCache()
-
-    with pytest.raises(UnrelatedHistoriesError):
-        asyncio.run(cache.get_safe_sha(deps))
-
-    assert len(fake.calls) == 0
 
 
 # ── Divergence-Resolver fingerprint gate ──────────────────────────────────────
