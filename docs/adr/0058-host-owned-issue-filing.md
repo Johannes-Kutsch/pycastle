@@ -10,7 +10,9 @@ Host-owned filing replaces agent-driven `gh` calls with a host-side `file_draft_
 
 **Stage 1** creates every issue (spec + slices) without the state label, then wires all sub-issue and dependency edges. Issues exist on GitHub but are invisible to `cfg.issue_label` queries, so the Planner does not pick them up in a racing iteration.
 
-**Stage 2** applies the state label to every issue in the set once Stage 1 is complete. Only after Stage 2 are the issues ready-for-agent.
+**Stage 2** applies the state label to every *slice* in the set once Stage 1 is complete. Only after Stage 2 are the slices ready-for-agent.
+
+*Amended: Stage 2 originally read "every issue in the set", which put the state label on the improve spec too. The spec is a tracking parent and carries no state label — a labelled spec reaches the slice classifier (ADR 0056), is given a slice-mode label, and becomes implementable work. The bundled PRD prompt and the glossary always said so; this ADR and `file_draft_set` did not.*
 
 The separation guarantees that a partial run never leaves issues in the `ready-for-agent` state with broken dependency graphs: the Planner can only see issues whose full graph is already wired.
 
