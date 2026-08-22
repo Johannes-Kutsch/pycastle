@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from pycastle.agents.output_protocol import AgentRole
-    from pycastle.services import ServiceRegistry
     from pycastle.services.runtime_services import AgentService
     from pycastle.session.role import RoleSession
 
@@ -194,36 +193,6 @@ def has_exact_transcript(
         return False
     return _is_exact_resumable_provider_session(
         service.name, provider_session_id, state_dir
-    )
-
-
-def has_exact_provider_transcript_for_service(
-    *,
-    worktree: Path,
-    role: AgentRole,
-    namespace: str,
-    service: AgentService,
-) -> bool:
-    return has_exact_transcript(
-        worktree=worktree, role=role, namespace=namespace, service=service
-    )
-
-
-def has_exact_provider_transcript_for_selected_service(
-    *,
-    worktree: Path,
-    role: AgentRole,
-    namespace: str,
-    registry: ServiceRegistry | None,
-    service_name: str,
-) -> bool:
-    if registry is None or not service_name:
-        return False
-    service = registry[service_name]
-    if service is None:
-        return False
-    return has_exact_transcript(
-        worktree=worktree, role=role, namespace=namespace, service=service
     )
 
 

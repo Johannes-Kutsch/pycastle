@@ -14,8 +14,7 @@ from pycastle.services import ServiceRegistry
 from pycastle.services.runtime_services import CodexService
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
-    has_exact_provider_transcript_for_selected_service,
-    has_exact_provider_transcript_for_service,
+    has_exact_transcript,
 )
 
 
@@ -194,7 +193,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_codex_with_m
     ServiceSessionStore(role_dir).record_successful_run("codex", "thread-exact")
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             namespace="main",
@@ -225,7 +224,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     ServiceSessionStore(role_dir).record_successful_run("opencode", "sess-opencode-123")
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.REVIEWER,
             namespace="main",
@@ -256,7 +255,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     ServiceSessionStore(role_dir).record_successful_run("opencode", "sess-opencode-123")
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.REVIEWER,
             namespace="main",
@@ -287,16 +286,17 @@ def test_has_exact_provider_transcript_for_selected_service_returns_true_for_reg
     ServiceSessionStore(role_dir).record_successful_run("opencode", "sess-opencode-123")
     registry = ServiceRegistry({"opencode": service})
 
+    _svc = registry["opencode"]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.REVIEWER,
             namespace="main",
-            registry=registry,
-            service_name="opencode",
+            service=_svc,
         )
-        is True
-    )
+        if _svc is not None
+        else False
+    ) is True
 
 
 @pytest.mark.parametrize(
@@ -317,16 +317,17 @@ def test_has_exact_provider_transcript_for_selected_service_returns_false_withou
     registry: ServiceRegistry | None,
     service_name: str,
 ) -> None:
+    _svc = None if (registry is None or not service_name) else registry[service_name]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             namespace="main",
-            registry=registry,
-            service_name=service_name,
+            service=_svc,
         )
-        is False
-    )
+        if _svc is not None
+        else False
+    ) is False
 
 
 def test_has_exact_provider_transcript_for_service_returns_true_for_claude_with_matching_sidecar_metadata_and_selected_resumable_state_dir(
@@ -350,7 +351,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_claude_with_
     ServiceSessionStore(role_dir).record_successful_run("claude", "claude-session-uuid")
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             namespace="",
@@ -401,7 +402,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_when_metadata_i
         )
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=role,
             namespace=namespace,
@@ -425,7 +426,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_malformed_m
     )
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             namespace="main",
@@ -461,7 +462,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_when_metadata_p
     )
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             namespace="main",
@@ -499,7 +500,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_missing_or_
     ServiceSessionStore(role_dir).record_successful_run("codex", metadata_value)
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             namespace="main",
@@ -527,7 +528,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_different_s
     )
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             namespace="main",
@@ -558,7 +559,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_non_resumab
     ServiceSessionStore(role_dir).record_successful_run("claude", "claude-session-uuid")
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPLEMENTER,
             namespace="",
@@ -588,7 +589,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_ambiguous_c
     ServiceSessionStore(role_dir).record_successful_run("codex", "thread-old")
 
     assert (
-        has_exact_provider_transcript_for_service(
+        has_exact_transcript(
             worktree=tmp_path,
             role=AgentRole.IMPROVE,
             namespace="main",

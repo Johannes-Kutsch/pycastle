@@ -35,7 +35,7 @@ from pycastle.session import (
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
-    has_exact_provider_transcript_for_selected_service,
+    has_exact_transcript,
     store_for_role_session,
 )
 from pycastle.session_planning import (
@@ -702,26 +702,28 @@ def test_role_session_reports_exact_provider_transcript_available_for_selected_o
     ServiceSessionStore(rs.path).record_successful_run("opencode", "sess-opencode-123")
     registry = ServiceRegistry({"opencode": cast("AgentService", service)})
 
+    _svc = registry["opencode"]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.REVIEWER,
             namespace="main",
-            registry=registry,
-            service_name="opencode",
+            service=_svc,
         )
-        is True
-    )
+        if _svc is not None
+        else False
+    ) is True
+    _svc = registry["opencode"]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.REVIEWER,
             namespace="main",
-            registry=registry,
-            service_name="opencode",
+            service=_svc,
         )
-        is True
-    )
+        if _svc is not None
+        else False
+    ) is True
 
 
 @pytest.mark.parametrize(
@@ -757,26 +759,36 @@ def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_
     ServiceSessionStore(rs.path).record_successful_run("codex", "thread-exact")
     registry = ServiceRegistry(cast("dict[str, AgentService]", registry_services))
 
+    _svc = (
+        None
+        if (registry is None or not selected_service_name)
+        else registry[selected_service_name]
+    )
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.IMPROVE,
             namespace="main",
-            registry=registry,
-            service_name=selected_service_name,
+            service=_svc,
         )
-        is False
+        if _svc is not None
+        else False
+    ) is False
+    _svc = (
+        None
+        if (registry is None or not selected_service_name)
+        else registry[selected_service_name]
     )
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.IMPROVE,
             namespace="main",
-            registry=registry,
-            service_name=selected_service_name,
+            service=_svc,
         )
-        is False
-    )
+        if _svc is not None
+        else False
+    ) is False
 
 
 def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous_codex_identity(
@@ -800,26 +812,28 @@ def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous
     ServiceSessionStore(rs.path).record_successful_run("codex", "thread-old")
     registry = ServiceRegistry({"codex": CodexService()})
 
+    _svc = registry["codex"]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.IMPROVE,
             namespace="main",
-            registry=registry,
-            service_name="codex",
+            service=_svc,
         )
-        is False
-    )
+        if _svc is not None
+        else False
+    ) is False
+    _svc = registry["codex"]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.IMPROVE,
             namespace="main",
-            registry=registry,
-            service_name="codex",
+            service=_svc,
         )
-        is False
-    )
+        if _svc is not None
+        else False
+    ) is False
 
 
 @pytest.mark.parametrize(
@@ -854,16 +868,17 @@ def test_role_session_reports_exact_provider_transcript_unavailable_without_exac
     if metadata_value is not None:
         ServiceSessionStore(rs.path).record_successful_run("opencode", metadata_value)
 
+    _svc = ServiceRegistry({service.name: cast("AgentService", service)})[service.name]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.REVIEWER,
             namespace="main",
-            registry=ServiceRegistry({service.name: cast("AgentService", service)}),
-            service_name=service.name,
+            service=_svc,
         )
-        is False
-    )
+        if _svc is not None
+        else False
+    ) is False
 
 
 def test_role_session_reports_exact_provider_transcript_codex_availability_for_duplicate_and_ambiguous_rollouts(
@@ -884,16 +899,17 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
     ServiceSessionStore(rs.path).save_service_session_id("codex", "thread-exact")
     ServiceSessionStore(rs.path).record_successful_run("codex", "thread-exact")
 
+    _svc = ServiceRegistry({service.name: service})[service.name]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.IMPROVE,
             namespace="main",
-            registry=ServiceRegistry({service.name: service}),
-            service_name=service.name,
+            service=_svc,
         )
-        is True
-    )
+        if _svc is not None
+        else False
+    ) is True
 
     rollout_path.write_text(
         '{"type":"thread.started","thread_id":"thread-exact"}\n'
@@ -901,16 +917,17 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
         encoding="utf-8",
     )
 
+    _svc = ServiceRegistry({service.name: service})[service.name]
     assert (
-        has_exact_provider_transcript_for_selected_service(
+        has_exact_transcript(
             worktree=worktree,
             role=AgentRole.IMPROVE,
             namespace="main",
-            registry=ServiceRegistry({service.name: service}),
-            service_name=service.name,
+            service=_svc,
         )
-        is False
-    )
+        if _svc is not None
+        else False
+    ) is False
 
 
 # ── any_role_dir_present ──────────────────────────────────────────────────────
