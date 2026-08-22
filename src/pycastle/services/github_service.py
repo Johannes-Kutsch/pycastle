@@ -503,7 +503,12 @@ class GithubService:
 
     def search_open_issues_by_title(self, prefix: str) -> list[int]:
         q = quote(f"{prefix} in:title state:open repo:{self.repo}", safe="")
-        payload, _ = self._request("GET", f"/search/issues?q={q}&per_page=100")
+        try:
+            payload, _ = self._request("GET", f"/search/issues?q={q}&per_page=100")
+        except GithubAPIError as exc:
+            if exc.status == _HTTP_UNPROCESSABLE:
+                return []
+            raise
         if not isinstance(payload, dict):
             return []
         items = payload.get("items") or []

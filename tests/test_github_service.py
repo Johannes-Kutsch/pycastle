@@ -3045,6 +3045,32 @@ def test_search_open_issues_by_title_returns_empty_list_when_items_missing():
     assert result == []
 
 
+def test_search_open_issues_by_title_returns_empty_list_when_query_rejected_by_github():
+    prefix = "[pycastle] issue close failed"
+    path = "/search/issues?q=%5Bpycastle%5D%20issue%20close%20failed%20in%3Atitle%20state%3Aopen%20repo%3Aowner%2Frepo&per_page=100"
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                path,
+                error=GithubHttpTransportAPIError(
+                    "Validation Failed",
+                    422,
+                    '{"message":"Validation Failed","errors":[{"message":"Cannot parse query"}]}',
+                    "GET",
+                    path,
+                ),
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.search_open_issues_by_title(prefix)
+
+    assert result == []
+    transport.assert_exhausted()
+
+
 # ── add_issue_dependency ─────────────────────────────────────────────────────
 
 

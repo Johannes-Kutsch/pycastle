@@ -546,3 +546,45 @@ def test_operator_actionable_git_issue_non_github_error_propagates():
             attempt_count=3,
             github_svc=github_svc,
         )
+
+
+# ── Issue #2174: unhandled exception files issue when search API returns 422 ──
+
+
+def test_unhandled_exception_files_issue_when_auto_file_bugs_enabled_and_search_rejected(
+    monkeypatch,
+):
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+    from pycastle.services import GithubService
+    from pycastle.services._github_http_transport import GithubHttpTransportAPIError
+
+    monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
+
+    class _ScriptedTransport:
+        def request(self, method, path, data=None):
+            if "/search/issues" in path:
+                raise GithubHttpTransportAPIError(
+                    "Validation Failed", 422, "{}", method, path
+                )
+            if method == "POST" and "/issues" in path:
+                return {"number": 42, "id": 10042}, {}
+            raise AssertionError(f"unexpected: {method} {path}")
+
+    original_init = GithubService.__init__
+
+    def patched_init(self, repo, token, cfg, *, transport=None):
+        original_init(self, repo, token, cfg, transport=_ScriptedTransport())
+
+    monkeypatch.setattr(GithubService, "__init__", patched_init)
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    assert "Filed issue #42:" in result.stdout
+    assert "issues/new" not in result.stdout
+    assert result.exit_code == 1
