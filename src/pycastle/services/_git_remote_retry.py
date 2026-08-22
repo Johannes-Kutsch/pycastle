@@ -65,6 +65,12 @@ _OPERATOR_ACTIONABLE_PATTERNS = (
 
 _NON_FAST_FORWARD_PUSH_PATTERNS = ("[rejected]",)
 
+_DETERMINISTIC_FETCH_FAILURE_PATTERNS = (
+    "non-fast-forward",
+    "refusing to fetch into branch",
+    "couldn't find remote ref",
+)
+
 
 class RemoteGitRetryPolicy:
     @property
@@ -86,6 +92,10 @@ class RemoteGitRetryPolicy:
             return RecoverPushNonFastForward()
         if any(pattern in stderr_lower for pattern in _DIVERGENCE_OR_CONFLICT_PATTERNS):
             return PassthroughRemoteDivergenceOrConflict()
+        if operation == "fetch" and any(
+            pattern in stderr_lower for pattern in _DETERMINISTIC_FETCH_FAILURE_PATTERNS
+        ):
+            return EscalateOperatorActionableGitFailure()
         if attempt >= _REMOTE_RETRY_PROFILE.max_attempts:
             return EscalateOperatorActionableGitFailure()
         return RetryTransientRemoteFailure(
