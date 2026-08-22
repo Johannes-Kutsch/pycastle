@@ -2459,6 +2459,139 @@ def test_run_with_runtime_client_propagates_non_oserror_from_session_exit(
         )
 
 
+class _CapturingToolPolicyRuntimeClient:
+    def __init__(self) -> None:
+        self.captured_tool_policy: ToolPolicy | None = None
+
+    async def run_new_session(self, request):
+        self.captured_tool_policy = request.tool_policy
+        return RuntimeOutcome(
+            kind=Completed(),
+            result=RunResult(
+                output="<promise>COMPLETE</promise>",
+                usage=None,
+                continuation=None,
+                selected=ResolvedProvider(
+                    service="codex",
+                    model="gpt-5.5",
+                    effort="medium",
+                ),
+            ),
+        )
+
+
+def _make_runner_for_policy_test(tmp_path, monkeypatch, *, issue: int, runtime_client):
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / f"issue-{issue}"
+    mount_path.mkdir(parents=True)
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+    return runner, mount_path
+
+
+def test_divergence_resolver_runs_with_unrestricted_tool_policy(tmp_path, monkeypatch):
+    runtime_client = _CapturingToolPolicyRuntimeClient()
+    runner, mount_path = _make_runner_for_policy_test(
+        tmp_path, monkeypatch, issue=2171, runtime_client=runtime_client
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Divergence Resolver #2171",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.DIVERGENCE_RESOLVE,
+                    scope_args={"BRANCH": "issue-2171"},
+                ),
+                mount_path=mount_path,
+                role=AgentRole.DIVERGENCE_RESOLVER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+            )
+        )
+    )
+
+    assert runtime_client.captured_tool_policy == ToolPolicy.UNRESTRICTED
+
+
+def test_planner_keeps_no_file_mutation_tool_policy(tmp_path, monkeypatch):
+    runtime_client = _CapturingToolPolicyRuntimeClient()
+    runner, mount_path = _make_runner_for_policy_test(
+        tmp_path, monkeypatch, issue=2171, runtime_client=runtime_client
+    )
+    monkeypatch.setattr(
+        "pycastle.prompts.pipeline.PromptRenderer.render_expected_output_shape",
+        lambda self, template, scope_args: "<plan>{...}</plan>",
+    )
+
+    class _PlannerSuccessRuntimeClient:
+        async def run_new_session(self, request):
+            runtime_client.captured_tool_policy = request.tool_policy
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output='<plan>{"issues": [], "blocked": []}</plan>',
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="codex",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: _PlannerSuccessRuntimeClient(),
+    )
+
+    asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Plan Agent",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.PLAN,
+                    scope_args={
+                        "ALL_OPEN_ISSUES_JSON": "[]",
+                        "READY_FOR_AGENT_ISSUES_JSON": "[]",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.PLANNER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+            )
+        )
+    )
+
+    assert runtime_client.captured_tool_policy == ToolPolicy.NO_FILE_MUTATION
+
+
 def test_run_preflight_propagates_non_oserror_from_session_exit(tmp_path, monkeypatch):
     mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2007"
     mount_path.mkdir(parents=True)

@@ -169,7 +169,7 @@ def _provider_auth_from_env(env: dict[str, str]) -> ProviderAuth | None:
 
 
 def _runtime_tool_policy_for_role(role: AgentRole) -> RuntimeToolPolicy:
-    if role in {AgentRole.PLANNER, AgentRole.DIVERGENCE_RESOLVER}:
+    if role is AgentRole.PLANNER:
         return RuntimeToolPolicy.NO_FILE_MUTATION
     return RuntimeToolPolicy.UNRESTRICTED
 
