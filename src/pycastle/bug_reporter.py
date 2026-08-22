@@ -129,15 +129,27 @@ def _try_api_path(
     success, None on any failure."""
     try:
         from pycastle.services import GithubService, GithubServiceError
+    except ImportError:
+        return None
 
+    try:
         svc = GithubService(repo, token, cfg)
+    except (GithubServiceError, ImportError):
+        return None
+
+    try:
         existing = svc.search_open_issues_by_title(title)
-        if existing:
-            html_url = f"https://github.com/{repo}/issues/{existing[0]}"
-            return existing[0], html_url
+    except GithubServiceError:
+        existing = []
+
+    if existing:
+        html_url = f"https://github.com/{repo}/issues/{existing[0]}"
+        return existing[0], html_url
+
+    try:
         number, _ = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)
         html_url = f"https://github.com/{repo}/issues/{number}"
-    except (GithubServiceError, ImportError):
+    except GithubServiceError:
         return None
     else:
         return number, html_url
@@ -194,10 +206,15 @@ def file_merge_close_failure_issue(
         existing = github_svc.search_open_issues_by_title(
             _MERGE_CLOSE_FAILURE_TITLE_PREFIX
         )
-        if existing:
-            return existing[0]
-        title = f"{_MERGE_CLOSE_FAILURE_TITLE_PREFIX}: #{issue_number}"
-        body = _build_merge_close_failure_body(issue_number=issue_number, exc=exc)
+    except GithubServiceError:
+        existing = []
+
+    if existing:
+        return existing[0]
+
+    title = f"{_MERGE_CLOSE_FAILURE_TITLE_PREFIX}: #{issue_number}"
+    body = _build_merge_close_failure_body(issue_number=issue_number, exc=exc)
+    try:
         number, _ = github_svc.create_issue_in(
             github_svc.repo,
             title,
@@ -235,12 +252,17 @@ def file_operator_actionable_git_issue(
         existing = github_svc.search_open_issues_by_title(
             _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX
         )
-        if existing:
-            return
-        title = f"{_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX}: {op} failed after {attempt_count} attempt(s)"
-        body = _build_operator_actionable_body(
-            op=op, stderr=stderr, attempt_count=attempt_count
-        )
+    except GithubServiceError:
+        existing = []
+
+    if existing:
+        return
+
+    title = f"{_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX}: {op} failed after {attempt_count} attempt(s)"
+    body = _build_operator_actionable_body(
+        op=op, stderr=stderr, attempt_count=attempt_count
+    )
+    try:
         number, _ = github_svc.create_issue_in(
             github_svc.repo,
             title,
