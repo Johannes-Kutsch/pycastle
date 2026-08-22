@@ -2413,8 +2413,8 @@ def test_run_full_iteration_cold_path(git_repo):
         check=True,
         capture_output=True,
     )
-    # ADR 0060: repo root must be on a non-operating branch so that
-    # fetch_branch can update refs/heads/main without a checkout restriction.
+    # ADR 0062: repo root must be on a non-operating branch so that
+    # advance_branch_ref can update refs/heads/main without a checkout restriction.
     subprocess.run(
         ["git", "-C", str(git_repo), "checkout", "-b", "operator-work"],
         check=True,
@@ -2762,7 +2762,7 @@ def test_idle_iteration_skips_preflight_gate(tmp_path):
 
     _run(tmp_path, github_service=mock_github, git_service=mock_git)
 
-    mock_git.fetch_branch.assert_not_called()
+    mock_git.refresh_operating_branch.assert_not_called()
 
 
 def test_in_flight_only_iteration_planning_runs_preflight_gate_once(tmp_path):
@@ -2772,15 +2772,15 @@ def test_in_flight_only_iteration_planning_runs_preflight_gate_once(tmp_path):
     mock_git = _make_git_svc(try_merge_side_effect=[True])
     mock_git.verify_ref_exists.return_value = True  # branch exists → in-flight
 
-    original_fetch = mock_git.fetch_branch.side_effect
+    original_refresh = mock_git.refresh_operating_branch.side_effect
 
-    def _tracking_fetch(repo_path, branch):
+    def _tracking_refresh(repo_path, branch):
         fetch_call_count[0] += 1
-        if original_fetch is not None:
-            return original_fetch(repo_path, branch)
+        if original_refresh is not None:
+            return original_refresh(repo_path, branch)
         return None
 
-    mock_git.fetch_branch.side_effect = _tracking_fetch
+    mock_git.refresh_operating_branch.side_effect = _tracking_refresh
     mock_github = _make_github_svc(numbers=[1])
 
     async def _fake_run_agent(request: RunRequest):
@@ -2794,7 +2794,7 @@ def test_in_flight_only_iteration_planning_runs_preflight_gate_once(tmp_path):
     )
 
     assert fetch_call_count[0] == 1, (
-        "In-flight planning path must call fetch_branch exactly once"
+        "In-flight planning path must call refresh_operating_branch exactly once"
     )
 
 
@@ -3663,7 +3663,7 @@ def test_orchestrator_files_issue_on_consuming_repo_when_no_existing_match(tmp_p
         attempt_count=4,
     )
     git_svc = _make_git_svc()
-    git_svc.fetch_branch.side_effect = err
+    git_svc.refresh_operating_branch.side_effect = err
     git_svc.get_github_remote_repo.return_value = ("consuming-owner", "consuming-repo")
 
     github_svc = _make_github_svc()
@@ -3695,7 +3695,7 @@ def test_orchestrator_skips_filing_when_matching_open_issue_exists(tmp_path):
         attempt_count=1,
     )
     git_svc = _make_git_svc()
-    git_svc.fetch_branch.side_effect = err
+    git_svc.refresh_operating_branch.side_effect = err
     git_svc.get_github_remote_repo.return_value = ("consuming-owner", "consuming-repo")
 
     github_svc = _make_github_svc()
@@ -3720,7 +3720,7 @@ def test_orchestrator_filed_issue_body_contains_diagnostic_info(tmp_path):
         attempt_count=4,
     )
     git_svc = _make_git_svc()
-    git_svc.fetch_branch.side_effect = err
+    git_svc.refresh_operating_branch.side_effect = err
 
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"
@@ -3750,7 +3750,7 @@ def test_orchestrator_operator_actionable_never_routes_to_pycastle_upstream(tmp_
         attempt_count=1,
     )
     git_svc = _make_git_svc()
-    git_svc.fetch_branch.side_effect = err
+    git_svc.refresh_operating_branch.side_effect = err
 
     github_svc = _make_github_svc()
     github_svc.repo = "consuming-owner/consuming-repo"

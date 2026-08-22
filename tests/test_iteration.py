@@ -4654,7 +4654,7 @@ def test_run_iteration_returns_aborted_operator_actionable_on_operator_actionabl
         op="fetch",
         attempt_count=4,
     )
-    git_svc.fetch_branch.side_effect = err
+    git_svc.refresh_operating_branch.side_effect = err
 
     async def _noop_agent(request: RunRequest):
         return CompletionOutput()
@@ -4684,7 +4684,7 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
         op="fetch",
         attempt_count=1,
     )
-    git_svc.fetch_branch.side_effect = err
+    git_svc.refresh_operating_branch.side_effect = err
 
     auto_file_calls: list = []
 
