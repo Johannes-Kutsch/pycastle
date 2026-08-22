@@ -12,11 +12,9 @@ Surface architectural friction in this codebase and nominate up to **{{CANDIDATE
 
 You must NOT modify any files in the worktree. Your only output for this phase is the conversation itself — your ranked candidates with their justifications, and a final `<candidates>` block followed by a `<promise>` tag.
 
-## Glossary
+## Design standards
 
 {{DESIGN_STANDARDS}}
-
-{{IMPLEMENTATION_STANDARDS}}
 
 ## AFK-safety filter
 

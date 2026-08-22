@@ -66,7 +66,7 @@ Every slice is exactly one of three **slice modes**. The mode determines which i
 
 ### Slicing rule
 
-**If a step cannot be verified by a new test of observable behavior, draft it as its own `refactor-slice`. Refactor steps never ride along inside a `behavior-slice`.**
+**If a step cannot be verified by a new test of observable behavior, draft it as its own `refactor-slice`. Refactor steps never ride along inside a `behavior-slice`.** **Prose artifacts** (see step 4) are the exception: they ride along inside any slice mode.
 
 By default, each refactor step is its own slice. Multiple refactor steps bundle into one `refactor-slice` only when they form a single atomic ripple — e.g., a rename propagating through call sites — that cannot land independently without leaving the tree inconsistent. Mixing refactor and behavior in the same slice is never allowed.
 
@@ -98,7 +98,7 @@ Acceptance criteria are how the implement agent learns what "done" looks like. T
 >
 > _Bad:_ "A test asserts the log contains `http_get_start` with no matching `http_get_ok`."
 
-A `behavior-slice` may also carry **prose artifacts** — `.md` files outside `tests/` whose wording no caller observes: documentation, ADRs, README, and shipped prompt or template text. Give those criteria the file-state shape `docs-slice` uses, so the implement agent reads at a glance which criteria carry a test obligation and which are plain edits.
+A `behavior-slice` may also carry **prose artifacts** — `.md` files outside `tests/` whose wording no caller observes: documentation, ADRs, README, and shipped prompt or template text. Give those criteria the file-state shape `docs-slice` uses, so the implement agent reads at a glance which criteria carry a test obligation and which are plain edits. A protocol tag a host parser reads is not prose: a slice changing which tag an output shape names gets a behavior criterion, with the tag as its observable surface.
 
 > _Good:_ "`coordination/plan.md` states that an implementation child is not blocked by its own parent PRD."
 >
@@ -162,7 +162,7 @@ blocked_by:
 <issue body here>
 ```
 
-The frontmatter is wiring instructions for the host. The host renders the `## Parent` and `## Blocked by` sections automatically from the frontmatter handles — do not write those sections in the body.
+The frontmatter is wiring instructions for the host. The host renders the `## Parent` section from the spec it files alongside this draft set, and the `## Blocked by` section from the `blocked_by` handles — leave both sections out of the body.
 
 Write in dependency order (blockers first) so you can reference draft handles in `blocked_by`. The CONTEXT.md issue from step 2, if any, is written first; refactor slices land before the behavior slices that depend on them.
 
@@ -191,7 +191,7 @@ The files this slice is expected to create or modify. A tentative planning/scopi
 
 Explicitly state that this slice is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
 
-_Drafted by improve session_
+_Drafted by improve session [improve-{{IMPROVE_SHORT_SID}}]._
 ```
 
 </workflow>

@@ -18,7 +18,7 @@ You must NOT modify any files in the worktree. Your only outputs are the draft f
 
 ## Recent Improve PRDs
 
-Use this novelty context to avoid filing a duplicate or near-duplicate PRD:
+Use this novelty context to avoid drafting a duplicate or near-duplicate PRD:
 
 {{RECENT_IMPROVE_PRDS}}
 
@@ -28,7 +28,7 @@ Use this novelty context to avoid filing a duplicate or near-duplicate PRD:
 
 ## Process
 
-1. Reuse the codebase exploration you inherit from phase 1 — don't re-explore the codebase. Walk the design tree for your candidate:
+1. Work from the codebase exploration you inherit from phase 1; open only what the four questions below force you to. Walk the design tree for your candidate:
 
    - Constraints any new interface would need to satisfy
    - Dependency category (in-process / local-substitutable / remote-owned / true-external) and the testing strategy that follows
@@ -47,7 +47,7 @@ title: [improve-PRD] <concise title>
 ---
 ```
 
-Do NOT apply any state label or slice-mode label — the spec is a tracking parent and carries neither a state label nor a slice-mode label; only phase 3 sub-issues carry a ready-for-agent label.
+The spec's frontmatter carries `title` only — it is a tracking parent. State labels and slice-mode labels belong on the phase-3 sub-issues.
 
 ## Issue body template
 
@@ -85,7 +85,7 @@ A list of implementation decisions that were made. This can include:
 
 - The modules that will be built/modified
 - The interfaces of those modules that will be modified
-- Technical clarifications from the phase-1 grilling
+- Technical clarifications from the design-tree walk in step 1
 - Architectural decisions
 - Schema changes
 - API contracts
@@ -113,7 +113,7 @@ Any further notes about the feature.
 
 Explicitly state that this change is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
 
-_Filed by improve session_
+_Drafted by improve session [improve-{{IMPROVE_SHORT_SID}}]._
 ```
 
 </workflow>

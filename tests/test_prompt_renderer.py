@@ -1101,15 +1101,29 @@ def test_renderer_aborts_on_broken_local_coding_standards_override(prompts_dir):
 
 
 def test_renderer_validates_shared_fragment_against_each_referencing_scope(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cfg, prompts_dir
 ):
-    monkeypatch.chdir(tmp_path)
-    prompts_dir = tmp_path / "pycastle" / "prompts" / "shared/standards"
-    prompts_dir.mkdir(parents=True)
-    (prompts_dir / "_implementation.md").write_text("branch {{BRANCH}}")
+    # Two templates in different scopes pull the same fragment. CANDIDATE_RANK
+    # is an IMPROVE_SESSION arg, so the IMPROVE_SCAN reference must reject it —
+    # which only happens if every referencing scope is checked, not just one.
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
+    (prompts_dir / "improve" / "02-prd.md").write_text("{{DESIGN_STANDARDS}}")
+    (prompts_dir / "shared/standards" / "_design.md").write_text(
+        "rank {{CANDIDATE_RANK}}"
+    )
 
-    with pytest.raises(PromptRenderError, match="BRANCH"):
-        PromptRenderer(Config())
+    with pytest.raises(PromptRenderError, match="CANDIDATE_RANK"):
+        PromptRenderer(cfg)
+
+
+def test_renderer_accepts_shared_fragment_valid_in_every_referencing_scope(
+    cfg, prompts_dir
+):
+    (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
+    (prompts_dir / "improve" / "02-prd.md").write_text("{{DESIGN_STANDARDS}}")
+    (prompts_dir / "shared/standards" / "_design.md").write_text("bug {{BUG_LABEL}}")
+
+    PromptRenderer(cfg)
 
 
 def test_renderer_aborts_on_fragment_cycle(prompts_dir):
@@ -1384,18 +1398,29 @@ def test_renderer_falls_back_per_file_for_partial_absolute_local_role_tree(tmp_p
 
 
 def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypatch):
+    # One template pulling two fragments, one of them overridden locally: the
+    # other must still resolve from the bundled tree.
     monkeypatch.chdir(tmp_path)
-    standards_dir = tmp_path / "pycastle" / "prompts" / "shared/standards"
-    standards_dir.mkdir(parents=True)
-    (standards_dir / "_design.md").write_text("local design guidance")
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "work").mkdir(parents=True)
+    (prompts_dir / "shared/standards").mkdir(parents=True)
+    (prompts_dir / "work/review.md").write_text(
+        "{{DESIGN_STANDARDS}}|{{IMPLEMENTATION_STANDARDS}}"
+    )
+    (prompts_dir / "shared/standards" / "_design.md").write_text("local design")
     renderer = PromptRenderer(Config())
 
     result = _run(
         renderer.render(
-            PromptTemplate.IMPROVE_SCAN,
+            PromptTemplate.REVIEW,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
-                "CANDIDATE_BUDGET": "3",
+                "ISSUE_NUMBER": "1",
+                "ISSUE_TITLE": "t",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": "pycastle/issue-1",
+                "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
             },
             _noop_exec,
         )
@@ -1404,8 +1429,7 @@ def test_renderer_mixes_local_and_bundled_shared_prompt_files(tmp_path, monkeypa
         _SHIPPED_PROMPTS_DIR / "shared/standards" / "_implementation.md"
     ).read_text(encoding="utf-8")
 
-    assert "local design guidance" in result
-    assert bundled_implementation in result
+    assert result == f"local design|{bundled_implementation}"
 
 
 def test_render_shipped_preflight_issue_prompt():
@@ -1658,67 +1682,6 @@ def test_scope_failure_report_placeholders():
     )
 
 
-# ── diagnostics/failure-report.md conditional rendering ───────────────────────────────────
-
-_FAILURE_REPORT_SCOPE_ARGS_BASE = {
-    "FAILED_ROLE": "implementer",
-    "SESSION_DIR": "/sessions/abc",
-    "EVIDENCE_PATH": "logs/implementer-agent-invocation.log",
-    "HAS_EVIDENCE_PATH": "yes",
-}
-
-
-def test_failure_report_renders_recovery_section_for_non_typed_crash():
-    renderer = PromptRenderer(Config())
-
-    result = _run(
-        renderer.render(
-            PromptTemplate.FAILURE_REPORT,
-            {**_FAILURE_REPORT_SCOPE_ARGS_BASE, "FAILURE_CLASS": "non_typed_crash"},
-            _noop_exec,
-        )
-    )
-
-    assert "## Recovery" in result
-    assert "rm -rf <SESSION_DIR>" in result
-
-
-def test_failure_report_renders_no_evidence_branch():
-    renderer = PromptRenderer(Config())
-
-    result = _run(
-        renderer.render(
-            PromptTemplate.FAILURE_REPORT,
-            {
-                **_FAILURE_REPORT_SCOPE_ARGS_BASE,
-                "EVIDENCE_PATH": "",
-                "HAS_EVIDENCE_PATH": "no",
-                "FAILURE_CLASS": "protocol_error",
-            },
-            _noop_exec,
-        )
-    )
-
-    assert "No invocation log was copied for diagnosis" in result
-    assert "git status" in result
-    assert "git diff" in result
-
-
-def test_failure_report_omits_recovery_section_for_protocol_error():
-    renderer = PromptRenderer(Config())
-
-    result = _run(
-        renderer.render(
-            PromptTemplate.FAILURE_REPORT,
-            {**_FAILURE_REPORT_SCOPE_ARGS_BASE, "FAILURE_CLASS": "protocol_error"},
-            _noop_exec,
-        )
-    )
-
-    assert "## Recovery" not in result
-    assert "rm -rf <SESSION_DIR>" not in result
-
-
 # ── Conditional block rendering ───────────────────────────────────────────────
 
 
@@ -1842,19 +1805,16 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
 
 
 @pytest.mark.parametrize(
-    ("template", "expected_fragment"),
+    "template",
     [
-        (PromptTemplate.IMPROVE_SCAN, "<candidates>"),
-        (PromptTemplate.IMPROVE_PRD, "<promise>COMPLETE</promise>"),
-        (PromptTemplate.IMPROVE_ISSUES, "<promise>COMPLETE</promise>"),
-        (
-            PromptTemplate.IMPROVE_NO_CANDIDATE,
-            "Output each filed PRD issue number as `<issue>N</issue>`.",
-        ),
+        PromptTemplate.IMPROVE_SCAN,
+        PromptTemplate.IMPROVE_PRD,
+        PromptTemplate.IMPROVE_ISSUES,
+        PromptTemplate.IMPROVE_NO_CANDIDATE,
     ],
 )
 def test_rendered_improve_prompt_includes_its_expected_output_shape(
-    template: PromptTemplate, expected_fragment: str
+    template: PromptTemplate,
 ):
     renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
     scope_args = _scope_args_for(template)
@@ -1863,30 +1823,40 @@ def test_rendered_improve_prompt_includes_its_expected_output_shape(
 
     assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
     assert expected_output_shape in result
-    assert expected_fragment in expected_output_shape
 
 
-def test_render_expected_output_shape_keeps_improve_no_candidate_distinct_from_issues():
-    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
-    issues_scope_args = _scope_args_for(PromptTemplate.IMPROVE_ISSUES)
-    no_candidate_scope_args = _scope_args_for(PromptTemplate.IMPROVE_NO_CANDIDATE)
-
-    issues_shape = renderer.render_expected_output_shape(
-        PromptTemplate.IMPROVE_ISSUES,
-        issues_scope_args,
-    )
-    no_candidate_shape = renderer.render_expected_output_shape(
+# The tags the host parser reads out of each improve turn (see
+# agents/output_protocol.py). The wording around a tag is prose and free to
+# change; the tag and its sentinel are interface — a reword that drops one
+# leaves the parser with nothing to find.
+_IMPROVE_PROTOCOL_TAGS: list[tuple[PromptTemplate, tuple[str, ...]]] = [
+    (
+        PromptTemplate.IMPROVE_SCAN,
+        (
+            "<candidates>",
+            "<promise>COMPLETE</promise>",
+            "<promise>NO-CANDIDATE</promise>",
+        ),
+    ),
+    (PromptTemplate.IMPROVE_PRD, ("<promise>COMPLETE</promise>",)),
+    (PromptTemplate.IMPROVE_ISSUES, ("<promise>COMPLETE</promise>",)),
+    (
         PromptTemplate.IMPROVE_NO_CANDIDATE,
-        no_candidate_scope_args,
-    )
+        ("<issue>N</issue>", "<promise>COMPLETE</promise>"),
+    ),
+]
 
-    assert issues_shape.strip() == "Emit `<promise>COMPLETE</promise>`."
-    assert no_candidate_shape.strip() == (
-        "Output each filed PRD issue number as `<issue>N</issue>`.\n"
-        "\n"
-        "Then emit `<promise>COMPLETE</promise>`."
-    )
-    assert no_candidate_shape != issues_shape
+
+@pytest.mark.parametrize(("template", "tags"), _IMPROVE_PROTOCOL_TAGS)
+def test_improve_output_shape_names_the_tags_its_parser_reads(
+    template: PromptTemplate, tags: tuple[str, ...]
+):
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
+    shape = renderer.render_expected_output_shape(template, _scope_args_for(template))
+
+    missing = [tag for tag in tags if tag not in shape]
+
+    assert missing == []
 
 
 def test_rendered_merge_prompt_includes_expected_output_shape():

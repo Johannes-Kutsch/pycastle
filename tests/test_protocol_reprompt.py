@@ -443,9 +443,6 @@ def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
             f"Use this Improve output shape exactly:\n{issues_shape}"
         )
     )
-    assert "Output each filed PRD issue number as `<issue>N</issue>`." in (
-        no_candidate_shape
-    )
     assert no_candidate_shape != issues_shape
     assert no_candidate_plan == TemplateSpecificProtocolReprompt(
         message=(

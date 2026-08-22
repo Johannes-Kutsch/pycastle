@@ -74,9 +74,16 @@ def test_calculate_total_sums_line_items():
 
 ## Prose artifacts
 
-A **prose artifact** is any `.md` file outside `tests/` whose wording no caller observes: project documentation (`CONTEXT.md`, ADRs, README) and any prompt or template prose the project ships. Apply the edit, then move on to the next artifact. The test obligation attaches to the artifact you are changing, not to the slice you are working in — so prose stays untested even where the same slice changes code.
+A **prose artifact** is any `.md` file outside `tests/` whose wording no caller observes: project documentation (`CONTEXT.md`, ADRs, README) and any prompt or template prose the project ships. Protocol tags a host parser reads — `<promise>`, `<issue>`, `<behavior>`, `<candidates>` — are the exception: the wording around a tag is prose, the tag itself is interface. Apply the edit, then move on to the next artifact. The test obligation attaches to the artifact you are changing, not to the slice you are working in — so prose stays untested even where the same slice changes code.
 
-Three structural invariants over template prose hold whatever the wording says, and stay valid: a named placeholder resolves to its expected value in rendered output; a placeholder-inventory test derives its expectations from the enum or registry that declares them; a scan of rendered output finds no leftover placeholder syntax. Reaching past those three means asserting on wording:
+Four structural invariants over template prose hold whatever the wording says, and stay valid:
+
+- A named placeholder resolves to its expected value in rendered output.
+- A placeholder-inventory test derives its expectations from the enum or registry that declares them.
+- A scan of rendered output finds no leftover placeholder syntax.
+- A rendered output shape names the protocol tag its host parser reads.
+
+Reaching past those four means asserting on wording:
 
 ```python
 # BAD: string-matches shipped prose. Breaks on the next reword and guards
@@ -84,6 +91,13 @@ Three structural invariants over template prose hold whatever the wording says, 
 def test_planner_prompt_mentions_own_parent():
     rendered = renderer.render(PromptTemplate.PLAN, ...)
     assert "its **own** parent PRD" in rendered
+
+
+# GOOD: asserts the placeholder resolved to its configured value,
+# never the prose around it
+def test_plan_prompt_resolves_ready_for_agent_label():
+    rendered = renderer.render(PromptTemplate.PLAN, ...)
+    assert cfg.issue_label in rendered
 ```
 
 ## Escape hatch
