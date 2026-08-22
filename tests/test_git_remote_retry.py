@@ -133,3 +133,45 @@ def test_policy_does_not_classify_pull_fetch_rejected_stderr_as_push_recovery(
     )
 
     assert decision != RecoverPushNonFastForward()
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "! [rejected]        main -> main (non-fast-forward)",
+        "fatal: refusing to fetch into branch 'refs/heads/main' checked out at '/path'",
+        "fatal: couldn't find remote ref no-such-branch",
+    ],
+)
+def test_policy_escalates_fetch_deterministic_failure_on_attempt_one(stderr):
+    policy = RemoteGitRetryPolicy()
+
+    decision = policy.classify_remote_failure(
+        operation="fetch",
+        stderr=stderr,
+        attempt=1,
+    )
+
+    assert decision == EscalateOperatorActionableGitFailure()
+
+
+@pytest.mark.parametrize("operation", ["pull", "push"])
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "fatal: refusing to fetch into branch 'refs/heads/main' checked out at '/path'",
+        "fatal: couldn't find remote ref no-such-branch",
+    ],
+)
+def test_policy_does_not_apply_fetch_deterministic_classification_to_pull_or_push(
+    operation, stderr
+):
+    policy = RemoteGitRetryPolicy()
+
+    decision = policy.classify_remote_failure(
+        operation=operation,
+        stderr=stderr,
+        attempt=1,
+    )
+
+    assert decision == RetryTransientRemoteFailure(delay_seconds=10)
