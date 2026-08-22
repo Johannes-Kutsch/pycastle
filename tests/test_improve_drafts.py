@@ -71,14 +71,34 @@ def test_missing_title_rejects_whole_set(tmp_path: Path, cfg: Config) -> None:
     assert any("title" in p for p in exc_info.value.problems)
 
 
-def test_missing_labels_rejects_whole_set(tmp_path: Path, cfg: Config) -> None:
-    (tmp_path / "spec.md").write_text(f"---\ntitle: Spec Issue\n---\n\n{_VALID_BODY}")
+def test_spec_with_title_only_and_valid_slices_is_accepted(
+    tmp_path: Path, cfg: Config
+) -> None:
+    (tmp_path / "spec.md").write_text(
+        f"---\ntitle: [improve-PRD] My feature\n---\n\n{_VALID_BODY}"
+    )
     _slice_draft(tmp_path, "01-foo")
+
+    result = read_draft_set(tmp_path, cfg)
+
+    assert [d.handle for d in result] == ["spec", "01-foo"]
+
+
+# ---------------------------------------------------------------------------
+# Behavior 2b: set with no spec draft is rejected, naming the missing spec
+# ---------------------------------------------------------------------------
+
+
+def test_set_with_only_slice_drafts_is_rejected_naming_the_missing_spec(
+    tmp_path: Path, cfg: Config
+) -> None:
+    _slice_draft(tmp_path, "01-foo")
+    _slice_draft(tmp_path, "02-bar")
 
     with pytest.raises(DraftSetValidationError) as exc_info:
         read_draft_set(tmp_path, cfg)
 
-    assert any("labels" in p for p in exc_info.value.problems)
+    assert any("spec" in p.lower() for p in exc_info.value.problems)
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +124,13 @@ def test_unknown_blocked_by_handle_rejects_set(tmp_path: Path, cfg: Config) -> N
 def test_multiple_malformed_drafts_reports_all_problems(
     tmp_path: Path, cfg: Config
 ) -> None:
-    # spec missing title, slice missing labels
+    # spec missing title, slice missing slice-mode label
     (tmp_path / "spec.md").write_text(
         f"---\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{_VALID_BODY}"
     )
-    (tmp_path / "01-foo.md").write_text(f"---\ntitle: Foo Slice\n---\n\n{_VALID_BODY}")
+    (tmp_path / "01-foo.md").write_text(
+        f"---\ntitle: Foo Slice\nlabels:\n  - ready-for-agent\n---\n\n{_VALID_BODY}"
+    )
 
     with pytest.raises(DraftSetValidationError) as exc_info:
         read_draft_set(tmp_path, cfg)
@@ -116,7 +138,7 @@ def test_multiple_malformed_drafts_reports_all_problems(
     problems = exc_info.value.problems
     assert len(problems) >= 2
     assert any("title" in p and "spec" in p for p in problems)
-    assert any("labels" in p and "01-foo" in p for p in problems)
+    assert any("readiness" in p and "01-foo" in p for p in problems)
 
 
 # ---------------------------------------------------------------------------
@@ -148,17 +170,27 @@ def test_missing_slice_mode_label_rejects_set(tmp_path: Path, cfg: Config) -> No
     assert any("readiness" in p and "01-foo" in p for p in exc_info.value.problems)
 
 
+def test_slice_with_no_labels_field_rejects_set_naming_that_slice(
+    tmp_path: Path, cfg: Config
+) -> None:
+    _spec_draft(tmp_path)
+    (tmp_path / "01-foo.md").write_text(f"---\ntitle: Foo Slice\n---\n\n{_VALID_BODY}")
+
+    with pytest.raises(DraftSetValidationError) as exc_info:
+        read_draft_set(tmp_path, cfg)
+
+    assert any("readiness" in p and "01-foo" in p for p in exc_info.value.problems)
+
+
 # ---------------------------------------------------------------------------
 # Behavior 7: spec draft is exempt from readiness classification
 # ---------------------------------------------------------------------------
 
 
-def test_spec_draft_with_no_labels_validates_successfully(
+def test_spec_draft_with_no_labels_field_validates_successfully(
     tmp_path: Path, cfg: Config
 ) -> None:
-    (tmp_path / "spec.md").write_text(
-        f"---\ntitle: Improve Spec\nlabels: []\n---\n\n{_VALID_BODY}"
-    )
+    (tmp_path / "spec.md").write_text(f"---\ntitle: Improve Spec\n---\n\n{_VALID_BODY}")
     _slice_draft(tmp_path, "01-foo")
 
     result = read_draft_set(tmp_path, cfg)
@@ -220,7 +252,6 @@ def test_draft_with_no_frontmatter_rejects_set(tmp_path: Path, cfg: Config) -> N
 
     problems = exc_info.value.problems
     assert any("title" in p for p in problems)
-    assert any("labels" in p for p in problems)
 
 
 def test_valid_blocked_by_reference_is_accepted(tmp_path: Path, cfg: Config) -> None:

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from pycastle.config import Config
+from pycastle.iteration.improve_drafts import read_draft_set
 from pycastle.label_catalog import PROMPT_GLOBAL_LABEL_SPECS
 from pycastle.prompts.pipeline import (
     PromptRenderer,
@@ -1884,3 +1885,43 @@ def test_rendered_diverge_prompt_has_expected_output_shape_and_no_checks_placeho
     assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
     assert expected_output_shape in result
     assert "{{CHECKS}}" not in result
+
+
+# ── Prompt-validator contract: shipped frontmatter examples pass the validator ─
+
+
+def _extract_frontmatter_from_prompt(text: str) -> str:
+    """Return the YAML frontmatter block (---...---) from the first code block that contains one."""
+    m = re.search(r"```\n(---\n.*?\n---)\n", text, re.DOTALL)
+    if m is None:
+        raise ValueError("No frontmatter code block found in prompt text")
+    return m.group(1)
+
+
+_VALID_BODY = "A" * 120
+
+
+def test_shipped_improve_prompt_frontmatter_examples_are_accepted_by_validator(
+    tmp_path: Path,
+) -> None:
+    prd_prompt = (_SHIPPED_PROMPTS_DIR / "improve/02-prd.md").read_text(
+        encoding="utf-8"
+    )
+    spec_frontmatter = _extract_frontmatter_from_prompt(prd_prompt)
+
+    slice_prompt = (_SHIPPED_PROMPTS_DIR / "improve/03-issues.md").read_text(
+        encoding="utf-8"
+    )
+    slice_frontmatter = _extract_frontmatter_from_prompt(slice_prompt)
+
+    # The slice example references blocked_by: 01-some-prerequisite — create it.
+    (tmp_path / "spec.md").write_text(f"{spec_frontmatter}\n\n{_VALID_BODY}")
+    (tmp_path / "01-some-prerequisite.md").write_text(
+        f"---\ntitle: [improve-SLICE] Prereq\nlabels:\n  - ready-for-agent\n  - behavior-slice\n---\n\n{_VALID_BODY}"
+    )
+    (tmp_path / "02-add-feature.md").write_text(f"{slice_frontmatter}\n\n{_VALID_BODY}")
+
+    result = read_draft_set(tmp_path, Config())
+
+    assert len(result) == 3
+    assert result[0].handle == "spec"
