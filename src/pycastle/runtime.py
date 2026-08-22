@@ -35,7 +35,6 @@ from pycastle.execution_contracts import (
 )
 from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import ToolPolicy
-from pycastle.services.service_registry import ServiceRegistry
 from pycastle.stage_priority_chain import iter_stage_chain
 
 if TYPE_CHECKING:
@@ -43,22 +42,18 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from pycastle.config.types import StageOverride
+    from pycastle.services.service_registry import ServiceRegistry
     from pycastle.session_planning import ResidentSessionPlan
 
 __all__ = [
     "OneShotRunRequest",
     "OneShotRunResult",
-    "OneShotRuntime",
-    "OneShotRuntimeExecutionAdapter",
     "OneShotRuntimeMetadata",
     "PromptRunRequest",
     "PromptRunSession",
-    "PromptRuntime",
     "PromptRuntimeExecutionAdapter",
     "ResidentRunRequest",
     "ResidentRunResult",
-    "ResidentRuntime",
-    "ResidentRuntimeExecutionAdapter",
     "ResidentRuntimeMetadata",
     "ToolPolicy",
     "WorktreeMount",
@@ -68,8 +63,6 @@ __all__ = [
 ]
 
 OneShotRunRequest = PromptRunRequest
-OneShotRuntimeExecutionAdapter = PromptRuntimeExecutionAdapter
-ResidentRuntimeExecutionAdapter = PromptRuntimeExecutionAdapter
 
 
 @dataclasses.dataclass(frozen=True)
@@ -202,29 +195,6 @@ def _require_execution_adapter_method(
     )
 
 
-class PromptRuntime:
-    def __init__(
-        self,
-        *,
-        execution_adapter: PromptRuntimeExecutionAdapter,
-        service_registry: ServiceRegistry | dict[str, Any] | None = None,
-    ) -> None:
-        registry = (
-            service_registry
-            if isinstance(service_registry, ServiceRegistry)
-            else ServiceRegistry(service_registry or {})
-        )
-        self._service_registry = registry
-        self._execution_adapter = execution_adapter
-
-    async def run_prompt(self, request: PromptRunRequest) -> str:
-        return await run_prompt(
-            runner=self._execution_adapter,
-            service_registry=self._service_registry,
-            request=request,
-        )
-
-
 class _OneShotOutputAdapter:
     def __init__(
         self,
@@ -308,47 +278,6 @@ class _OneShotOutputAdapter:
         return result
 
 
-class OneShotRuntime:
-    def __init__(
-        self,
-        *,
-        execution_adapter: OneShotRuntimeExecutionAdapter,
-        service_registry: ServiceRegistry | dict[str, Any] | None = None,
-    ) -> None:
-        registry = (
-            service_registry
-            if isinstance(service_registry, ServiceRegistry)
-            else ServiceRegistry(service_registry or {})
-        )
-        self._service_registry = registry
-        self._execution_adapter = execution_adapter
-
-    async def run_one_shot(self, request: OneShotRunRequest) -> OneShotRunResult:
-        return await run_one_shot(
-            runner=self._execution_adapter,
-            service_registry=self._service_registry,
-            request=request,
-        )
-
-
-class ResidentRuntime:
-    def __init__(
-        self,
-        *,
-        execution_adapter: ResidentRuntimeExecutionAdapter,
-    ) -> None:
-        self._execution_adapter = execution_adapter
-
-    async def run_resident_prompt(
-        self,
-        request: ResidentRunRequest,
-    ) -> ResidentRunResult:
-        return await run_resident_prompt(
-            runner=self._execution_adapter,
-            request=request,
-        )
-
-
 async def run_prompt(
     *,
     runner: PromptRuntimeExecutionAdapter,
@@ -404,7 +333,7 @@ async def run_prompt(
 
 async def run_one_shot(
     *,
-    runner: OneShotRuntimeExecutionAdapter,
+    runner: PromptRuntimeExecutionAdapter,
     service_registry: ServiceRegistry,
     request: OneShotRunRequest,
 ) -> OneShotRunResult:
@@ -505,7 +434,7 @@ async def run_one_shot(
 
 async def run_resident_prompt(
     *,
-    runner: ResidentRuntimeExecutionAdapter,
+    runner: PromptRuntimeExecutionAdapter,
     request: ResidentRunRequest,
 ) -> ResidentRunResult:
     build_work_dependencies = _require_execution_adapter_method(
