@@ -16,6 +16,7 @@ from pycastle.services import (
     OperatorActionableGitError,
     UnrelatedHistoriesError,
 )
+from tests.support.git_errors import PERMISSION_DENIED_STDERR
 
 _cfg = Config()
 
@@ -44,7 +45,7 @@ def _run_push(svc: GitService, repo_path: Path) -> None:
     asyncio.run(svc.push(repo_path, "main"))
 
 
-_PERMISSION_DENIED_STDERR = b"Permission denied (publickey)."
+_PERMISSION_DENIED_STDERR = PERMISSION_DENIED_STDERR.encode()
 _NON_FAST_FORWARD_PUSH_STDERR = (
     b"! [rejected] main -> main (fetch first)\nerror: failed to push some refs"
 )

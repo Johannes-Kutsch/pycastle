@@ -31,6 +31,7 @@ from pycastle.services import (
     GithubService,
     GitService,
     OperatingBranchCheckedOutError,
+    OperatorActionableGitError,
     ServiceRegistry,
 )
 from pycastle.services._operating_branch_refresh import (
@@ -40,6 +41,7 @@ from pycastle.services._operating_branch_refresh import (
 from pycastle.services.runtime_services import AgentService
 from pycastle.session import RoleSession
 from tests.support import (
+    FETCH_PERMISSION_DENIED,
     FakeAgentRunner,
     RecordingStatusDisplay,
     _make_deps,
@@ -704,12 +706,10 @@ def test_get_safe_sha_uses_refresh_not_pull_on_repo_root(tmp_path, git_svc, gith
 # ── get_safe_sha: pull failure ────────────────────────────────────────────────
 
 
-def test_get_safe_sha_propagates_git_command_error_on_refresh_failure(
+def test_get_safe_sha_propagates_operator_actionable_error_on_refresh_failure(
     tmp_path, git_svc, github_svc
 ):
-    git_svc.refresh_operating_branch.side_effect = GitCommandError(
-        "git fetch origin failed"
-    )
+    git_svc.refresh_operating_branch.side_effect = FETCH_PERMISSION_DENIED
     fake = FakeAgentRunner([], preflight_responses=[])
     deps = _make_deps(
         tmp_path,
@@ -720,7 +720,7 @@ def test_get_safe_sha_propagates_git_command_error_on_refresh_failure(
     )
     cache = PreflightCache()
 
-    with pytest.raises(GitCommandError):
+    with pytest.raises(OperatorActionableGitError):
         asyncio.run(cache.get_safe_sha(deps))
 
 
@@ -737,11 +737,11 @@ def test_get_safe_sha_leaves_slot_unchanged_on_pull_failure(
     assert isinstance(result1, PreflightReady)
 
     # Second call: refresh fails
-    git_svc.refresh_operating_branch.side_effect = GitCommandError("fetch failed")
+    git_svc.refresh_operating_branch.side_effect = FETCH_PERMISSION_DENIED
     # Different SHA so it would invalidate cache
     git_svc.get_branch_sha.return_value = "sha-new"
 
-    with pytest.raises(GitCommandError):
+    with pytest.raises(OperatorActionableGitError):
         asyncio.run(cache.get_safe_sha(deps))
 
     # The slot still holds the original verdict
@@ -984,9 +984,7 @@ def test_get_safe_sha_propagates_refresh_error_without_spawning_agent(
 ):
     """Refresh errors are propagated immediately without spawning
     the divergence-resolution agent."""
-    git_svc.refresh_operating_branch.side_effect = GitCommandError(
-        "git fetch origin failed", stderr="authentication failed"
-    )
+    git_svc.refresh_operating_branch.side_effect = FETCH_PERMISSION_DENIED
 
     fake = FakeAgentRunner([], preflight_responses=[])
     deps = _make_deps(
@@ -998,7 +996,7 @@ def test_get_safe_sha_propagates_refresh_error_without_spawning_agent(
     )
     cache = PreflightCache()
 
-    with pytest.raises(GitCommandError):
+    with pytest.raises(OperatorActionableGitError):
         asyncio.run(cache.get_safe_sha(deps))
 
     assert len(fake.calls) == 0
