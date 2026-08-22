@@ -40,7 +40,6 @@ from pycastle.session import RoleSession
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
-    save_service_session_metadata,
 )
 from tests.support import (
     FakeAgentRunner,
@@ -439,7 +438,9 @@ def _seed_exact_phase_1_main_transcript(
     namespace: str = "main",
 ) -> None:
     role_session = RoleSession(worktree_path, AgentRole.IMPROVE, namespace)
-    save_service_session_metadata(role_session.path, service_name, provider_session_id)
+    ServiceSessionStore(role_session.path).record_successful_run(
+        service_name, provider_session_id
+    )
     if service_name == "opencode":
         state_dir = worktree_path / "opencode"
     elif service_name == "codex":

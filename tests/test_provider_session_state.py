@@ -16,7 +16,6 @@ from pycastle.session.service_session_store import (
     ServiceSessionStore,
     has_exact_provider_transcript_for_selected_service,
     has_exact_provider_transcript_for_service,
-    save_service_session_metadata,
 )
 
 
@@ -192,7 +191,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_codex_with_m
     state_dir = role_dir / "codex"
     _write_codex_rollout(state_dir, "thread-exact", "thread-exact")
     ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-exact")
-    save_service_session_metadata(role_dir, "codex", "thread-exact")
+    ServiceSessionStore(role_dir).record_successful_run("codex", "thread-exact")
 
     assert (
         has_exact_provider_transcript_for_service(
@@ -223,7 +222,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     ServiceSessionStore(role_dir).save_service_session_id(
         "opencode", "sess-opencode-123"
     )
-    save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
+    ServiceSessionStore(role_dir).record_successful_run("opencode", "sess-opencode-123")
 
     assert (
         has_exact_provider_transcript_for_service(
@@ -254,7 +253,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     ServiceSessionStore(role_dir).save_service_session_id(
         "opencode", "sess-opencode-123"
     )
-    save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
+    ServiceSessionStore(role_dir).record_successful_run("opencode", "sess-opencode-123")
 
     assert (
         has_exact_provider_transcript_for_service(
@@ -285,7 +284,7 @@ def test_has_exact_provider_transcript_for_selected_service_returns_true_for_reg
     ServiceSessionStore(role_dir).save_service_session_id(
         "opencode", "sess-opencode-123"
     )
-    save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
+    ServiceSessionStore(role_dir).record_successful_run("opencode", "sess-opencode-123")
     registry = ServiceRegistry({"opencode": service})
 
     assert (
@@ -348,7 +347,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_claude_with_
     ServiceSessionStore(role_dir).save_service_session_id(
         "claude", "claude-session-uuid"
     )
-    save_service_session_metadata(role_dir, "claude", "claude-session-uuid")
+    ServiceSessionStore(role_dir).record_successful_run("claude", "claude-session-uuid")
 
     assert (
         has_exact_provider_transcript_for_service(
@@ -497,7 +496,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_missing_or_
         service_dir = role_dir / "codex"
         service_dir.mkdir(parents=True, exist_ok=True)
         (service_dir / "thread_id").write_text("\n", encoding="utf-8")
-    save_service_session_metadata(role_dir, "codex", metadata_value)
+    ServiceSessionStore(role_dir).record_successful_run("codex", metadata_value)
 
     assert (
         has_exact_provider_transcript_for_service(
@@ -517,7 +516,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_different_s
     state_dir = role_dir / "codex"
     _write_codex_rollout(state_dir, "thread-exact")
     ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-exact")
-    save_service_session_metadata(role_dir, "codex", "thread-exact")
+    ServiceSessionStore(role_dir).record_successful_run("codex", "thread-exact")
     selected_service = cast(
         "Any",
         _FakeService(
@@ -556,7 +555,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_non_resumab
     ServiceSessionStore(role_dir).save_service_session_id(
         "claude", "claude-session-uuid"
     )
-    save_service_session_metadata(role_dir, "claude", "claude-session-uuid")
+    ServiceSessionStore(role_dir).record_successful_run("claude", "claude-session-uuid")
 
     assert (
         has_exact_provider_transcript_for_service(
@@ -586,7 +585,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_ambiguous_c
         encoding="utf-8",
     )
     ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-old")
-    save_service_session_metadata(role_dir, "codex", "thread-old")
+    ServiceSessionStore(role_dir).record_successful_run("codex", "thread-old")
 
     assert (
         has_exact_provider_transcript_for_service(

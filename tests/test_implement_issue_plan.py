@@ -28,7 +28,6 @@ from pycastle.services import GitService, ServiceRegistry
 from pycastle.session import RoleSession, RunKind
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
-    save_service_session_metadata,
 )
 from tests.support import FakeAgentRunner, _make_deps
 
@@ -81,7 +80,9 @@ def _seed_prior_role_session_with_service(
     ServiceSessionStore(role_session.path).save_service_session_id(
         service_name, session_id
     )
-    save_service_session_metadata(role_session.path, service_name, session_id)
+    ServiceSessionStore(role_session.path).record_successful_run(
+        service_name, session_id
+    )
     state_dir = worktree / f".pycastle-session/{role.value}/{service_name}"
     state_dir.mkdir(parents=True, exist_ok=True)
     (state_dir / "seed").write_text("seed", encoding="utf-8")

@@ -197,34 +197,6 @@ def has_exact_transcript(
     )
 
 
-def load_service_session_metadata(
-    role_session_path: Path,
-    service_name: str,
-) -> dict[str, str] | None:
-    return ServiceSessionStore(role_session_path).service_session_metadata(service_name)
-
-
-def save_service_session_metadata(
-    role_session_path: Path,
-    service_name: str,
-    session_id: str,
-) -> None:
-    ServiceSessionStore(role_session_path).record_successful_run(
-        service_name, session_id
-    )
-
-
-def clear_service_session_metadata(
-    role_session_path: Path,
-    service_name: str,
-) -> None:
-    ServiceSessionStore(role_session_path).record_successful_run(service_name)
-
-
-def load_exact_transcript_service_name(role_session_path: Path) -> str | None:
-    return ServiceSessionStore(role_session_path).exact_transcript_service_name()
-
-
 def has_exact_provider_transcript_for_service(
     *,
     worktree: Path,

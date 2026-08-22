@@ -11,7 +11,7 @@ from pycastle.iteration.implement import branch_for
 from pycastle.iteration.in_flight import select_in_flight_issues
 from pycastle.services import GitService
 from pycastle.session.role import SESSION_DIR_NAME, RoleSession
-from pycastle.session.service_session_store import save_service_session_metadata
+from pycastle.session.service_session_store import ServiceSessionStore
 
 
 def _commit(repo_root: Path, message: str, content: str) -> None:
@@ -161,7 +161,7 @@ def test_select_in_flight_issues_omits_metadata_only_role_session_without_branch
         AgentRole.IMPLEMENTER,
     )
     role_session.start_fresh()
-    save_service_session_metadata(role_session.path, "claude", "thread-123")
+    ServiceSessionStore(role_session.path).record_successful_run("claude", "thread-123")
 
     git_svc.verify_ref_exists.return_value = False
 
