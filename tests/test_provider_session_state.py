@@ -13,10 +13,9 @@ from pycastle.runtime_session import (
 from pycastle.services import ServiceRegistry
 from pycastle.services.runtime_services import CodexService
 from pycastle.session.service_session_store import (
+    ServiceSessionStore,
     has_exact_provider_transcript_for_selected_service,
     has_exact_provider_transcript_for_service,
-    recover_state_dir_provider_session_id,
-    save_service_session_id,
     save_service_session_metadata,
 )
 
@@ -75,7 +74,7 @@ def test_recover_state_dir_provider_session_id_recovers_single_codex_rollout_thr
     )
 
     assert (
-        recover_state_dir_provider_session_id(state_dir, "codex")
+        ServiceSessionStore.recover_state_session_id(state_dir, "codex")
         == "thread-from-rollout"
     )
 
@@ -87,7 +86,7 @@ def test_recover_state_dir_provider_session_id_ignores_persisted_codex_thread_id
     state_dir.mkdir()
     (state_dir / "thread_id").write_text("thread-from-sidecar\n", encoding="utf-8")
 
-    assert recover_state_dir_provider_session_id(state_dir, "codex") is None
+    assert ServiceSessionStore.recover_state_session_id(state_dir, "codex") is None
 
 
 def test_recover_state_dir_provider_session_id_returns_none_when_sessions_tree_has_no_rollouts(
@@ -96,7 +95,7 @@ def test_recover_state_dir_provider_session_id_returns_none_when_sessions_tree_h
     state_dir = tmp_path / "codex"
     (state_dir / "sessions" / "2026" / "05" / "30").mkdir(parents=True)
 
-    assert recover_state_dir_provider_session_id(state_dir, "codex") is None
+    assert ServiceSessionStore.recover_state_session_id(state_dir, "codex") is None
 
 
 def test_recover_state_dir_provider_session_id_deduplicates_repeated_codex_thread_ids(
@@ -111,7 +110,9 @@ def test_recover_state_dir_provider_session_id_deduplicates_repeated_codex_threa
         encoding="utf-8",
     )
 
-    assert recover_state_dir_provider_session_id(state_dir, "codex") == "thread-abc"
+    assert (
+        ServiceSessionStore.recover_state_session_id(state_dir, "codex") == "thread-abc"
+    )
 
 
 def test_recover_state_dir_provider_session_id_returns_none_for_ambiguous_codex_rollouts(
@@ -129,7 +130,7 @@ def test_recover_state_dir_provider_session_id_returns_none_for_ambiguous_codex_
         encoding="utf-8",
     )
 
-    assert recover_state_dir_provider_session_id(state_dir, "codex") is None
+    assert ServiceSessionStore.recover_state_session_id(state_dir, "codex") is None
 
 
 def test_recover_state_dir_provider_session_id_returns_none_for_distinct_thread_ids_in_one_rollout(
@@ -144,7 +145,7 @@ def test_recover_state_dir_provider_session_id_returns_none_for_distinct_thread_
         encoding="utf-8",
     )
 
-    assert recover_state_dir_provider_session_id(state_dir, "codex") is None
+    assert ServiceSessionStore.recover_state_session_id(state_dir, "codex") is None
 
 
 def test_recover_state_dir_provider_session_id_ignores_malformed_and_unreadable_codex_rollouts(
@@ -163,7 +164,7 @@ def test_recover_state_dir_provider_session_id_ignores_malformed_and_unreadable_
     )
     (rollout_dir / "rollout-002.jsonl").mkdir()
 
-    assert recover_state_dir_provider_session_id(state_dir, "codex") is None
+    assert ServiceSessionStore.recover_state_session_id(state_dir, "codex") is None
 
 
 def test_recover_state_dir_provider_session_id_ignores_unreadable_codex_rollouts_without_losing_valid_identity(
@@ -178,7 +179,9 @@ def test_recover_state_dir_provider_session_id_ignores_unreadable_codex_rollouts
     )
     (rollout_dir / "rollout-002.jsonl").mkdir()
 
-    assert recover_state_dir_provider_session_id(state_dir, "codex") == "thread-abc"
+    assert (
+        ServiceSessionStore.recover_state_session_id(state_dir, "codex") == "thread-abc"
+    )
 
 
 def test_has_exact_provider_transcript_for_service_returns_true_for_codex_with_matching_metadata_sidecar_and_duplicate_rollout_entries(
@@ -188,7 +191,7 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_codex_with_m
     role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
     state_dir = role_dir / "codex"
     _write_codex_rollout(state_dir, "thread-exact", "thread-exact")
-    save_service_session_id(role_dir, "codex", "thread-exact")
+    ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-exact")
     save_service_session_metadata(role_dir, "codex", "thread-exact")
 
     assert (
@@ -217,7 +220,9 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     state_dir = tmp_path / "custom" / "opencode-state"
     state_dir.mkdir(parents=True)
     (state_dir / "session_id").write_text("sess-opencode-123\n", encoding="utf-8")
-    save_service_session_id(role_dir, "opencode", "sess-opencode-123")
+    ServiceSessionStore(role_dir).save_service_session_id(
+        "opencode", "sess-opencode-123"
+    )
     save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
 
     assert (
@@ -246,7 +251,9 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_opencode_wit
     state_dir = tmp_path / "custom" / "opencode-state"
     state_dir.mkdir(parents=True)
     (state_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
-    save_service_session_id(role_dir, "opencode", "sess-opencode-123")
+    ServiceSessionStore(role_dir).save_service_session_id(
+        "opencode", "sess-opencode-123"
+    )
     save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
 
     assert (
@@ -275,7 +282,9 @@ def test_has_exact_provider_transcript_for_selected_service_returns_true_for_reg
     state_dir = tmp_path / "custom" / "opencode-state"
     state_dir.mkdir(parents=True)
     (state_dir / "session_id").write_text("sess-opencode-123\n", encoding="utf-8")
-    save_service_session_id(role_dir, "opencode", "sess-opencode-123")
+    ServiceSessionStore(role_dir).save_service_session_id(
+        "opencode", "sess-opencode-123"
+    )
     save_service_session_metadata(role_dir, "opencode", "sess-opencode-123")
     registry = ServiceRegistry({"opencode": service})
 
@@ -336,7 +345,9 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_claude_with_
     state_dir = tmp_path / "custom" / "claude-state"
     state_dir.mkdir(parents=True)
     (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-    save_service_session_id(role_dir, "claude", "claude-session-uuid")
+    ServiceSessionStore(role_dir).save_service_session_id(
+        "claude", "claude-session-uuid"
+    )
     save_service_session_metadata(role_dir, "claude", "claude-session-uuid")
 
     assert (
@@ -383,10 +394,12 @@ def test_has_exact_provider_transcript_for_service_returns_false_when_metadata_i
     state_dir.mkdir(parents=True)
     if service.name == "codex":
         _write_codex_rollout(state_dir, "thread-exact")
-        save_service_session_id(role_dir, "codex", "thread-exact")
+        ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-exact")
     else:
         (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-        save_service_session_id(role_dir, "claude", "claude-session-uuid")
+        ServiceSessionStore(role_dir).save_service_session_id(
+            "claude", "claude-session-uuid"
+        )
 
     assert (
         has_exact_provider_transcript_for_service(
@@ -406,7 +419,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_malformed_m
     role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
     state_dir = role_dir / "codex"
     _write_codex_rollout(state_dir, "thread-exact")
-    save_service_session_id(role_dir, "codex", "thread-exact")
+    ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-exact")
     (role_dir / "_service_session_metadata.json").write_text(
         json.dumps({"codex": {"provider_session_id": "   "}}, sort_keys=True),
         encoding="utf-8",
@@ -430,7 +443,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_when_metadata_p
     role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
     state_dir = role_dir / "codex"
     _write_codex_rollout(state_dir, "thread-exact")
-    save_service_session_id(role_dir, "codex", "thread-exact")
+    ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-exact")
     (role_dir / "_service_session_metadata.json").write_text(
         json.dumps(
             {
@@ -479,7 +492,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_missing_or_
     if sidecar_value is None:
         pass
     elif sidecar_value:
-        save_service_session_id(role_dir, "codex", sidecar_value)
+        ServiceSessionStore(role_dir).save_service_session_id("codex", sidecar_value)
     else:
         service_dir = role_dir / "codex"
         service_dir.mkdir(parents=True, exist_ok=True)
@@ -503,7 +516,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_different_s
     role_dir = tmp_path / ".pycastle-session" / "improve" / "main"
     state_dir = role_dir / "codex"
     _write_codex_rollout(state_dir, "thread-exact")
-    save_service_session_id(role_dir, "codex", "thread-exact")
+    ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-exact")
     save_service_session_metadata(role_dir, "codex", "thread-exact")
     selected_service = cast(
         "Any",
@@ -540,7 +553,9 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_non_resumab
     state_dir = tmp_path / "custom" / "claude-state"
     state_dir.mkdir(parents=True)
     (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-    save_service_session_id(role_dir, "claude", "claude-session-uuid")
+    ServiceSessionStore(role_dir).save_service_session_id(
+        "claude", "claude-session-uuid"
+    )
     save_service_session_metadata(role_dir, "claude", "claude-session-uuid")
 
     assert (
@@ -570,7 +585,7 @@ def test_has_exact_provider_transcript_for_service_returns_false_for_ambiguous_c
         '{"type":"thread.started","thread_id":"thread-new"}\n',
         encoding="utf-8",
     )
-    save_service_session_id(role_dir, "codex", "thread-old")
+    ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-old")
     save_service_session_metadata(role_dir, "codex", "thread-old")
 
     assert (

@@ -197,42 +197,6 @@ def has_exact_transcript(
     )
 
 
-# --- Free-function façades ---
-
-
-def provider_state_session_id_path(state_dir: Path, service_name: str) -> Path:
-    return ServiceSessionStore.provider_session_id_path(state_dir, service_name)
-
-
-def load_state_dir_provider_session_id(
-    state_dir: Path | None,
-    service_name: str,
-) -> str | None:
-    return ServiceSessionStore.load_state_session_id(state_dir, service_name)
-
-
-def service_session_id_path(role_session_path: Path, service_name: str) -> Path:
-    return ServiceSessionStore(role_session_path).session_id_path(service_name)
-
-
-def service_session_metadata_path(role_session_path: Path) -> Path:
-    return ServiceSessionStore(role_session_path).metadata_path()
-
-
-def load_service_session_id(role_session_path: Path, service_name: str) -> str | None:
-    return ServiceSessionStore(role_session_path).get_service_session_id(service_name)
-
-
-def save_service_session_id(
-    role_session_path: Path,
-    service_name: str,
-    session_id: str,
-) -> None:
-    ServiceSessionStore(role_session_path).save_service_session_id(
-        service_name, session_id
-    )
-
-
 def load_service_session_metadata(
     role_session_path: Path,
     service_name: str,
@@ -259,13 +223,6 @@ def clear_service_session_metadata(
 
 def load_exact_transcript_service_name(role_session_path: Path) -> str | None:
     return ServiceSessionStore(role_session_path).exact_transcript_service_name()
-
-
-def recover_state_dir_provider_session_id(
-    state_dir: Path | None,
-    service_name: str,
-) -> str | None:
-    return ServiceSessionStore.recover_state_session_id(state_dir, service_name)
 
 
 def has_exact_provider_transcript_for_service(

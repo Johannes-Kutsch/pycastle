@@ -39,9 +39,8 @@ from pycastle.session.run_session import (
     RunSessionPlan,
 )
 from pycastle.session.service_session_store import (
-    load_service_session_id,
+    ServiceSessionStore,
     load_service_session_metadata,
-    save_service_session_id,
     save_service_session_metadata,
     store_for_role_session,
 )
@@ -69,7 +68,9 @@ def _role_session_service_session_id(
 ) -> str | None:
     role_session_path = getattr(role_session, "path", None)
     if isinstance(role_session_path, Path):
-        saved_session_id = load_service_session_id(role_session_path, service_name)
+        saved_session_id = ServiceSessionStore(
+            role_session_path
+        ).get_service_session_id(service_name)
         if saved_session_id is not None:
             return saved_session_id
     legacy = getattr(role_session, "service_session_id", None)
@@ -664,7 +665,9 @@ def test_has_exact_transcript_match_accepts_sidecar_backed_opencode_handoff_with
     state_dir = tmp_path / "custom" / "opencode-state"
     state_dir.mkdir(parents=True)
     (state_dir / "resume.jsonl").write_text("{}\n", encoding="utf-8")
-    save_service_session_id(role_session.path, "opencode", "sess-opencode-123")
+    ServiceSessionStore(role_session.path).save_service_session_id(
+        "opencode", "sess-opencode-123"
+    )
     save_service_session_metadata(role_session.path, "opencode", "sess-opencode-123")
 
     assert (
@@ -879,7 +882,9 @@ def test_codex_provider_session_state_returns_resume_decision_for_saved_sidecar(
         '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
         encoding="utf-8",
     )
-    save_service_session_id(role_session.path, "codex", "thread-from-sidecar")
+    ServiceSessionStore(role_session.path).save_service_session_id(
+        "codex", "thread-from-sidecar"
+    )
 
     decision = service.provider_session_state(
         ProviderSessionStateRequest(

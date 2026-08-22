@@ -39,7 +39,7 @@ from pycastle.services.runtime_services import CodexService, OpenCodeService
 from pycastle.session import RoleSession
 from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import (
-    save_service_session_id,
+    ServiceSessionStore,
     save_service_session_metadata,
 )
 from tests.support import (
@@ -447,7 +447,9 @@ def _seed_exact_phase_1_main_transcript(
     else:
         state_dir = role_session.path / service_name
     state_dir.mkdir(parents=True, exist_ok=True)
-    save_service_session_id(role_session.path, service_name, provider_session_id)
+    ServiceSessionStore(role_session.path).save_service_session_id(
+        service_name, provider_session_id
+    )
     sidecar_name = "session_id" if service_name == "opencode" else "thread_id"
     (state_dir / sidecar_name).write_text(provider_session_id, encoding="utf-8")
     if service_name == "codex":
