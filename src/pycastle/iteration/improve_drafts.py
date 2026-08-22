@@ -47,6 +47,9 @@ def read_draft_set(directory: Path, cfg: Config) -> list[IssueDraft]:
     problems: list[str] = []
     drafts: list[IssueDraft] = []
 
+    if not spec_files:
+        problems.append("draft set has no spec draft")
+
     for path in ordered_files:
         draft, draft_problems = _parse_draft(path)
         problems.extend(draft_problems)
@@ -84,18 +87,23 @@ def _parse_draft(path: Path) -> tuple[IssueDraft | None, list[str]]:
     fm, body = _split_frontmatter(text)
 
     title = fm.get("title")
-    labels = fm.get("labels")
+    labels_raw = fm.get("labels")
 
     if not title:
         problems.append(f"{handle}: missing required field 'title'")
-    if labels is None:
-        problems.append(f"{handle}: missing required field 'labels'")
 
     if problems:
         return None, problems
 
-    if not isinstance(title, str) or not isinstance(labels, list):
-        return None, [f"{handle}: unexpected frontmatter type for title or labels"]
+    if not isinstance(title, str):
+        return None, [f"{handle}: unexpected frontmatter type for title"]
+
+    if labels_raw is None:
+        labels: list[str] = []
+    elif isinstance(labels_raw, list):
+        labels = [str(lbl) for lbl in labels_raw]
+    else:
+        return None, [f"{handle}: unexpected frontmatter type for labels"]
 
     raw_blocked = fm.get("blocked_by")
     blocked_by: list[object] = raw_blocked if isinstance(raw_blocked, list) else []
@@ -104,7 +112,7 @@ def _parse_draft(path: Path) -> tuple[IssueDraft | None, list[str]]:
         IssueDraft(
             handle=handle,
             title=title,
-            labels=[str(lbl) for lbl in labels],
+            labels=labels,
             body=body,
             blocked_by=[str(b) for b in blocked_by],
         ),
