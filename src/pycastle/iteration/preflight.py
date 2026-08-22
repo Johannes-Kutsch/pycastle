@@ -174,9 +174,6 @@ class BranchRefreshBoundary:
                         deps, "Preflight", branch, sandbox_identity.branch
                     )
                     role_session.discard()
-            except OperatingBranchCheckedOutError:
-                await _wait_for_operating_branch_release(deps, "Preflight")
-                continue
             except AgentCredentialFailureError:
                 raise
             except (
