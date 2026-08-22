@@ -1138,13 +1138,7 @@ def test_malformed_drafts_reprompt_agent_before_filing(tmp_path, git_svc):
 
 
 def test_draft_correction_dispatch_sends_role_prompt_on_resume(tmp_path, git_svc):
-    """Draft-correction RunRequest carries send_role_prompt_on_resume=True.
-
-    The correction pass resumes the same session the slice phase just left
-    (preserve_session_on_completion=True), so the run kind is always Resume.
-    Without send_role_prompt_on_resume=True the agent receives the shared
-    continuation prompt and never learns about the validation errors.
-    """
+    """Draft-correction RunRequest carries send_role_prompt_on_resume=True."""
     call_count = [0]
 
     def side_effect(request):
@@ -1164,9 +1158,11 @@ def test_draft_correction_dispatch_sends_role_prompt_on_resume(tmp_path, git_svc
     with pytest.raises(DraftSetValidationError):
         _run(deps)
 
-    # The 4th call (index 3) is the draft-correction dispatch.
-    correction_request = runner.calls[3]
-    assert correction_request.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
+    correction_request = next(
+        c
+        for c in runner.calls
+        if c.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
+    )
     assert correction_request.prompt.send_role_prompt_on_resume is True
 
 
