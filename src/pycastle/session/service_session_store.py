@@ -166,20 +166,6 @@ class ServiceSessionStore(ServiceResumeIdentityStore):
         path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
 
 
-class RoleSessionStore(ServiceResumeIdentityStore):
-    def __init__(self, role_session_path: Path) -> None:
-        self.path = role_session_path
-
-    def save_service_session_id(self, service_name: str, session_id: str) -> None:
-        ServiceSessionStore(self.path).save_service_session_id(service_name, session_id)
-
-    def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
-        return ServiceSessionStore(self.path).service_session_metadata(service_name)
-
-    def exact_transcript_service_name(self) -> str | None:
-        return ServiceSessionStore(self.path).exact_transcript_service_name()
-
-
 def store_for_role_session(role_session: RoleSession) -> ServiceSessionStore:
     return ServiceSessionStore(role_session.path, role_session)
 
