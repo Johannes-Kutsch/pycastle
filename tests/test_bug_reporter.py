@@ -556,31 +556,20 @@ def test_unhandled_exception_files_issue_when_auto_file_bugs_enabled_and_search_
 ):
     from pycastle.config import Config
     from pycastle.main import main as cli
-    from pycastle.services import GithubService
-    from pycastle.services._github_http_transport import GithubHttpTransportAPIError
 
     monkeypatch.setenv("GH_TOKEN", "tkn")
     monkeypatch.setattr(
         "pycastle.bug_reporter._safe_load_config",
         lambda: Config(auto_file_bugs=True),
     )
-
-    class _ScriptedTransport:
-        def request(self, method, path, data=None):
-            if "/search/issues" in path:
-                raise GithubHttpTransportAPIError(
-                    "Validation Failed", 422, "{}", method, path
-                )
-            if method == "POST" and "/issues" in path:
-                return {"number": 42, "id": 10042}, {}
-            raise AssertionError(f"unexpected: {method} {path}")
-
-    original_init = GithubService.__init__
-
-    def patched_init(self, repo, token, cfg, *, transport=None):
-        original_init(self, repo, token, cfg, transport=_ScriptedTransport())
-
-    monkeypatch.setattr(GithubService, "__init__", patched_init)
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.search_open_issues_by_title",
+        lambda self, prefix: [],
+    )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.create_issue_in",
+        lambda self, owner_repo, title, body, labels: (42, 10042),
+    )
 
     _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
     result = CliRunner().invoke(cli, ["build"])
