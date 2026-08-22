@@ -142,10 +142,7 @@ Before drafting, answer:
 
 ## 6. Write the draft files
 
-For each approved slice, write a draft file to `.pycastle-session/improve/_drafts/`. Name each file with a two-digit prefix and a slug, e.g. `01-add-parser-seam.md`, `02-wire-tests.md`. Each title must start with `[improve-SLICE]`. Apply two labels:
-
-- A ready-for-agent label (state)
-- One of the slice-mode labels (mode)
+For each approved slice, write a draft file to `.pycastle-session/improve/_drafts/`. Name each file with a two-digit prefix and a slug, e.g. `01-add-parser-seam.md`, `02-wire-tests.md`. Each title must start with `[improve-SLICE]`. Apply the one slice-mode label that fits the slice — the host applies the state label itself once the whole set is filed.
 
 Use this frontmatter format:
 
@@ -153,7 +150,6 @@ Use this frontmatter format:
 ---
 title: [improve-SLICE] <concise title>
 labels:
-  - ready-for-agent
   - behavior-slice
 blocked_by:
   - 01-some-prerequisite
