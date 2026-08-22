@@ -20,7 +20,10 @@ from pycastle.iteration._merge_reporting import (
     build_merge_close_message,
 )
 from pycastle.iteration._rows import StatusRowConfig, status_row
-from pycastle.iteration._utils import _wait_for_operating_branch_release
+from pycastle.iteration._utils import (
+    _advance_branch_ref_through_gate,
+    _wait_for_operating_branch_release,
+)
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
 from pycastle.services import GitCommandError, GithubService, GitService
@@ -71,8 +74,9 @@ async def _classify_merge_candidates(
             else:
                 conflict_issues.append(issue)
         if clean_issues:
-            deps.git_svc.advance_branch_ref(
-                deps.repo_root,
+            await _advance_branch_ref_through_gate(
+                deps,
+                "Merge",
                 deps.cfg.operating_branch,
                 _MERGE_BATCH_SANDBOX_BRANCH,
             )

@@ -30,9 +30,13 @@ from pycastle.services import (
     GitCommandError,
     GithubService,
     GitService,
+    OperatingBranchCheckedOutError,
     ServiceRegistry,
 )
-from pycastle.services._operating_branch_refresh import OperatingBranchDiverged
+from pycastle.services._operating_branch_refresh import (
+    AlreadyCurrent,
+    OperatingBranchDiverged,
+)
 from pycastle.services.runtime_services import AgentService
 from pycastle.session import RoleSession
 from tests.support import (
@@ -1275,3 +1279,117 @@ def test_divergence_resolver_spawned_without_prior_backoff(
 
     mock_sleep.assert_not_called()
     assert len(fake.calls) == 1
+
+
+# ── Operating-branch checkout gate: mid-refresh ───────────────────────────────
+
+
+def test_get_safe_sha_retries_refresh_when_branch_checked_out_mid_refresh(
+    tmp_path, github_svc
+):
+    """When refresh_operating_branch raises OperatingBranchCheckedOutError,
+    get_safe_sha re-enters the checkout gate and retries the refresh — no backoff,
+    no issue filed, returns PreflightReady once released."""
+    checkout_path = tmp_path / "some-worktree"
+    git_svc = functional_git_svc()
+    git_svc.get_branch_sha.return_value = "abc123"
+    git_svc.refresh_operating_branch.side_effect = [
+        OperatingBranchCheckedOutError("main"),
+        AlreadyCurrent(),
+    ]
+    # Initial gate (before pull_with_resolution): clear; gate inside retry: blocked then clear
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [],
+        [(checkout_path, "main")],
+        [],
+    ]
+
+    display = RecordingStatusDisplay()
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, status_display=display
+    )
+    cache = PreflightCache()
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert result.sha == "abc123"
+    assert git_svc.refresh_operating_branch.call_count == 2
+    # Gate message was printed naming the Preflight phase
+    printed = [call for call in display.calls if call[0] == "print"]
+    assert any(
+        "Preflight" in str(call) and str(checkout_path) in str(call) for call in printed
+    )
+    # No issue was filed on the tracker
+    github_svc.create_issue_in.assert_not_called()
+
+
+def test_get_safe_sha_checked_out_during_refresh_causes_no_backoff(
+    tmp_path, github_svc
+):
+    """A checkout-blocked refresh must not trigger the remote-retry backoff sleep."""
+    git_svc = functional_git_svc()
+    git_svc.get_branch_sha.return_value = "abc123"
+    git_svc.refresh_operating_branch.side_effect = [
+        OperatingBranchCheckedOutError("main"),
+        AlreadyCurrent(),
+    ]
+    git_svc.list_worktrees_with_branches.return_value = []
+
+    fake = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
+    cache = PreflightCache()
+
+    with patch("pycastle.iteration._utils.asyncio.sleep") as mock_sleep:
+        asyncio.run(cache.get_safe_sha(deps))
+
+    mock_sleep.assert_not_called()
+
+
+# ── Operating-branch checkout gate: divergence-resolver ref advance ────────────
+
+
+def test_get_safe_sha_retries_advance_when_branch_checked_out_after_divergence_resolver(
+    tmp_path, github_svc
+):
+    """When advance_branch_ref raises OperatingBranchCheckedOutError after the
+    divergence-resolver runs, get_safe_sha re-enters the gate and retries the
+    advance — completed merge work is preserved, no issue filed."""
+    checkout_path = tmp_path / "some-worktree"
+    git_svc = functional_git_svc()
+    git_svc.get_branch_sha.return_value = "abc123"
+    git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
+    git_svc.advance_branch_ref.side_effect = [
+        OperatingBranchCheckedOutError("main"),
+        None,
+    ]
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [],  # initial gate
+        [(checkout_path, "main")],  # gate inside retry after advance fails
+        [],
+    ]
+
+    display = RecordingStatusDisplay()
+    fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
+    deps = _make_deps(
+        tmp_path, fake, git_svc=git_svc, github_svc=github_svc, status_display=display
+    )
+    cache = PreflightCache()
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        result = asyncio.run(cache.get_safe_sha(deps))
+
+    assert isinstance(result, PreflightReady)
+    assert result.sha == "abc123"
+    assert git_svc.advance_branch_ref.call_count == 2
+    # Agent ran exactly once (work preserved)
+    assert len(fake.calls) == 1
+    # No issue was filed
+    github_svc.create_issue_in.assert_not_called()
+    # Gate message names Preflight phase
+    printed = [call for call in display.calls if call[0] == "print"]
+    assert any(
+        "Preflight" in str(call) and str(checkout_path) in str(call) for call in printed
+    )

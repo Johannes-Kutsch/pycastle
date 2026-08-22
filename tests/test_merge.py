@@ -36,6 +36,7 @@ from pycastle.services import (
     GithubServiceError,
     GitService,
     GitTimeoutError,
+    OperatingBranchCheckedOutError,
 )
 from pycastle.session import RoleSession
 from tests.support import (
@@ -2797,3 +2798,96 @@ def test_merge_worktree_cleanup_propagates_non_git_os_error(
 
     prints = [(c[1], str(c[2])) for c in deps.status_display.calls if c[0] == "print"]
     assert any("teardown of" in msg and "pycastle/issue-1" in msg for _, msg in prints)
+
+
+# ── Operating-branch checkout gate: ref advance during merge ──────────────────
+
+
+def test_clean_batch_advance_waits_at_gate_when_operating_branch_checked_out(
+    tmp_path, git_svc, github_svc, agent_runner
+):
+    """When advance_branch_ref raises OperatingBranchCheckedOutError after a clean
+    batch merge, merge_phase re-enters the checkout gate and retries the advance —
+    completed merge work is preserved, no backoff, no issue filed."""
+    checkout_path = tmp_path / "operator-worktree"
+    issues = [{"number": 1, "title": "Fix A"}]
+
+    git_svc.advance_branch_ref.side_effect = [
+        OperatingBranchCheckedOutError("main"),
+        None,
+    ]
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [],  # initial gate in merge_phase
+        [(checkout_path, "main")],  # gate inside retry after advance fails
+        [],
+    ]
+
+    display = RecordingStatusDisplay()
+    deps = _make_deps(
+        tmp_path,
+        agent_runner,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        status_display=display,
+    )
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        result = _run(issues, deps)
+
+    assert result.clean == issues
+    assert git_svc.advance_branch_ref.call_count == 2
+    # Gate message names Merge phase
+    printed = [call for call in display.calls if call[0] == "print"]
+    assert any(
+        "Merge" in str(call) and str(checkout_path) in str(call) for call in printed
+    )
+    # No backoff issue filed
+    github_svc.create_issue_in.assert_not_called()
+
+
+def test_merger_advance_waits_at_gate_when_operating_branch_checked_out(
+    tmp_path, git_svc, github_svc
+):
+    """When advance_branch_ref raises OperatingBranchCheckedOutError after a Merger
+    run resolves a conflict, merge_phase re-enters the checkout gate and retries —
+    the resolved merge work is preserved once the branch is released."""
+    checkout_path = tmp_path / "operator-worktree"
+    issues = [{"number": 1, "title": "Conflict"}]
+
+    git_svc.try_merge.return_value = False
+    git_svc.start_merge.return_value = False
+    git_svc.advance_branch_ref.side_effect = [
+        OperatingBranchCheckedOutError("main"),
+        None,
+    ]
+    git_svc.list_worktrees_with_branches.side_effect = [
+        [],  # initial gate in merge_phase
+        [(checkout_path, "main")],  # gate inside retry after advance fails
+        [],
+    ]
+
+    display = RecordingStatusDisplay()
+    fake = FakeAgentRunner([CommitMessageOutput(message="resolve conflict")])
+    preflight_cache = StubPreflightCache(PreflightReady(sha="abc123"))
+    deps = _make_deps(
+        tmp_path,
+        fake,
+        git_svc=git_svc,
+        github_svc=github_svc,
+        status_display=display,
+        preflight_cache=preflight_cache,
+    )
+
+    with patch("pycastle.iteration._utils.asyncio.sleep", new_callable=AsyncMock):
+        result = _run(issues, deps)
+
+    assert result.completed_conflicts == issues
+    assert result.pending_conflicts == []
+    assert git_svc.advance_branch_ref.call_count == 2
+    # Gate message names Merge phase
+    printed = [call for call in display.calls if call[0] == "print"]
+    assert any(
+        "Merge" in str(call) and str(checkout_path) in str(call) for call in printed
+    )
+    # No issue was filed for the checkout condition
+    github_svc.create_issue_in.assert_not_called()
