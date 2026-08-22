@@ -1262,25 +1262,16 @@ def test_divergence_resolver_failure_does_not_escalate_to_operator_actionable(
 def test_divergence_resolver_spawned_without_prior_backoff(
     tmp_path, git_svc, github_svc
 ):
-    """When divergence is detected, the resolver is spawned immediately — no
-    retry backoff from the old non-fast-forward classification path elapses first."""
-    import time
-
+    """When divergence is detected, the resolver is spawned without any sleep/backoff
+    from the old non-fast-forward classification path (10s/60s/300s)."""
     git_svc.refresh_operating_branch.return_value = OperatingBranchDiverged()
 
-    start_monotonic: list[float] = []
-    resolver_spawned_at: list[float] = []
-
-    async def _resolver(request):
-        resolver_spawned_at.append(time.monotonic())
-        return CompletionOutput()
-
-    fake = FakeAgentRunner(side_effect=_resolver, preflight_responses=[[]])
+    fake = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
     cache = PreflightCache()
 
-    start_monotonic.append(time.monotonic())
-    asyncio.run(cache.get_safe_sha(deps))
+    with patch("pycastle.iteration._utils.asyncio.sleep") as mock_sleep:
+        asyncio.run(cache.get_safe_sha(deps))
 
-    elapsed = resolver_spawned_at[0] - start_monotonic[0]
-    assert elapsed < 5  # no 10 s / 60 s / 300 s retry backoff
+    mock_sleep.assert_not_called()
+    assert len(fake.calls) == 1
