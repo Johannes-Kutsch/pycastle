@@ -2015,7 +2015,7 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
                 prompt=PromptInvocation(
                     template=PromptTemplate.IMPROVE_SCAN,
                     scope_args={
-                        "RECENT_IMPROVE_PRD_TITLES": "",
+                        "RECENT_IMPROVE_SPEC_TITLES": "",
                         "CANDIDATE_BUDGET": "3",
                     },
                 ),
@@ -2036,10 +2036,10 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
             RunRequest(
                 name="PRD Agent",
                 prompt=PromptInvocation(
-                    template=PromptTemplate.IMPROVE_PRD,
+                    template=PromptTemplate.IMPROVE_SPEC,
                     scope_args={
                         "IMPROVE_SHORT_SID": "abc123",
-                        "RECENT_IMPROVE_PRDS": "",
+                        "RECENT_IMPROVE_SPECS": "",
                         "CANDIDATE_RANK": "1",
                         "CANDIDATE_TITLE": "Deepen the parser module",
                     },

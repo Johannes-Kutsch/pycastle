@@ -1304,11 +1304,11 @@ def test_get_labels_returns_empty_list_when_no_labels():
     transport.assert_exhausted()
 
 
-def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_states():
+def test_get_recent_improve_specs_returns_newest_12_canonical_titles_across_states():
     issues = [
         {
             "number": number,
-            "title": f"[improve-PRD] Candidate {number}",
+            "title": f"[improve-spec] Candidate {number}",
             "state": "open" if number % 2 else "closed",
         }
         for number in range(30, 17, -1)
@@ -1317,7 +1317,7 @@ def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_state
         3,
         {
             "number": 999,
-            "title": "Follow-up [improve-PRD] mention only",
+            "title": "Follow-up [improve-spec] mention only",
             "state": "open",
         },
     )
@@ -1325,7 +1325,7 @@ def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_state
         7,
         {
             "number": 998,
-            "title": "[improve-SLICE] Not a PRD",
+            "title": "[improve-SLICE] Not a spec",
             "state": "closed",
         },
     )
@@ -1342,7 +1342,7 @@ def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_state
     )
     svc = _make_service(transport=transport)
 
-    result = svc.get_recent_improve_prds()
+    result = svc.get_recent_improve_specs()
 
     assert result == [
         {
@@ -1355,10 +1355,14 @@ def test_get_recent_improve_prds_returns_newest_12_canonical_titles_across_state
     transport.assert_exhausted()
 
 
-def test_get_recent_improve_prds_returns_empty_list_when_no_matching_issues():
+def test_get_recent_improve_specs_returns_empty_list_when_no_matching_issues():
     issues = [
         {"number": 1, "title": "Regular issue", "state": "open"},
-        {"number": 2, "title": "Follow-up [improve-PRD] mention", "state": "closed"},
+        {
+            "number": 2,
+            "title": "[improve-PRD] Old-prefix issue does not match",
+            "state": "closed",
+        },
     ]
     transport = _ScriptedGithubTransport(
         [
@@ -1371,11 +1375,11 @@ def test_get_recent_improve_prds_returns_empty_list_when_no_matching_issues():
     )
     svc = _make_service(transport=transport)
 
-    assert svc.get_recent_improve_prds() == []
+    assert svc.get_recent_improve_specs() == []
     transport.assert_exhausted()
 
 
-def test_get_recent_improve_prds_raises_operator_actionable_error_after_retry_exhaustion():
+def test_get_recent_improve_specs_raises_operator_actionable_error_after_retry_exhaustion():
     transport = _ScriptedGithubTransport(
         [
             _script_step(
@@ -1397,10 +1401,41 @@ def test_get_recent_improve_prds_raises_operator_actionable_error_after_retry_ex
         patch("time.sleep") as mock_sleep,
         pytest.raises(OperatorActionableGithubError) as exc_info,
     ):
-        svc.get_recent_improve_prds()
+        svc.get_recent_improve_specs()
 
     assert exc_info.value.path == "/repos/owner/repo/issues?state=all&per_page=100"
     assert [call.args[0] for call in mock_sleep.call_args_list] == [10, 60, 300]
+    transport.assert_exhausted()
+
+
+# ── get_recent_improve_specs ──────────────────────────────────────────────────
+
+
+def test_get_recent_improve_specs_returns_spec_prefixed_issues_and_ignores_prd_prefix():
+    issues = [
+        {"number": 5, "title": "[improve-spec] Candidate 5", "state": "open"},
+        {"number": 4, "title": "[improve-PRD] Old PRD candidate", "state": "open"},
+        {"number": 3, "title": "[improve-spec] Candidate 3", "state": "closed"},
+        {"number": 2, "title": "Regular issue", "state": "open"},
+    ]
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues?state=all&per_page=100",
+                payload=issues,
+                headers={},
+            )
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    result = svc.get_recent_improve_specs()
+
+    assert result == [
+        {"number": 5, "state": "OPEN", "title": "Candidate 5"},
+        {"number": 3, "state": "CLOSED", "title": "Candidate 3"},
+    ]
     transport.assert_exhausted()
 
 

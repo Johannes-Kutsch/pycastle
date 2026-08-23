@@ -90,7 +90,7 @@ Reaching past those four means asserting on wording:
 # nothing a caller can observe. Rendering the file first does not launder it.
 def test_planner_prompt_mentions_own_parent():
     rendered = renderer.render(PromptTemplate.PLAN, ...)
-    assert "its **own** parent PRD" in rendered
+    assert "its **own** parent spec" in rendered
 
 
 # GOOD: asserts the placeholder resolved to its configured value,

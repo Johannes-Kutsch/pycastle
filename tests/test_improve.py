@@ -150,17 +150,17 @@ def test_improve_phase_uses_scan_prompt_first(deps, agent_runner):
 
 
 def test_improve_phase_picked_path_runs_scan_then_prd(deps, agent_runner):
-    """Picked path runs IMPROVE_SCAN then IMPROVE_PRD in order."""
+    """Picked path runs IMPROVE_SCAN then IMPROVE_SPEC in order."""
     _run(deps)
     templates = [c.prompt.template for c in agent_runner.calls]
-    assert templates[:2] == [PromptTemplate.IMPROVE_SCAN, PromptTemplate.IMPROVE_PRD]
+    assert templates[:2] == [PromptTemplate.IMPROVE_SCAN, PromptTemplate.IMPROVE_SPEC]
 
 
 @pytest.mark.parametrize(
     ("template", "expected_name", "expected_body"),
     [
         (PromptTemplate.IMPROVE_SCAN, "Scan Agent", "picking an improvement"),
-        (PromptTemplate.IMPROVE_PRD, "PRD Agent", "writing PRD"),
+        (PromptTemplate.IMPROVE_SPEC, "Spec Agent", "writing spec"),
         (PromptTemplate.IMPROVE_ISSUES, "Slice Agent", "filing sub-issues"),
         (
             PromptTemplate.IMPROVE_NO_CANDIDATE,
@@ -266,14 +266,14 @@ def test_improve_phase_dispatches_scan_prd_and_issues_templates_in_order(
     _run(deps)
     assert [(call.role, call.prompt.template) for call in agent_runner.calls] == [
         (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SCAN),
-        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_PRD),
+        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SPEC),
         (AgentRole.IMPROVE, PromptTemplate.IMPROVE_ISSUES),
     ]
 
 
 def test_improve_phase_dispatches_prd_step_with_expected_work_body(tmp_path, git_svc):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.return_value = [
+    github_svc.get_recent_improve_specs.return_value = [
         {"number": 12, "state": "OPEN", "title": "First candidate"},
         {"number": 11, "state": "CLOSED", "title": "Second candidate"},
     ]
@@ -286,16 +286,16 @@ def test_improve_phase_dispatches_prd_step_with_expected_work_body(tmp_path, git
     _run(deps)
 
     prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
-    assert prd_call.work_body == "writing PRD"
+    assert prd_call.work_body == "writing spec"
 
 
 def test_improve_phase_still_dispatches_prd_step_when_recent_prd_history_is_empty(
     tmp_path, git_svc
 ):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.return_value = []
+    github_svc.get_recent_improve_specs.return_value = []
     github_svc.create_issue_in.return_value = (0, 0)
     runner = _make_runner_with_drafts(
         make_scan_output(), CompletionOutput(), CompletionOutput()
@@ -305,14 +305,14 @@ def test_improve_phase_still_dispatches_prd_step_when_recent_prd_history_is_empt
     _run(deps)
 
     prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
-    assert prd_call.prompt.template == PromptTemplate.IMPROVE_PRD
+    assert prd_call.prompt.template == PromptTemplate.IMPROVE_SPEC
 
 
 def test_improve_phase_propagates_recent_improve_prd_lookup_failures(tmp_path, git_svc):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.side_effect = GithubNetworkError(
+    github_svc.get_recent_improve_specs.side_effect = GithubNetworkError(
         "transport error", cause=RuntimeError("boom")
     )
     runner = FakeAgentRunner([], preflight_responses=[[]])
@@ -328,7 +328,7 @@ def test_improve_phase_propagates_prd_preparation_lookup_failures_after_scan(
     tmp_path, git_svc
 ):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.side_effect = [
+    github_svc.get_recent_improve_specs.side_effect = [
         [{"number": 12, "state": "OPEN", "title": "First candidate"}],
         GithubNetworkError("transport error", cause=RuntimeError("boom")),
     ]
@@ -360,7 +360,7 @@ def test_improve_phase_propagates_no_candidate_report_preparation_lookup_failure
     tmp_path, git_svc
 ):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.side_effect = [
+    github_svc.get_recent_improve_specs.side_effect = [
         [{"number": 12, "state": "OPEN", "title": "First candidate"}],
         GithubNetworkError("transport error", cause=RuntimeError("boom")),
     ]
@@ -483,7 +483,7 @@ def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
         service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
     )
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert len(runner.calls) == 2
 
 
@@ -510,7 +510,7 @@ def test_improve_clean_phase_2_entry_dispatches_prd_prompt_for_exact_codex_trans
 
     _run(deps)
 
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert runner.calls[0].prompt.kind is PromptKind.FOLLOW_UP
     assert len(runner.calls) == 2
 
@@ -541,7 +541,7 @@ def test_improve_clean_phase_2_entry_accepts_recovered_exact_codex_transcript(
 
     _run(deps)
 
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert runner.calls[0].prompt.kind is PromptKind.FOLLOW_UP
     assert len(runner.calls) == 2
 
@@ -689,17 +689,17 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
 
 
 def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc):
-    """Candidate with no record and in-flight='02-prd': PRD resumes as a continuation (no role prompt)."""
+    """Candidate with no record and in-flight='02-spec': PRD resumes as a continuation (no role prompt)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
-    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-prd")
+    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-spec")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
     _run(deps)
 
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert runner.calls[0].prompt.kind is PromptKind.ROLE_PROMPT
     assert len(runner.calls) == 2
 
@@ -728,17 +728,17 @@ def test_improve_is_terminal_after_report(tmp_path, git_svc):
 
 
 def test_mid_phase_2_retry_is_role_prompt_kind(tmp_path, git_svc):
-    """Resume mid-phase-2 (in-flight='02-prd'): kind=ROLE_PROMPT so the runner
+    """Resume mid-phase-2 (in-flight='02-spec'): kind=ROLE_PROMPT so the runner
     falls back to the continuation prompt (role prompt already in history)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
-    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-prd")
+    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-spec")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
     assert prd_call.prompt.kind is PromptKind.ROLE_PROMPT
 
@@ -764,7 +764,7 @@ def test_cross_teardown_resume_at_phase_2_is_follow_up_kind(tmp_path, git_svc):
     )
     _run(deps)
     prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
     assert prd_call.prompt.kind is PromptKind.FOLLOW_UP
 
@@ -782,7 +782,9 @@ def test_phase_2_is_follow_up_kind_on_resumed_session(deps, agent_runner):
     so the PRD prompt is delivered rather than the continuation prompt."""
     _run(deps)
     prd_call = next(
-        c for c in agent_runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c
+        for c in agent_runner.calls
+        if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
     assert prd_call.prompt.kind is PromptKind.FOLLOW_UP
 
@@ -849,7 +851,7 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
         service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
     )
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert len(runner.calls) == 2
 
 
@@ -875,7 +877,9 @@ def test_improve_phase_02_uses_candidate_namespace(deps, agent_runner):
     """Phase 02-prd uses a per-candidate session namespace ('candidate/0' for first)."""
     _run(deps)
     prd_call = next(
-        c for c in agent_runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c
+        for c in agent_runner.calls
+        if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
     assert prd_call.session_namespace == "candidate/0"
 
@@ -896,7 +900,7 @@ def test_improve_all_phases_have_correct_namespace(deps, agent_runner):
     _run(deps)
     assert agent_runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
     assert agent_runner.calls[0].session_namespace == "main"
-    assert agent_runner.calls[1].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert agent_runner.calls[1].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert agent_runner.calls[1].session_namespace == "candidate/0"
     assert agent_runner.calls[2].prompt.template == PromptTemplate.IMPROVE_ISSUES
     assert agent_runner.calls[2].session_namespace == "candidate/0"
@@ -997,7 +1001,7 @@ def test_scan_returning_candidates_output_continues_to_phase_2(tmp_path, git_svc
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
-    assert runner.calls[1].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[1].prompt.template == PromptTemplate.IMPROVE_SPEC
 
 
 # ── Host-side filing pass (AC3, AC5, AC6, AC7) ──────────────────────────────
@@ -1353,7 +1357,7 @@ def test_no_candidate_path_makes_no_forks(tmp_path, git_svc):
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     dispatched_templates = [c.prompt.template for c in runner.calls]
-    assert PromptTemplate.IMPROVE_PRD not in dispatched_templates
+    assert PromptTemplate.IMPROVE_SPEC not in dispatched_templates
     assert PromptTemplate.IMPROVE_ISSUES not in dispatched_templates
 
 
@@ -1406,7 +1410,7 @@ def test_cross_teardown_resume_checks_candidate_namespace_for_gate(tmp_path, git
         service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
     )
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert len(runner.calls) == 2
 
 
@@ -1482,7 +1486,7 @@ def test_sha_change_mid_run_does_not_start_next_candidate(tmp_path, git_svc):
     _run(deps)
 
     prd_calls = [
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     ]
     assert len(prd_calls) == 1
     assert prd_calls[0].session_namespace == "candidate/0"

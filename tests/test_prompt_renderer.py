@@ -88,8 +88,8 @@ def _scope_args_for(template: PromptTemplate) -> dict[str, str]:
         "CANDIDATE_BUDGET": "3",
         "CANDIDATE_RANK": "1",
         "CANDIDATE_TITLE": "Deepen the parser module",
-        "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
-        "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+        "RECENT_IMPROVE_SPECS": "No recent improve specs found.",
+        "RECENT_IMPROVE_SPEC_TITLES": "No recent improve specs found.",
         "SESSION_DIR": "/sessions/abc",
         "VALIDATION_ERRORS": "- Error 1\n- Error 2",
     }
@@ -283,7 +283,7 @@ def test_scope_host_check_placeholders():
 
 def test_scope_improve_scan_placeholders():
     assert Scope.IMPROVE_SCAN.placeholders == frozenset(
-        {"RECENT_IMPROVE_PRD_TITLES", "CANDIDATE_BUDGET"}
+        {"RECENT_IMPROVE_SPEC_TITLES", "CANDIDATE_BUDGET"}
     )
 
 
@@ -291,7 +291,7 @@ def test_scope_improve_session_placeholders():
     assert Scope.IMPROVE_SESSION.placeholders == frozenset(
         {
             "IMPROVE_SHORT_SID",
-            "RECENT_IMPROVE_PRDS",
+            "RECENT_IMPROVE_SPECS",
             "CANDIDATE_RANK",
             "CANDIDATE_TITLE",
         }
@@ -342,7 +342,7 @@ def test_scopes_are_distinct_members():
             Scope.HOST_CHECK,
         ),
         (PromptTemplate.IMPROVE_SCAN, "improve/01-scan.md", Scope.IMPROVE_SCAN),
-        (PromptTemplate.IMPROVE_PRD, "improve/02-prd.md", Scope.IMPROVE_SESSION),
+        (PromptTemplate.IMPROVE_SPEC, "improve/02-spec.md", Scope.IMPROVE_SESSION),
         (PromptTemplate.IMPROVE_ISSUES, "improve/03-issues.md", Scope.IMPROVE_ISSUES),
         (
             PromptTemplate.IMPROVE_NO_CANDIDATE,
@@ -611,7 +611,7 @@ def test_render_implementation_standards_available_in_improve_scan(cfg, prompts_
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPEC_TITLES": "No recent improve specs found.",
                 "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
@@ -631,7 +631,7 @@ def test_render_design_standards_available_in_improve_scan(cfg, prompts_dir):
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPEC_TITLES": "No recent improve specs found.",
                 "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
@@ -641,9 +641,9 @@ def test_render_design_standards_available_in_improve_scan(cfg, prompts_dir):
     assert result == "design guidelines"
 
 
-def test_render_recent_improve_prd_titles_available_in_improve_scan(cfg, prompts_dir):
+def test_render_recent_improve_spec_titles_available_in_improve_scan(cfg, prompts_dir):
     (prompts_dir / "improve" / "01-scan.md").write_text(
-        "recent:\n{{RECENT_IMPROVE_PRD_TITLES}}"
+        "recent:\n{{RECENT_IMPROVE_SPEC_TITLES}}"
     )
     renderer = PromptRenderer(cfg)
 
@@ -651,7 +651,7 @@ def test_render_recent_improve_prd_titles_available_in_improve_scan(cfg, prompts
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+                "RECENT_IMPROVE_SPEC_TITLES": "#12 OPEN - First candidate",
                 "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
@@ -661,18 +661,18 @@ def test_render_recent_improve_prd_titles_available_in_improve_scan(cfg, prompts
     assert result == "recent:\n#12 OPEN - First candidate"
 
 
-def test_render_design_standards_available_in_improve_prd(cfg, prompts_dir):
+def test_render_design_standards_available_in_improve_spec(cfg, prompts_dir):
     standards_dir = prompts_dir / "shared/standards"
     (standards_dir / "_design.md").write_text("design guidelines")
-    (prompts_dir / "improve" / "02-prd.md").write_text("{{DESIGN_STANDARDS}}")
+    (prompts_dir / "improve" / "02-spec.md").write_text("{{DESIGN_STANDARDS}}")
     renderer = PromptRenderer(cfg)
 
     result = _run(
         renderer.render(
-            PromptTemplate.IMPROVE_PRD,
+            PromptTemplate.IMPROVE_SPEC,
             {
                 "IMPROVE_SHORT_SID": "abc",
-                "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPECS": "No recent improve specs found.",
                 "CANDIDATE_RANK": "1",
                 "CANDIDATE_TITLE": "Deepen the parser module",
             },
@@ -773,7 +773,7 @@ def test_renderer_loads_both_standards_keys(prompts_dir):
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPEC_TITLES": "No recent improve specs found.",
                 "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
@@ -800,7 +800,7 @@ def test_renderer_returns_empty_string_for_missing_standards_file(prompts_dir):
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPEC_TITLES": "No recent improve specs found.",
                 "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
@@ -824,7 +824,7 @@ def test_renderer_returns_all_empty_standards_when_dir_absent(tmp_path):
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPEC_TITLES": "No recent improve specs found.",
                 "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
@@ -890,7 +890,7 @@ def test_renderer_renders_issue_tracker_fragment(prompts_dir):
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPEC_TITLES": "No recent improve specs found.",
                 "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
@@ -946,7 +946,7 @@ def test_renderer_renders_local_issue_tracker_override_through_bundled_prompt(
             PromptTemplate.IMPROVE_NO_CANDIDATE,
             {
                 "IMPROVE_SHORT_SID": "abc",
-                "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPECS": "No recent improve specs found.",
                 "CANDIDATE_RANK": "",
                 "CANDIDATE_TITLE": "",
             },
@@ -971,7 +971,7 @@ def test_renderer_allows_empty_local_issue_tracker_override(tmp_path, monkeypatc
             PromptTemplate.IMPROVE_NO_CANDIDATE,
             {
                 "IMPROVE_SHORT_SID": "abc",
-                "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+                "RECENT_IMPROVE_SPECS": "No recent improve specs found.",
                 "CANDIDATE_RANK": "",
                 "CANDIDATE_TITLE": "",
             },
@@ -1108,7 +1108,7 @@ def test_renderer_validates_shared_fragment_against_each_referencing_scope(
     # is an IMPROVE_SESSION arg, so the IMPROVE_SCAN reference must reject it —
     # which only happens if every referencing scope is checked, not just one.
     (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
-    (prompts_dir / "improve" / "02-prd.md").write_text("{{DESIGN_STANDARDS}}")
+    (prompts_dir / "improve" / "02-spec.md").write_text("{{DESIGN_STANDARDS}}")
     (prompts_dir / "shared/standards" / "_design.md").write_text(
         "rank {{CANDIDATE_RANK}}"
     )
@@ -1121,10 +1121,18 @@ def test_renderer_accepts_shared_fragment_valid_in_every_referencing_scope(
     cfg, prompts_dir
 ):
     (prompts_dir / "improve" / "01-scan.md").write_text("{{DESIGN_STANDARDS}}")
-    (prompts_dir / "improve" / "02-prd.md").write_text("{{DESIGN_STANDARDS}}")
+    (prompts_dir / "improve" / "02-spec.md").write_text("{{DESIGN_STANDARDS}}")
     (prompts_dir / "shared/standards" / "_design.md").write_text("bug {{BUG_LABEL}}")
 
     PromptRenderer(cfg)
+
+
+def test_local_override_at_improve_02_prd_raises_startup_error_naming_path(
+    cfg, prompts_dir
+):
+    (prompts_dir / "improve" / "02-prd.md").write_text("old prd override")
+    with pytest.raises(PromptRenderError, match=r"improve/02-prd\.md"):
+        PromptRenderer(cfg)
 
 
 def test_renderer_aborts_on_fragment_cycle(prompts_dir):
@@ -1482,14 +1490,14 @@ def test_render_shipped_host_check_issue_prompt():
     assert "{{EXPECTED_OUTPUT_SHAPE}}" not in result
 
 
-def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles():
+def test_render_shipped_improve_scan_prompt_includes_recent_improve_spec_titles():
     renderer = PromptRenderer(Config())
 
     result = _run(
         renderer.render(
             PromptTemplate.IMPROVE_SCAN,
             {
-                "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
+                "RECENT_IMPROVE_SPEC_TITLES": "#12 OPEN - First candidate",
                 "CANDIDATE_BUDGET": "3",
             },
             _noop_exec,
@@ -1499,23 +1507,23 @@ def test_render_shipped_improve_scan_prompt_includes_recent_improve_prd_titles()
     assert "#12 OPEN - First candidate" in result
 
 
-def test_render_shipped_improve_prd_carries_candidate_rank_and_title():
+def test_render_shipped_improve_spec_carries_candidate_rank_and_title():
     renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR))
     scope_args = {
         "IMPROVE_SHORT_SID": "abc",
-        "RECENT_IMPROVE_PRDS": "No recent improve PRDs found.",
+        "RECENT_IMPROVE_SPECS": "No recent improve specs found.",
         "CANDIDATE_RANK": "3",
         "CANDIDATE_TITLE": "Deepen the parser module",
     }
-    result = _run(renderer.render(PromptTemplate.IMPROVE_PRD, scope_args, _noop_exec))
+    result = _run(renderer.render(PromptTemplate.IMPROVE_SPEC, scope_args, _noop_exec))
     assert "3" in result
     assert "Deepen the parser module" in result
 
 
-def test_render_improve_prd_without_candidate_rank_and_title_fails_loudly(
+def test_render_improve_spec_without_candidate_rank_and_title_fails_loudly(
     cfg, prompts_dir
 ):
-    (prompts_dir / "improve" / "02-prd.md").write_text(
+    (prompts_dir / "improve" / "02-spec.md").write_text(
         "Rank: {{CANDIDATE_RANK}} Title: {{CANDIDATE_TITLE}}"
     )
     renderer = PromptRenderer(cfg)
@@ -1523,10 +1531,10 @@ def test_render_improve_prd_without_candidate_rank_and_title_fails_loudly(
     with pytest.raises(PromptRenderError):
         _run(
             renderer.render(
-                PromptTemplate.IMPROVE_PRD,
+                PromptTemplate.IMPROVE_SPEC,
                 {
                     "IMPROVE_SHORT_SID": "abc",
-                    "RECENT_IMPROVE_PRDS": "prds",
+                    "RECENT_IMPROVE_SPECS": "prds",
                 },
                 _noop_exec,
             )
@@ -1809,7 +1817,7 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
     "template",
     [
         PromptTemplate.IMPROVE_SCAN,
-        PromptTemplate.IMPROVE_PRD,
+        PromptTemplate.IMPROVE_SPEC,
         PromptTemplate.IMPROVE_ISSUES,
         PromptTemplate.IMPROVE_NO_CANDIDATE,
     ],
@@ -1839,7 +1847,7 @@ _IMPROVE_PROTOCOL_TAGS: list[tuple[PromptTemplate, tuple[str, ...]]] = [
             "<promise>NO-CANDIDATE</promise>",
         ),
     ),
-    (PromptTemplate.IMPROVE_PRD, ("<promise>COMPLETE</promise>",)),
+    (PromptTemplate.IMPROVE_SPEC, ("<promise>COMPLETE</promise>",)),
     (PromptTemplate.IMPROVE_ISSUES, ("<promise>COMPLETE</promise>",)),
     (
         PromptTemplate.IMPROVE_NO_CANDIDATE,
@@ -1904,7 +1912,7 @@ _VALID_BODY = "A" * 120
 def test_shipped_improve_prompt_frontmatter_examples_are_accepted_by_validator(
     tmp_path: Path,
 ) -> None:
-    prd_prompt = (_SHIPPED_PROMPTS_DIR / "improve/02-prd.md").read_text(
+    prd_prompt = (_SHIPPED_PROMPTS_DIR / "improve/02-spec.md").read_text(
         encoding="utf-8"
     )
     spec_frontmatter = _extract_frontmatter_from_prompt(prd_prompt)

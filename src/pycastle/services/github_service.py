@@ -27,7 +27,7 @@ _HTTP_SERVER_ERROR_MIN = 500
 _HTTP_SERVER_ERROR_MAX = 599
 _HTTP_FORBIDDEN = 403
 _HTTP_UNPROCESSABLE = 422
-_RECENT_PRD_PAGE_SIZE = 12
+_RECENT_SPEC_PAGE_SIZE = 12
 
 
 class GithubServiceError(RuntimeError):
@@ -81,7 +81,7 @@ class OperatorActionableGithubError(GithubServiceError):
         super().__init__(message)
 
 
-_IMPROVE_PRD_TITLE_PREFIX = "[improve-PRD] "
+_IMPROVE_SPEC_TITLE_PREFIX = "[improve-spec] "
 _READ_RETRY_MAX_ATTEMPTS = 4
 _READ_RETRY_BACKOFF_SECONDS = (10, 60, 300)
 
@@ -301,25 +301,25 @@ class GithubService:
         labels = payload.get("labels") or []
         return [str(label["name"]) for label in labels if "name" in label]
 
-    def get_recent_improve_prds(self) -> list[dict[str, Any]]:
+    def get_recent_improve_specs(self) -> list[dict[str, Any]]:
         results = self._paginate(f"/repos/{self.repo}/issues?state=all&per_page=100")
-        recent_prds: list[dict[str, Any]] = []
+        recent_specs: list[dict[str, Any]] = []
         for item in results:
             if not isinstance(item, dict) or "pull_request" in item:
                 continue
             title = str(item.get("title") or "")
-            if not title.startswith(_IMPROVE_PRD_TITLE_PREFIX):
+            if not title.startswith(_IMPROVE_SPEC_TITLE_PREFIX):
                 continue
-            recent_prds.append(
+            recent_specs.append(
                 {
                     "number": int(item["number"]),
                     "state": str(item.get("state") or "").upper(),
-                    "title": title.removeprefix(_IMPROVE_PRD_TITLE_PREFIX),
+                    "title": title.removeprefix(_IMPROVE_SPEC_TITLE_PREFIX),
                 }
             )
-            if len(recent_prds) == _RECENT_PRD_PAGE_SIZE:
+            if len(recent_specs) == _RECENT_SPEC_PAGE_SIZE:
                 break
-        return recent_prds
+        return recent_specs
 
     def get_parent(self, number: int) -> int | None:
         payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{number}")

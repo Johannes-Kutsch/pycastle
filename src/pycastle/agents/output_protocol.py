@@ -331,7 +331,7 @@ def _parse_candidates_body(body: str) -> ScanCandidatesOutput:
 
 
 def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
-    # Phase 02 (PRD) emits a JSON-form <issue>; phase 03 emits bare integers.
+    # Phase 02 (spec) emits a JSON-form <issue>; phase 03 emits bare integers.
     try:
         return _extract_issue_output(text)
     except IssueParseError:
