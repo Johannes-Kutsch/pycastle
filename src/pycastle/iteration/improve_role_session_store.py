@@ -26,7 +26,7 @@ class CandidateList:
 
 
 @dataclass(frozen=True)
-class FiledSlice:
+class FiledTicket:
     handle: str
     number: int
     database_id: int
@@ -38,7 +38,7 @@ class CandidateRecord:
     spec_number: int | None
     spec_database_id: int | None
     spec_title: str
-    filed_slices: tuple[FiledSlice, ...]
+    filed_tickets: tuple[FiledTicket, ...]
     labels_applied: bool
 
 
@@ -110,20 +110,20 @@ class ImproveRoleSessionStore:
             return None
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            filed_slices = tuple(
-                FiledSlice(
+            filed_tickets = tuple(
+                FiledTicket(
                     handle=s["handle"],
                     number=s["number"],
                     database_id=s["database_id"],
                     title=s["title"],
                 )
-                for s in data.get("filed_slices", [])
+                for s in data.get("filed_tickets", [])
             )
             return CandidateRecord(
                 spec_number=data.get("spec_number"),
                 spec_database_id=data.get("spec_database_id"),
                 spec_title=data.get("spec_title", ""),
-                filed_slices=filed_slices,
+                filed_tickets=filed_tickets,
                 labels_applied=bool(data.get("labels_applied", False)),
             )
         except (KeyError, json.JSONDecodeError):
@@ -136,14 +136,14 @@ class ImproveRoleSessionStore:
             "spec_number": record.spec_number,
             "spec_database_id": record.spec_database_id,
             "spec_title": record.spec_title,
-            "filed_slices": [
+            "filed_tickets": [
                 {
                     "handle": s.handle,
                     "number": s.number,
                     "database_id": s.database_id,
                     "title": s.title,
                 }
-                for s in record.filed_slices
+                for s in record.filed_tickets
             ],
             "labels_applied": record.labels_applied,
         }
@@ -159,7 +159,7 @@ class ImproveRoleSessionStore:
                     spec_number=None,
                     spec_database_id=None,
                     spec_title="",
-                    filed_slices=(),
+                    filed_tickets=(),
                     labels_applied=False,
                 ),
             )

@@ -259,7 +259,7 @@ def test_prepare_improve_step_uses_short_sid_only_for_issues():
 
     prepared = prepare_improve_step(
         ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_ISSUES,
+            prompt_template=PromptTemplate.IMPROVE_TICKETS,
             session_namespace="main",
             display_name="Slice Agent",
             work_body="filing sub-issues",
@@ -316,7 +316,7 @@ def test_prepare_improve_step_issues_scope_contains_only_short_sid():
 
     prepared = prepare_improve_step(
         ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_ISSUES,
+            prompt_template=PromptTemplate.IMPROVE_TICKETS,
             session_namespace="main",
             display_name="Slice Agent",
             work_body="filing sub-issues",
@@ -353,7 +353,7 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
 
     step3 = driver.next()
     assert step3 is not None
-    assert step3.prompt_key == "03-issues.md"
+    assert step3.prompt_key == "03-tickets.md"
     github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
@@ -362,7 +362,7 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
         github_port=github_port,
     )
 
-    assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_TICKETS
     assert prepared.session_namespace == "candidate/0"
     assert prepared.name == "Tickets Agent"
     assert prepared.work_body == 'filing tickets for candidate 1/1 "Refactor"'
@@ -395,7 +395,7 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
             spec_number=None,
             spec_database_id=None,
             spec_title="",
-            filed_slices=(),
+            filed_tickets=(),
             labels_applied=False,
         ),
     )
@@ -404,7 +404,7 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
     step = driver.start()
 
     assert step is not None
-    assert step.prompt_key == "03-issues.md"
+    assert step.prompt_key == "03-tickets.md"
     github_port = _GithubPortStandIn(
         issue_error=AssertionError("phase 03 resume without parent PRD must not read")
     )
@@ -415,7 +415,7 @@ def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_han
         github_port=github_port,
     )
 
-    assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_TICKETS
     assert prepared.session_namespace == "candidate/0"
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
@@ -445,7 +445,7 @@ def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
 
     step3 = driver.next()
     assert step3 is not None
-    assert step3.prompt_key == "03-issues.md"
+    assert step3.prompt_key == "03-tickets.md"
     github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
@@ -454,7 +454,7 @@ def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
         github_port=github_port,
     )
 
-    assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_TICKETS
     assert prepared.session_namespace == "candidate/0"
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
@@ -507,7 +507,7 @@ def test_prepare_improve_step_accepts_request_with_candidate(tmp_path: Path) -> 
     """ImproveStepPreparationRequest with a candidate passes through prepare_improve_step unchanged."""
     candidate = ImproveCandidate(rank=1, title="Foo", spec_number=42)
     request = ImproveStepPreparationRequest(
-        prompt_template=PromptTemplate.IMPROVE_ISSUES,
+        prompt_template=PromptTemplate.IMPROVE_TICKETS,
         session_namespace="candidate/0",
         display_name="Slice Agent",
         work_body="filing sub-issues",
@@ -520,7 +520,7 @@ def test_prepare_improve_step_accepts_request_with_candidate(tmp_path: Path) -> 
 
     prepared = prepare_improve_step(request, github_port=github_port)
 
-    assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert prepared.prompt.template == PromptTemplate.IMPROVE_TICKETS
     assert prepared.prompt.scope_args == {"IMPROVE_SHORT_SID": "abcd1234"}
 
 
@@ -637,7 +637,7 @@ def test_tickets_agent_name_and_body_from_driver_issues_step(tmp_path: Path) -> 
     driver.record_outcome(step2, CompletionOutput())
     step3 = driver.next()
     assert step3 is not None
-    assert step3.prompt_key == "03-issues.md"
+    assert step3.prompt_key == "03-tickets.md"
 
     prepared = prepare_improve_step(
         step3,

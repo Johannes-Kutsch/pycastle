@@ -85,7 +85,7 @@ _SCOPE_ARGS_BY_TEMPLATE: dict[PromptTemplate, dict[str, str]] = {
         "RECENT_IMPROVE_PRD_TITLES": "[]",
         "CANDIDATE_BUDGET": "3",
     },
-    PromptTemplate.IMPROVE_ISSUES: {
+    PromptTemplate.IMPROVE_TICKETS: {
         "IMPROVE_SHORT_SID": "abc123",
     },
     PromptTemplate.IMPROVE_DRAFT_CORRECTION: {
@@ -129,7 +129,7 @@ _TEMPLATE_SPECIFIC_PROTOCOL_CASES = (
     (AgentRole.MERGER, PromptTemplate.MERGE),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SCAN),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_PRD),
-    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_ISSUES),
+    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_TICKETS),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_NO_CANDIDATE),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_DRAFT_CORRECTION),
     (AgentRole.FAILURE_REPORT, PromptTemplate.FAILURE_REPORT),
@@ -376,7 +376,7 @@ def test_plan_protocol_reprompt_preserves_exact_improve_phase_invocations():
     for template, expected_scope_fragment in (
         (PromptTemplate.IMPROVE_SCAN, "RECENT_IMPROVE_PRD_TITLES=[]"),
         (PromptTemplate.IMPROVE_PRD, "RECENT_IMPROVE_PRDS=[]"),
-        (PromptTemplate.IMPROVE_ISSUES, "IMPROVE_SHORT_SID=abc123"),
+        (PromptTemplate.IMPROVE_TICKETS, "IMPROVE_SHORT_SID=abc123"),
         (PromptTemplate.IMPROVE_NO_CANDIDATE, "RECENT_IMPROVE_PRDS=[]"),
     ):
         plan = plan_protocol_reprompt(
@@ -407,7 +407,7 @@ def test_plan_protocol_reprompt_preserves_exact_improve_phase_invocations():
 
 def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
     renderer = _renderer()
-    issues_invocation = _invocation(PromptTemplate.IMPROVE_ISSUES)
+    issues_invocation = _invocation(PromptTemplate.IMPROVE_TICKETS)
     no_candidate_invocation = _invocation(PromptTemplate.IMPROVE_NO_CANDIDATE)
     parser_error = "unexpected <issue>17</issue> before <promise>COMPLETE</promise>"
     issues_shape = renderer.render_expected_output_shape(

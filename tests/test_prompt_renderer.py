@@ -303,7 +303,7 @@ def test_scope_resume_is_empty():
 
 
 def test_scope_improve_issues_placeholders():
-    assert Scope.IMPROVE_ISSUES.placeholders == frozenset({"IMPROVE_SHORT_SID"})
+    assert Scope.IMPROVE_TICKETS.placeholders == frozenset({"IMPROVE_SHORT_SID"})
 
 
 def test_scope_improve_draft_correction_placeholders():
@@ -343,7 +343,11 @@ def test_scopes_are_distinct_members():
         ),
         (PromptTemplate.IMPROVE_SCAN, "improve/01-scan.md", Scope.IMPROVE_SCAN),
         (PromptTemplate.IMPROVE_PRD, "improve/02-prd.md", Scope.IMPROVE_SESSION),
-        (PromptTemplate.IMPROVE_ISSUES, "improve/03-issues.md", Scope.IMPROVE_ISSUES),
+        (
+            PromptTemplate.IMPROVE_TICKETS,
+            "improve/03-tickets.md",
+            Scope.IMPROVE_TICKETS,
+        ),
         (
             PromptTemplate.IMPROVE_NO_CANDIDATE,
             "improve/04-no-candidate-report.md",
@@ -390,8 +394,8 @@ def test_renderer_ctor_rejects_unknown_token(cfg, prompts_dir):
 
 
 def test_renderer_ctor_rejects_typo_in_improve_issues_template(cfg, prompts_dir):
-    # IMPROVE_ISSUES scope must reject any unknown placeholder at startup.
-    (prompts_dir / "improve" / "03-issues.md").write_text(
+    # IMPROVE_TICKETS scope must reject any unknown placeholder at startup.
+    (prompts_dir / "improve" / "03-tickets.md").write_text(
         "SID: {{IMPROVE_SHORT_SID}}\nNum: {{ISSUE_NUMBR}}"  # typo: NUMBR
     )
     with pytest.raises(PromptRenderError, match="ISSUE_NUMBR"):
@@ -399,7 +403,7 @@ def test_renderer_ctor_rejects_typo_in_improve_issues_template(cfg, prompts_dir)
 
 
 def test_renderer_ctor_accepts_improve_issues_template(cfg, prompts_dir):
-    (prompts_dir / "improve" / "03-issues.md").write_text("SID: {{IMPROVE_SHORT_SID}}")
+    (prompts_dir / "improve" / "03-tickets.md").write_text("SID: {{IMPROVE_SHORT_SID}}")
     PromptRenderer(cfg)  # must not raise
 
 
@@ -1285,6 +1289,18 @@ def test_renderer_rejects_stale_local_prompt_file_not_in_bundled_set(
         PromptRenderer(Config())
 
 
+def test_renderer_startup_rejects_old_issues_path_local_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.chdir(tmp_path)
+    prompts_dir = tmp_path / "pycastle" / "prompts"
+    (prompts_dir / "improve").mkdir(parents=True)
+    (prompts_dir / "improve" / "03-issues.md").write_text("old override")
+
+    with pytest.raises(PromptRenderError, match=r"03-issues\.md"):
+        PromptRenderer(Config())
+
+
 def test_renderer_prefers_local_override_over_bundled_prompt(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     prompts_dir = tmp_path / "pycastle" / "prompts"
@@ -1810,7 +1826,7 @@ def test_render_omits_interrupted_work_clause_when_clean(cfg, prompts_dir):
     [
         PromptTemplate.IMPROVE_SCAN,
         PromptTemplate.IMPROVE_PRD,
-        PromptTemplate.IMPROVE_ISSUES,
+        PromptTemplate.IMPROVE_TICKETS,
         PromptTemplate.IMPROVE_NO_CANDIDATE,
     ],
 )
@@ -1840,7 +1856,7 @@ _IMPROVE_PROTOCOL_TAGS: list[tuple[PromptTemplate, tuple[str, ...]]] = [
         ),
     ),
     (PromptTemplate.IMPROVE_PRD, ("<promise>COMPLETE</promise>",)),
-    (PromptTemplate.IMPROVE_ISSUES, ("<promise>COMPLETE</promise>",)),
+    (PromptTemplate.IMPROVE_TICKETS, ("<promise>COMPLETE</promise>",)),
     (
         PromptTemplate.IMPROVE_NO_CANDIDATE,
         ("<issue>N</issue>", "<promise>COMPLETE</promise>"),
@@ -1909,7 +1925,7 @@ def test_shipped_improve_prompt_frontmatter_examples_are_accepted_by_validator(
     )
     spec_frontmatter = _extract_frontmatter_from_prompt(prd_prompt)
 
-    slice_prompt = (_SHIPPED_PROMPTS_DIR / "improve/03-issues.md").read_text(
+    slice_prompt = (_SHIPPED_PROMPTS_DIR / "improve/03-tickets.md").read_text(
         encoding="utf-8"
     )
     slice_frontmatter = _extract_frontmatter_from_prompt(slice_prompt)

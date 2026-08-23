@@ -134,8 +134,8 @@ _PHASES: dict[str, _PhaseConfig] = {
         display_name="Spec Agent",
         display_body="writing spec",
     ),
-    "03-issues.md": _PhaseConfig(
-        template=PromptTemplate.IMPROVE_ISSUES,
+    "03-tickets.md": _PhaseConfig(
+        template=PromptTemplate.IMPROVE_TICKETS,
         namespace="main",
         display_name="Tickets Agent",
         display_body="filing tickets",
@@ -214,11 +214,11 @@ class ImprovePhaseDriver:
 
     def _make_issues_step(self, *, idx: int, candidate: ImproveCandidate) -> Step:
         cfg = dataclasses.replace(
-            _PHASES["03-issues.md"], namespace=_candidate_namespace(idx)
+            _PHASES["03-tickets.md"], namespace=_candidate_namespace(idx)
         )
         candidates = self._candidates
         return Step(
-            prompt_key="03-issues.md",
+            prompt_key="03-tickets.md",
             cfg=cfg,
             kind=PromptKind.FOLLOW_UP,
             fetch_recent_prd_titles=False,
@@ -265,7 +265,7 @@ class ImprovePhaseDriver:
 
         # Record exists → slice (Issues) phase.
         in_flight = self._store.read_in_flight() if from_start else None
-        is_mid_issues = in_flight == "03-issues"
+        is_mid_issues = in_flight == "03-tickets"
         step = self._make_issues_step(idx=idx, candidate=candidate)
         # For mid-issues resume, override kind to ROLE_PROMPT.
         if is_mid_issues:
@@ -383,7 +383,7 @@ class ImprovePhaseDriver:
         elif step.prompt_key == "02-prd.md":
             self._store.mark_prd_completion(self._cursor)
 
-        elif step.prompt_key == "03-issues.md":
+        elif step.prompt_key == "03-tickets.md":
             self._cursor += 1
             self._store.write_cursor(self._cursor)
 
@@ -466,7 +466,7 @@ def _improve_step_body(
     improve_max: int | None,
 ) -> str | None:
     """Return the Improve phase body for the given step, or None for no change."""
-    if step.prompt_key in ("02-prd.md", "03-issues.md"):
+    if step.prompt_key in ("02-prd.md", "03-tickets.md"):
         candidate_idx = int(step.cfg.namespace.split("/")[1])
         k = candidate_idx + 1
         if improve_max is not None:
@@ -485,7 +485,7 @@ def _announce_candidate(
     last_announced_idx: int,
 ) -> int:
     """Print the candidate start line if this is a new candidate. Returns updated last_announced_idx."""
-    if step.prompt_key not in ("02-prd.md", "03-issues.md"):
+    if step.prompt_key not in ("02-prd.md", "03-tickets.md"):
         return last_announced_idx
     candidate_idx = int(step.cfg.namespace.split("/")[1])
     if candidate_idx == last_announced_idx:
@@ -657,7 +657,7 @@ def _wind_down_partial_candidates(
         record = store.read_candidate_record(idx)
         if record is None or record.spec_number is None or record.labels_applied:
             continue
-        if not record.filed_slices:
+        if not record.filed_tickets:
             port.close_issue(record.spec_number)
         else:
             draft_dir = role_session_dir / _DRAFTS_SUBDIR
@@ -702,7 +702,7 @@ async def _complete_candidate(
     fingerprint: str,
     completed_count: int,
 ) -> tuple[int, bool]:
-    """File drafts and check stop conditions after a 03-issues.md step.
+    """File drafts and check stop conditions after a 03-tickets.md step.
 
     Returns (new_completed_count, should_stop) where should_stop is True when
     either the cap is reached or the safe SHA changed (AC1).  An abandoned
@@ -855,7 +855,7 @@ async def improve_phase(
                 ):
                     _fork_candidate_namespaces(sandbox_path, list(output.candidates))
 
-                if step.prompt_key == "03-issues.md":
+                if step.prompt_key == "03-tickets.md":
                     completed_count, stop = await _complete_candidate(
                         step_namespace=step_namespace,
                         deps=deps,

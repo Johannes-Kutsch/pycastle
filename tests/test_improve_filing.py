@@ -509,7 +509,7 @@ def test_full_resume_with_labels_pending_only_applies_labels(tmp_path: Path) -> 
     record = store.read_candidate_record(0)
     assert record is not None
     assert record.spec_number == 100
-    assert len(record.filed_slices) == 1
+    assert len(record.filed_tickets) == 1
     assert record.labels_applied is False
 
     port_second = MagicMock(spec=FilingPort)
@@ -681,7 +681,7 @@ def test_old_record_with_prd_number_still_loads(tmp_path: Path) -> None:
         "spec_number": 100,
         "spec_database_id": 1000,
         "spec_title": "Spec Issue",
-        "filed_slices": [],
+        "filed_tickets": [],
         "labels_applied": False,
         "prd_number": 42,
     }

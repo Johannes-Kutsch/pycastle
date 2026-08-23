@@ -28,7 +28,7 @@ from pycastle.iteration.improve import (
 )
 from pycastle.iteration.improve_role_session_store import (
     CandidateRecord,
-    FiledSlice,
+    FiledTicket,
     ImproveRoleSessionStore,
 )
 from pycastle.iteration.preflight import PreflightReady
@@ -70,7 +70,7 @@ def agent_runner():
     idx = [0]
 
     def _side_effect(request):
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             draft_dir.mkdir(parents=True, exist_ok=True)
             body = "A" * 120
@@ -167,7 +167,7 @@ def test_improve_phase_picked_path_runs_scan_then_prd(deps, agent_runner):
             'writing spec for candidate 1/1 "Candidate"',
         ),
         (
-            PromptTemplate.IMPROVE_ISSUES,
+            PromptTemplate.IMPROVE_TICKETS,
             "Tickets Agent",
             'filing tickets for candidate 1/1 "Candidate"',
         ),
@@ -276,7 +276,7 @@ def test_improve_phase_dispatches_scan_prd_and_issues_templates_in_order(
     assert [(call.role, call.prompt.template) for call in agent_runner.calls] == [
         (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SCAN),
         (AgentRole.IMPROVE, PromptTemplate.IMPROVE_PRD),
-        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_ISSUES),
+        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_TICKETS),
     ]
 
 
@@ -430,7 +430,7 @@ def _seed_candidate_record(
         spec_number=spec_number,
         spec_database_id=42 if spec_number is not None else None,
         spec_title="Seeded" if spec_number is not None else "",
-        filed_slices=(),
+        filed_tickets=(),
         labels_applied=labels_applied,
     )
     store.write_candidate_record(idx, record)
@@ -692,7 +692,7 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     runner = _make_runner_with_drafts(CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_TICKETS
     assert runner.calls[0].prompt.scope_args["IMPROVE_SHORT_SID"] != ""
     assert len(runner.calls) == 1
 
@@ -895,7 +895,7 @@ def test_improve_phase_03_uses_candidate_namespace(deps, agent_runner):
     issues_call = next(
         c
         for c in agent_runner.calls
-        if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+        if c.prompt.template == PromptTemplate.IMPROVE_TICKETS
     )
     assert issues_call.session_namespace == "candidate/0"
 
@@ -907,7 +907,7 @@ def test_improve_all_phases_have_correct_namespace(deps, agent_runner):
     assert agent_runner.calls[0].session_namespace == "main"
     assert agent_runner.calls[1].prompt.template == PromptTemplate.IMPROVE_PRD
     assert agent_runner.calls[1].session_namespace == "candidate/0"
-    assert agent_runner.calls[2].prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert agent_runner.calls[2].prompt.template == PromptTemplate.IMPROVE_TICKETS
     assert agent_runner.calls[2].session_namespace == "candidate/0"
 
 
@@ -1045,7 +1045,7 @@ def _make_runner_with_drafts(
     idx = [0]
 
     def _side_effect(request):
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             )
@@ -1254,7 +1254,7 @@ def test_multi_candidate_run_files_both_candidates_specs(tmp_path, git_svc):
                     ScanCandidateItem(rank=2, title="Second"),
                 )
             )
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             _write_spec_draft(draft_dir)
         return CompletionOutput()
@@ -1282,7 +1282,7 @@ def test_multi_candidate_run_files_all_candidates_in_rank_order(tmp_path, git_sv
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             issues_namespaces.append(request.session_namespace)
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
@@ -1310,7 +1310,7 @@ def test_dispatch_count_increments_per_completed_candidate(tmp_path, git_svc):
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             )
@@ -1337,7 +1337,7 @@ def test_improve_stops_at_cap_after_completing_first_candidate(tmp_path, git_svc
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             issues_namespaces.append(request.session_namespace)
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
@@ -1363,7 +1363,7 @@ def test_no_candidate_path_makes_no_forks(tmp_path, git_svc):
     _run(deps)
     dispatched_templates = [c.prompt.template for c in runner.calls]
     assert PromptTemplate.IMPROVE_PRD not in dispatched_templates
-    assert PromptTemplate.IMPROVE_ISSUES not in dispatched_templates
+    assert PromptTemplate.IMPROVE_TICKETS not in dispatched_templates
 
 
 def test_gate_failure_for_next_candidate_ends_dispatch_without_touching_filed(
@@ -1449,7 +1449,7 @@ def _make_two_candidate_runner() -> FakeAgentRunner:
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             )
@@ -1471,7 +1471,7 @@ def test_sha_change_mid_run_stops_further_agent_dispatch(tmp_path, git_svc):
     result = _run(deps)
 
     issues_calls = [
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_TICKETS
     ]
     assert len(issues_calls) == 1
     assert isinstance(result, ImproveContinue)
@@ -1508,7 +1508,7 @@ def test_sha_unchanged_run_is_unaffected(tmp_path, git_svc):
     assert isinstance(result, ImproveContinue)
     assert result.completed_count == 2
     issues_calls = [
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_TICKETS
     ]
     assert len(issues_calls) == 2
 
@@ -1570,7 +1570,7 @@ def test_draft_valid_on_third_correction_is_filed(tmp_path, git_svc):
         draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(draft_dir)
             _write_slice_draft(draft_dir, "01-slice", body="Too short.")
         if request.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION:
@@ -1597,7 +1597,7 @@ def test_unrepairable_draft_set_does_not_end_run(tmp_path, git_svc):
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             _write_spec_draft(draft_dir)
             _write_slice_draft(draft_dir, "01-slice", body="Too short.")
@@ -1617,7 +1617,7 @@ def test_unrepairable_draft_set_clears_draft_dir(tmp_path, git_svc):
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             _write_spec_draft(draft_dir)
             _write_slice_draft(draft_dir, "01-slice", body="Too short.")
@@ -1652,8 +1652,10 @@ def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
         spec_number=200,
         spec_database_id=2000,
         spec_title="Spec",
-        filed_slices=(
-            FiledSlice(handle="slice-a", number=201, database_id=2001, title="Slice A"),
+        filed_tickets=(
+            FiledTicket(
+                handle="slice-a", number=201, database_id=2001, title="Slice A"
+            ),
         ),
         labels_applied=False,
     )
@@ -1766,6 +1768,8 @@ def test_draft_correction_body_names_candidate_ordinal_title_and_attempt(
         correction_calls[1].work_body
         == 'fixing draft validation errors for candidate 1/3 "Alpha" (attempt 2/3)'
     )
+
+
 # ── Issue #2191: Improve phase row — constant name, live body ─────────────────
 
 
@@ -1784,7 +1788,7 @@ def _three_candidate_runner_with_drafts(
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             )
@@ -1932,7 +1936,7 @@ def test_improve_phase_closes_with_filed_count(tmp_path, git_svc):
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             )

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from pycastle.iteration.improve_role_session_store import (
     CandidateRecord,
-    FiledSlice,
+    FiledTicket,
     ImproveRoleSessionStore,
 )
 
@@ -64,11 +64,11 @@ def _reconstruct_sections(sections: list[tuple[str | None, str]]) -> str:
     return "\n\n".join(parts)
 
 
-def _render_slice_body(
+def _render_ticket_body(
     base_body: str,
     spec_number: int,
     blocked_by: list[str],
-    handle_to_filed: dict[str, FiledSlice],
+    handle_to_filed: dict[str, FiledTicket],
     extra_blocker_numbers: list[int] | None = None,
 ) -> str:
     intra = [f"#{handle_to_filed[h].number}" for h in blocked_by]
@@ -133,7 +133,7 @@ def file_draft_set(
 
     Stage 1 creates every issue without the state label and wires all
     sub-issue and dependency edges.  Stage 2 applies the state label to
-    each slice; the spec carries no state label because it is a tracking
+    each ticket; the spec carries no state label because it is a tracking
     parent, not implementable work.  A durable candidate record in *store*
     at *candidate_idx* makes both stages idempotent across resumed runs.
     """
@@ -141,10 +141,10 @@ def file_draft_set(
         return
 
     spec_draft = drafts[0]
-    slice_drafts = drafts[1:]
+    ticket_drafts = drafts[1:]
 
     record = store.read_candidate_record(candidate_idx)
-    handle_to_filed: dict[str, FiledSlice] = {}
+    handle_to_filed: dict[str, FiledTicket] = {}
 
     if record is None or record.spec_number is None:
         # Stage 1a: create the spec issue.
@@ -152,7 +152,7 @@ def file_draft_set(
         spec_number, spec_db_id = port.create_issue(
             spec_draft.title, spec_draft.body, spec_labels
         )
-        spec_filed = FiledSlice(
+        spec_filed = FiledTicket(
             handle=spec_draft.handle,
             number=spec_number,
             database_id=spec_db_id,
@@ -163,68 +163,68 @@ def file_draft_set(
             spec_number=spec_number,
             spec_database_id=spec_db_id,
             spec_title=spec_draft.title,
-            filed_slices=(),
+            filed_tickets=(),
             labels_applied=False,
         )
         store.write_candidate_record(candidate_idx, record)
     else:
         # Branch condition: record.spec_number is not None (proved by if-guard above).
-        spec_filed = FiledSlice(
+        spec_filed = FiledTicket(
             handle=spec_draft.handle,
             number=record.spec_number,
             database_id=cast("int", record.spec_database_id),
             title=record.spec_title,
         )
         handle_to_filed[spec_draft.handle] = spec_filed
-        for filed in record.filed_slices:
+        for filed in record.filed_tickets:
             handle_to_filed[filed.handle] = filed
 
     spec_number = cast("int", record.spec_number)
-    filed_handles = {s.handle for s in record.filed_slices}
+    filed_handles = {s.handle for s in record.filed_tickets}
 
-    # Stage 1b: create each slice in order.
-    for slice_draft in slice_drafts:
-        if slice_draft.handle in filed_handles:
+    # Stage 1b: create each ticket in order.
+    for ticket_draft in ticket_drafts:
+        if ticket_draft.handle in filed_handles:
             continue
 
-        slice_labels = _strip_state_label(slice_draft.labels, state_label)
+        ticket_labels = _strip_state_label(ticket_draft.labels, state_label)
         extra = [prev_spec[0]] if prev_spec is not None else []
-        body = _render_slice_body(
-            slice_draft.body,
+        body = _render_ticket_body(
+            ticket_draft.body,
             spec_number,
-            slice_draft.blocked_by,
+            ticket_draft.blocked_by,
             handle_to_filed,
             extra,
         )
-        slice_number, slice_db_id = port.create_issue(
-            slice_draft.title, body, slice_labels
+        ticket_number, ticket_db_id = port.create_issue(
+            ticket_draft.title, body, ticket_labels
         )
 
-        port.register_sub_issue(spec_number, slice_db_id)
+        port.register_sub_issue(spec_number, ticket_db_id)
 
-        for blocker_handle in slice_draft.blocked_by:
+        for blocker_handle in ticket_draft.blocked_by:
             port.add_issue_dependency(
-                slice_number, handle_to_filed[blocker_handle].database_id
+                ticket_number, handle_to_filed[blocker_handle].database_id
             )
         if prev_spec is not None:
-            port.add_issue_dependency(slice_number, prev_spec[1])
+            port.add_issue_dependency(ticket_number, prev_spec[1])
 
-        slice_filed = FiledSlice(
-            handle=slice_draft.handle,
-            number=slice_number,
-            database_id=slice_db_id,
-            title=slice_draft.title,
+        ticket_filed = FiledTicket(
+            handle=ticket_draft.handle,
+            number=ticket_number,
+            database_id=ticket_db_id,
+            title=ticket_draft.title,
         )
-        handle_to_filed[slice_draft.handle] = slice_filed
+        handle_to_filed[ticket_draft.handle] = ticket_filed
         record = dataclasses.replace(
-            record, filed_slices=(*record.filed_slices, slice_filed)
+            record, filed_tickets=(*record.filed_tickets, ticket_filed)
         )
         store.write_candidate_record(candidate_idx, record)
 
-    # Stage 2: apply state label to slices only; the spec is a tracking
+    # Stage 2: apply state label to tickets only; the spec is a tracking
     # parent and must not carry the state label (ADR 0058).
     if not record.labels_applied:
-        for filed in record.filed_slices:
+        for filed in record.filed_tickets:
             port.apply_label(filed.number, state_label)
         record = dataclasses.replace(record, labels_applied=True)
         store.write_candidate_record(candidate_idx, record)

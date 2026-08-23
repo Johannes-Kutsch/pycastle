@@ -65,7 +65,7 @@ _TEMPLATE_SPECIFIC_PROTOCOL_POLICY = MappingProxyType(
             {
                 PromptTemplate.IMPROVE_SCAN,
                 PromptTemplate.IMPROVE_PRD,
-                PromptTemplate.IMPROVE_ISSUES,
+                PromptTemplate.IMPROVE_TICKETS,
                 PromptTemplate.IMPROVE_NO_CANDIDATE,
                 PromptTemplate.IMPROVE_DRAFT_CORRECTION,
             }

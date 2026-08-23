@@ -156,7 +156,7 @@ def _compute_work_body(
                 return (
                     f'writing spec for candidate {ordinal}/{total} "{candidate.title}"'
                 )
-            if template is PromptTemplate.IMPROVE_ISSUES:
+            if template is PromptTemplate.IMPROVE_TICKETS:
                 return f'filing tickets for candidate {ordinal}/{total} "{candidate.title}"'
     return step.cfg.display_body
 
@@ -195,7 +195,7 @@ def _build_scope_args(
         return _build_improve_scope_args(request, github_port=github_port)
     if request.prompt_template.scope is Scope.IMPROVE_SCAN:
         return _build_scan_scope_args(request, recent_prds=[])
-    if request.prompt_template.scope in (Scope.IMPROVE_ISSUES, Scope.IMPROVE_SESSION):
+    if request.prompt_template.scope in (Scope.IMPROVE_TICKETS, Scope.IMPROVE_SESSION):
         return _build_improve_scope_args(request, github_port=github_port)
     return {}
 
@@ -255,7 +255,7 @@ def _build_improve_scope_args(
             },
         )
 
-    if template is PromptTemplate.IMPROVE_ISSUES:
+    if template is PromptTemplate.IMPROVE_TICKETS:
         return validated_scope_args_for_template(
             template,
             {"IMPROVE_SHORT_SID": request.short_sid},

@@ -1690,7 +1690,7 @@ def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
             if scan_call_count == 1:
                 raise UsageLimitError(reset_time=None)
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             draft_dir.mkdir(parents=True, exist_ok=True)
             body = "A" * 120

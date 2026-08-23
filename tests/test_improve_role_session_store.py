@@ -9,7 +9,7 @@ from pycastle.iteration.improve_role_session_store import (
     CandidateItem,
     CandidateList,
     CandidateRecord,
-    FiledSlice,
+    FiledTicket,
     ImproveRoleSessionStore,
 )
 
@@ -145,7 +145,7 @@ def test_in_flight_clear_returns_none(store: ImproveRoleSessionStore) -> None:
 def test_in_flight_file_named_correctly(
     store: ImproveRoleSessionStore, store_dir: Path
 ) -> None:
-    store.write_in_flight("03-issues.md")
+    store.write_in_flight("03-tickets.md")
     assert (store_dir / "_in_flight").is_file()
 
 
@@ -164,8 +164,8 @@ def test_candidate_record_roundtrip(store: ImproveRoleSessionStore) -> None:
         spec_number=101,
         spec_database_id=9001,
         spec_title="Improve caching",
-        filed_slices=(
-            FiledSlice(
+        filed_tickets=(
+            FiledTicket(
                 handle="slice-1", number=102, database_id=9002, title="Add Redis"
             ),
         ),
@@ -182,7 +182,7 @@ def test_candidate_record_file_at_correct_path(
         spec_number=None,
         spec_database_id=None,
         spec_title="",
-        filed_slices=(),
+        filed_tickets=(),
         labels_applied=False,
     )
     store.write_candidate_record(3, record)
@@ -196,7 +196,7 @@ def test_candidate_record_json_keys(
         spec_number=5,
         spec_database_id=55,
         spec_title="Title",
-        filed_slices=(FiledSlice(handle="h", number=6, database_id=66, title="T"),),
+        filed_tickets=(FiledTicket(handle="h", number=6, database_id=66, title="T"),),
         labels_applied=False,
     )
     store.write_candidate_record(0, record)
@@ -208,14 +208,34 @@ def test_candidate_record_json_keys(
     assert "spec_number" in data
     assert "spec_database_id" in data
     assert "spec_title" in data
-    assert "filed_slices" in data
+    assert "filed_tickets" in data
     assert "labels_applied" in data
-    assert data["filed_slices"][0].keys() >= {
+    assert data["filed_tickets"][0].keys() >= {
         "handle",
         "number",
         "database_id",
         "title",
     }
+
+
+def test_candidate_record_serialises_under_filed_tickets_key(
+    store: ImproveRoleSessionStore, store_dir: Path
+) -> None:
+    record = CandidateRecord(
+        spec_number=5,
+        spec_database_id=55,
+        spec_title="Title",
+        filed_tickets=(FiledTicket(handle="h", number=6, database_id=66, title="T"),),
+        labels_applied=False,
+    )
+    store.write_candidate_record(0, record)
+    data = json.loads(
+        (store_dir / "candidates" / "0" / "_candidate_record").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "filed_tickets" in data
+    assert "filed_slices" not in data
 
 
 # ── 6. Mark PRD completion ────────────────────────────────────────────────────
@@ -230,7 +250,7 @@ def test_mark_prd_completion_writes_empty_record_when_none(
     assert record.spec_number is None
     assert record.spec_database_id is None
     assert record.spec_title == ""
-    assert record.filed_slices == ()
+    assert record.filed_tickets == ()
     assert record.labels_applied is False
 
 
@@ -241,7 +261,7 @@ def test_mark_prd_completion_leaves_existing_record_untouched(
         spec_number=77,
         spec_database_id=777,
         spec_title="Existing",
-        filed_slices=(),
+        filed_tickets=(),
         labels_applied=True,
     )
     store.write_candidate_record(1, existing)
@@ -294,7 +314,7 @@ def test_candidate_record_with_missing_filed_slice_key_returns_none(
     candidate_dir.mkdir(parents=True, exist_ok=True)
     (candidate_dir / "_candidate_record").write_text(
         '{"spec_number": 1, "spec_database_id": 2, "spec_title": "T",'
-        ' "filed_slices": [{"handle": "h"}], "labels_applied": false}',
+        ' "filed_tickets": [{"handle": "h"}], "labels_applied": false}',
         encoding="utf-8",
     )
     assert store.read_candidate_record(0) is None
@@ -310,7 +330,7 @@ def test_write_candidate_record_creates_parent_dirs(
         spec_number=None,
         spec_database_id=None,
         spec_title="",
-        filed_slices=(),
+        filed_tickets=(),
         labels_applied=False,
     )
     store.write_candidate_record(5, record)

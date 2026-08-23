@@ -81,9 +81,9 @@ Used by: improve/02-prd.md, improve/04-no-candidate-report.md
 - `{{CANDIDATE_RANK}}` — Rank of the candidate this fork is writing up (e.g. `1`, `2`); empty string for the no-candidate report.
 - `{{CANDIDATE_TITLE}}` — Title of the candidate this fork is writing up; empty string for the no-candidate report.
 
-## Scope: IMPROVE_ISSUES
+## Scope: IMPROVE_TICKETS
 
-Used by: improve/03-issues.md
+Used by: improve/03-tickets.md
 
 - `{{IMPROVE_SHORT_SID}}` — Short session ID for the improve session.
 
