@@ -19,6 +19,7 @@ from pycastle.iteration.improve_role_session_store import (
     CandidateRecord,
     ImproveRoleSessionStore,
 )
+from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
 
 
@@ -310,19 +311,19 @@ def test_cursor_at_end_of_list_is_terminal(driver_dir: Path) -> None:
     assert driver.start() is None
 
 
-# ── send_role_prompt_on_resume ────────────────────────────────────────────────
+# ── prompt kind ───────────────────────────────────────────────────────────────
 
 
-def test_cold_start_scan_does_not_send_role_prompt(driver_dir: Path) -> None:
-    """Cold start: scan step has send_role_prompt_on_resume=False."""
+def test_cold_start_scan_is_role_prompt_kind(driver_dir: Path) -> None:
+    """Cold start: scan step has kind=ROLE_PROMPT."""
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.send_role_prompt_on_resume is False
+    assert step.kind is PromptKind.ROLE_PROMPT
 
 
-def test_prd_step_sends_role_prompt_after_scan(driver_dir: Path) -> None:
-    """PRD step after successful scan signals send_role_prompt_on_resume=True."""
+def test_prd_step_is_follow_up_kind_after_scan(driver_dir: Path) -> None:
+    """PRD step after successful scan has kind=FOLLOW_UP."""
     driver = _make_driver(driver_dir)
     step1 = driver.start()
     assert step1 is not None
@@ -332,11 +333,11 @@ def test_prd_step_sends_role_prompt_after_scan(driver_dir: Path) -> None:
     step2 = driver.next()
     assert step2 is not None
     assert step2.prompt_key == "02-prd.md"
-    assert step2.send_role_prompt_on_resume is True
+    assert step2.kind is PromptKind.FOLLOW_UP
 
 
-def test_mid_prd_retry_does_not_send_role_prompt(driver_dir: Path) -> None:
-    """In-flight=02-prd → PRD step has send_role_prompt_on_resume=False (mid-phase retry)."""
+def test_mid_prd_retry_is_role_prompt_kind(driver_dir: Path) -> None:
+    """In-flight=02-prd → PRD step has kind=ROLE_PROMPT (mid-phase retry)."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
     store = ImproveRoleSessionStore(driver_dir)
     store.write_in_flight("02-prd")
@@ -344,17 +345,17 @@ def test_mid_prd_retry_does_not_send_role_prompt(driver_dir: Path) -> None:
     step = driver.start()
     assert step is not None
     assert step.prompt_key == "02-prd.md"
-    assert step.send_role_prompt_on_resume is False
+    assert step.kind is PromptKind.ROLE_PROMPT
 
 
-def test_clean_prd_entry_sends_role_prompt(driver_dir: Path) -> None:
-    """No in-flight at PRD start → send_role_prompt_on_resume=True (cross-teardown resume)."""
+def test_clean_prd_entry_is_follow_up_kind(driver_dir: Path) -> None:
+    """No in-flight at PRD start → kind=FOLLOW_UP (cross-teardown resume)."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
     assert step.prompt_key == "02-prd.md"
-    assert step.send_role_prompt_on_resume is True
+    assert step.kind is PromptKind.FOLLOW_UP
 
 
 # ── in-flight marker written before step is consumed ─────────────────────────
@@ -489,7 +490,7 @@ def test_candidate_built_from_durable_scan_output_not_rederived(
 
 
 def test_mid_issues_resume_preserves_candidate(driver_dir: Path) -> None:
-    """Mid-issues resume keeps candidate intact when overriding send_role_prompt_on_resume."""
+    """Mid-issues resume keeps candidate intact when overriding kind to ROLE_PROMPT."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=7, title="Resume Me")])
     _seed_candidate_record(driver_dir, 0, spec_number=99)
     store = ImproveRoleSessionStore(driver_dir)
@@ -498,5 +499,5 @@ def test_mid_issues_resume_preserves_candidate(driver_dir: Path) -> None:
     step = driver.start()
     assert step is not None
     assert step.prompt_key == "03-issues.md"
-    assert step.send_role_prompt_on_resume is False
+    assert step.kind is PromptKind.ROLE_PROMPT
     assert step.candidate == ImproveCandidate(rank=7, title="Resume Me", spec_number=99)

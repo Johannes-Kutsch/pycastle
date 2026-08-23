@@ -6,6 +6,7 @@ import pytest
 from pycastle.config import Config
 from pycastle.prompts.dispatch import (
     PromptInvocation,
+    PromptKind,
     build_prompt_invocation,
     render_prompt_invocation,
 )
@@ -46,14 +47,14 @@ def test_prompt_invocation_rejects_missing_and_extra_role_scope_args() -> None:
         )
 
 
-def test_build_prompt_invocation_carries_validated_scope_args_and_resume_flag() -> None:
+def test_build_prompt_invocation_carries_validated_scope_args_and_kind() -> None:
     invocation = build_prompt_invocation(
         PromptTemplate.PLAN,
         {
             "ALL_OPEN_ISSUES_JSON": "[]",
             "READY_FOR_AGENT_ISSUES_JSON": "[]",
         },
-        send_role_prompt_on_resume=True,
+        kind=PromptKind.FOLLOW_UP,
     )
 
     assert invocation == PromptInvocation(
@@ -62,7 +63,7 @@ def test_build_prompt_invocation_carries_validated_scope_args_and_resume_flag() 
             "ALL_OPEN_ISSUES_JSON": "[]",
             "READY_FOR_AGENT_ISSUES_JSON": "[]",
         },
-        send_role_prompt_on_resume=True,
+        kind=PromptKind.FOLLOW_UP,
     )
 
 
@@ -90,7 +91,7 @@ def test_fresh_prompt_dispatch_renders_role_prompt_with_validated_scope_args(
             "ALL_OPEN_ISSUES_JSON": '[{"number": 1}]',
             "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 1}]',
         },
-        send_role_prompt_on_resume=False,
+        kind=PromptKind.ROLE_PROMPT,
     )
 
     result = asyncio.run(
@@ -105,7 +106,7 @@ def test_fresh_prompt_dispatch_renders_role_prompt_with_validated_scope_args(
     assert result == ('Open=[{"number": 1}]\nReady=[{"number": 1}]\n')
 
 
-def test_resume_prompt_dispatch_uses_resume_template_when_role_prompt_is_disabled(
+def test_resume_prompt_dispatch_uses_resume_template_when_kind_is_role_prompt(
     prompts_dir: Path,
 ) -> None:
     (prompts_dir / "coordination" / "plan.md").write_text(
@@ -119,7 +120,7 @@ def test_resume_prompt_dispatch_uses_resume_template_when_role_prompt_is_disable
             "ALL_OPEN_ISSUES_JSON": '[{"number": 1}]',
             "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 1}]',
         },
-        send_role_prompt_on_resume=False,
+        kind=PromptKind.ROLE_PROMPT,
     )
 
     result = asyncio.run(
@@ -134,7 +135,7 @@ def test_resume_prompt_dispatch_uses_resume_template_when_role_prompt_is_disable
     assert result == "resume prompt"
 
 
-def test_resume_prompt_dispatch_renders_role_prompt_when_role_prompt_is_enabled(
+def test_resume_prompt_dispatch_renders_role_prompt_when_kind_is_follow_up(
     prompts_dir: Path,
 ) -> None:
     (prompts_dir / "coordination" / "plan.md").write_text(
@@ -148,7 +149,7 @@ def test_resume_prompt_dispatch_renders_role_prompt_when_role_prompt_is_enabled(
             "ALL_OPEN_ISSUES_JSON": '[{"number": 1}]',
             "READY_FOR_AGENT_ISSUES_JSON": '[{"number": 2}]',
         },
-        send_role_prompt_on_resume=True,
+        kind=PromptKind.FOLLOW_UP,
     )
 
     result = asyncio.run(

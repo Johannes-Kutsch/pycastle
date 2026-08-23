@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING, Protocol
 
 from pycastle.prompts.pipeline import PromptRenderer, PromptTemplate
@@ -20,11 +21,16 @@ class PromptDispatchRenderer(Protocol):
     ) -> str: ...
 
 
+class PromptKind(Enum):
+    ROLE_PROMPT = "role_prompt"
+    FOLLOW_UP = "follow_up"
+
+
 @dataclass(frozen=True)
 class PromptInvocation:
     template: PromptTemplate
     scope_args: dict[str, str]
-    send_role_prompt_on_resume: bool = False
+    kind: PromptKind = PromptKind.ROLE_PROMPT
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -38,12 +44,12 @@ def build_prompt_invocation(
     template: PromptTemplate,
     scope_args: dict[str, str],
     *,
-    send_role_prompt_on_resume: bool = False,
+    kind: PromptKind = PromptKind.ROLE_PROMPT,
 ) -> PromptInvocation:
     return PromptInvocation(
         template=template,
         scope_args=validated_scope_args_for_template(template, scope_args),
-        send_role_prompt_on_resume=send_role_prompt_on_resume,
+        kind=kind,
     )
 
 
@@ -54,7 +60,7 @@ async def render_prompt_invocation(
     run_kind: RunKind,
     exec_fn: Callable[[str], Awaitable[str]],
 ) -> str:
-    if run_kind is RunKind.RESUME and not invocation.send_role_prompt_on_resume:
+    if run_kind is RunKind.RESUME and invocation.kind is PromptKind.ROLE_PROMPT:
         return await renderer.render(PromptTemplate.RESUME, {}, exec_fn)
     return await renderer.render(invocation.template, invocation.scope_args, exec_fn)
 
@@ -62,6 +68,7 @@ async def render_prompt_invocation(
 __all__ = [
     "PromptDispatchRenderer",
     "PromptInvocation",
+    "PromptKind",
     "build_prompt_invocation",
     "render_prompt_invocation",
 ]

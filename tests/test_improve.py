@@ -33,6 +33,7 @@ from pycastle.iteration.improve_role_session_store import (
     ImproveRoleSessionStore,
 )
 from pycastle.iteration.preflight import PreflightReady
+from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubNetworkError, ServiceRegistry
 from pycastle.services.runtime_services import CodexService, OpenCodeService
@@ -511,7 +512,7 @@ def test_improve_clean_phase_2_entry_dispatches_prd_prompt_for_exact_codex_trans
     _run(deps)
 
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
-    assert runner.calls[0].prompt.send_role_prompt_on_resume is True
+    assert runner.calls[0].prompt.kind is PromptKind.FOLLOW_UP
     assert len(runner.calls) == 2
 
 
@@ -542,7 +543,7 @@ def test_improve_clean_phase_2_entry_accepts_recovered_exact_codex_transcript(
     _run(deps)
 
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
-    assert runner.calls[0].prompt.send_role_prompt_on_resume is True
+    assert runner.calls[0].prompt.kind is PromptKind.FOLLOW_UP
     assert len(runner.calls) == 2
 
 
@@ -700,7 +701,7 @@ def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc)
     _run(deps)
 
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
-    assert runner.calls[0].prompt.send_role_prompt_on_resume is False
+    assert runner.calls[0].prompt.kind is PromptKind.ROLE_PROMPT
     assert len(runner.calls) == 2
 
 
@@ -727,9 +728,9 @@ def test_improve_is_terminal_after_report(tmp_path, git_svc):
 # ── Issue #528: phase-boundary prompt shape ──────────────────────────────────
 
 
-def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
-    """Resume mid-phase-2 (in-flight='02-prd'): send_role_prompt_on_resume stays False
-    so the runner falls back to the continuation prompt (role prompt already in history)."""
+def test_mid_phase_2_retry_is_role_prompt_kind(tmp_path, git_svc):
+    """Resume mid-phase-2 (in-flight='02-prd'): kind=ROLE_PROMPT so the runner
+    falls back to the continuation prompt (role prompt already in history)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
@@ -740,11 +741,11 @@ def test_mid_phase_2_retry_does_not_signal_role_prompt(tmp_path, git_svc):
     prd_call = next(
         c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
     )
-    assert prd_call.prompt.send_role_prompt_on_resume is False
+    assert prd_call.prompt.kind is PromptKind.ROLE_PROMPT
 
 
-def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc):
-    """Resume with candidate list (scan done, no in-flight): PRD's send_role_prompt_on_resume=True
+def test_cross_teardown_resume_at_phase_2_is_follow_up_kind(tmp_path, git_svc):
+    """Resume with candidate list (scan done, no in-flight): PRD's kind=FOLLOW_UP
     so the PRD prompt is delivered, not the continuation prompt."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
@@ -766,26 +767,25 @@ def test_cross_teardown_resume_at_phase_2_signals_role_prompt(tmp_path, git_svc)
     prd_call = next(
         c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
     )
-    assert prd_call.prompt.send_role_prompt_on_resume is True
+    assert prd_call.prompt.kind is PromptKind.FOLLOW_UP
 
 
-def test_cold_start_phase_1_does_not_signal_role_prompt_on_resume(deps, agent_runner):
-    """Cold start: phase 1 RunRequest leaves send_role_prompt_on_resume False
-    so today's Fresh-run prompt-shape stays identical."""
+def test_cold_start_phase_1_is_role_prompt_kind(deps, agent_runner):
+    """Cold start: phase 1 RunRequest has kind=ROLE_PROMPT so Fresh-run
+    prompt-shape stays identical."""
     _run(deps)
     scan_call = agent_runner.calls[0]
-    assert scan_call.prompt.send_role_prompt_on_resume is False
+    assert scan_call.prompt.kind is PromptKind.ROLE_PROMPT
 
 
-def test_phase_2_signals_role_prompt_on_resumed_session(deps, agent_runner):
-    """After phase 1 completes cleanly, phase 2's RunRequest signals that the
-    new role prompt must be sent despite the resumed claude session — otherwise
-    the agent would receive only the continuation prompt (issue #528)."""
+def test_phase_2_is_follow_up_kind_on_resumed_session(deps, agent_runner):
+    """After phase 1 completes cleanly, phase 2's RunRequest has kind=FOLLOW_UP
+    so the PRD prompt is delivered rather than the continuation prompt."""
     _run(deps)
     prd_call = next(
         c for c in agent_runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
     )
-    assert prd_call.prompt.send_role_prompt_on_resume is True
+    assert prd_call.prompt.kind is PromptKind.FOLLOW_UP
 
 
 def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
@@ -1137,8 +1137,8 @@ def test_malformed_drafts_reprompt_agent_before_filing(tmp_path, git_svc):
     assert github_svc.create_issue_in.call_count == 0
 
 
-def test_draft_correction_dispatch_sends_role_prompt_on_resume(tmp_path, git_svc):
-    """Draft-correction RunRequest carries send_role_prompt_on_resume=True."""
+def test_draft_correction_dispatch_is_follow_up_kind(tmp_path, git_svc):
+    """Draft-correction RunRequest carries kind=FOLLOW_UP."""
     call_count = [0]
 
     def side_effect(request):
@@ -1163,7 +1163,7 @@ def test_draft_correction_dispatch_sends_role_prompt_on_resume(tmp_path, git_svc
         for c in runner.calls
         if c.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
     )
-    assert correction_request.prompt.send_role_prompt_on_resume is True
+    assert correction_request.prompt.kind is PromptKind.FOLLOW_UP
 
 
 def test_valid_reprompt_gets_filed(tmp_path, git_svc):

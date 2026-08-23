@@ -45,7 +45,7 @@ from pycastle.managed_worktree_mount_policy import (
     describe_managed_worktree_mount_rejection,
     should_reject_managed_worktree_mount,
 )
-from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.dispatch import PromptKind, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import (
     compute_candidate_budget,
@@ -150,7 +150,7 @@ _PHASES: dict[str, _PhaseConfig] = {
 class Step:
     prompt_key: str
     cfg: _PhaseConfig
-    send_role_prompt_on_resume: bool
+    kind: PromptKind
     fetch_recent_prd_titles: bool
     candidate: ImproveCandidate | None = None
 
@@ -182,14 +182,14 @@ class ImprovePhaseDriver:
         return Step(
             prompt_key="01-scan.md",
             cfg=_PHASES["01-scan.md"],
-            send_role_prompt_on_resume=False,
+            kind=PromptKind.ROLE_PROMPT,
             fetch_recent_prd_titles=fetch_recent_prd_titles,
         )
 
     def _make_prd_step(
         self,
         *,
-        send_role_prompt_on_resume: bool,
+        kind: PromptKind,
         idx: int,
         candidate: ImproveCandidate,
     ) -> Step:
@@ -199,7 +199,7 @@ class ImprovePhaseDriver:
         return Step(
             prompt_key="02-prd.md",
             cfg=cfg,
-            send_role_prompt_on_resume=send_role_prompt_on_resume,
+            kind=kind,
             fetch_recent_prd_titles=True,
             candidate=candidate,
         )
@@ -211,16 +211,16 @@ class ImprovePhaseDriver:
         return Step(
             prompt_key="03-issues.md",
             cfg=cfg,
-            send_role_prompt_on_resume=True,
+            kind=PromptKind.FOLLOW_UP,
             fetch_recent_prd_titles=False,
             candidate=candidate,
         )
 
-    def _make_report_step(self, *, send_role_prompt_on_resume: bool) -> Step:
+    def _make_report_step(self, *, kind: PromptKind) -> Step:
         return Step(
             prompt_key="04-no-candidate-report.md",
             cfg=_PHASES["04-no-candidate-report.md"],
-            send_role_prompt_on_resume=send_role_prompt_on_resume,
+            kind=kind,
             fetch_recent_prd_titles=True,
         )
 
@@ -247,19 +247,21 @@ class ImprovePhaseDriver:
             in_flight = self._store.read_in_flight() if from_start else None
             is_mid_prd = in_flight == "02-prd"
             return self._make_prd_step(
-                send_role_prompt_on_resume=not is_mid_prd, idx=idx, candidate=candidate
+                kind=PromptKind.ROLE_PROMPT if is_mid_prd else PromptKind.FOLLOW_UP,
+                idx=idx,
+                candidate=candidate,
             )
 
         # Record exists → slice (Issues) phase.
         in_flight = self._store.read_in_flight() if from_start else None
         is_mid_issues = in_flight == "03-issues"
         step = self._make_issues_step(idx=idx, candidate=candidate)
-        # For mid-issues resume, override send_role_prompt_on_resume to False.
+        # For mid-issues resume, override kind to ROLE_PROMPT.
         if is_mid_issues:
             step = Step(
                 prompt_key=step.prompt_key,
                 cfg=step.cfg,
-                send_role_prompt_on_resume=False,
+                kind=PromptKind.ROLE_PROMPT,
                 fetch_recent_prd_titles=step.fetch_recent_prd_titles,
                 candidate=step.candidate,
             )
@@ -309,7 +311,9 @@ class ImprovePhaseDriver:
                 in_flight = self._store.read_in_flight()
                 is_mid_report = in_flight == "04-no-candidate-report"
                 step = self._make_report_step(
-                    send_role_prompt_on_resume=not is_mid_report
+                    kind=PromptKind.ROLE_PROMPT
+                    if is_mid_report
+                    else PromptKind.FOLLOW_UP
                 )
                 self._store.write_in_flight("04-no-candidate-report")
                 return step
@@ -327,7 +331,7 @@ class ImprovePhaseDriver:
 
         if self._no_candidate:
             if self._no_candidate_report and self._cursor == 0:
-                step = self._make_report_step(send_role_prompt_on_resume=True)
+                step = self._make_report_step(kind=PromptKind.FOLLOW_UP)
                 self._store.write_in_flight("04-no-candidate-report")
                 return step
             return None
@@ -414,7 +418,7 @@ def _needs_candidate_gate(step: "Step | None") -> bool:
     return (
         step is not None
         and step.prompt_key == "02-prd.md"
-        and step.send_role_prompt_on_resume
+        and step.kind is PromptKind.FOLLOW_UP
     )
 
 
@@ -484,7 +488,7 @@ async def _file_improve_drafts(
                 PromptTemplate.IMPROVE_DRAFT_CORRECTION,
                 {"VALIDATION_ERRORS": validation_errors},
             ),
-            send_role_prompt_on_resume=True,
+            kind=PromptKind.FOLLOW_UP,
         )
         await deps.agent_runner.run(
             RunRequest(

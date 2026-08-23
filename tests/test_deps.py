@@ -93,12 +93,13 @@ def _run_request(**kwargs) -> RunRequest:
         "scope_args",
         dict.fromkeys(template.scope.placeholders, ""),
     )
-    send_role_prompt_on_resume = kwargs.pop("send_role_prompt_on_resume", False)
+    from pycastle.prompts.dispatch import PromptKind
+    kind = kwargs.pop("kind", PromptKind.ROLE_PROMPT)
     return RunRequest(
         prompt=build_prompt_invocation(
             template,
             scope_args,
-            send_role_prompt_on_resume=send_role_prompt_on_resume,
+            kind=kind,
         ),
         **kwargs,
     )

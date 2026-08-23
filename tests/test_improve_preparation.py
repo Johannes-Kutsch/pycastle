@@ -21,6 +21,7 @@ from pycastle.iteration.improve_role_session_store import (
     CandidateRecord,
     ImproveRoleSessionStore,
 )
+from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate
 from pycastle.services import GithubNetworkError
 
@@ -74,7 +75,7 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
     assert prepared.session_namespace == "main"
     assert prepared.name == "Scan Agent"
     assert prepared.work_body == "picking an improvement"
-    assert prepared.prompt.send_role_prompt_on_resume is False
+    assert prepared.prompt.kind is PromptKind.ROLE_PROMPT
     assert prepared.prompt.scope_args == {
         "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
         "CANDIDATE_BUDGET": "3",
@@ -111,7 +112,7 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
     assert prepared.session_namespace == "candidate/0"
     assert prepared.name == "PRD Agent"
     assert prepared.work_body == "writing PRD"
-    assert prepared.prompt.send_role_prompt_on_resume is True
+    assert prepared.prompt.kind is PromptKind.FOLLOW_UP
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "RECENT_IMPROVE_PRDS": (
@@ -153,7 +154,7 @@ def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driv
     assert prepared.session_namespace == "main"
     assert prepared.name == "Rejection Report Agent"
     assert prepared.work_body == "filing no-candidate report"
-    assert prepared.prompt.send_role_prompt_on_resume is True
+    assert prepared.prompt.kind is PromptKind.FOLLOW_UP
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "RECENT_IMPROVE_PRDS": (
@@ -181,7 +182,7 @@ def test_prepare_improve_step_builds_exact_prd_payload_without_lookup_policy_fla
             session_namespace="main",
             display_name="PRD Agent",
             work_body="writing PRD",
-            send_role_prompt_on_resume=True,
+            kind=PromptKind.FOLLOW_UP,
             short_sid="abcd1234",
             candidate=ImproveCandidate(rank=1, title="Refactor"),
         ),
@@ -192,7 +193,7 @@ def test_prepare_improve_step_builds_exact_prd_payload_without_lookup_policy_fla
     assert prepared.session_namespace == "main"
     assert prepared.name == "PRD Agent"
     assert prepared.work_body == "writing PRD"
-    assert prepared.prompt.send_role_prompt_on_resume is True
+    assert prepared.prompt.kind is PromptKind.FOLLOW_UP
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
         "RECENT_IMPROVE_PRDS": (
@@ -213,7 +214,7 @@ def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_prd_templa
             session_namespace="main",
             display_name="PRD Agent",
             work_body="body",
-            send_role_prompt_on_resume=True,
+            kind=PromptKind.FOLLOW_UP,
             short_sid="abcd1234",
             candidate=ImproveCandidate(rank=2, title="Deepen module"),
         ),
@@ -238,7 +239,7 @@ def test_prepare_improve_step_uses_exact_empty_recent_prd_message_for_no_candida
             session_namespace="main",
             display_name="Rejection Report Agent",
             work_body="body",
-            send_role_prompt_on_resume=True,
+            kind=PromptKind.FOLLOW_UP,
             short_sid="abcd1234",
         ),
         github_port=github_port,
@@ -262,7 +263,7 @@ def test_prepare_improve_step_uses_short_sid_only_for_issues():
             session_namespace="main",
             display_name="Slice Agent",
             work_body="filing sub-issues",
-            send_role_prompt_on_resume=True,
+            kind=PromptKind.FOLLOW_UP,
             short_sid="abcd1234",
             fetch_recent_prd_titles=False,
         ),
@@ -302,7 +303,7 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
     assert prepared.session_namespace == "main"
     assert prepared.name == "Scan Agent"
     assert prepared.work_body == "picking an improvement"
-    assert prepared.prompt.send_role_prompt_on_resume is False
+    assert prepared.prompt.kind is PromptKind.ROLE_PROMPT
     assert prepared.prompt.scope_args == {
         "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
         "CANDIDATE_BUDGET": "2",
@@ -319,7 +320,7 @@ def test_prepare_improve_step_issues_scope_contains_only_short_sid():
             session_namespace="main",
             display_name="Slice Agent",
             work_body="filing sub-issues",
-            send_role_prompt_on_resume=True,
+            kind=PromptKind.FOLLOW_UP,
             short_sid="abcd1234",
             fetch_recent_prd_titles=False,
         ),
@@ -365,7 +366,7 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     assert prepared.session_namespace == "candidate/0"
     assert prepared.name == "Slice Agent"
     assert prepared.work_body == "filing sub-issues"
-    assert prepared.prompt.send_role_prompt_on_resume is True
+    assert prepared.prompt.kind is PromptKind.FOLLOW_UP
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
     }
@@ -510,7 +511,7 @@ def test_prepare_improve_step_accepts_request_with_candidate(tmp_path: Path) -> 
         session_namespace="candidate/0",
         display_name="Slice Agent",
         work_body="filing sub-issues",
-        send_role_prompt_on_resume=True,
+        kind=PromptKind.FOLLOW_UP,
         short_sid="abcd1234",
         fetch_recent_prd_titles=False,
         candidate=candidate,
@@ -533,7 +534,7 @@ def test_prepare_improve_step_prd_without_candidate_fails_loudly():
                 session_namespace="main",
                 display_name="PRD Agent",
                 work_body="writing PRD",
-                send_role_prompt_on_resume=True,
+                kind=PromptKind.FOLLOW_UP,
                 short_sid="abcd1234",
                 # candidate intentionally omitted
             ),

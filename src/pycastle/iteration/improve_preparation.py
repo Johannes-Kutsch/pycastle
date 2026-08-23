@@ -3,7 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
-from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
+from pycastle.prompts.dispatch import (
+    PromptInvocation,
+    PromptKind,
+    build_prompt_invocation,
+)
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
 from pycastle.prompts.scope_args import (
     build_improve_scan_scope_args,
@@ -55,7 +59,7 @@ class ImprovePreparationStep(Protocol):
     def cfg(self) -> ImprovePreparationStepConfig: ...
 
     @property
-    def send_role_prompt_on_resume(self) -> bool: ...
+    def kind(self) -> PromptKind: ...
 
     @property
     def fetch_recent_prd_titles(self) -> bool: ...
@@ -78,7 +82,7 @@ class ImproveStepPreparationRequest:
     session_namespace: str
     display_name: str
     work_body: str
-    send_role_prompt_on_resume: bool
+    kind: PromptKind
     short_sid: str
     fetch_recent_prd_titles: bool = False
     candidate_budget: int | None = None
@@ -118,7 +122,7 @@ def prepare_improve_step(
         prompt=build_prompt_invocation(
             request.prompt_template,
             scope_args,
-            send_role_prompt_on_resume=request.send_role_prompt_on_resume,
+            kind=request.kind,
         ),
         session_namespace=request.session_namespace,
         name=request.display_name,
@@ -143,7 +147,7 @@ def _coerce_request(
         session_namespace=step.cfg.namespace,
         display_name=step.cfg.display_name,
         work_body=step.cfg.display_body,
-        send_role_prompt_on_resume=step.send_role_prompt_on_resume,
+        kind=step.kind,
         short_sid=short_sid,
         fetch_recent_prd_titles=step.fetch_recent_prd_titles,
         candidate_budget=candidate_budget,

@@ -31,6 +31,7 @@ from pycastle.iteration.implement_issue_plan import (
     IssueRoleStepPlan,
     plan_issue_execution,
 )
+from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubService, GitService, ServiceRegistry
 from pycastle.session import RoleSession, RunKind
@@ -766,7 +767,7 @@ def test_run_issue_same_service_resumable_session_keeps_interrupted_work_clause_
 
     implementer_call = fake.calls[0]
     assert implementer_call.prompt.scope_args["INTERRUPTED_WORK"] == ""
-    assert implementer_call.prompt.send_role_prompt_on_resume is False
+    assert implementer_call.prompt.kind is PromptKind.ROLE_PROMPT
 
 
 def test_run_issue_uses_planned_resume_prompt_when_exact_handoff_fact_changes_after_planning(
@@ -806,7 +807,7 @@ def test_run_issue_uses_planned_resume_prompt_when_exact_handoff_fact_changes_af
 
     implementer_call = fake.calls[0]
     assert implementer_call.prompt.scope_args["INTERRUPTED_WORK"] == ""
-    assert implementer_call.prompt.send_role_prompt_on_resume is False
+    assert implementer_call.prompt.kind is PromptKind.ROLE_PROMPT
 
 
 def test_run_issue_reviewer_uses_planned_resume_prompt_when_exact_handoff_fact_changes_after_planning(
@@ -848,7 +849,7 @@ def test_run_issue_reviewer_uses_planned_resume_prompt_when_exact_handoff_fact_c
     reviewer_call = fake.calls[0]
     assert reviewer_call.role is AgentRole.REVIEWER
     assert reviewer_call.prompt.scope_args["INTERRUPTED_WORK"] == ""
-    assert reviewer_call.prompt.send_role_prompt_on_resume is False
+    assert reviewer_call.prompt.kind is PromptKind.ROLE_PROMPT
 
 
 def test_run_issue_no_prior_session_starts_with_full_role_prompt_without_interrupted_clause(

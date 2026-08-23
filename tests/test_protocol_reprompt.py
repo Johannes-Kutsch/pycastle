@@ -11,7 +11,7 @@ from pycastle.agents.protocol_reprompt import (
     UnsupportedProtocolReprompt,
     plan_protocol_reprompt,
 )
-from pycastle.prompts.dispatch import PromptInvocation, build_prompt_invocation
+from pycastle.prompts.dispatch import PromptInvocation, PromptKind, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptRenderer, PromptTemplate
 
 _SHIPPED_PROMPTS_DIR = (
@@ -285,7 +285,7 @@ def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes(
         invocation = PromptInvocation(
             template=template,
             scope_args=_scope_args_for(template),
-            send_role_prompt_on_resume=True,
+            kind=PromptKind.FOLLOW_UP,
         )
 
         plan = plan_protocol_reprompt(

@@ -919,7 +919,7 @@ class AgentRunner:
                             RunKind.FRESH, is_dirty=True
                         ),
                     },
-                    send_role_prompt_on_resume=request.prompt.send_role_prompt_on_resume,
+                    kind=request.prompt.kind,
                 ),
             )
         new_prompt = await self._render_runtime_prompt(
