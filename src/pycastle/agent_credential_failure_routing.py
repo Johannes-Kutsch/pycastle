@@ -175,19 +175,24 @@ def _file_or_reuse_agent_credential_failure_issue(
         existing = github_svc.search_open_issues_by_title(
             _AGENT_CREDENTIAL_FAILURE_TITLE
         )
-        if existing:
-            return _CredentialFailureIssueLookupResult(
-                issue_url=f"https://github.com/{github_svc.repo}/issues/{existing[0]}",
-                reused_issue_number=existing[0],
-            )
-        body = _build_agent_credential_failure_body(
-            service_name=service_name,
-            role_name=role_name,
-            status_code=status_code,
-            raw_result_envelope=raw_result_envelope,
-            remediation=remediation,
-            observations=observations,
+    except GithubServiceError:
+        existing = []
+
+    if existing:
+        return _CredentialFailureIssueLookupResult(
+            issue_url=f"https://github.com/{github_svc.repo}/issues/{existing[0]}",
+            reused_issue_number=existing[0],
         )
+
+    body = _build_agent_credential_failure_body(
+        service_name=service_name,
+        role_name=role_name,
+        status_code=status_code,
+        raw_result_envelope=raw_result_envelope,
+        remediation=remediation,
+        observations=observations,
+    )
+    try:
         number, _ = github_svc.create_issue_in(
             github_svc.repo,
             _AGENT_CREDENTIAL_FAILURE_TITLE,

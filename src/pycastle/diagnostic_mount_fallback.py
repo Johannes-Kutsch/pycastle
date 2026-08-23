@@ -12,6 +12,7 @@ from pycastle.managed_worktree_mount_policy import (
     decide_managed_worktree_mount,
     should_reject_managed_worktree_mount,
 )
+from pycastle.services.github_service import GithubServiceError
 
 _DIAGNOSTIC_MOUNT_FALLBACK_LABELS = ["bug", "needs-triage"]
 
@@ -72,9 +73,13 @@ def decide_diagnostic_mount_dispatch(
         f"[pycastle] {caller} skipped for role {role_name}: "
         f"managed mount {decision.rejection_code}"
     )
-    existing = github_svc.search_open_issues_by_title(title)
-    if not isinstance(existing, list):
+    try:
+        existing = github_svc.search_open_issues_by_title(title)
+        if not isinstance(existing, list):
+            existing = []
+    except GithubServiceError:
         existing = []
+
     if existing:
         return DiagnosticMountFallbackIssue(issue_number=existing[0], title=title)
 

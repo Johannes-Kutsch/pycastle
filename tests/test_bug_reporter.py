@@ -461,13 +461,16 @@ def test_merge_close_failure_dedups_by_existing_open_issue():
     github_svc.create_issue_in.assert_not_called()
 
 
-def test_merge_close_failure_issue_github_service_error_is_caught():
+def test_merge_close_failure_search_and_create_github_service_error_returns_none():
     from pycastle import bug_reporter
     from pycastle.services import GithubAPIError, GithubNetworkError
 
     github_svc = _make_github_svc()
     github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
         "dns fail", cause=OSError("dns")
+    )
+    github_svc.create_issue_in.side_effect = GithubNetworkError(
+        "create failed", cause=OSError("refused")
     )
     exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
     number = bug_reporter.file_merge_close_failure_issue(
@@ -546,6 +549,78 @@ def test_operator_actionable_git_issue_non_github_error_propagates():
             attempt_count=3,
             github_svc=github_svc,
         )
+
+
+# ── Issue #2178: failing deduplication search no longer suppresses filing ─────
+
+
+def test_api_path_search_failure_still_creates_issue(monkeypatch):
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+    from pycastle.services import GithubNetworkError
+
+    monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
+
+    def _boom_search(self, prefix):
+        raise GithubNetworkError("dns fail", cause=OSError("dns"))
+
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.search_open_issues_by_title",
+        _boom_search,
+    )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.create_issue_in",
+        lambda self, owner_repo, title, body, labels: (77, 10077),
+    )
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    assert "Filed issue #77:" in result.stdout
+    assert "issues/new" not in result.stdout
+    assert result.exit_code == 1
+
+
+def test_merge_close_failure_search_failure_still_creates_issue():
+    from pycastle import bug_reporter
+    from pycastle.services import GithubAPIError, GithubNetworkError
+
+    github_svc = _make_github_svc()
+    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "dns fail", cause=OSError("dns")
+    )
+    exc = GithubAPIError("boom", status=500, body="body", method="PATCH", path="/x")
+    number = bug_reporter.file_merge_close_failure_issue(
+        issue_number=42,
+        exc=exc,
+        github_svc=github_svc,
+    )
+
+    assert number == 123
+    github_svc.create_issue_in.assert_called_once()
+
+
+def test_operator_actionable_git_issue_search_failure_still_creates_issue():
+    from pycastle import bug_reporter
+    from pycastle.services import GithubNetworkError
+
+    github_svc = _make_github_svc()
+    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "connection refused", cause=OSError("refused")
+    )
+
+    bug_reporter.file_operator_actionable_git_issue(
+        op="push",
+        stderr="permission denied",
+        attempt_count=3,
+        github_svc=github_svc,
+    )
+
+    github_svc.create_issue_in.assert_called_once()
 
 
 # ── Issue #2174: unhandled exception files issue when search API returns 422 ──
