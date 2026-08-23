@@ -9,7 +9,7 @@ from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
 from pycastle.iteration._deps import Deps
-from pycastle.prompts.dispatch import build_prompt_invocation
+from pycastle.prompts.dispatch import PromptKind, build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from tests.support import FakeAgentRunner, RecordingLogger, _make_deps
 
@@ -93,7 +93,6 @@ def _run_request(**kwargs) -> RunRequest:
         "scope_args",
         dict.fromkeys(template.scope.placeholders, ""),
     )
-    from pycastle.prompts.dispatch import PromptKind
     kind = kwargs.pop("kind", PromptKind.ROLE_PROMPT)
     return RunRequest(
         prompt=build_prompt_invocation(

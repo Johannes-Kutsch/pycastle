@@ -11,7 +11,11 @@ from pycastle.agents.protocol_reprompt import (
     UnsupportedProtocolReprompt,
     plan_protocol_reprompt,
 )
-from pycastle.prompts.dispatch import PromptInvocation, PromptKind, build_prompt_invocation
+from pycastle.prompts.dispatch import (
+    PromptInvocation,
+    PromptKind,
+    build_prompt_invocation,
+)
 from pycastle.prompts.pipeline import PromptRenderer, PromptTemplate
 
 _SHIPPED_PROMPTS_DIR = (
