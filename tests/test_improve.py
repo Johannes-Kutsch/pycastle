@@ -43,6 +43,7 @@ from pycastle.session.service_session_store import (
 )
 from tests.support import (
     FakeAgentRunner,
+    RecordingStatusDisplay,
     _make_deps,
     functional_git_svc,
     make_scan_output,
@@ -1675,3 +1676,223 @@ def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
     # No agent was dispatched to handle the partial candidate — wind-down is host-only
     old_ns_calls = [c for c in runner.calls if c.session_namespace == "candidate/1"]
     assert old_ns_calls == []
+
+
+# ── Issue #2191: Improve phase row — constant name, live body ─────────────────
+
+
+def _three_candidate_runner_with_drafts(
+    *, preflight_responses: list | None = None
+) -> FakeAgentRunner:
+    """FakeAgentRunner for a 3-candidate scan; writes drafts on each issues call."""
+    scan_output = ScanCandidatesOutput(
+        candidates=(
+            ScanCandidateItem(rank=1, title="First candidate"),
+            ScanCandidateItem(rank=2, title="Second candidate"),
+            ScanCandidateItem(rank=3, title="Third candidate"),
+        )
+    )
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return scan_output
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        return CompletionOutput()
+
+    return FakeAgentRunner(
+        side_effect=side_effect,
+        preflight_responses=preflight_responses
+        if preflight_responses is not None
+        else [[]],
+    )
+
+
+def test_improve_row_name_is_improve_no_counter_with_improve_max(tmp_path, git_svc):
+    """With improve_max set, the Improve row registers under 'Improve'; no row name has a counter."""
+    status_display = RecordingStatusDisplay()
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    cfg = Config(improve_max=10)
+    deps = _make_deps(
+        tmp_path, runner, git_svc=git_svc, status_display=status_display, cfg=cfg
+    )
+    _run(deps)
+
+    caller_names = [c["caller"] for c in status_display.register_calls]
+    assert "Improve" in caller_names
+    assert not any("(" in name for name in caller_names)
+
+
+def test_improve_phase_body_scanning_before_scan_agent_runs(tmp_path, git_svc):
+    """The Improve phase body reads 'scanning for candidates' from the start (before scan returns)."""
+    status_display = RecordingStatusDisplay()
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, status_display=status_display)
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    assert improve_updates[0] == "scanning for candidates"
+
+
+def test_improve_phase_body_first_candidate_with_improve_max(tmp_path, git_svc):
+    """First candidate of 3 with improve_max=10 and d=0: body reads 'candidate 1/3 · improvement 1/10'."""
+    status_display = RecordingStatusDisplay()
+    runner = _three_candidate_runner_with_drafts()
+    cfg = Config(improve_max=10)
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        cfg=cfg,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    assert "candidate 1/3 · improvement 1/10" in improve_updates
+
+
+def test_improve_phase_body_changes_for_second_candidate(tmp_path, git_svc):
+    """Body changes within a single improve_phase call: second candidate shows 'candidate 2/3 · improvement 2/10'."""
+    status_display = RecordingStatusDisplay()
+    runner = _three_candidate_runner_with_drafts()
+    cfg = Config(improve_max=10)
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        cfg=cfg,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    idx1 = improve_updates.index("candidate 1/3 · improvement 1/10")
+    idx2 = improve_updates.index("candidate 2/3 · improvement 2/10")
+    assert idx1 < idx2
+
+
+def test_improve_phase_body_candidate_without_improve_max(tmp_path, git_svc):
+    """With improve_max unset, body while working second of three candidates reads 'candidate 2/3'."""
+    status_display = RecordingStatusDisplay()
+    runner = _three_candidate_runner_with_drafts()
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    assert "candidate 2/3" in improve_updates
+    second_body = next(b for b in improve_updates if b.startswith("candidate 2/3"))
+    assert "improvement" not in second_body
+
+
+def test_improve_phase_prints_candidate_start_line(tmp_path, git_svc):
+    """Each candidate start emits a print on 'Improve' naming ordinal and title."""
+    status_display = RecordingStatusDisplay()
+    runner = _three_candidate_runner_with_drafts()
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    printed = [
+        msg
+        for event, caller, msg, *_ in status_display.calls
+        if event == "print" and caller == "Improve"
+    ]
+    assert any('→ candidate 2/3 "Second candidate"' in str(m) for m in printed)
+
+
+def test_improve_phase_closes_with_filed_count(tmp_path, git_svc):
+    """A run that files two improvements closes the Improve row with 'filed 2 improvement(s)'."""
+    scan_output = ScanCandidatesOutput(
+        candidates=(
+            ScanCandidateItem(rank=1, title="First"),
+            ScanCandidateItem(rank=2, title="Second"),
+        )
+    )
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return scan_output
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        return CompletionOutput()
+
+    status_display = RecordingStatusDisplay()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    improve_close = next(
+        c for c in status_display.remove_calls if c["caller"] == "Improve"
+    )
+    assert improve_close["shutdown_message"] == "filed 2 improvement(s)"
+
+
+def test_improve_phase_no_candidate_closes_with_no_candidate(tmp_path, git_svc):
+    """Scan that nominates nothing closes the Improve row with 'no candidate'."""
+    status_display = RecordingStatusDisplay()
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, status_display=status_display)
+    _run(deps)
+
+    improve_close = next(
+        c for c in status_display.remove_calls if c["caller"] == "Improve"
+    )
+    assert improve_close["shutdown_message"] == "no candidate"
+
+
+def test_improve_phase_no_candidate_body_filing_report(tmp_path, git_svc):
+    """While the no-candidate report agent runs, the Improve body reads 'filing no-candidate report'."""
+    status_display = RecordingStatusDisplay()
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, status_display=status_display)
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    assert "filing no-candidate report" in improve_updates
