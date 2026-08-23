@@ -7,10 +7,9 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
-import click
 from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
-from pycastle.services.github_service import GithubServiceError
+from pycastle.upstream_issue_filing import file_deduped_upstream_issue
 
 if TYPE_CHECKING:
     from pycastle.services import GithubService
@@ -171,13 +170,7 @@ def _file_or_reuse_agent_credential_failure_issue(
     observations: tuple[tuple[str, str], ...],
     github_svc: GithubService,
 ) -> _CredentialFailureIssueLookupResult:
-    try:
-        existing = github_svc.search_open_issues_by_title(
-            _AGENT_CREDENTIAL_FAILURE_TITLE
-        )
-    except GithubServiceError:
-        existing = []
-
+    existing = github_svc.search_open_issues_by_title(_AGENT_CREDENTIAL_FAILURE_TITLE)
     if existing:
         return _CredentialFailureIssueLookupResult(
             issue_url=f"https://github.com/{github_svc.repo}/issues/{existing[0]}",
@@ -192,20 +185,17 @@ def _file_or_reuse_agent_credential_failure_issue(
         remediation=remediation,
         observations=observations,
     )
-    try:
-        number, _ = github_svc.create_issue_in(
-            github_svc.repo,
-            _AGENT_CREDENTIAL_FAILURE_TITLE,
-            body,
-            _AGENT_CREDENTIAL_FAILURE_LABELS,
-        )
-        url = f"https://github.com/{github_svc.repo}/issues/{number}"
-        click.echo(
-            f"Filed issue #{number} on {github_svc.repo}: {_AGENT_CREDENTIAL_FAILURE_TITLE}"
-        )
-        return _CredentialFailureIssueLookupResult(issue_url=url)
-    except GithubServiceError:
+    number = file_deduped_upstream_issue(
+        _AGENT_CREDENTIAL_FAILURE_TITLE,
+        _AGENT_CREDENTIAL_FAILURE_TITLE,
+        body,
+        _AGENT_CREDENTIAL_FAILURE_LABELS,
+        github_svc,
+    )
+    if number is None:
         return _CredentialFailureIssueLookupResult(issue_url=None)
+    url = f"https://github.com/{github_svc.repo}/issues/{number}"
+    return _CredentialFailureIssueLookupResult(issue_url=url)
 
 
 def _build_local_fallback_status_message(

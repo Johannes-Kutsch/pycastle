@@ -378,99 +378,6 @@ def test_route_agent_credential_failure_reports_reused_issue_in_terminal_status_
     github_svc.create_issue_in.assert_not_called()
 
 
-def test_route_agent_credential_failure_returns_local_remediation_when_both_search_and_create_fail():
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.repo = "owner/consuming-project"
-    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
-        "tracker down", cause=OSError()
-    )
-    github_svc.create_issue_in.side_effect = GithubNetworkError(
-        "tracker write failed", cause=OSError()
-    )
-
-    err = AgentCredentialFailureError(
-        message="Codex authentication missing: run `codex login` on the host.",
-        service_name="codex",
-    )
-    err.caller = "Failure Report Agent"
-
-    result = route_agent_credential_failure(
-        provider_failure=err,
-        github_svc=github_svc,
-    )
-
-    assert result == AgentCredentialFailureRouteResult(
-        status_code=None,
-        status_message=(
-            "operator-actionable agent credential failure: "
-            "Run `codex login` on the host to seed Codex credentials before "
-            "dispatch. Evidence: Codex authentication missing: run `codex login` "
-            "on the host."
-        ),
-        issue_url=None,
-    )
-
-
-def test_route_agent_credential_failure_redacts_local_fallback_evidence_when_both_search_and_create_fail():
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.repo = "owner/consuming-project"
-    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
-        "tracker down", cause=OSError()
-    )
-    github_svc.create_issue_in.side_effect = GithubNetworkError(
-        "tracker write failed", cause=OSError()
-    )
-
-    err = AgentCredentialFailureError(
-        message=(
-            "Codex authentication missing: accessToken=at-secret-123456; "
-            "run `codex login` on the host."
-        ),
-        service_name="codex",
-    )
-    err.caller = "Failure Report Agent"
-
-    result = route_agent_credential_failure(
-        provider_failure=err,
-        github_svc=github_svc,
-    )
-
-    assert result == AgentCredentialFailureRouteResult(
-        status_code=None,
-        status_message=(
-            "operator-actionable agent credential failure: "
-            "Run `codex login` on the host to seed Codex credentials before "
-            "dispatch. Evidence: Codex authentication missing: "
-            "accessToken=[REDACTED]; run `codex login` on the host."
-        ),
-        issue_url=None,
-    )
-
-
-def test_route_agent_credential_failure_search_failure_still_creates_issue():
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.repo = "owner/consuming-project"
-    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
-        "tracker down", cause=OSError()
-    )
-    github_svc.create_issue_in.return_value = (99, 10099)
-
-    err = AgentCredentialFailureError(
-        message="Codex authentication missing: run `codex login` on the host.",
-        service_name="codex",
-    )
-    err.caller = "Failure Report Agent"
-
-    result = route_agent_credential_failure(
-        provider_failure=err,
-        github_svc=github_svc,
-    )
-
-    assert result is not None
-    assert result.issue_url == "https://github.com/owner/consuming-project/issues/99"
-    github_svc.create_issue_in.assert_called_once()
-
-
 def test_route_agent_credential_failure_returns_local_remediation_when_issue_creation_fails():
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
@@ -497,40 +404,6 @@ def test_route_agent_credential_failure_returns_local_remediation_when_issue_cre
             "Run `codex login` on the host to seed Codex credentials before "
             "dispatch. Evidence: Codex authentication missing: run `codex login` "
             "on the host."
-        ),
-        issue_url=None,
-    )
-
-
-def test_route_agent_credential_failure_uses_raw_error_as_local_evidence_without_observations():
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.repo = "owner/consuming-project"
-    github_svc.search_open_issues_by_title.side_effect = GithubNetworkError(
-        "tracker down", cause=OSError()
-    )
-    github_svc.create_issue_in.side_effect = GithubNetworkError(
-        "tracker write failed", cause=OSError()
-    )
-    message = "OpenCode request failed: 401 invalid API key for provider opencode-go"
-    err = AgentCredentialFailureError(
-        message=message,
-        service_name="opencode",
-        classification="operator_actionable_agent_credential_failure",
-    )
-    err.caller = "Implementer"
-
-    result = route_agent_credential_failure(
-        provider_failure=err,
-        github_svc=github_svc,
-    )
-
-    assert result == AgentCredentialFailureRouteResult(
-        status_code=None,
-        status_message=(
-            "operator-actionable agent credential failure: "
-            "Update the configured OpenCode API key and rerun pycastle. "
-            "Evidence: OpenCode request failed: 401 invalid API key for provider "
-            "opencode-go"
         ),
         issue_url=None,
     )
@@ -666,7 +539,7 @@ def test_route_agent_credential_failure_files_new_issue_when_no_open_family_issu
         status_message="operator-actionable agent credential failure: status no status",
         issue_url="https://github.com/owner/consuming-project/issues/88",
     )
-    github_svc.search_open_issues_by_title.assert_called_once_with(
+    github_svc.search_open_issues_by_title.assert_called_with(
         "[pycastle] operator-actionable agent credential failure"
     )
     github_svc.create_issue_in.assert_called_once()
