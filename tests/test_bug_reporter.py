@@ -604,6 +604,51 @@ def test_merge_close_failure_search_failure_still_creates_issue():
     github_svc.create_issue_in.assert_called_once()
 
 
+# ── Issue #2180: unrepairable improve draft set filing ────────────────────────
+
+
+def test_unrepairable_draft_set_issue_carries_problems_and_draft_contents():
+    """Unrepairable draft set issue body names the validation problems and draft file contents."""
+    from pycastle import bug_reporter
+
+    github_svc = _make_github_svc()
+
+    problems = ["01-slice: body does not pass readiness classification"]
+    draft_files = {
+        "spec.md": "---\ntitle: My Spec\n---\n\nSpec body here",
+        "01-slice.md": "Too short.",
+    }
+
+    number = bug_reporter.file_unrepairable_draft_set_issue(
+        problems=problems,
+        draft_files=draft_files,
+        github_svc=github_svc,
+    )
+
+    assert number == 123
+    call = github_svc.create_issue_in.call_args
+    body = call.args[2]
+    assert "01-slice: body does not pass readiness classification" in body
+    assert "My Spec" in body
+
+
+def test_unrepairable_draft_set_issue_deduplicates_existing_open_issue():
+    """When an existing open issue matches the title prefix, it is reused without filing a new one."""
+    from pycastle import bug_reporter
+
+    github_svc = _make_github_svc()
+    github_svc.search_open_issues_by_title.return_value = [77]
+
+    number = bug_reporter.file_unrepairable_draft_set_issue(
+        problems=["some problem"],
+        draft_files={"spec.md": "content"},
+        github_svc=github_svc,
+    )
+
+    assert number == 77
+    github_svc.create_issue_in.assert_not_called()
+
+
 def test_operator_actionable_git_issue_search_failure_still_creates_issue():
     from pycastle import bug_reporter
     from pycastle.services import GithubNetworkError

@@ -26,7 +26,6 @@ from pycastle.iteration.improve import (
     ImproveNoCandidate,
     improve_phase,
 )
-from pycastle.iteration.improve_drafts import DraftSetValidationError
 from pycastle.iteration.improve_role_session_store import (
     CandidateRecord,
     FiledSlice,
@@ -1085,17 +1084,21 @@ def test_host_files_issues_after_slice_phase_with_valid_drafts(tmp_path, git_svc
     assert github_svc.create_issue_in.call_count == 2
 
 
-def test_host_does_not_file_when_no_drafts_present(tmp_path, git_svc):
-    """When draft dir is absent, improve_phase raises rather than silently succeeding.
+def test_host_does_not_file_spec_when_no_drafts_present(tmp_path, git_svc):
+    """When the draft dir stays absent through all 3 corrections, a failure report is filed
+    on the consuming project's tracker and improve_phase returns ImproveContinue.
 
-    Flow: scan → prd → issues (no drafts written) → correction reprompt (still no
-    drafts written) → second read_draft_set raises DraftSetValidationError.
+    Flow: scan → prd → issues (no drafts written) → 3 correction reprompts (still
+    no drafts written) → file failure report → ImproveContinue.
     """
     github_svc = _make_filing_github_svc()
-    # 4 responses: scan, prd, issues, correction reprompt (none write drafts)
+    github_svc.search_open_issues_by_title.return_value = []
+    # 6 responses: scan, prd, issues, 3 correction reprompts (none write drafts)
     runner = FakeAgentRunner(
         [
             make_scan_output(),
+            CompletionOutput(),
+            CompletionOutput(),
             CompletionOutput(),
             CompletionOutput(),
             CompletionOutput(),
@@ -1104,14 +1107,16 @@ def test_host_does_not_file_when_no_drafts_present(tmp_path, git_svc):
     )
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
-    with pytest.raises(DraftSetValidationError):
-        _run(deps)
+    result = _run(deps)
 
-    assert github_svc.create_issue_in.call_count == 0
+    assert isinstance(result, ImproveContinue)
+    # One issue filed on the consuming tracker for the unrepairable draft set
+    assert github_svc.create_issue_in.call_count == 1
 
 
-def test_malformed_drafts_reprompt_agent_before_filing(tmp_path, git_svc):
-    """When drafts fail validation, the agent is reprompted once; nothing is filed yet."""
+def test_malformed_drafts_reprompted_three_times_before_abandonment(tmp_path, git_svc):
+    """When drafts fail validation, the agent is reprompted up to 3 times; if still
+    invalid after the 3rd correction, a failure report is filed and the run continues."""
     call_count = [0]
 
     def side_effect(request):
@@ -1126,15 +1131,17 @@ def test_malformed_drafts_reprompt_agent_before_filing(tmp_path, git_svc):
         return CompletionOutput()
 
     github_svc = _make_filing_github_svc()
+    github_svc.search_open_issues_by_title.return_value = []
     runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
-    with pytest.raises(DraftSetValidationError):
-        _run(deps)
+    result = _run(deps)
 
-    # Agent is called 4 times total: scan, prd, issues, correction reprompt
-    assert len(runner.calls) == 4
-    assert github_svc.create_issue_in.call_count == 0
+    # Agent is called 6 times total: scan, prd, issues, 3 correction reprompts
+    assert len(runner.calls) == 6
+    assert isinstance(result, ImproveContinue)
+    # Failure report filed; no spec or slice issues created via file_draft_set
+    assert github_svc.create_issue_in.call_count == 1
 
 
 def test_draft_correction_dispatch_is_follow_up_kind(tmp_path, git_svc):
@@ -1152,11 +1159,11 @@ def test_draft_correction_dispatch_is_follow_up_kind(tmp_path, git_svc):
         return CompletionOutput()
 
     github_svc = _make_filing_github_svc()
+    github_svc.search_open_issues_by_title.return_value = []
     runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
 
-    with pytest.raises(DraftSetValidationError):
-        _run(deps)
+    _run(deps)
 
     correction_request = next(
         c
@@ -1541,6 +1548,79 @@ def test_sha_change_fingerprint_gate_no_close_when_no_spec(tmp_path, git_svc):
     _run(deps)
 
     github_svc.close_issue.assert_not_called()
+
+
+# ── Unrepairable draft set (issue #2180) ─────────────────────────────────────
+
+
+def test_draft_valid_on_third_correction_is_filed(tmp_path, git_svc):
+    """A draft set that becomes valid on the third correction attempt is filed normally."""
+    correction_count = [0]
+
+    def side_effect(request):
+        draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+        if request.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION:
+            correction_count[0] += 1
+            if correction_count[0] == 3:
+                _write_spec_draft(draft_dir)
+                _write_slice_draft(draft_dir, "01-slice")
+        return CompletionOutput()
+
+    github_svc = _make_filing_github_svc()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    result = _run(deps)
+
+    assert isinstance(result, ImproveContinue)
+    assert github_svc.create_issue_in.call_count == 2  # spec + 1 slice
+
+
+def test_unrepairable_draft_set_does_not_end_run(tmp_path, git_svc):
+    """A draft set still invalid after 3 correction attempts does not raise — improve_phase
+    returns ImproveContinue and the run continues to the next candidate."""
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+        return CompletionOutput()
+
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+
+    result = _run(deps)
+
+    assert isinstance(result, ImproveContinue)
+
+
+def test_unrepairable_draft_set_clears_draft_dir(tmp_path, git_svc):
+    """After a candidate is abandoned due to unrepairable drafts, the drafts dir is empty."""
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+        return CompletionOutput()
+
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+
+    _run(deps)
+
+    draft_dir = _draft_dir(tmp_path)
+    assert not draft_dir.is_dir() or not any(draft_dir.iterdir())
 
 
 def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(

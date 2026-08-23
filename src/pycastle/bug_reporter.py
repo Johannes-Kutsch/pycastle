@@ -287,6 +287,64 @@ def _build_operator_actionable_body(*, op: str, stderr: str, attempt_count: int)
     )
 
 
+_UNREPAIRABLE_DRAFT_TITLE_PREFIX = "[pycastle] improve draft set invalid"
+_UNREPAIRABLE_DRAFT_LABELS = ["bug", "needs-triage"]
+
+
+def file_unrepairable_draft_set_issue(
+    *,
+    problems: list[str],
+    draft_files: dict[str, str],
+    github_svc: GithubService,
+) -> int | None:
+    """File one deduped issue on the consuming project's tracker when an improve
+    draft set cannot be repaired after all correction attempts. Never files on
+    bug_report_repo."""
+    from pycastle.services import GithubServiceError
+
+    try:
+        existing = github_svc.search_open_issues_by_title(
+            _UNREPAIRABLE_DRAFT_TITLE_PREFIX
+        )
+    except GithubServiceError:
+        existing = []
+
+    if existing:
+        return existing[0]
+
+    title = _UNREPAIRABLE_DRAFT_TITLE_PREFIX
+    body = _build_unrepairable_draft_body(problems=problems, draft_files=draft_files)
+    try:
+        number, _ = github_svc.create_issue_in(
+            github_svc.repo,
+            title,
+            body,
+            _UNREPAIRABLE_DRAFT_LABELS,
+        )
+        click.echo(f"Filed issue #{number} on {github_svc.repo}: {title}")
+    except GithubServiceError:
+        return None
+    else:
+        return number
+
+
+def _build_unrepairable_draft_body(
+    *, problems: list[str], draft_files: dict[str, str]
+) -> str:
+    env = _env_block()
+    problems_text = "\n".join(f"- {p}" for p in problems)
+    files_section = "\n\n".join(
+        f"### `{name}`\n\n```\n{content}\n```"
+        for name, content in sorted(draft_files.items())
+    )
+    return (
+        f"## Improve draft set could not be repaired\n\n"
+        f"### Validation problems\n\n{problems_text}\n\n"
+        f"### Draft file contents\n\n{files_section}\n\n"
+        f"{env}"
+    )
+
+
 def report_and_exit(
     exc: BaseException,
     *,

@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 import shutil
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from pycastle.agents.output_protocol import (
     ScanCandidatesOutput,
 )
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.bug_reporter import file_unrepairable_draft_set_issue
 from pycastle.config import Config
 from pycastle.display.status_display import StatusDisplay
 from pycastle.errors import SetupPhaseError
@@ -64,6 +66,7 @@ IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
 
 _DRAFTS_SUBDIR = "_drafts"
 _CANDIDATE_NS_PREFIX = "candidate"
+_MAX_CORRECTION_ATTEMPTS = 3
 
 
 def _candidate_namespace(idx: int) -> str:
@@ -473,41 +476,70 @@ async def _file_improve_drafts(
     sandbox_path: Path,
     candidate_idx: int,
     candidate_namespace: str,
-) -> None:
+) -> bool:
+    """Attempt to read, correct, and file the improve draft set.
+
+    Returns True when the draft set was filed successfully, False when all
+    correction attempts were exhausted and the candidate was abandoned (an issue
+    is filed on the consuming project's tracker and the drafts dir is cleared).
+    """
     draft_dir = role_session_dir / _DRAFTS_SUBDIR
     store = ImproveRoleSessionStore(role_session_dir)
     prev_spec = _prev_spec(store, candidate_idx)
 
-    try:
-        drafts = read_draft_set(draft_dir, deps.cfg)
-    except DraftSetValidationError as exc:
-        validation_errors = "\n".join(exc.problems)
-        correction_prompt = build_prompt_invocation(
-            PromptTemplate.IMPROVE_DRAFT_CORRECTION,
-            validated_scope_args_for_template(
-                PromptTemplate.IMPROVE_DRAFT_CORRECTION,
-                {"VALIDATION_ERRORS": validation_errors},
-            ),
-            kind=PromptKind.FOLLOW_UP,
-        )
-        await deps.agent_runner.run(
-            RunRequest(
-                name="Draft Correction",
-                prompt=correction_prompt,
-                mount_path=sandbox_path,
-                role=AgentRole.IMPROVE,
-                model=deps.cfg.improve_override.model,
-                effort=deps.cfg.improve_override.effort,
-                service=deps.cfg.improve_override.service,
-                stage="improve-sandbox",
-                status_display=deps.status_display,
-                work_body="fixing draft validation errors",
-                session_namespace=candidate_namespace,
-                preserve_session_on_completion=True,
-            )
-        )
-        drafts = read_draft_set(draft_dir, deps.cfg)
+    last_exc: DraftSetValidationError | None = None
+    drafts = None
+    for attempt in range(_MAX_CORRECTION_ATTEMPTS + 1):
+        try:
+            drafts = read_draft_set(draft_dir, deps.cfg)
+            last_exc = None
+            break
+        except DraftSetValidationError as exc:
+            last_exc = exc
+            if attempt < _MAX_CORRECTION_ATTEMPTS:
+                validation_errors = "\n".join(exc.problems)
+                correction_prompt = build_prompt_invocation(
+                    PromptTemplate.IMPROVE_DRAFT_CORRECTION,
+                    validated_scope_args_for_template(
+                        PromptTemplate.IMPROVE_DRAFT_CORRECTION,
+                        {"VALIDATION_ERRORS": validation_errors},
+                    ),
+                    kind=PromptKind.FOLLOW_UP,
+                )
+                await deps.agent_runner.run(
+                    RunRequest(
+                        name="Draft Correction",
+                        prompt=correction_prompt,
+                        mount_path=sandbox_path,
+                        role=AgentRole.IMPROVE,
+                        model=deps.cfg.improve_override.model,
+                        effort=deps.cfg.improve_override.effort,
+                        service=deps.cfg.improve_override.service,
+                        stage="improve-sandbox",
+                        status_display=deps.status_display,
+                        work_body="fixing draft validation errors",
+                        session_namespace=candidate_namespace,
+                        preserve_session_on_completion=True,
+                    )
+                )
 
+    if last_exc is not None:
+        draft_file_contents: dict[str, str] = {}
+        if draft_dir.is_dir():
+            for f in sorted(draft_dir.glob("*.md")):
+                with contextlib.suppress(OSError):
+                    draft_file_contents[f.name] = f.read_text(encoding="utf-8")
+        file_unrepairable_draft_set_issue(
+            problems=last_exc.problems,
+            draft_files=draft_file_contents,
+            github_svc=deps.github_svc,
+        )
+        if draft_dir.is_dir():
+            shutil.rmtree(draft_dir)
+        return False
+
+    if drafts is None:
+        return False  # unreachable; loop always sets drafts on break
     file_draft_set(
         drafts,
         port=_GithubFilingPort(deps.github_svc),
@@ -519,6 +551,7 @@ async def _file_improve_drafts(
     # Clear draft dir so the next candidate starts with a clean slate.
     if draft_dir.is_dir():
         shutil.rmtree(draft_dir)
+    return True
 
 
 def _wind_down_partial_candidates(
@@ -593,16 +626,20 @@ async def _complete_candidate(
     """File drafts and check stop conditions after a 03-issues.md step.
 
     Returns (new_completed_count, should_stop) where should_stop is True when
-    either the cap is reached or the safe SHA changed (AC1).
+    either the cap is reached or the safe SHA changed (AC1).  An abandoned
+    candidate (unrepairable draft set) returns (completed_count, False) so the
+    loop advances to the next candidate without counting the failed one.
     """
     candidate_idx = int(step_namespace.split("/")[1])
-    await _file_improve_drafts(
+    filed = await _file_improve_drafts(
         deps=deps,
         role_session_dir=role_session_dir,
         sandbox_path=sandbox_path,
         candidate_idx=candidate_idx,
         candidate_namespace=step_namespace,
     )
+    if not filed:
+        return completed_count, False
     new_count = completed_count + 1
     if _cap_reached(deps, new_count):
         return new_count, True
