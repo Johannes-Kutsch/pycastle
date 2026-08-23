@@ -43,8 +43,10 @@ def _symlink_to_or_skip(path: Path, target: Path) -> None:
         raise
 
 
-def _cfg_for_prompts_dir(prompts_dir: Path) -> SimpleNamespace:
-    base = Config()
+def _cfg_for_prompts_dir(
+    prompts_dir: Path, base: Config | None = None
+) -> SimpleNamespace:
+    base = base or Config()
     return SimpleNamespace(
         prompts_dir=prompts_dir,
         preflight_checks=base.preflight_checks,
@@ -1901,27 +1903,55 @@ def _extract_frontmatter_from_prompt(text: str) -> str:
 _VALID_BODY = "A" * 120
 
 
+def _frontmatter_from_rendered_prompt(template: PromptTemplate, cfg: Config) -> str:
+    renderer = PromptRenderer(_cfg_for_prompts_dir(_SHIPPED_PROMPTS_DIR, cfg))
+    rendered = _run(renderer.render(template, _scope_args_for(template), _noop_exec))
+    return _extract_frontmatter_from_prompt(rendered)
+
+
+def _write_draft_set_from_shipped_prompts(directory: Path, cfg: Config) -> None:
+    spec_frontmatter = _frontmatter_from_rendered_prompt(
+        PromptTemplate.IMPROVE_PRD, cfg
+    )
+    slice_frontmatter = _frontmatter_from_rendered_prompt(
+        PromptTemplate.IMPROVE_ISSUES, cfg
+    )
+
+    (directory / "spec.md").write_text(f"{spec_frontmatter}\n\n{_VALID_BODY}")
+    # The slice example references blocked_by: 01-some-prerequisite — create it.
+    (directory / "01-some-prerequisite.md").write_text(
+        f"---\ntitle: [improve-SLICE] Prereq\nlabels:\n"
+        f"  - {cfg.behavior_slice_label}\n---\n\n{_VALID_BODY}"
+    )
+    (directory / "02-add-feature.md").write_text(
+        f"{slice_frontmatter}\n\n{_VALID_BODY}"
+    )
+
+
 def test_shipped_improve_prompt_frontmatter_examples_are_accepted_by_validator(
     tmp_path: Path,
 ) -> None:
-    prd_prompt = (_SHIPPED_PROMPTS_DIR / "improve/02-prd.md").read_text(
-        encoding="utf-8"
-    )
-    spec_frontmatter = _extract_frontmatter_from_prompt(prd_prompt)
+    cfg = Config()
 
-    slice_prompt = (_SHIPPED_PROMPTS_DIR / "improve/03-issues.md").read_text(
-        encoding="utf-8"
-    )
-    slice_frontmatter = _extract_frontmatter_from_prompt(slice_prompt)
-
-    # The slice example references blocked_by: 01-some-prerequisite — create it.
-    (tmp_path / "spec.md").write_text(f"{spec_frontmatter}\n\n{_VALID_BODY}")
-    (tmp_path / "01-some-prerequisite.md").write_text(
-        f"---\ntitle: [improve-SLICE] Prereq\nlabels:\n  - ready-for-agent\n  - behavior-slice\n---\n\n{_VALID_BODY}"
-    )
-    (tmp_path / "02-add-feature.md").write_text(f"{slice_frontmatter}\n\n{_VALID_BODY}")
-
-    result = read_draft_set(tmp_path, Config())
+    _write_draft_set_from_shipped_prompts(tmp_path, cfg)
+    result = read_draft_set(tmp_path, cfg)
 
     assert len(result) == 3
     assert result[0].handle == "spec"
+    assert result[0].labels == []
+    assert result[2].labels == [cfg.behavior_slice_label]
+
+
+def test_shipped_improve_prompt_frontmatter_examples_follow_renamed_slice_labels(
+    tmp_path: Path,
+) -> None:
+    cfg = Config(
+        behavior_slice_label="feature-cut",
+        refactor_slice_label="structure-cut",
+        docs_slice_label="prose-cut",
+    )
+
+    _write_draft_set_from_shipped_prompts(tmp_path, cfg)
+    result = read_draft_set(tmp_path, cfg)
+
+    assert result[2].labels == ["feature-cut"]

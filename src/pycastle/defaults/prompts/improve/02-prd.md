@@ -47,7 +47,7 @@ title: [improve-PRD] <concise title>
 ---
 ```
 
-The spec's frontmatter carries `title` only — it is a tracking parent. State labels and slice-mode labels belong on the phase-3 sub-issues.
+The spec's frontmatter carries `title` only — it is a tracking parent. Slice-mode labels belong on the phase-3 sub-issues; the state label is the host's to apply.
 
 ## Issue body template
 

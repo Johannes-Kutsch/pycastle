@@ -36,7 +36,7 @@ If yes, draft a single dedicated CONTEXT.md issue **first** before any vertical 
 
 - Spell out the **exact additions or edits** in the body, ready for an Implementer to apply verbatim.
 - Mark it highest priority — every other sub-issue lists it in its `Blocked by` field.
-- Use the same title prefix and labels as the slice issues.
+- Use the same title prefix as the slice issues.
 
 ## 3. Draft vertical slices
 
@@ -58,17 +58,17 @@ Each issue must fit in one usage window of an AFK agent; over-scoping is wastefu
 
 Every slice is exactly one of three **slice modes**. The mode determines which implement prompt the agent will run, and shapes the acceptance criteria you write in step 4.
 
-**`behavior-slice`** — introduces or changes observable behavior verifiable by a new test.
+**`{{BEHAVIOR_SLICE_LABEL}}`** — introduces or changes observable behavior verifiable by a new test.
 
-**`refactor-slice`** — changes structure without changing observable behavior: symbol moves, renames, protocol introductions, import rewires, dead-code removal, dependency-injection rewiring.
+**`{{REFACTOR_SLICE_LABEL}}`** — changes structure without changing observable behavior: symbol moves, renames, protocol introductions, import rewires, dead-code removal, dependency-injection rewiring.
 
-**`docs-slice`** — markdown-only: CONTEXT.md additions, ADRs, README updates. No code touched. (The dedicated CONTEXT.md update issue from step 2 above is always a `docs-slice`.)
+**`{{DOCS_SLICE_LABEL}}`** — markdown-only: CONTEXT.md additions, ADRs, README updates. No code touched. (The dedicated CONTEXT.md update issue from step 2 above is always a `{{DOCS_SLICE_LABEL}}`.)
 
 ### Slicing rule
 
-**If a step cannot be verified by a new test of observable behavior, draft it as its own `refactor-slice`. Refactor steps never ride along inside a `behavior-slice`.** **Prose artifacts** (see step 4) are the exception: they ride along inside any slice mode.
+**If a step cannot be verified by a new test of observable behavior, draft it as its own `{{REFACTOR_SLICE_LABEL}}`. Refactor steps never ride along inside a `{{BEHAVIOR_SLICE_LABEL}}`.** **Prose artifacts** (see step 4) are the exception: they ride along inside any slice mode.
 
-By default, each refactor step is its own slice. Multiple refactor steps bundle into one `refactor-slice` only when they form a single atomic ripple — e.g., a rename propagating through call sites — that cannot land independently without leaving the tree inconsistent. Mixing refactor and behavior in the same slice is never allowed.
+By default, each refactor step is its own slice. Multiple refactor steps bundle into one `{{REFACTOR_SLICE_LABEL}}` only when they form a single atomic ripple — e.g., a rename propagating through call sites — that cannot land independently without leaving the tree inconsistent. Mixing refactor and behavior in the same slice is never allowed.
 
 Refactor slices land first. The dependent behavior slice lists the refactor in `Blocked by`.
 
@@ -92,25 +92,25 @@ A separate signal that the candidate is too big for any single slice is **layer 
 
 Acceptance criteria are how the implement agent learns what "done" looks like. The shape differs by mode.
 
-**`behavior-slice`** — behavior + observable surface. State the behavior in terms of what the system does and where that's visible.
+**`{{BEHAVIOR_SLICE_LABEL}}`** — behavior + observable surface. State the behavior in terms of what the system does and where that's visible.
 
 > _Good:_ "The parser log file contains `http_get_start` for the attempt and does not contain a matching `http_get_ok`."
 >
 > _Bad:_ "A test asserts the log contains `http_get_start` with no matching `http_get_ok`."
 
-A `behavior-slice` may also carry **prose artifacts** — `.md` files outside `tests/` whose wording no caller observes: documentation, ADRs, README, and shipped prompt or template text. Give those criteria the file-state shape `docs-slice` uses, so the implement agent reads at a glance which criteria carry a test obligation and which are plain edits. A protocol tag a host parser reads is not prose: a slice changing which tag an output shape names gets a behavior criterion, with the tag as its observable surface.
+A `{{BEHAVIOR_SLICE_LABEL}}` may also carry **prose artifacts** — `.md` files outside `tests/` whose wording no caller observes: documentation, ADRs, README, and shipped prompt or template text. Give those criteria the file-state shape `{{DOCS_SLICE_LABEL}}` uses, so the implement agent reads at a glance which criteria carry a test obligation and which are plain edits. A protocol tag a host parser reads is not prose: a slice changing which tag an output shape names gets a behavior criterion, with the tag as its observable surface.
 
 > _Good:_ "`coordination/plan.md` states that an implementation child is not blocked by its own parent PRD."
 >
 > _Bad:_ "The rendered planner prompt states that an implementation child is not blocked by its own parent PRD." — file state dressed as observable behavior; it invites a test that string-matches the wording.
 
-**`refactor-slice`** — outcome-shaped. State the new structural fact plus "no behavior change."
+**`{{REFACTOR_SLICE_LABEL}}`** — outcome-shaped. State the new structural fact plus "no behavior change."
 
 > _Good:_ "`current_stage` is imported from `_context`. No behavior change. Existing test suite passes."
 >
 > _Bad:_ "A test verifies the import path."
 
-**`docs-slice`** — file-state-shaped. State what the file should contain after the edit.
+**`{{DOCS_SLICE_LABEL}}`** — file-state-shaped. State what the file should contain after the edit.
 
 > _Good:_ "`CONTEXT.md` contains the term `slice mode` defined as `One of refactor-slice, behavior-slice, docs-slice; …`."
 >
@@ -142,7 +142,7 @@ Before drafting, answer:
 
 ## 6. Write the draft files
 
-For each approved slice, write a draft file to `.pycastle-session/improve/_drafts/`. Name each file with a two-digit prefix and a slug, e.g. `01-add-parser-seam.md`, `02-wire-tests.md`. Each title must start with `[improve-SLICE]`. Apply the one slice-mode label that fits the slice — the host applies the state label itself once the whole set is filed.
+For each approved slice, write a draft file to `.pycastle-session/improve/_drafts/`. Name each file with a two-digit prefix and a slug, e.g. `01-add-parser-seam.md`, `02-wire-tests.md`. Each title must start with `[improve-SLICE]`. Apply exactly one slice-mode label (step 3a) — the host applies the state label itself once the whole set is filed.
 
 Use this frontmatter format:
 
@@ -150,7 +150,7 @@ Use this frontmatter format:
 ---
 title: [improve-SLICE] <concise title>
 labels:
-  - behavior-slice
+  - {{BEHAVIOR_SLICE_LABEL}}
 blocked_by:
   - 01-some-prerequisite
 ---
