@@ -133,8 +133,9 @@ def file_draft_set(
 
     Stage 1 creates every issue without the state label and wires all
     sub-issue and dependency edges.  Stage 2 applies the state label to
-    every issue in the set.  A durable candidate record in *store* at
-    *candidate_idx* makes both stages idempotent across resumed runs.
+    each slice; the spec carries no state label because it is a tracking
+    parent, not implementable work.  A durable candidate record in *store*
+    at *candidate_idx* makes both stages idempotent across resumed runs.
     """
     if not drafts:
         return
@@ -220,9 +221,9 @@ def file_draft_set(
         )
         store.write_candidate_record(candidate_idx, record)
 
-    # Stage 2: apply state label to every issue in the set.
+    # Stage 2: apply state label to slices only; the spec is a tracking
+    # parent and must not carry the state label (ADR 0058).
     if not record.labels_applied:
-        port.apply_label(spec_number, state_label)
         for filed in record.filed_slices:
             port.apply_label(filed.number, state_label)
         record = dataclasses.replace(record, labels_applied=True)

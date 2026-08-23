@@ -199,6 +199,7 @@ def test_slice_blocked_by_spec_and_earlier_slice(
 
 # ---------------------------------------------------------------------------
 # Behavior 5: state label withheld during creation, applied in terminal pass
+#             to slices only — spec carries no state label
 # ---------------------------------------------------------------------------
 
 
@@ -215,7 +216,24 @@ def test_state_label_absent_from_create_calls(tmp_path: Path, port: MagicMock) -
         assert _STATE_LABEL not in labels
 
 
-def test_state_label_applied_to_all_issues_after_creation(
+def test_state_label_applied_to_slices_only_not_spec(
+    tmp_path: Path, port: MagicMock
+) -> None:
+    """After filing, every slice carries the state label and the spec carries none."""
+    drafts = [_spec(), _slice("01-foo"), _slice("02-bar")]
+    store = ImproveRoleSessionStore(tmp_path)
+
+    file_draft_set(
+        drafts, port=port, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
+
+    applied_numbers = {c.args[0] for c in port.apply_label.call_args_list}
+    # spec is issue 100; slices are 101 and 102
+    assert 100 not in applied_numbers  # spec must never receive state label
+    assert applied_numbers == {101, 102}
+
+
+def test_state_label_applied_to_all_slices_after_creation(
     tmp_path: Path, port: MagicMock
 ) -> None:
     drafts = [_spec(), _slice("01-foo"), _slice("02-bar")]
@@ -228,7 +246,7 @@ def test_state_label_applied_to_all_issues_after_creation(
     apply_calls = port.apply_label.call_args_list
     applied_numbers = {c.args[0] for c in apply_calls}
     applied_labels = {c.args[1] for c in apply_calls}
-    assert applied_numbers == {100, 101, 102}
+    assert applied_numbers == {101, 102}  # spec (100) excluded
     assert applied_labels == {_STATE_LABEL}
 
 
@@ -327,10 +345,10 @@ def test_resume_does_not_create_second_spec(tmp_path: Path) -> None:
     assert title == "01-foo Slice"
 
 
-def test_resume_applies_labels_to_all_issues_including_previously_filed(
+def test_resume_applies_state_label_to_slices_only_not_spec(
     tmp_path: Path,
 ) -> None:
-    """On resume, apply_label must cover both the spec and the resumed slice."""
+    """Resuming a candidate applies the state label to remaining slices; spec stays unlabelled."""
     port_first = MagicMock(spec=FilingPort)
     port_first.create_issue.side_effect = [
         (100, 1000),
@@ -357,7 +375,41 @@ def test_resume_applies_labels_to_all_issues_including_previously_filed(
     )
 
     applied_numbers = {c.args[0] for c in port_second.apply_label.call_args_list}
-    assert 100 in applied_numbers
+    assert 100 not in applied_numbers  # spec must not receive state label on resume
+    assert 101 in applied_numbers
+
+
+def test_resume_applies_labels_to_all_slices_including_previously_filed(
+    tmp_path: Path,
+) -> None:
+    """On resume, apply_label must cover the resumed slice but not the spec."""
+    port_first = MagicMock(spec=FilingPort)
+    port_first.create_issue.side_effect = [
+        (100, 1000),
+        RuntimeError("interrupted"),
+    ]
+
+    drafts = [_spec(), _slice("01-foo")]
+    store = ImproveRoleSessionStore(tmp_path)
+
+    with pytest.raises(RuntimeError):
+        file_draft_set(
+            drafts,
+            port=port_first,
+            store=store,
+            candidate_idx=0,
+            state_label=_STATE_LABEL,
+        )
+
+    port_second = MagicMock(spec=FilingPort)
+    port_second.create_issue.side_effect = [(101, 1001)]
+
+    file_draft_set(
+        drafts, port=port_second, store=store, candidate_idx=0, state_label=_STATE_LABEL
+    )
+
+    applied_numbers = {c.args[0] for c in port_second.apply_label.call_args_list}
+    assert 100 not in applied_numbers  # spec must not receive state label
     assert 101 in applied_numbers
 
 
@@ -420,7 +472,7 @@ def test_empty_drafts_is_no_op(tmp_path: Path) -> None:
     port.apply_label.assert_not_called()
 
 
-def test_spec_only_draft_gets_state_label_applied(tmp_path: Path) -> None:
+def test_spec_only_draft_does_not_get_state_label_applied(tmp_path: Path) -> None:
     port = MagicMock(spec=FilingPort)
     port.create_issue.side_effect = [(100, 1000)]
     store = ImproveRoleSessionStore(tmp_path)
@@ -431,7 +483,7 @@ def test_spec_only_draft_gets_state_label_applied(tmp_path: Path) -> None:
 
     port.create_issue.assert_called_once()
     assert _STATE_LABEL not in port.create_issue.call_args.args[2]
-    port.apply_label.assert_called_once_with(100, _STATE_LABEL)
+    port.apply_label.assert_not_called()  # spec carries no state label
     port.register_sub_issue.assert_not_called()
 
 
@@ -468,7 +520,7 @@ def test_full_resume_with_labels_pending_only_applies_labels(tmp_path: Path) -> 
 
     port_second.create_issue.assert_not_called()
     applied_numbers = {c.args[0] for c in port_second.apply_label.call_args_list}
-    assert applied_numbers == {100, 101}
+    assert applied_numbers == {101}  # spec (100) excluded
 
 
 # ---------------------------------------------------------------------------
