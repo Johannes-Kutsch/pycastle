@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from pycastle.services import GithubService
 
 from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountAccepted,
@@ -13,22 +15,9 @@ from pycastle.managed_worktree_mount_policy import (
     should_reject_managed_worktree_mount,
 )
 from pycastle.services.github_service import GithubServiceError
+from pycastle.upstream_issue_filing import file_deduped_upstream_issue
 
 _DIAGNOSTIC_MOUNT_FALLBACK_LABELS = ["bug", "needs-triage"]
-
-
-class DiagnosticMountFallbackIssueTracker(Protocol):
-    repo: str
-
-    def search_open_issues_by_title(self, prefix: str) -> list[int]: ...
-
-    def create_issue_in(
-        self,
-        owner_repo: str,
-        title: str,
-        body: str,
-        labels: list[str],
-    ) -> tuple[int, int]: ...
 
 
 @dataclass(frozen=True)
@@ -50,7 +39,7 @@ def decide_diagnostic_mount_dispatch(
     diagnostic_role: str,
     role_name: str,
     original_failure_summary: str,
-    github_svc: DiagnosticMountFallbackIssueTracker,
+    github_svc: GithubService,
 ) -> DiagnosticMountDispatchDecision:
     decision = decide_managed_worktree_mount(
         repo_root=repo_root,
@@ -73,16 +62,6 @@ def decide_diagnostic_mount_dispatch(
         f"[pycastle] {caller} skipped for role {role_name}: "
         f"managed mount {decision.rejection_code}"
     )
-    try:
-        existing = github_svc.search_open_issues_by_title(title)
-        if not isinstance(existing, list):
-            existing = []
-    except GithubServiceError:
-        existing = []
-
-    if existing:
-        return DiagnosticMountFallbackIssue(issue_number=existing[0], title=title)
-
     body = _build_fallback_issue_body(
         caller=caller,
         diagnostic_role=diagnostic_role,
@@ -90,12 +69,17 @@ def decide_diagnostic_mount_dispatch(
         original_failure_summary=original_failure_summary,
         rejection=decision,
     )
-    issue_number, _ = github_svc.create_issue_in(
-        github_svc.repo,
-        title,
-        body,
-        _DIAGNOSTIC_MOUNT_FALLBACK_LABELS,
+    issue_number = file_deduped_upstream_issue(
+        dedupe_query=title,
+        title=title,
+        body=body,
+        labels=_DIAGNOSTIC_MOUNT_FALLBACK_LABELS,
+        github_svc=github_svc,
     )
+    if issue_number is None:
+        raise GithubServiceError(
+            "create_issue_in failed in decide_diagnostic_mount_dispatch"
+        )
     return DiagnosticMountFallbackIssue(issue_number=issue_number, title=title)
 
 
