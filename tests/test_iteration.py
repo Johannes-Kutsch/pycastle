@@ -59,6 +59,8 @@ from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubService, GitService
 from pycastle.session import RoleSession
 from tests.support import (
+    FETCH_CONNECTION_TIMEOUT,
+    FETCH_REPO_NOT_FOUND,
     FakeAgentRunner,
     RecordingLogger,
     RecordingStatusDisplay,
@@ -4646,15 +4648,8 @@ def test_run_iteration_returns_aborted_operator_actionable_on_operator_actionabl
     """When OperatorActionableGitError escapes from a git operation, run_iteration
     returns AbortedOperatorActionable carrying op name, stderr snippet, and attempt count."""
     from pycastle.iteration import AbortedOperatorActionable
-    from pycastle.services import OperatorActionableGitError
 
-    err = OperatorActionableGitError(
-        "git fetch origin main:main failed after 4 attempts",
-        stderr="ssh: connect to host github.com port 22: Connection timed out",
-        op="fetch",
-        attempt_count=4,
-    )
-    git_svc.refresh_operating_branch.side_effect = err
+    git_svc.refresh_operating_branch.side_effect = FETCH_CONNECTION_TIMEOUT
 
     async def _noop_agent(request: RunRequest):
         return CompletionOutput()
@@ -4676,15 +4671,8 @@ def test_run_iteration_operator_actionable_does_not_call_auto_file_issue_or_fail
     """OperatorActionableGitError catch arm must not invoke auto_file_issue
     and must not spawn the Failure-Report agent."""
     from pycastle.iteration import AbortedOperatorActionable
-    from pycastle.services import OperatorActionableGitError
 
-    err = OperatorActionableGitError(
-        "git fetch origin main:main failed",
-        stderr="remote: Repository not found",
-        op="fetch",
-        attempt_count=1,
-    )
-    git_svc.refresh_operating_branch.side_effect = err
+    git_svc.refresh_operating_branch.side_effect = FETCH_REPO_NOT_FOUND
 
     auto_file_calls: list = []
 
