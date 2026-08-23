@@ -224,6 +224,32 @@ def test_create_github_api_error_returns_none():
     assert result is None
 
 
+# ── Combined: search error + create error still returns None ─────────────────
+
+
+def test_search_error_then_create_error_returns_none():
+    from pycastle.services import GithubNetworkError
+    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
+
+    svc = _make_github_svc()
+    svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "dns fail", cause=OSError("dns")
+    )
+    svc.create_issue_in.side_effect = GithubNetworkError(
+        "create failed", cause=OSError("refused")
+    )
+
+    result = file_deduped_upstream_issue(
+        dedupe_query="prefix",
+        title="title",
+        body="body",
+        labels=["bug"],
+        github_svc=svc,
+    )
+
+    assert result is None
+
+
 # ── Non-GithubServiceError propagates unchanged ───────────────────────────────
 
 
