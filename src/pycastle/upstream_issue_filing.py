@@ -16,6 +16,8 @@ def file_deduped_upstream_issue(
     body: str,
     labels: list[str],
     github_svc: GithubService,
+    *,
+    echo: bool = True,
 ) -> int | None:
     """Search for an existing open issue matching *dedupe_query*; return its
     number if found. Otherwise create a new issue and return its number.
@@ -23,6 +25,8 @@ def file_deduped_upstream_issue(
     Returns ``None`` when ``create_issue_in`` raises ``GithubServiceError``.
     ``GithubServiceError`` from the search is swallowed and treated as "no
     existing match". Other exceptions from either call propagate unchanged.
+
+    Pass ``echo=False`` when the caller owns its own "Filed issue" output line.
     """
     from pycastle.services import GithubServiceError
 
@@ -36,7 +40,8 @@ def file_deduped_upstream_issue(
 
     try:
         number, _ = github_svc.create_issue_in(github_svc.repo, title, body, labels)
-        click.echo(f"Filed issue #{number} on {github_svc.repo}: {title}")
+        if echo:
+            click.echo(f"Filed issue #{number} on {github_svc.repo}: {title}")
     except GithubServiceError:
         return None
     else:

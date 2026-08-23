@@ -139,7 +139,9 @@ def _try_api_path(
 
     from pycastle.upstream_issue_filing import file_deduped_upstream_issue
 
-    number = file_deduped_upstream_issue(title, title, body, BUG_REPORT_LABEL_LIST, svc)
+    number = file_deduped_upstream_issue(
+        title, title, body, BUG_REPORT_LABEL_LIST, svc, echo=False
+    )
     if number is None:
         return None
     html_url = f"https://github.com/{svc.repo}/issues/{number}"

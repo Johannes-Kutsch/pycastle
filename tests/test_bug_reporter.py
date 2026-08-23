@@ -301,6 +301,40 @@ def test_auto_file_bugs_true_reads_gh_token_from_local_env_layer(monkeypatch, tm
     assert result.exit_code == 1
 
 
+def test_auto_file_issue_api_path_emits_exactly_one_filed_line(monkeypatch, tmp_path):
+    """_try_api_path must not double-echo: auto_file_issue owns the echo, the module must not add one."""
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+
+    pycastle_dir = tmp_path / "pycastle"
+    pycastle_dir.mkdir()
+    (pycastle_dir / ".env").write_text("GH_TOKEN=from-local-env\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("PYCASTLE_HOME", raising=False)
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.search_open_issues_by_title",
+        lambda self, prefix: [],
+    )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.create_issue_in",
+        lambda self, owner_repo, title, body, labels: (42, 10042),
+    )
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("boom"))
+    result = CliRunner().invoke(cli, ["build"])
+
+    filed_lines = [line for line in result.stdout.splitlines() if "Filed issue" in line]
+    assert len(filed_lines) == 1, (
+        f"Expected exactly one 'Filed issue' line, got: {filed_lines}"
+    )
+    assert result.exit_code == 1
+
+
 def test_url_uses_cfg_bug_report_repo(monkeypatch):
     from pycastle import bug_reporter
     from pycastle.config import Config
