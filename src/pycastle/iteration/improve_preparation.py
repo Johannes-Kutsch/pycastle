@@ -67,6 +67,12 @@ class ImprovePreparationStep(Protocol):
     @property
     def candidate(self) -> ImproveCandidate | None: ...
 
+    @property
+    def scan_set_size(self) -> int | None: ...
+
+    @property
+    def candidate_ordinal(self) -> int | None: ...
+
 
 @dataclass(frozen=True)
 class ImproveStepPreparationRequest:
@@ -130,6 +136,31 @@ def prepare_improve_step(
     )
 
 
+def _compute_work_body(
+    step: ImprovePreparationStep,
+    *,
+    candidate_budget: int | None,
+) -> str:
+    template = step.cfg.template
+    if template is PromptTemplate.IMPROVE_SCAN:
+        budget = candidate_budget or 0
+        if budget == 1:
+            return "picking 1 improvement"
+        return f"picking up to {budget} improvements"
+    candidate = step.candidate
+    if candidate is not None:
+        ordinal = step.candidate_ordinal
+        total = step.scan_set_size
+        if ordinal is not None and total is not None:
+            if template is PromptTemplate.IMPROVE_PRD:
+                return (
+                    f'writing spec for candidate {ordinal}/{total} "{candidate.title}"'
+                )
+            if template is PromptTemplate.IMPROVE_ISSUES:
+                return f'filing tickets for candidate {ordinal}/{total} "{candidate.title}"'
+    return step.cfg.display_body
+
+
 def _coerce_request(
     request_or_step: ImproveStepPreparationRequest | ImprovePreparationStep,
     *,
@@ -146,7 +177,7 @@ def _coerce_request(
         prompt_template=step.cfg.template,
         session_namespace=step.cfg.namespace,
         display_name=step.cfg.display_name,
-        work_body=step.cfg.display_body,
+        work_body=_compute_work_body(step, candidate_budget=candidate_budget),
         kind=step.kind,
         short_sid=short_sid,
         fetch_recent_prd_titles=step.fetch_recent_prd_titles,

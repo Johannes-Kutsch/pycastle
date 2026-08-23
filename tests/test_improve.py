@@ -159,9 +159,17 @@ def test_improve_phase_picked_path_runs_scan_then_prd(deps, agent_runner):
 @pytest.mark.parametrize(
     ("template", "expected_name", "expected_body"),
     [
-        (PromptTemplate.IMPROVE_SCAN, "Scan Agent", "picking an improvement"),
-        (PromptTemplate.IMPROVE_PRD, "PRD Agent", "writing PRD"),
-        (PromptTemplate.IMPROVE_ISSUES, "Slice Agent", "filing sub-issues"),
+        (PromptTemplate.IMPROVE_SCAN, "Scan Agent", "picking up to 3 improvements"),
+        (
+            PromptTemplate.IMPROVE_PRD,
+            "Spec Agent",
+            'writing spec for candidate 1/1 "Candidate"',
+        ),
+        (
+            PromptTemplate.IMPROVE_ISSUES,
+            "Tickets Agent",
+            'filing tickets for candidate 1/1 "Candidate"',
+        ),
         (
             PromptTemplate.IMPROVE_NO_CANDIDATE,
             "Rejection Report Agent",
@@ -288,7 +296,7 @@ def test_improve_phase_dispatches_prd_step_with_expected_work_body(tmp_path, git
     prd_call = next(
         c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
     )
-    assert prd_call.work_body == "writing PRD"
+    assert prd_call.work_body == 'writing spec for candidate 1/1 "Candidate"'
 
 
 def test_improve_phase_still_dispatches_prd_step_when_recent_prd_history_is_empty(
@@ -1675,3 +1683,85 @@ def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
     # No agent was dispatched to handle the partial candidate — wind-down is host-only
     old_ns_calls = [c for c in runner.calls if c.session_namespace == "candidate/1"]
     assert old_ns_calls == []
+
+
+def test_draft_correction_body_names_candidate_ordinal_title_and_attempt(
+    tmp_path, git_svc
+):
+    """Draft Correction work_body includes ordinal/total, title, and 1-based attempt.
+
+    Scan produces 3 candidates. Candidate 0 (ordinal 1/3, title "Alpha") needs two
+    correction attempts before its drafts are valid. Candidates 1 and 2 file cleanly.
+    """
+    call_count = [0]
+
+    def side_effect(request):
+        call_count[0] += 1
+        draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+        n = call_count[0]
+        if n == 1:
+            # Scan: 3 candidates
+            return ScanCandidatesOutput(
+                candidates=(
+                    ScanCandidateItem(rank=1, title="Alpha"),
+                    ScanCandidateItem(rank=2, title="Beta"),
+                    ScanCandidateItem(rank=3, title="Gamma"),
+                )
+            )
+        # n==2: PRD for candidate 0 → no-op
+        if n == 3:
+            # Issues for candidate 0: write invalid drafts
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+        elif n == 4:
+            # Correction attempt 1 for candidate 0: still invalid
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+        elif n == 5:
+            # Correction attempt 2 for candidate 0: valid now
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice")
+        # n==6: PRD for candidate 1 → no-op
+        elif n == 7:
+            # Issues for candidate 1: write valid drafts immediately
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice")
+        # n==8: PRD for candidate 2 → no-op
+        elif n == 9:
+            # Issues for candidate 2: write valid drafts immediately
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice")
+        return CompletionOutput()
+
+    from unittest.mock import MagicMock
+
+    github_svc = MagicMock()
+    github_svc.repo = "test/repo"
+    # 3 candidates x (spec + 1 slice) = 6 create_issue_in calls
+    github_svc.create_issue_in.side_effect = [
+        (100, 1000),
+        (101, 1001),
+        (102, 1002),
+        (103, 1003),
+        (104, 1004),
+        (105, 1005),
+    ]
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    correction_calls = [
+        c
+        for c in runner.calls
+        if c.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
+    ]
+    assert len(correction_calls) == 2
+    assert (
+        correction_calls[0].work_body
+        == 'fixing draft validation errors for candidate 1/3 "Alpha" (attempt 1/3)'
+    )
+    assert (
+        correction_calls[1].work_body
+        == 'fixing draft validation errors for candidate 1/3 "Alpha" (attempt 2/3)'
+    )

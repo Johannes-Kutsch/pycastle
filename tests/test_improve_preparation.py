@@ -74,7 +74,7 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
     assert prepared.session_namespace == "main"
     assert prepared.name == "Scan Agent"
-    assert prepared.work_body == "picking an improvement"
+    assert prepared.work_body == "picking up to 3 improvements"
     assert prepared.prompt.kind is PromptKind.ROLE_PROMPT
     assert prepared.prompt.scope_args == {
         "RECENT_IMPROVE_PRD_TITLES": "#12 OPEN - First candidate",
@@ -110,8 +110,8 @@ def test_prepare_improve_step_builds_exact_prd_payload_from_driver_step(
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_PRD
     assert prepared.session_namespace == "candidate/0"
-    assert prepared.name == "PRD Agent"
-    assert prepared.work_body == "writing PRD"
+    assert prepared.name == "Spec Agent"
+    assert prepared.work_body == 'writing spec for candidate 1/1 "Refactor"'
     assert prepared.prompt.kind is PromptKind.FOLLOW_UP
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
@@ -302,7 +302,7 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
     assert prepared.session_namespace == "main"
     assert prepared.name == "Scan Agent"
-    assert prepared.work_body == "picking an improvement"
+    assert prepared.work_body == "picking up to 2 improvements"
     assert prepared.prompt.kind is PromptKind.ROLE_PROMPT
     assert prepared.prompt.scope_args == {
         "RECENT_IMPROVE_PRD_TITLES": "No recent improve PRDs found.",
@@ -364,8 +364,8 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_ISSUES
     assert prepared.session_namespace == "candidate/0"
-    assert prepared.name == "Slice Agent"
-    assert prepared.work_body == "filing sub-issues"
+    assert prepared.name == "Tickets Agent"
+    assert prepared.work_body == 'filing tickets for candidate 1/1 "Refactor"'
     assert prepared.prompt.kind is PromptKind.FOLLOW_UP
     assert prepared.prompt.scope_args == {
         "IMPROVE_SHORT_SID": "abcd1234",
@@ -556,3 +556,94 @@ def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render(
             short_sid="abcd1234",
             github_port=github_port,
         )
+
+
+def test_scan_agent_row_body_says_picking_up_to_n_improvements(tmp_path: Path) -> None:
+    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
+    step = driver.start()
+    assert step is not None
+
+    prepared = prepare_improve_step(
+        step,
+        short_sid="abcd1234",
+        github_port=_GithubPortStandIn(),
+        candidate_budget=3,
+    )
+
+    assert prepared.work_body == "picking up to 3 improvements"
+
+
+def test_scan_agent_row_body_with_budget_one_says_picking_1_improvement(
+    tmp_path: Path,
+) -> None:
+    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
+    step = driver.start()
+    assert step is not None
+
+    prepared = prepare_improve_step(
+        step,
+        short_sid="abcd1234",
+        github_port=_GithubPortStandIn(),
+        candidate_budget=1,
+    )
+
+    assert prepared.work_body == "picking 1 improvement"
+
+
+def test_spec_agent_name_and_body_from_driver_prd_step(tmp_path: Path) -> None:
+    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
+    step1 = driver.start()
+    assert step1 is not None
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(
+            candidates=(
+                ScanCandidateItem(rank=1, title="Alpha"),
+                ScanCandidateItem(rank=2, title="Beta"),
+                ScanCandidateItem(rank=3, title="Gamma"),
+            )
+        ),
+    )
+    step2 = driver.next()
+    assert step2 is not None
+    assert step2.prompt_key == "02-prd.md"
+
+    prepared = prepare_improve_step(
+        step2,
+        short_sid="abcd1234",
+        github_port=_GithubPortStandIn(),
+    )
+
+    assert prepared.name == "Spec Agent"
+    assert prepared.work_body == 'writing spec for candidate 1/3 "Alpha"'
+
+
+def test_tickets_agent_name_and_body_from_driver_issues_step(tmp_path: Path) -> None:
+    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
+    step1 = driver.start()
+    assert step1 is not None
+    driver.record_outcome(
+        step1,
+        ScanCandidatesOutput(
+            candidates=(
+                ScanCandidateItem(rank=1, title="Alpha"),
+                ScanCandidateItem(rank=2, title="Beta"),
+                ScanCandidateItem(rank=3, title="Gamma"),
+            )
+        ),
+    )
+    step2 = driver.next()
+    assert step2 is not None
+    driver.record_outcome(step2, CompletionOutput())
+    step3 = driver.next()
+    assert step3 is not None
+    assert step3.prompt_key == "03-issues.md"
+
+    prepared = prepare_improve_step(
+        step3,
+        short_sid="abcd1234",
+        github_port=_GithubPortStandIn(),
+    )
+
+    assert prepared.name == "Tickets Agent"
+    assert prepared.work_body == 'filing tickets for candidate 1/3 "Alpha"'

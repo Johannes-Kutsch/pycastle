@@ -131,14 +131,14 @@ _PHASES: dict[str, _PhaseConfig] = {
     "02-prd.md": _PhaseConfig(
         template=PromptTemplate.IMPROVE_PRD,
         namespace="main",
-        display_name="PRD Agent",
-        display_body="writing PRD",
+        display_name="Spec Agent",
+        display_body="writing spec",
     ),
     "03-issues.md": _PhaseConfig(
         template=PromptTemplate.IMPROVE_ISSUES,
         namespace="main",
-        display_name="Slice Agent",
-        display_body="filing sub-issues",
+        display_name="Tickets Agent",
+        display_body="filing tickets",
     ),
     "04-no-candidate-report.md": _PhaseConfig(
         template=PromptTemplate.IMPROVE_NO_CANDIDATE,
@@ -156,6 +156,8 @@ class Step:
     kind: PromptKind
     fetch_recent_prd_titles: bool
     candidate: ImproveCandidate | None = None
+    scan_set_size: int | None = None
+    candidate_ordinal: int | None = None
 
 
 class ImprovePhaseDriver:
@@ -199,24 +201,30 @@ class ImprovePhaseDriver:
         cfg = dataclasses.replace(
             _PHASES["02-prd.md"], namespace=_candidate_namespace(idx)
         )
+        candidates = self._candidates
         return Step(
             prompt_key="02-prd.md",
             cfg=cfg,
             kind=kind,
             fetch_recent_prd_titles=True,
             candidate=candidate,
+            scan_set_size=len(candidates) if candidates is not None else None,
+            candidate_ordinal=idx + 1,
         )
 
     def _make_issues_step(self, *, idx: int, candidate: ImproveCandidate) -> Step:
         cfg = dataclasses.replace(
             _PHASES["03-issues.md"], namespace=_candidate_namespace(idx)
         )
+        candidates = self._candidates
         return Step(
             prompt_key="03-issues.md",
             cfg=cfg,
             kind=PromptKind.FOLLOW_UP,
             fetch_recent_prd_titles=False,
             candidate=candidate,
+            scan_set_size=len(candidates) if candidates is not None else None,
+            candidate_ordinal=idx + 1,
         )
 
     def _make_report_step(self, *, kind: PromptKind) -> Step:
@@ -487,6 +495,15 @@ async def _file_improve_drafts(
     store = ImproveRoleSessionStore(role_session_dir)
     prev_spec = _prev_spec(store, candidate_idx)
 
+    candidate_list = store.read_candidate_list()
+    scan_set_size = len(candidate_list.candidates) if candidate_list is not None else 0
+    candidate_title = (
+        candidate_list.candidates[candidate_idx].title
+        if candidate_list is not None and candidate_idx < len(candidate_list.candidates)
+        else ""
+    )
+    candidate_ordinal = candidate_idx + 1
+
     last_exc: DraftSetValidationError | None = None
     drafts = None
     for attempt in range(_MAX_CORRECTION_ATTEMPTS + 1):
@@ -506,6 +523,12 @@ async def _file_improve_drafts(
                     ),
                     kind=PromptKind.FOLLOW_UP,
                 )
+                correction_body = (
+                    f"fixing draft validation errors for candidate"
+                    f" {candidate_ordinal}/{scan_set_size}"
+                    f' "{candidate_title}"'
+                    f" (attempt {attempt + 1}/{_MAX_CORRECTION_ATTEMPTS})"
+                )
                 await deps.agent_runner.run(
                     RunRequest(
                         name="Draft Correction",
@@ -517,7 +540,7 @@ async def _file_improve_drafts(
                         service=deps.cfg.improve_override.service,
                         stage="improve-sandbox",
                         status_display=deps.status_display,
-                        work_body="fixing draft validation errors",
+                        work_body=correction_body,
                         session_namespace=candidate_namespace,
                         preserve_session_on_completion=True,
                     )
