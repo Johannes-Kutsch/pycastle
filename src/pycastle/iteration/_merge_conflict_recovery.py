@@ -169,12 +169,14 @@ async def _recover_active_conflict(
             f"merge-sandbox-issue-{active_issue['number']}",
             sha=safe_sha,
             deps=deps,
+            operating_branch=deps.cfg.operating_branch,
         )
     else:
         worktree_cm = replaceable_merge_sandbox_worktree(
             issue_number=active_issue["number"],
             sha=safe_sha,
             deps=deps,
+            operating_branch=deps.cfg.operating_branch,
         )
     try:
         async with worktree_cm as sandbox_path:

@@ -932,6 +932,142 @@ def test_managed_worktree_recreates_stale_ancestor_branch(git_repo):
     asyncio.run(_run())
 
 
+# ── Issue #2196: _recreate_stale_branch checks operating_branch, not root HEAD ─
+
+
+def _setup_working_branch_repo(git_repo: Path) -> None:
+    """Build a repo where working_branch diverges from dev_branch (main).
+
+    After this call:
+    - main: initial commit only (no pyproject.toml)
+    - pycastle/issue-99: initial commit + work.txt (no pyproject.toml), merged into working
+    - working: initial + pyproject.toml commit + merge of issue-99
+    - pycastle/issue-100: initial commit + extra.txt (no pyproject.toml), NOT merged into working
+    - repo root checked out on main
+    """
+    initial_sha = _git(git_repo, "rev-list", "--max-parents=0", "HEAD")
+
+    # Create and populate pycastle/issue-99 (will be merged into working)
+    temp_99 = git_repo.parent / "wt-99"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/issue-99",
+            str(temp_99),
+            initial_sha,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (temp_99 / "work.txt").write_text("issue 99 work")
+    _git(temp_99, "add", "work.txt")
+    _git(temp_99, "commit", "-m", "issue-99 work")
+    subprocess.run(
+        ["git", "-C", str(git_repo), "worktree", "remove", str(temp_99)],
+        check=True,
+        capture_output=True,
+    )
+
+    # Create pycastle/issue-100 (will NOT be merged into working)
+    temp_100 = git_repo.parent / "wt-100"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/issue-100",
+            str(temp_100),
+            initial_sha,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    (temp_100 / "extra.txt").write_text("issue 100 work")
+    _git(temp_100, "add", "extra.txt")
+    _git(temp_100, "commit", "-m", "issue-100 work")
+    subprocess.run(
+        ["git", "-C", str(git_repo), "worktree", "remove", str(temp_100)],
+        check=True,
+        capture_output=True,
+    )
+
+    # Build working branch: pyproject.toml + merge of issue-99 only
+    _git(git_repo, "checkout", "-b", "working", initial_sha)
+    (git_repo / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+    _git(git_repo, "add", "pyproject.toml")
+    _git(git_repo, "commit", "-m", "add pyproject to working")
+    _git(
+        git_repo,
+        "merge",
+        "--no-ff",
+        "pycastle/issue-99",
+        "-m",
+        "merge issue-99 into working",
+    )
+
+    # Return to main (no pyproject.toml, so the stale-branch check matters)
+    _git(git_repo, "checkout", "main")
+
+
+def test_managed_worktree_recreates_stale_branch_merged_into_operating_branch(git_repo):
+    """With operating_branch set, a stale branch merged into it is recreated rather than raising."""
+    _setup_working_branch_repo(git_repo)
+    working_sha = _git(git_repo, "rev-parse", "working")
+
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
+
+    async def _run():
+        async with managed_worktree(
+            "issue-99",
+            branch="pycastle/issue-99",
+            sha=working_sha,
+            lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
+            deps=deps,
+            operating_branch="working",
+        ) as path:
+            assert (path / "pyproject.toml").exists()
+
+    asyncio.run(_run())
+
+
+def test_managed_worktree_raises_for_stale_branch_not_merged_into_operating_branch(
+    git_repo,
+):
+    """With operating_branch set, a stale branch not merged into it still raises WorktreeError."""
+    _setup_working_branch_repo(git_repo)
+
+    # Add pyproject.toml to main so the repo itself is valid
+    (git_repo / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+    _git(git_repo, "add", "pyproject.toml")
+    _git(git_repo, "commit", "-m", "add pyproject to main")
+
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=git_repo, cfg=cfg, git_svc=GitService(cfg))
+
+    async def _run():
+        with pytest.raises(WorktreeError, match="base branch"):
+            async with managed_worktree(
+                "issue-100",
+                branch="pycastle/issue-100",
+                sha=None,
+                lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
+                deps=deps,
+                operating_branch="working",
+            ):
+                pass
+
+    asyncio.run(_run())
+
+
 # ── Cycle D: .git file is patched to Linux gitdir path on Windows ─────────────
 
 

@@ -67,6 +67,7 @@ async def _classify_merge_candidates(
         sha=safe_sha,
         lifecycle=BranchWorktreeLifecycle.REPLACEABLE_MERGE_SANDBOX,
         deps=deps,
+        operating_branch=deps.cfg.operating_branch,
     ) as sandbox_path:
         for issue in completed:
             if deps.git_svc.try_merge(sandbox_path, branch_for(issue["number"])):
