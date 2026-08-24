@@ -212,6 +212,7 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
             sha=None,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=deps,
+            operating_branch="HEAD",
         ):
             with pytest.raises(WorktreeError):
                 async with managed_worktree(
@@ -220,6 +221,7 @@ def test_branch_worktree_raises_worktree_error_on_git_failure(tmp_path):
                     sha=None,
                     lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                     deps=deps,
+                    operating_branch="HEAD",
                 ):
                     pass
 
