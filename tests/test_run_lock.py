@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import threading
+import time
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
@@ -13,9 +14,10 @@ if TYPE_CHECKING:
 
 from datetime import UTC
 
+from pycastle import run_lock as run_lock_module
 from pycastle.errors import RunAlreadyInProgressError, RunSlotTimeoutError
 from pycastle.layout import resolve_layout
-from pycastle.run_lock import run_slot
+from pycastle.run_lock import _locked_project_names, run_slot
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +55,22 @@ def _hold_lock_in_thread(layout, **slot_kwargs) -> Iterator[threading.Event]:
     finally:
         release.set()
         t.join(timeout=5)
+
+
+@contextmanager
+def _patched(module, name: str, value) -> Iterator[None]:
+    """Temporarily swap a module attribute back and forth."""
+    original = getattr(module, name)
+    setattr(module, name, value)
+    try:
+        yield
+    finally:
+        setattr(module, name, original)
+
+
+def _ensure_marker(marker_path: Path) -> None:
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    marker_path.touch()
 
 
 # ── B1: Layout exposes run-slot paths ─────────────────────────────────────────
@@ -348,6 +366,164 @@ def test_lock_respecting_holds_no_own_marker_while_waiting_for_other_marker(
 
         release.set()
         t.join(timeout=5)
+
+
+# ── B8a: The marker scan never probes the scanning run's own marker ───────────
+
+
+def test_marker_scan_skips_the_scanning_projects_own_marker(tmp_path: Path) -> None:
+    """`_is_exclusively_locked` takes the marker's lock to probe it.
+
+    Probing our own marker therefore makes B8 ("a waiting run holds no own
+    marker") true only probabilistically: a queue-jumper colliding with the
+    probe is rejected. The scan must filter by project name *before* probing.
+    """
+    layout_a = _layout(tmp_path, repo_name="project-alpha")
+    layout_b = resolve_layout(
+        repo_root=tmp_path / "project-beta",
+        pycastle_home=tmp_path / "pycastle-home",
+    )
+    (tmp_path / "project-beta").mkdir(exist_ok=True)
+
+    probed: list[str] = []
+    real_probe = run_lock_module._is_exclusively_locked
+
+    def _spy(path: Path) -> bool:
+        probed.append(path.stem)
+        return real_probe(path)
+
+    with _hold_lock_in_thread(layout_a, ignore_global_lock=True):
+        # Give project-beta a marker file so the glob would otherwise pick it up.
+        with run_slot(layout_b, ignore_global_lock=True):
+            pass
+        probed.clear()
+        with _patched(run_lock_module, "_is_exclusively_locked", _spy):
+            locked = _locked_project_names(
+                layout_b.run_markers_dir, skip="project-beta"
+            )
+
+    assert locked == ["project-alpha"]
+    assert "project-beta" not in probed
+    assert "project-alpha" in probed
+
+
+def test_queue_jumper_is_not_rejected_by_a_concurrent_marker_scan(
+    tmp_path: Path,
+) -> None:
+    """B8 end to end, made deterministic by widening the probe's lock hold.
+
+    A probe of project-beta's marker holds that marker's lock for as long as it
+    takes the probing thread to be rescheduled — normally microseconds, which is
+    why the collision only showed up under full-suite CPU contention. Stretching
+    that hold turns the race into a certainty, so a regression fails every run
+    instead of one run in a thousand.
+    """
+    layout_a = _layout(tmp_path, repo_name="project-alpha")
+    layout_b = resolve_layout(
+        repo_root=tmp_path / "project-beta",
+        pycastle_home=tmp_path / "pycastle-home",
+    )
+    (tmp_path / "project-beta").mkdir(exist_ok=True)
+
+    real_probe = run_lock_module._is_exclusively_locked
+
+    def _slow_probe(path: Path) -> bool:
+        if path.stem != "project-beta":
+            return real_probe(path)
+        with path.open("r+b") as fh:
+            if not run_lock_module._try_lock(fh.fileno()):
+                return True
+            time.sleep(0.05)
+            run_lock_module._unlock(fh.fileno())
+            return False
+
+    waiting = threading.Event()
+
+    with (
+        _patched(run_lock_module, "_is_exclusively_locked", _slow_probe),
+        _hold_lock_in_thread(layout_a, ignore_global_lock=True) as release,
+    ):
+        # Give project-beta a marker file so a scan would pick it up.
+        with run_slot(layout_b, ignore_global_lock=True):
+            pass
+
+        def _run():
+            with (
+                contextlib.suppress(RunSlotTimeoutError, RunAlreadyInProgressError),
+                run_slot(
+                    layout_b,
+                    timeout=30,
+                    poll_interval=0.0,
+                    on_wait=lambda _msg: waiting.set(),
+                ),
+            ):
+                pass
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        assert waiting.wait(timeout=5), "project-beta never entered its wait loop"
+
+        # project-beta is parked waiting for project-alpha. Its own marker must
+        # be free for every queue-jumper, not just the lucky ones.
+        for _ in range(10):
+            with run_slot(layout_b, ignore_global_lock=True):
+                pass
+
+        release.set()
+        t.join(timeout=5)
+
+
+def test_marker_acquisition_retries_past_a_transient_probe_hold(
+    tmp_path: Path,
+) -> None:
+    """A scan of *another* project's marker must not reject that project's run.
+
+    Filtering our own marker out of the scan does not help the project being
+    scanned: its marker is probed, and its own queue-jumper can collide with
+    that hold. Real acquisition retries instead of believing the first refusal.
+    """
+    layout = _layout(tmp_path)
+    marker_path = layout.project_run_marker_path
+    _ensure_marker(marker_path)
+
+    held = threading.Event()
+    released = threading.Event()
+
+    def _hold_briefly() -> None:
+        with marker_path.open("r+b") as fh:
+            assert run_lock_module._try_lock(fh.fileno())
+            held.set()
+            time.sleep(0.05)
+            run_lock_module._unlock(fh.fileno())
+            released.set()
+
+    t = threading.Thread(target=_hold_briefly, daemon=True)
+    t.start()
+    assert held.wait(timeout=5), "probe holder never took the marker"
+
+    # The marker is held right now, so a single try-lock would refuse it.
+    with run_slot(layout, ignore_global_lock=True):
+        assert released.is_set()
+    t.join(timeout=5)
+
+
+def test_marker_acquisition_still_reports_a_genuinely_held_marker(
+    tmp_path: Path,
+) -> None:
+    """The retry window must not turn a real same-project overlap into a wait."""
+    layout = _layout(tmp_path)
+
+    with _hold_lock_in_thread(layout, ignore_global_lock=True):
+        started = time.monotonic()
+        with (
+            pytest.raises(RunAlreadyInProgressError),
+            run_slot(layout, ignore_global_lock=True),
+        ):
+            pass
+        elapsed = time.monotonic() - started
+
+    # Bounded: it aborts, it does not queue behind the holder.
+    assert elapsed < 5
 
 
 # ── B9: Own marker taken by queue-jumping → already-in-progress ───────────────

@@ -21,6 +21,14 @@ __all__ = ["run_slot"]
 _DEFAULT_TIMEOUT: float = 6 * 3600
 _DEFAULT_POLL: float = 1.0
 
+# A marker scan probes liveness by taking and immediately dropping the marker's
+# own exclusive lock, so a real acquirer can collide with that sub-millisecond
+# hold and see a spurious "already in progress". Retry briefly before believing
+# a failed try-lock. Same-project overlap is an anomaly, not a queue, so paying
+# this window on the abort path costs nothing (ADR 0053).
+_MARKER_ACQUIRE_RETRY: float = 0.5
+_MARKER_ACQUIRE_POLL: float = 0.005
+
 
 def _try_lock(fd: int) -> bool:
     if sys.platform == "win32":
@@ -54,6 +62,17 @@ def _unlock(fd: int) -> None:
         fcntl.flock(fd, fcntl.LOCK_UN)
 
 
+def _lock_marker(fd: int) -> bool:
+    """Try-lock a project run marker, retrying past a scan's transient probe hold."""
+    deadline = time.monotonic() + _MARKER_ACQUIRE_RETRY
+    while True:
+        if _try_lock(fd):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(_MARKER_ACQUIRE_POLL)
+
+
 def _is_exclusively_locked(path: Path) -> bool:
     try:
         with path.open("r+b") as fh:
@@ -65,9 +84,11 @@ def _is_exclusively_locked(path: Path) -> bool:
         return False
 
 
-def _locked_project_names(markers_dir: Path) -> list[str]:
+def _locked_project_names(markers_dir: Path, *, skip: str | None = None) -> list[str]:
     return [
-        p.stem for p in sorted(markers_dir.glob("*.lock")) if _is_exclusively_locked(p)
+        p.stem
+        for p in sorted(markers_dir.glob("*.lock"))
+        if p.stem != skip and _is_exclusively_locked(p)
     ]
 
 
@@ -141,7 +162,7 @@ def _remove_holder_record(record_path: Path) -> None:
 @contextlib.contextmanager
 def _queue_jumping_slot(marker_path: Path, project_name: str) -> Iterator[None]:
     with marker_path.open("r+b") as marker_fh:
-        if not _try_lock(marker_fh.fileno()):
+        if not _lock_marker(marker_fh.fileno()):
             raise RunAlreadyInProgressError(project_name)
         try:
             yield
@@ -151,7 +172,6 @@ def _queue_jumping_slot(marker_path: Path, project_name: str) -> Iterator[None]:
 
 def _wait_for_other_markers(
     markers_dir: Path,
-    marker_path: Path,
     project_name: str,
     *,
     deadline: float,
@@ -159,10 +179,7 @@ def _wait_for_other_markers(
     on_wait: Callable[[str], None] | None,
 ) -> None:
     def _other_locked() -> list[str]:
-        return [n for n in _locked_project_names(markers_dir) if n != project_name]
-
-    if _is_exclusively_locked(marker_path):
-        raise RunAlreadyInProgressError(project_name)
+        return _locked_project_names(markers_dir, skip=project_name)
 
     locked = _other_locked()
     if not locked:
@@ -170,8 +187,6 @@ def _wait_for_other_markers(
     projects = ", ".join(locked)
     _notify(on_wait, f"Waiting for project run markers: {projects}")
     while True:
-        if _is_exclusively_locked(marker_path):
-            raise RunAlreadyInProgressError(project_name)
         locked = _other_locked()
         if not locked:
             break
@@ -245,7 +260,6 @@ def run_slot(
             # Step 2: wait until all *other* project markers are free.
             _wait_for_other_markers(
                 markers_dir,
-                marker_path,
                 project_name,
                 deadline=deadline,
                 poll_interval=poll_interval,
@@ -254,7 +268,7 @@ def run_slot(
 
             # Step 3: take own project marker.
             with marker_path.open("r+b") as marker_fh:
-                if not _try_lock(marker_fh.fileno()):
+                if not _lock_marker(marker_fh.fileno()):
                     raise RunAlreadyInProgressError(project_name)
                 try:
                     yield
