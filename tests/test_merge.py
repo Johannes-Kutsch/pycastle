@@ -2920,6 +2920,37 @@ def test_merge_phase_with_working_branch_deletes_merged_branch(
     assert "pycastle/issue-1" in deleted
 
 
+def test_conflict_branch_deleted_when_merged_into_operating_branch_not_root_head(
+    tmp_path, git_svc, github_svc
+):
+    """Conflict-branch teardown uses operating_branch, not root HEAD.
+
+    A branch merged into pycastle/work but not into main (root HEAD) must still
+    be deleted — this verifies _delete_conflict_branch passes cfg.operating_branch.
+    """
+    cfg = Config(dev_branch="main", working_branch="pycastle/work")
+    git_svc.try_merge.side_effect = _conflict_on([2])
+
+    def _is_ancestor(branch, repo_path, ref):
+        # Merged into operating branch (pycastle/work) and into the sandbox
+        # worktree (repo_path != tmp_path), but NOT into root HEAD (main).
+        return ref == "pycastle/work" or repo_path != tmp_path
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([CompletionOutput()]),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+    )
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, deps)
+
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-2" in deleted
+
+
 def test_delete_merged_branches_uses_operating_branch_with_real_git(tmp_path):
     """Integration: branch merged into working_branch but not root HEAD is deleted.
 
