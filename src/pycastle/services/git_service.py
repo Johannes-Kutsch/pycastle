@@ -123,9 +123,9 @@ class GitService:
         )
         return self._decode(result.stdout)
 
-    def is_ancestor(self, branch: str, repo_path: Path) -> bool:
+    def is_ancestor(self, branch: str, repo_path: Path, ref: str) -> bool:
         result = self._run(
-            ["git", "merge-base", "--is-ancestor", branch, "HEAD"],
+            ["git", "merge-base", "--is-ancestor", branch, ref],
             cwd=repo_path,
             capture_output=True,
         )

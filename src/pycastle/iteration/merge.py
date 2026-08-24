@@ -127,7 +127,9 @@ async def _delete_merged_branches(
     async def _teardown_one(branch: str, idx: int) -> None:
         nonlocal done
         try:
-            if not deps.git_svc.is_ancestor(branch, deps.repo_root):
+            if not deps.git_svc.is_ancestor(
+                branch, deps.repo_root, deps.cfg.operating_branch
+            ):
                 return
             worktree_path_ = worktree_identity(branch, deps.repo_root).path
             if worktree_path_ in registered_worktrees or worktree_path_.exists():
