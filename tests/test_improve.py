@@ -1766,6 +1766,8 @@ def test_draft_correction_body_names_candidate_ordinal_title_and_attempt(
         correction_calls[1].work_body
         == 'fixing draft validation errors for candidate 1/3 "Alpha" (attempt 2/3)'
     )
+
+
 # ── Issue #2191: Improve phase row — constant name, live body ─────────────────
 
 

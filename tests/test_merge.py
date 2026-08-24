@@ -2504,9 +2504,7 @@ def test_close_failure_still_closes_remaining_issues_and_deletes_branches(
 # ── Issue 2197: parent-cascade close failure ──────────────────────────────────
 
 
-def _make_cascade_failing_github_svc(
-    child_numbers: list[int], parent_number: int
-) -> GithubService:
+def _make_cascade_failing_github_svc(parent_number: int) -> GithubService:
     """Real GithubService whose child closes succeed but parent cascade always fails with 422."""
     transport = MagicMock()
 
@@ -2543,9 +2541,7 @@ def test_sibling_parent_cascade_failure_does_not_report_close_failure(
     Acceptance criterion from #2197: a merge phase whose issues all close but whose parent
     close fails returns no close_failure_issue_numbers and files no issue.
     """
-    github_svc = _make_cascade_failing_github_svc(
-        child_numbers=[1, 2, 3], parent_number=100
-    )
+    github_svc = _make_cascade_failing_github_svc(parent_number=100)
     deps = _make_deps(
         tmp_path, FakeAgentRunner([]), git_svc=git_svc, github_svc=github_svc
     )
