@@ -285,7 +285,7 @@ def _recreate_stale_branch(
     branch: str,
     sha: str | None,
 ) -> None:
-    if not svc.is_ancestor(branch, repo_path):
+    if not svc.is_ancestor(branch, repo_path, "HEAD"):
         raise WorktreeError(
             f"Branch {branch!r} has unique commits not yet on the base branch. "
             "Merge or remove these commits before retrying."

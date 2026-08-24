@@ -94,7 +94,7 @@ def _ensure_conflict_branch_is_merged(
     issue: dict, path: Path, deps: _ConflictRecoveryDeps
 ) -> None:
     branch = branch_for(issue["number"])
-    if deps.git_svc.is_ancestor(branch, path):
+    if deps.git_svc.is_ancestor(branch, path, "HEAD"):
         return
     raise RuntimeError(f"{branch} is not a merged branch")
 
@@ -108,7 +108,7 @@ async def _delete_conflict_branch(
     progress: MergeProgressReporter,
     deps: _ConflictRecoveryDeps,
 ) -> str | None:
-    if not deps.git_svc.is_ancestor(branch, deps.repo_root):
+    if not deps.git_svc.is_ancestor(branch, deps.repo_root, deps.cfg.operating_branch):
         return None
     registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
     worktree_path = worktree_identity(branch, deps.repo_root).path

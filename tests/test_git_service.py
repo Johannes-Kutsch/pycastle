@@ -216,13 +216,13 @@ def test_get_user_email_raises_git_timeout_error_on_timeout():
 def test_is_ancestor_returns_true_when_ancestor():
     svc = GitService(_cfg)
     with patch("subprocess.run", return_value=MagicMock(returncode=0)):
-        assert svc.is_ancestor("main", Path("/tmp/repo")) is True
+        assert svc.is_ancestor("main", Path("/tmp/repo"), "HEAD") is True
 
 
 def test_is_ancestor_returns_false_when_not_ancestor():
     svc = GitService(_cfg)
     with patch("subprocess.run", return_value=MagicMock(returncode=1)):
-        assert svc.is_ancestor("feature/x", Path("/tmp/repo")) is False
+        assert svc.is_ancestor("feature/x", Path("/tmp/repo"), "HEAD") is False
 
 
 def test_is_ancestor_raises_git_timeout_error_on_timeout():
@@ -234,7 +234,7 @@ def test_is_ancestor_raises_git_timeout_error_on_timeout():
         ),
         pytest.raises(GitTimeoutError),
     ):
-        svc.is_ancestor("main", Path("/tmp/repo"))
+        svc.is_ancestor("main", Path("/tmp/repo"), "HEAD")
 
 
 # ── verify_ref_exists() ────────────────────────────────────────────────────────
