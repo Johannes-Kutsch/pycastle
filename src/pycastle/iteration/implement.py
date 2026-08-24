@@ -226,7 +226,7 @@ async def run_issue(
                     issue["number"],
                     intent=DurableIssueWorktreeIntent.IMPLEMENTER,
                     deps=deps,
-                    planner_sha=sha,
+                    planner_sha=issue_plan.planner_sha,
                     operating_branch=deps.cfg.operating_branch,
                 ) as impl_mount_path,
             ):
