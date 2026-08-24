@@ -333,7 +333,8 @@ def _create_worktree(
     worktree_path: Path,
     branch: str,
     sha: str | None = None,
-    operating_branch: str = "HEAD",
+    *,
+    operating_branch: str,
 ) -> None:
     with _wrap_git_errors():
         branch_exists = svc.verify_ref_exists(branch, repo_path)
@@ -446,7 +447,7 @@ async def managed_worktree(
     sha: str | None,
     lifecycle: BranchWorktreeLifecycle,
     deps: _WorktreeDeps,
-    operating_branch: str = "HEAD",
+    operating_branch: str,
 ) -> AsyncIterator[Path]:
     resolved_identity = identity
     if resolved_identity is None:
@@ -470,7 +471,7 @@ async def managed_worktree(
             path,
             resolved_identity.branch,
             sha,
-            operating_branch,
+            operating_branch=operating_branch,
         )
     elif not is_worktree_reusable(path, resolved_identity.branch, deps.git_svc):
         _create_worktree(
@@ -479,7 +480,7 @@ async def managed_worktree(
             path,
             resolved_identity.branch,
             sha,
-            operating_branch,
+            operating_branch=operating_branch,
         )
     log_worktree_lifecycle_event("worktree_create", path, repo_root=deps.repo_root)
     _preservation_worthy_exc = False
@@ -515,7 +516,7 @@ async def durable_issue_worktree(
     intent: DurableIssueWorktreeIntent,
     deps: _WorktreeDeps,
     planner_sha: str | None = None,
-    operating_branch: str = "HEAD",
+    operating_branch: str,
 ) -> AsyncIterator[Path]:
     identity = worktree_identity(issue_branch(issue_number), deps.repo_root)
     sha = planner_sha if intent is DurableIssueWorktreeIntent.IMPLEMENTER else None
@@ -535,7 +536,7 @@ async def reusable_sandbox_worktree(
     *,
     sha: str | None,
     deps: _WorktreeDeps,
-    operating_branch: str = "HEAD",
+    operating_branch: str,
 ) -> AsyncIterator[Path]:
     identity = reusable_sandbox_worktree_identity(intent, deps.repo_root)
     async with managed_worktree(
@@ -554,7 +555,7 @@ async def replaceable_merge_sandbox_worktree(
     *,
     sha: str | None,
     deps: _WorktreeDeps,
-    operating_branch: str = "HEAD",
+    operating_branch: str,
 ) -> AsyncIterator[Path]:
     identity = merge_sandbox_worktree_identity(issue_number, deps.repo_root)
     async with managed_worktree(

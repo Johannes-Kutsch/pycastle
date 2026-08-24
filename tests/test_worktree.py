@@ -127,6 +127,7 @@ def test_managed_worktree_raises_worktree_timeout_error_when_git_times_out(branc
                 sha="abc123",
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -144,6 +145,7 @@ def test_managed_worktree_raises_worktree_error_on_git_command_failure(branch_de
                 sha="abc123",
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -167,6 +169,7 @@ def test_managed_worktree_raises_when_registered_worktree_has_no_project_files(
                 sha="abc123",
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -184,6 +187,7 @@ def test_managed_worktree_yields_valid_path_in_real_repo(real_branch_deps):
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             assert path.exists()
             assert (path / "pyproject.toml").exists()
@@ -199,6 +203,7 @@ def test_durable_issue_worktree_uses_existing_issue_path_layout(real_branch_deps
             42,
             intent=DurableIssueWorktreeIntent.REVIEWER,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             assert path == expected
             assert path.exists()
@@ -219,6 +224,7 @@ def test_durable_issue_worktree_raises_worktree_timeout_error_when_git_times_out
                 intent=DurableIssueWorktreeIntent.IMPLEMENTER,
                 deps=branch_deps,
                 planner_sha="abc123",
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -237,6 +243,7 @@ def test_durable_issue_worktree_raises_worktree_error_on_git_command_failure(
                 intent=DurableIssueWorktreeIntent.IMPLEMENTER,
                 deps=branch_deps,
                 planner_sha="abc123",
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -250,6 +257,7 @@ def test_durable_issue_worktree_implementer_uses_planner_sha(branch_deps):
             intent=DurableIssueWorktreeIntent.IMPLEMENTER,
             deps=branch_deps,
             planner_sha="abc123",
+            operating_branch="HEAD",
         ):
             pass
 
@@ -265,6 +273,7 @@ def test_durable_issue_worktree_reviewer_ignores_planner_sha(branch_deps):
             intent=DurableIssueWorktreeIntent.REVIEWER,
             deps=branch_deps,
             planner_sha="abc123",
+            operating_branch="HEAD",
         ):
             pass
 
@@ -302,6 +311,7 @@ def test_managed_worktree_creates_new_branch_in_repo(real_branch_deps):
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ):
             branches = subprocess.run(
                 [
@@ -332,6 +342,7 @@ def test_managed_worktree_preserves_when_stage_done_sentinel_present(real_branch
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             (path / ".pycastle-session" / "implementer").mkdir(parents=True)
             captured["path"] = path
@@ -378,6 +389,7 @@ def test_managed_worktree_logs_creation_and_prune_events_with_node_state(
             sha="abc1848",
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=branch_deps,
+            operating_branch="HEAD",
         ):
             pass
 
@@ -477,6 +489,7 @@ def test_managed_worktree_tears_down_when_no_role_dirs_and_clean_tree(real_branc
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             captured["path"] = path
 
@@ -509,6 +522,7 @@ def test_durable_issue_worktree_tears_down_empty_issue_branch_on_clean_exit(
             42,
             intent=DurableIssueWorktreeIntent.REVIEWER,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             captured["path"] = path
 
@@ -542,6 +556,7 @@ def test_managed_worktree_preserves_when_resumable_session_present(real_branch_d
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             role_dir = path / ".pycastle-session" / "reviewer"
             role_dir.mkdir(parents=True)
@@ -581,6 +596,7 @@ def test_managed_worktree_preserves_clean_worktree_on_unexpected_agent_failure(
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=real_branch_deps,
+                operating_branch="HEAD",
             ) as path:
                 captured["path"] = path
                 raise RuntimeError("unexpected crash")
@@ -620,6 +636,7 @@ def test_managed_worktree_with_existing_branch(real_branch_deps):
             sha=None,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             assert (path / "pyproject.toml").exists()
 
@@ -638,6 +655,7 @@ def test_managed_worktree_succeeds_after_stale_git_registration(real_branch_deps
             sha=None,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as wt:
             # commit so the branch has WIP and is preserved by the empty-branch cleanup rule
             (wt / "stale.txt").write_text("wip")
@@ -669,6 +687,7 @@ def test_managed_worktree_succeeds_after_stale_git_registration(real_branch_deps
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             assert (path / "pyproject.toml").exists()
 
@@ -685,6 +704,7 @@ def test_managed_worktree_raises_on_same_branch_conflict(real_branch_deps):
             sha=None,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ):
             with pytest.raises(WorktreeError, match=r"(?i)worktree add failed"):
                 async with managed_worktree(
@@ -693,6 +713,7 @@ def test_managed_worktree_raises_on_same_branch_conflict(real_branch_deps):
                     sha=None,
                     lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                     deps=real_branch_deps,
+                    operating_branch="HEAD",
                 ):
                     pass
 
@@ -710,6 +731,7 @@ def test_managed_worktree_raises_when_project_files_missing(bare_branch_deps):
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=bare_branch_deps,
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -727,6 +749,7 @@ def test_managed_worktree_error_includes_path_and_listing(bare_branch_deps):
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=bare_branch_deps,
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -794,6 +817,7 @@ def test_managed_worktree_does_not_recreate_valid_ancestor_branch(git_repo):
             sha=None,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             assert (path / "pyproject.toml").exists()
             assert not (path / "extra.txt").exists(), (
@@ -891,6 +915,7 @@ def test_managed_worktree_raises_when_non_ancestor_branch_has_no_project_files(
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
                 deps=deps,
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -926,6 +951,7 @@ def test_managed_worktree_recreates_stale_ancestor_branch(git_repo):
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             assert (path / "pyproject.toml").exists()
 
@@ -1185,6 +1211,7 @@ def test_managed_worktree_accepts_worktree_identity(branch_deps):
             sha="abc123",
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
+            operating_branch="HEAD",
         ) as path:
             assert path == identity.path
 
@@ -1435,6 +1462,7 @@ def test_managed_worktree_creates_worktree_on_enter_and_yields_correct_path(
             sha="abc123",
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
+            operating_branch="HEAD",
         ) as path:
             assert path == expected_path
             assert expected_path.exists()
@@ -1452,6 +1480,7 @@ def test_managed_worktree_removes_worktree_and_branch_on_clean_exit(branch_deps)
             sha="abc123",
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
+            operating_branch="HEAD",
         ):
             pass
 
@@ -1474,6 +1503,7 @@ def test_managed_worktree_removes_worktree_but_not_branch_for_durable_issue_life
             sha="abc123",
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=branch_deps,
+            operating_branch="HEAD",
         ):
             pass
 
@@ -1493,6 +1523,7 @@ def test_managed_worktree_preserves_worktree_on_unexpected_exception(branch_deps
                 sha="abc123",
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 raise RuntimeError("body error")
 
@@ -1517,6 +1548,7 @@ def test_managed_worktree_does_not_delete_branch_when_remove_worktree_raises(
                 sha="abc123",
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -1537,6 +1569,7 @@ def test_managed_worktree_does_not_run_cleanup_when_create_fails(branch_deps):
                 sha="abc123",
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 pass
 
@@ -1557,6 +1590,7 @@ def test_managed_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
             sha=None,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ):
             async with managed_worktree(
                 "issue-11",
@@ -1564,6 +1598,7 @@ def test_managed_worktree_keeps_worktrees_dir_when_sibling_worktree_remains(
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=real_branch_deps,
+                operating_branch="HEAD",
             ):
                 pass
             assert worktrees_dir.exists()
@@ -1583,6 +1618,7 @@ def test_managed_worktree_removes_worktrees_dir_when_last_worktree_exits(
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ):
             assert worktrees_dir.exists()
         assert not worktrees_dir.exists()
@@ -1640,6 +1676,7 @@ def test_managed_worktree_has_clean_status_after_creation(real_branch_deps, auto
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             _assert_worktree_clean(path)
 
@@ -1677,6 +1714,7 @@ def test_managed_worktree_preserves_worktree_and_branch_when_session_dir_has_fil
             sha=None,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
+            operating_branch="HEAD",
         ) as wt_path:
             session_dir = wt_path / ".pycastle-session" / "merger"
             session_dir.mkdir(parents=True, exist_ok=True)
@@ -1700,6 +1738,7 @@ def test_managed_worktree_cleans_up_on_usage_limit_error(branch_deps):
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 raise UsageLimitError(reset_time=None)
 
@@ -1726,6 +1765,7 @@ def test_managed_worktree_preserves_worktree_on_agent_failed_error(branch_deps):
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ) as wt_path:
                 raise AgentFailedError(
                     role_value="implementer",
@@ -1768,6 +1808,7 @@ def test_managed_worktree_preservation_predicate(
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ) as wt_path:
                 if has_resumable_session:
                     session_dir = wt_path / ".pycastle-session" / "implementer"
@@ -1796,6 +1837,7 @@ def test_managed_worktree_cleans_up_on_transient_agent_error(branch_deps):
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 raise TransientAgentError
 
@@ -1820,6 +1862,7 @@ def test_managed_worktree_preserves_worktree_on_hard_agent_error(branch_deps):
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 raise HardAgentError
 
@@ -1841,6 +1884,7 @@ def test_managed_worktree_cleans_up_on_agent_credential_failure(branch_deps):
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ):
                 raise AgentCredentialFailureError(
                     message="Codex authentication missing: run `codex login` on the host.",
@@ -1876,6 +1920,7 @@ def test_managed_worktree_preserves_independent_worktree_state_on_agent_credenti
                 sha=None,
                 lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
                 deps=branch_deps,
+                operating_branch="HEAD",
             ) as wt_path:
                 if has_resumable_session:
                     session_dir = wt_path / ".pycastle-session" / "implementer"
@@ -2379,6 +2424,7 @@ def test_managed_worktree_preserves_branch_with_commits_for_durable_issue_lifecy
             sha=None,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             (path / "wip.txt").write_text("work in progress")
             subprocess.run(
@@ -2418,6 +2464,7 @@ def test_durable_issue_worktree_preserves_issue_branch_with_commits_ahead_of_mai
             42,
             intent=DurableIssueWorktreeIntent.REVIEWER,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             (path / "wip.txt").write_text("work in progress")
             subprocess.run(
@@ -2463,6 +2510,7 @@ def test_managed_worktree_deletes_empty_branch_for_durable_issue_lifecycle(
             sha=None,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=real_branch_deps,
+            operating_branch="HEAD",
         ) as path:
             worktree_path = path
 
@@ -2554,6 +2602,7 @@ def test_reusable_sandbox_lifecycle_rebuilds_at_sha_when_stale_divergent_branch_
             sha=sha_main,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
 
@@ -2617,6 +2666,7 @@ def test_reusable_sandbox_lifecycle_reuses_preserved_failure_worktree(repo):
             sha=sha_main,
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
 
@@ -2670,6 +2720,7 @@ def test_replaceable_merge_lifecycle_replaces_preserved_failure_worktree(repo):
             issue_number=issue_number,
             sha=sha_main,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
 
@@ -2732,6 +2783,7 @@ def test_durable_issue_lifecycle_reuses_existing_branch_tip(repo):
             sha=sha_main,
             lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
 
@@ -2785,6 +2837,7 @@ def test_reusable_sandbox_rebuilds_stale_non_preserved_branch_at_sha(repo):
             "improve-sandbox",
             sha=sha_main,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
 
@@ -2837,6 +2890,7 @@ def test_reusable_sandbox_keeps_preserved_failure_state_intact(repo):
             "improve-sandbox",
             sha=sha_main,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
 
@@ -2861,6 +2915,7 @@ def test_reusable_sandbox_tears_down_clean_branch_on_success(repo):
             "improve-sandbox",
             sha=sha_main,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             assert path == sandbox_path
             assert _git(path, "rev-parse", "HEAD") == sha_main
@@ -2890,6 +2945,7 @@ def test_reusable_sandbox_named_intent_keeps_same_lifecycle(repo):
             SandboxWorktreeIntent.IMPROVE,
             sha=sha_main,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             assert path == sandbox_path
             assert _git(path, "symbolic-ref", "--short", "HEAD") == (
@@ -2950,6 +3006,7 @@ def test_replaceable_merge_sandbox_replaces_preserved_failure_state(repo):
             issue_number=42,
             sha=sha_main,
             deps=deps,
+            operating_branch="HEAD",
         ) as path:
             head_inside.append(_git(path, "rev-parse", "HEAD"))
 
@@ -3003,6 +3060,7 @@ def test_managed_worktree_finally_propagates_unexpected_exception_from_has_commi
             sha="abc123",
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
+            operating_branch="HEAD",
         ):
             pass
 
@@ -3025,6 +3083,7 @@ def test_managed_worktree_finally_propagates_unexpected_exception_from_is_clean(
             sha="abc123",
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
+            operating_branch="HEAD",
         ):
             pass
 
@@ -3045,6 +3104,7 @@ def test_cleanup_stale_worktree_propagates_unexpected_exception_from_list_worktr
             sha="abc123",
             lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
             deps=branch_deps,
+            operating_branch="HEAD",
         ):
             pass
 
