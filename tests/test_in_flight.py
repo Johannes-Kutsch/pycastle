@@ -57,7 +57,9 @@ def test_select_in_flight_issues_keeps_input_order_across_mixed_evidence(
         lambda _repo_root, branch, main_branch="main": branch == "pycastle/issue-2"
     )
 
-    assert select_in_flight_issues(issues, repo_root=repo_root, git_svc=git_svc) == [
+    assert select_in_flight_issues(
+        issues, repo_root=repo_root, git_svc=git_svc, operating_branch="main"
+    ) == [
         issues[0],
         issues[1],
     ]
@@ -115,7 +117,9 @@ def test_select_in_flight_issues_uses_only_resumable_role_session_worktree_evide
 
     git_svc.verify_ref_exists.return_value = False
 
-    result = select_in_flight_issues(issues, repo_root=repo_root, git_svc=git_svc)
+    result = select_in_flight_issues(
+        issues, repo_root=repo_root, git_svc=git_svc, operating_branch="main"
+    )
 
     assert result == [issues[0]]
     assert result[0] is issues[0]
@@ -140,9 +144,9 @@ def test_select_in_flight_issues_treats_any_role_session_dir_under_issue_worktre
 
     git_svc.verify_ref_exists.return_value = False
 
-    assert select_in_flight_issues([issue], repo_root=tmp_path, git_svc=git_svc) == [
-        issue
-    ]
+    assert select_in_flight_issues(
+        [issue], repo_root=tmp_path, git_svc=git_svc, operating_branch="main"
+    ) == [issue]
 
 
 def test_select_in_flight_issues_omits_metadata_only_role_session_without_branch_evidence(
@@ -165,7 +169,12 @@ def test_select_in_flight_issues_omits_metadata_only_role_session_without_branch
 
     git_svc.verify_ref_exists.return_value = False
 
-    assert select_in_flight_issues([issue], repo_root=tmp_path, git_svc=git_svc) == []
+    assert (
+        select_in_flight_issues(
+            [issue], repo_root=tmp_path, git_svc=git_svc, operating_branch="main"
+        )
+        == []
+    )
 
 
 def test_select_in_flight_issues_returns_exact_issue_for_branch_with_commits_ahead(
@@ -191,9 +200,9 @@ def test_select_in_flight_issues_returns_exact_issue_for_branch_with_commits_ahe
     )
     _commit(git_repo, "advance main", "main-1\nmain-2\n")
 
-    assert select_in_flight_issues(issues, repo_root=git_repo, git_svc=git_svc) == [
-        issues[0]
-    ]
+    assert select_in_flight_issues(
+        issues, repo_root=git_repo, git_svc=git_svc, operating_branch="main"
+    ) == [issues[0]]
 
 
 def test_select_in_flight_issues_omits_leftover_empty_branch_ref(git_repo: Path):
@@ -209,7 +218,12 @@ def test_select_in_flight_issues_omits_leftover_empty_branch_ref(git_repo: Path)
         capture_output=True,
     )
 
-    assert select_in_flight_issues(issues, repo_root=git_repo, git_svc=git_svc) == []
+    assert (
+        select_in_flight_issues(
+            issues, repo_root=git_repo, git_svc=git_svc, operating_branch="main"
+        )
+        == []
+    )
 
 
 def test_select_in_flight_issues_omits_issue_without_worktree_or_branch(
@@ -222,7 +236,12 @@ def test_select_in_flight_issues_omits_issue_without_worktree_or_branch(
 
     git_svc.verify_ref_exists.return_value = False
 
-    assert select_in_flight_issues(issues, repo_root=tmp_path, git_svc=git_svc) == []
+    assert (
+        select_in_flight_issues(
+            issues, repo_root=tmp_path, git_svc=git_svc, operating_branch="main"
+        )
+        == []
+    )
 
 
 def test_select_in_flight_issues_keeps_ready_issue_input_order_for_branch_evidence(
@@ -270,7 +289,9 @@ def test_select_in_flight_issues_keeps_ready_issue_input_order_for_branch_eviden
         capture_output=True,
     )
 
-    assert select_in_flight_issues(issues, repo_root=git_repo, git_svc=git_svc) == [
+    assert select_in_flight_issues(
+        issues, repo_root=git_repo, git_svc=git_svc, operating_branch="main"
+    ) == [
         issues[0],
         issues[1],
     ]
@@ -334,7 +355,7 @@ def test_select_in_flight_issues_omits_issue_branch_not_ahead_of_non_main_operat
     assert result == []
 
 
-def test_select_in_flight_issues_default_operating_branch_main_unchanged(
+def test_select_in_flight_issues_with_main_as_operating_branch(
     git_repo: Path,
 ):
     issues = [
@@ -349,6 +370,8 @@ def test_select_in_flight_issues_default_operating_branch_main_unchanged(
     _checkout(git_repo, "main")
     _commit(git_repo, "advance main", "main-1\nmain-2\n")
 
-    result = select_in_flight_issues(issues, repo_root=git_repo, git_svc=git_svc)
+    result = select_in_flight_issues(
+        issues, repo_root=git_repo, git_svc=git_svc, operating_branch="main"
+    )
 
     assert result == [issues[0]]

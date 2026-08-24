@@ -2990,10 +2990,10 @@ def test_is_worktree_reusable_returns_false_on_git_service_error(tmp_path):
 def test_managed_worktree_finally_propagates_unexpected_exception_from_has_commits(
     branch_deps,
 ):
-    """RuntimeError from has_commits_ahead_of_main in finally block must propagate."""
+    """RuntimeError from the commits check in the finally block must propagate."""
     branch_deps.git_svc.is_working_tree_clean.return_value = True
-    branch_deps.git_svc.has_commits_ahead_of_main.side_effect = RuntimeError(
-        "unexpected commits check failure"
+    branch_deps.git_svc.branch_has_commits_ahead_of_merge_base.side_effect = (
+        RuntimeError("unexpected commits check failure")
     )
 
     async def _run():
@@ -3075,3 +3075,124 @@ def test_log_worktree_lifecycle_event_propagates_unexpected_exception(
 
     with pytest.raises(RuntimeError, match="unexpected fsync"):
         log_worktree_lifecycle_event("worktree_create", tmp_path)
+
+
+# ── Durable issue branches are cut and kept against the operating branch ──────
+
+
+def _working_branch_repo(repo: Path) -> tuple[str, str]:
+    """Root on main, `working` ahead of it. Returns (old working tip, new tip).
+
+    Mirrors a configured `working_branch`: pycastle's work lands on `working`
+    while the repo root stays checked out on the dev branch.
+    """
+    _git(repo, "checkout", "-b", "working")
+    (repo / "shared.txt").write_text("one\n")
+    _git(repo, "add", "shared.txt")
+    _git(repo, "commit", "-m", "working: first")
+    old_tip = _git(repo, "rev-parse", "HEAD")
+    (repo / "shared.txt").write_text("one\ntwo\n")
+    _git(repo, "add", "shared.txt")
+    _git(repo, "commit", "-m", "working: another issue merged")
+    new_tip = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "main")
+    return old_tip, new_tip
+
+
+def _durable_worktree(deps, sha: str | None, operating_branch: str) -> Path:
+    async def _run() -> Path:
+        async with durable_issue_worktree(
+            99,
+            intent=DurableIssueWorktreeIntent.IMPLEMENTER,
+            deps=deps,
+            planner_sha=sha,
+            operating_branch=operating_branch,
+        ) as path:
+            return path
+
+    return asyncio.run(_run())
+
+
+def test_empty_durable_issue_branch_is_deleted_when_ahead_of_dev_but_not_operating(
+    real_branch_deps,
+):
+    """A durable branch with no work of its own must not survive teardown.
+
+    With a working branch configured, every fresh issue branch is many commits
+    ahead of the dev branch. Asking the dev branch whether the branch carries
+    work keeps it forever; asking the operating branch answers correctly.
+    """
+    repo = real_branch_deps.repo_root
+    _, new_tip = _working_branch_repo(repo)
+
+    _durable_worktree(real_branch_deps, new_tip, "working")
+
+    assert not real_branch_deps.git_svc.verify_ref_exists("pycastle/issue-99", repo)
+
+
+def test_durable_issue_branch_with_own_commits_survives_teardown(real_branch_deps):
+    """Sole-variable control: a branch carrying work is still kept."""
+    repo = real_branch_deps.repo_root
+    _, new_tip = _working_branch_repo(repo)
+
+    async def _run() -> None:
+        async with durable_issue_worktree(
+            99,
+            intent=DurableIssueWorktreeIntent.IMPLEMENTER,
+            deps=real_branch_deps,
+            planner_sha=new_tip,
+            operating_branch="working",
+        ) as path:
+            (path / "impl.txt").write_text("implementer work")
+            _git(path, "add", "impl.txt")
+            _git(path, "commit", "-m", "Implement #99")
+
+    asyncio.run(_run())
+
+    assert real_branch_deps.git_svc.verify_ref_exists("pycastle/issue-99", repo)
+
+
+def test_reused_empty_issue_branch_starts_at_the_requested_sha(real_branch_deps):
+    """A branch left behind by an earlier run is moved to this run's sha.
+
+    Reusing it at its old base hands the agent a tree missing every merge
+    since, which can never fast-forward back into the operating branch.
+    """
+    repo = real_branch_deps.repo_root
+    old_tip, new_tip = _working_branch_repo(repo)
+    _git(repo, "branch", "pycastle/issue-99", old_tip)
+    seen: dict[str, str] = {}
+
+    async def _run() -> None:
+        async with durable_issue_worktree(
+            99,
+            intent=DurableIssueWorktreeIntent.IMPLEMENTER,
+            deps=real_branch_deps,
+            planner_sha=new_tip,
+            operating_branch="working",
+        ) as path:
+            seen["head"] = _git(path, "rev-parse", "HEAD")
+            seen["shared"] = (path / "shared.txt").read_text()
+
+    asyncio.run(_run())
+
+    assert seen["head"] == new_tip
+    assert seen["shared"] == "one\ntwo\n"
+
+
+def test_reused_issue_branch_with_own_commits_keeps_its_base(real_branch_deps):
+    """Sole-variable control: a branch carrying work is never reset."""
+    repo = real_branch_deps.repo_root
+    old_tip, new_tip = _working_branch_repo(repo)
+    _git(repo, "branch", "pycastle/issue-99", old_tip)
+    scratch = repo.parent / "scratch"
+    _git(repo, "worktree", "add", str(scratch), "pycastle/issue-99")
+    (scratch / "impl.txt").write_text("work in progress")
+    _git(scratch, "add", "impl.txt")
+    _git(scratch, "commit", "-m", "Implement #99")
+    own_tip = _git(scratch, "rev-parse", "HEAD")
+    _git(repo, "worktree", "remove", str(scratch))
+
+    _durable_worktree(real_branch_deps, new_tip, "working")
+
+    assert _git(repo, "rev-parse", "pycastle/issue-99") == own_tip

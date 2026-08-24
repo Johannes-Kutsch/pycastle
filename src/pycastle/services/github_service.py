@@ -393,6 +393,11 @@ class GithubService:
         try:
             self.close_issue_with_parents(parent)
         except GithubServiceError as exc:
+            # The mark exists to stop concurrent siblings racing on one parent,
+            # not to retire it: a later batch must be free to retry a cascade
+            # that failed transiently. One service instance serves the whole run.
+            with self._cascade_lock:
+                self._cascade_attempted.discard(parent)
             self._warn_parent_cascade_failure(number, exc)
 
     def _filter_recently_closed_open_issue_items(

@@ -13,7 +13,7 @@ def select_in_flight_issues(
     *,
     repo_root: Path,
     git_svc: GitService,
-    operating_branch: str = "main",
+    operating_branch: str,
 ) -> list[dict]:
     return [
         issue
@@ -32,7 +32,7 @@ def _issue_is_in_flight(
     *,
     repo_root: Path,
     git_svc: GitService,
-    operating_branch: str = "main",
+    operating_branch: str,
 ) -> bool:
     branch = branch_for(issue["number"])
     issue_worktree = worktree_identity(branch, repo_root).path

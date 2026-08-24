@@ -225,6 +225,19 @@ def test_is_ancestor_returns_false_when_not_ancestor():
         assert svc.is_ancestor("feature/x", Path("/tmp/repo"), "HEAD") is False
 
 
+def test_is_ancestor_requires_an_explicit_comparison_target():
+    """The target is the caller's to state — a default answers the wrong question.
+
+    With a working branch configured, defaulting to the repo root's HEAD reports
+    every merged branch as unmerged (#2195). Requiring the argument is what stops
+    the next call site — or the next merge resolution — reintroducing that silently.
+    """
+    svc = GitService(_cfg)
+
+    with pytest.raises(TypeError):
+        svc.is_ancestor("main", Path("/tmp/repo"))  # type: ignore[call-arg]
+
+
 def test_is_ancestor_raises_git_timeout_error_on_timeout():
     svc = GitService(_cfg)
     with (

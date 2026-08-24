@@ -284,7 +284,7 @@ def _recreate_stale_branch(
     worktree_path: Path,
     branch: str,
     sha: str | None,
-    operating_branch: str = "HEAD",
+    operating_branch: str,
 ) -> None:
     if not svc.is_ancestor(branch, repo_path, target=operating_branch):
         raise WorktreeError(
@@ -295,6 +295,36 @@ def _recreate_stale_branch(
     with _wrap_git_errors():
         svc.delete_branch(branch, repo_path)
         svc.create_worktree(repo_path, worktree_path, branch, sha)
+
+
+def _carries_own_work(
+    svc: GitService, repo_path: Path, branch: str, operating_branch: str
+) -> bool:
+    """True when the branch holds commits the operating branch does not."""
+    return svc.branch_has_commits_ahead_of_merge_base(
+        repo_path, branch, operating_branch
+    )
+
+
+def _rebase_reused_branch_onto(
+    svc: GitService,
+    repo_path: Path,
+    worktree_path: Path,
+    branch: str,
+    sha: str,
+    operating_branch: str,
+) -> None:
+    """Move a reused branch that carries no work of its own to the requested sha.
+
+    A branch left behind by an earlier run stays pinned to the operating-branch
+    tip of that run. Reusing it as-is hands the agent a base that is behind by
+    every merge since, which is never a fast-forward at merge time and conflicts
+    as soon as the two touch the same lines. Nothing is at risk while the branch
+    is an ancestor of the operating branch: it has no commits to lose.
+    """
+    if _carries_own_work(svc, repo_path, branch, operating_branch):
+        return
+    svc.hard_reset_to(worktree_path, sha)
 
 
 def _create_worktree(
@@ -319,6 +349,11 @@ def _create_worktree(
             svc.remove_worktree(repo_path, worktree_path)
 
         svc.create_worktree(repo_path, worktree_path, branch, sha)
+
+        if branch_exists and sha is not None:
+            _rebase_reused_branch_onto(
+                svc, repo_path, worktree_path, branch, sha, operating_branch
+            )
 
         if not _has_project_files(worktree_path) and branch_exists:
             _recreate_stale_branch(
@@ -384,6 +419,7 @@ def _teardown_worktree_branch(
     lifecycle: BranchWorktreeLifecycle,
     *,
     preservation_worthy: bool,
+    operating_branch: str,
 ) -> None:
     try:
         dirty = not deps.git_svc.is_working_tree_clean(path)
@@ -391,7 +427,9 @@ def _teardown_worktree_branch(
         dirty = True
     if not (preservation_worthy or dirty or any_role_dir_present(path)):
         try:
-            _branch_has_commits = deps.git_svc.has_commits_ahead_of_main(path)
+            _branch_has_commits = _carries_own_work(
+                deps.git_svc, deps.repo_root, identity.branch, operating_branch
+            )
         except GitServiceError:
             _branch_has_commits = True
         teardown_worktree(deps.git_svc, deps.repo_root, path)
@@ -466,6 +504,7 @@ async def managed_worktree(
             resolved_identity,
             lifecycle,
             preservation_worthy=_preservation_worthy_exc,
+            operating_branch=operating_branch,
         )
 
 

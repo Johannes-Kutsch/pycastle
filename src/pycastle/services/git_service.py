@@ -123,7 +123,7 @@ class GitService:
         )
         return self._decode(result.stdout)
 
-    def is_ancestor(self, branch: str, repo_path: Path, target: str = "HEAD") -> bool:
+    def is_ancestor(self, branch: str, repo_path: Path, target: str) -> bool:
         result = self._run(
             ["git", "merge-base", "--is-ancestor", branch, target],
             cwd=repo_path,
@@ -312,24 +312,11 @@ class GitService:
             stderr=output,
         )
 
-    def count_commits_ahead(self, repo_path: Path, remote_ref: str) -> int:
-        result = self._run_or_raise(
-            ["git", "rev-list", "--count", f"{remote_ref}..HEAD"],
-            f"git rev-list --count {remote_ref}..HEAD failed",
-            cwd=repo_path,
-        )
-        return int(self._decode(result.stdout))
-
-    def has_commits_ahead_of_main(
-        self, repo_path: Path, main_branch: str = "main"
-    ) -> bool:
-        return self.count_commits_ahead(repo_path, main_branch) > 0
-
     def branch_has_commits_ahead_of_merge_base(
-        self, repo_path: Path, branch: str, main_branch: str = "main"
+        self, repo_path: Path, branch: str, base_branch: str
     ) -> bool:
         result = self._run(
-            ["git", "rev-list", "--count", f"{main_branch}..{branch}"],
+            ["git", "rev-list", "--count", f"{base_branch}..{branch}"],
             cwd=repo_path,
             capture_output=True,
         )
