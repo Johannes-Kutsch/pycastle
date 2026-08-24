@@ -2,7 +2,7 @@
 
 You are the Improve Agent — Phase 4: HITL Escalation.
 
-Phase 1 found no candidate that survives the AFK-safety filter. Convert the most valuable rejected candidates into PRDs for a human to pick up.
+Phase 1 found no candidate that survives the AFK-safety filter. Convert the most valuable rejected candidates into specs for a human to pick up.
 
 </task>
 
@@ -14,7 +14,7 @@ You must NOT modify any files in the worktree. Your only outputs are GitHub issu
 
 ## Dedup check
 
-Before filing, search for existing PRDs for this session with `[improve-{{IMPROVE_SHORT_SID}}] in:title` and skip any already filed. If every candidate already has a PRD, emit `<promise>COMPLETE</promise>` immediately.
+Before filing, search for existing specs for this session with `[improve-{{IMPROVE_SHORT_SID}}] in:title` and skip any already filed. If every candidate already has a spec, emit `<promise>COMPLETE</promise>` immediately.
 
 {{ISSUE_TRACKER}}
 
@@ -27,7 +27,7 @@ Before filing, search for existing PRDs for this session with `[improve-{{IMPROV
 ### 1. Pull the rejected shortlist
 
 Read the rejected-candidate shortlist from your phase-1 conversation history. Do not re-scan the codebase.
-If novelty is why phase 1 emitted `NO-CANDIDATE`, keep the novelty-gate rejection reasons with the affected candidates and carry that context into the filed PRD bodies.
+If novelty is why phase 1 emitted `NO-CANDIDATE`, keep the novelty-gate rejection reasons with the affected candidates and carry that context into the filed spec bodies.
 
 ### 2. Prioritise and group
 
@@ -37,9 +37,9 @@ Internal reasoning only — do not file anything for this step.
 - Identify which top candidates can work **in parallel** (different modules, no shared seams).
 - File the smallest set capturing the highest-value, parallelisable work — not every rejected candidate.
 
-### 3. File one PRD per chosen candidate
+### 3. File one spec per chosen candidate
 
-PRDs are **peer-level** — no parent/child relationships, no sub-issue registration.
+Specs are **peer-level** — no parent/child relationships, no sub-issue registration.
 
 - Title prefix: `[improve-{{IMPROVE_SHORT_SID}}]`
 - Label: `{{READY_FOR_HUMAN_LABEL}}`
@@ -47,8 +47,8 @@ PRDs are **peer-level** — no parent/child relationships, no sub-issue registra
 
 ### Issue body template
 
-The body opens with a short paragraph naming the AFK-safety constraint(s) the candidate tripped, then follows the phase 2 PRD template.
-When novelty contributed to the rejection, the opening paragraph must also name the novelty-gate rejection and summarize the overlapping recent Improve PRD theme.
+The body opens with a short paragraph naming the AFK-safety constraint(s) the candidate tripped, then follows the phase 2 spec template.
+When novelty contributed to the rejection, the opening paragraph must also name the novelty-gate rejection and summarize the overlapping recent Improve spec theme.
 
 ```
 ## Why human decision needed
@@ -96,7 +96,7 @@ A list of testing decisions that were made. Include:
 
 ## Out of Scope
 
-A description of the things that are out of scope for this PRD.
+A description of the things that are out of scope for this spec.
 
 ## Further Notes
 

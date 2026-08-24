@@ -75,7 +75,7 @@ def test_spec_with_title_only_and_valid_slices_is_accepted(
     tmp_path: Path, cfg: Config
 ) -> None:
     (tmp_path / "spec.md").write_text(
-        f"---\ntitle: [improve-PRD] My feature\n---\n\n{_VALID_BODY}"
+        f"---\ntitle: [improve-spec] My feature\n---\n\n{_VALID_BODY}"
     )
     _slice_draft(tmp_path, "01-foo")
 

@@ -15,7 +15,7 @@ Sort the issue's acceptance criteria into two lists:
 - **Behaviors** — criteria naming an observable surface. Order them most critical paths first, edge cases last; they run the loop below.
 - **Prose artifacts** — criteria naming the content of a **prose artifact**, as defined under *Prose artifacts* in the standards below. Apply these as plain edits at any point in the session.
 
-The seams under test were agreed at PRD time: test only at the observable surfaces the issue's acceptance criteria name. Do not invent new seams in-session.
+The seams under test were agreed at spec time: test only at the observable surfaces the issue's acceptance criteria name. Do not invent new seams in-session.
 
 ---
 

@@ -1,8 +1,8 @@
 <task>
 
-You are the Improve Agent — Phase 2: PRD.
+You are the Improve Agent — Phase 2: Spec.
 
-You are writing up candidate rank {{CANDIDATE_RANK}}: **{{CANDIDATE_TITLE}}**. Turn it into a PRD. Write it as a draft file.
+You are writing up candidate rank {{CANDIDATE_RANK}}: **{{CANDIDATE_TITLE}}**. Turn it into a spec. Write it as a draft file.
 
 </task>
 
@@ -16,11 +16,11 @@ You must NOT modify any files in the worktree. Your only outputs are the draft f
 
 {{DESIGN_STANDARDS}}
 
-## Recent Improve PRDs
+## Recent Improve Specs
 
-Use this novelty context to avoid drafting a duplicate or near-duplicate PRD:
+Use this novelty context to avoid drafting a duplicate or near-duplicate spec:
 
-{{RECENT_IMPROVE_PRDS}}
+{{RECENT_IMPROVE_SPECS}}
 
 </context>
 
@@ -39,11 +39,11 @@ Use this novelty context to avoid drafting a duplicate or near-duplicate PRD:
 
 2. Sketch out the seams at which the change will be tested. Prefer existing seams; if a new one is needed, place it at the highest point you can. The fewer seams this change tests at, the better — ideally one.
 
-3. Write the PRD using the template below, then save it as `.pycastle-session/improve/_drafts/spec.md` with the following frontmatter:
+3. Write the spec using the template below, then save it as `.pycastle-session/improve/_drafts/spec.md` with the following frontmatter:
 
 ```
 ---
-title: [improve-PRD] <concise title>
+title: [improve-spec] <concise title>
 ---
 ```
 
@@ -74,10 +74,10 @@ This list should be extensive and cover all aspects of the change.
 
 ## Novelty Check
 
-Record the novelty decision from phase 1 durably in every PRD.
+Record the novelty decision from phase 1 durably in every spec.
 
-- For same-theme candidates, name the matching recent Improve PRDs, the material remaining friction, and why prior PRDs did not cover it.
-- For non-overlapping candidates, use this exact wording: `Recent Improve PRDs do not share this candidate's architectural theme.`
+- For same-theme candidates, name the matching recent Improve specs, the material remaining friction, and why prior specs did not cover it.
+- For non-overlapping candidates, use this exact wording: `Recent Improve specs do not share this candidate's architectural theme.`
 
 ## Implementation Decisions
 
@@ -103,7 +103,7 @@ A list of testing decisions that were made. Include:
 
 ## Out of Scope
 
-A description of the things that are out of scope for this PRD.
+A description of the things that are out of scope for this spec.
 
 ## Further Notes
 

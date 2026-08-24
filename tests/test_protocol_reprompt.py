@@ -53,9 +53,9 @@ _ISSUE_SCOPE_ARGS: dict[str, str] = {
     "OPERATING_BRANCH": "main",
 }
 
-_IMPROVE_PRD_SCOPE_ARGS: dict[str, str] = {
+_IMPROVE_SPEC_SCOPE_ARGS: dict[str, str] = {
     "IMPROVE_SHORT_SID": "abc123",
-    "RECENT_IMPROVE_PRDS": "[]",
+    "RECENT_IMPROVE_SPECS": "[]",
     "CANDIDATE_RANK": "1",
     "CANDIDATE_TITLE": "Deepen the parser module",
 }
@@ -79,10 +79,10 @@ _SCOPE_ARGS_BY_TEMPLATE: dict[PromptTemplate, dict[str, str]] = {
         "COMMAND": "ruff check",
         "OUTPUT": "failure",
     },
-    PromptTemplate.IMPROVE_PRD: _IMPROVE_PRD_SCOPE_ARGS,
-    PromptTemplate.IMPROVE_NO_CANDIDATE: _IMPROVE_PRD_SCOPE_ARGS,
+    PromptTemplate.IMPROVE_SPEC: _IMPROVE_SPEC_SCOPE_ARGS,
+    PromptTemplate.IMPROVE_NO_CANDIDATE: _IMPROVE_SPEC_SCOPE_ARGS,
     PromptTemplate.IMPROVE_SCAN: {
-        "RECENT_IMPROVE_PRD_TITLES": "[]",
+        "RECENT_IMPROVE_SPEC_TITLES": "[]",
         "CANDIDATE_BUDGET": "3",
     },
     PromptTemplate.IMPROVE_TICKETS: {
@@ -128,7 +128,7 @@ _TEMPLATE_SPECIFIC_PROTOCOL_CASES = (
     (AgentRole.PREFLIGHT_ISSUE, PromptTemplate.HOST_CHECK_ISSUE),
     (AgentRole.MERGER, PromptTemplate.MERGE),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SCAN),
-    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_PRD),
+    (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SPEC),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_TICKETS),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_NO_CANDIDATE),
     (AgentRole.IMPROVE, PromptTemplate.IMPROVE_DRAFT_CORRECTION),
@@ -355,7 +355,7 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_work_famil
 def test_plan_protocol_reprompt_returns_improve_specific_message():
     plan = plan_protocol_reprompt(
         role=AgentRole.IMPROVE,
-        invocation=_invocation(PromptTemplate.IMPROVE_PRD),
+        invocation=_invocation(PromptTemplate.IMPROVE_SPEC),
         parser_error="missing promise tag",
         render_expected_output_shape=lambda: "<issue>{...}</issue>",
     )
@@ -374,10 +374,10 @@ def test_plan_protocol_reprompt_returns_improve_specific_message():
 
 def test_plan_protocol_reprompt_preserves_exact_improve_phase_invocations():
     for template, expected_scope_fragment in (
-        (PromptTemplate.IMPROVE_SCAN, "RECENT_IMPROVE_PRD_TITLES=[]"),
-        (PromptTemplate.IMPROVE_PRD, "RECENT_IMPROVE_PRDS=[]"),
+        (PromptTemplate.IMPROVE_SCAN, "RECENT_IMPROVE_SPEC_TITLES=[]"),
+        (PromptTemplate.IMPROVE_SPEC, "RECENT_IMPROVE_SPECS=[]"),
         (PromptTemplate.IMPROVE_TICKETS, "IMPROVE_SHORT_SID=abc123"),
-        (PromptTemplate.IMPROVE_NO_CANDIDATE, "RECENT_IMPROVE_PRDS=[]"),
+        (PromptTemplate.IMPROVE_NO_CANDIDATE, "RECENT_IMPROVE_SPECS=[]"),
     ):
         plan = plan_protocol_reprompt(
             role=AgentRole.IMPROVE,

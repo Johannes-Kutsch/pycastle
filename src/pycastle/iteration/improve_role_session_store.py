@@ -151,7 +151,7 @@ class ImproveRoleSessionStore:
             json.dumps(data), encoding="utf-8"
         )
 
-    def mark_prd_completion(self, idx: int) -> None:
+    def mark_spec_completion(self, idx: int) -> None:
         if self.read_candidate_record(idx) is None:
             self.write_candidate_record(
                 idx,

@@ -45,10 +45,10 @@ Only `{{WONTFIX_LABEL}}` issues are treated as effectively closed. Do not treat 
 
 Issues absent from both lists have already been completed. Do not treat absent issues as blockers.
 
-**Parent PRDs and their implementation issues form a unit.** An implementation issue declares its parent PRD with a `## Parent` heading followed by `#N` near the top of its body. The relationship has two consequences:
+**Parent specs and their implementation issues form a unit.** An implementation issue declares its parent spec with a `## Parent` heading followed by `#N` near the top of its body. The relationship has two consequences:
 
-- The parent PRD cannot be worked on while any implementation child is open.
-- An implementation child is **not** blocked by its **own** parent PRD — the PRD's role is complete once the child carries the spec forward. A blocking edge onto any *other* PRD remains in force.
+- The parent spec cannot be worked on while any implementation child is open.
+- An implementation child is **not** blocked by its **own** parent spec — the spec's role is complete once the child carries the spec forward. A blocking edge onto any *other* spec remains in force.
 
 ## Conflict avoidance
 

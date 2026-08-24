@@ -241,10 +241,10 @@ def test_candidate_record_serialises_under_filed_tickets_key(
 # ── 6. Mark PRD completion ────────────────────────────────────────────────────
 
 
-def test_mark_prd_completion_writes_empty_record_when_none(
+def test_mark_spec_completion_writes_empty_record_when_none(
     store: ImproveRoleSessionStore,
 ) -> None:
-    store.mark_prd_completion(0)
+    store.mark_spec_completion(0)
     record = store.read_candidate_record(0)
     assert record is not None
     assert record.spec_number is None
@@ -254,7 +254,7 @@ def test_mark_prd_completion_writes_empty_record_when_none(
     assert record.labels_applied is False
 
 
-def test_mark_prd_completion_leaves_existing_record_untouched(
+def test_mark_spec_completion_leaves_existing_record_untouched(
     store: ImproveRoleSessionStore,
 ) -> None:
     existing = CandidateRecord(
@@ -265,7 +265,7 @@ def test_mark_prd_completion_leaves_existing_record_untouched(
         labels_applied=True,
     )
     store.write_candidate_record(1, existing)
-    store.mark_prd_completion(1)
+    store.mark_spec_completion(1)
     assert store.read_candidate_record(1) == existing
 
 
@@ -337,8 +337,8 @@ def test_write_candidate_record_creates_parent_dirs(
     assert (store_dir / "candidates" / "5").is_dir()
 
 
-def test_mark_prd_completion_creates_parent_dirs(
+def test_mark_spec_completion_creates_parent_dirs(
     store: ImproveRoleSessionStore, store_dir: Path
 ) -> None:
-    store.mark_prd_completion(9)
+    store.mark_spec_completion(9)
     assert (store_dir / "candidates" / "9").is_dir()

@@ -128,8 +128,8 @@ _PHASES: dict[str, _PhaseConfig] = {
         display_name="Scan Agent",
         display_body="picking an improvement",
     ),
-    "02-prd.md": _PhaseConfig(
-        template=PromptTemplate.IMPROVE_PRD,
+    "02-spec.md": _PhaseConfig(
+        template=PromptTemplate.IMPROVE_SPEC,
         namespace="main",
         display_name="Spec Agent",
         display_body="writing spec",
@@ -154,7 +154,7 @@ class Step:
     prompt_key: str
     cfg: _PhaseConfig
     kind: PromptKind
-    fetch_recent_prd_titles: bool
+    fetch_recent_spec_titles: bool
     candidate: ImproveCandidate | None = None
     scan_set_size: int | None = None
     candidate_ordinal: int | None = None
@@ -183,15 +183,15 @@ class ImprovePhaseDriver:
 
     # ── Step factories ────────────────────────────────────────────────────────
 
-    def _make_scan_step(self, *, fetch_recent_prd_titles: bool) -> Step:
+    def _make_scan_step(self, *, fetch_recent_spec_titles: bool) -> Step:
         return Step(
             prompt_key="01-scan.md",
             cfg=_PHASES["01-scan.md"],
             kind=PromptKind.ROLE_PROMPT,
-            fetch_recent_prd_titles=fetch_recent_prd_titles,
+            fetch_recent_spec_titles=fetch_recent_spec_titles,
         )
 
-    def _make_prd_step(
+    def _make_spec_step(
         self,
         *,
         kind: PromptKind,
@@ -199,14 +199,14 @@ class ImprovePhaseDriver:
         candidate: ImproveCandidate,
     ) -> Step:
         cfg = dataclasses.replace(
-            _PHASES["02-prd.md"], namespace=_candidate_namespace(idx)
+            _PHASES["02-spec.md"], namespace=_candidate_namespace(idx)
         )
         candidates = self._candidates
         return Step(
-            prompt_key="02-prd.md",
+            prompt_key="02-spec.md",
             cfg=cfg,
             kind=kind,
-            fetch_recent_prd_titles=True,
+            fetch_recent_spec_titles=True,
             candidate=candidate,
             scan_set_size=len(candidates) if candidates is not None else None,
             candidate_ordinal=idx + 1,
@@ -221,7 +221,7 @@ class ImprovePhaseDriver:
             prompt_key="03-tickets.md",
             cfg=cfg,
             kind=PromptKind.FOLLOW_UP,
-            fetch_recent_prd_titles=False,
+            fetch_recent_spec_titles=False,
             candidate=candidate,
             scan_set_size=len(candidates) if candidates is not None else None,
             candidate_ordinal=idx + 1,
@@ -232,7 +232,7 @@ class ImprovePhaseDriver:
             prompt_key="04-no-candidate-report.md",
             cfg=_PHASES["04-no-candidate-report.md"],
             kind=kind,
-            fetch_recent_prd_titles=True,
+            fetch_recent_spec_titles=True,
         )
 
     # ── Core state resolution ─────────────────────────────────────────────────
@@ -254,11 +254,11 @@ class ImprovePhaseDriver:
         )
 
         if record is None:
-            # No record → spec (PRD) phase. Check in-flight for mid-PRD resume.
+            # No record → spec phase. Check in-flight for mid-spec resume.
             in_flight = self._store.read_in_flight() if from_start else None
-            is_mid_prd = in_flight == "02-prd"
-            return self._make_prd_step(
-                kind=PromptKind.ROLE_PROMPT if is_mid_prd else PromptKind.FOLLOW_UP,
+            is_mid_spec = in_flight == "02-spec"
+            return self._make_spec_step(
+                kind=PromptKind.ROLE_PROMPT if is_mid_spec else PromptKind.FOLLOW_UP,
                 idx=idx,
                 candidate=candidate,
             )
@@ -273,7 +273,7 @@ class ImprovePhaseDriver:
                 prompt_key=step.prompt_key,
                 cfg=step.cfg,
                 kind=PromptKind.ROLE_PROMPT,
-                fetch_recent_prd_titles=step.fetch_recent_prd_titles,
+                fetch_recent_spec_titles=step.fetch_recent_spec_titles,
                 candidate=step.candidate,
             )
         return step
@@ -302,7 +302,7 @@ class ImprovePhaseDriver:
             # Scan not done → return scan step.
             in_flight = self._store.read_in_flight()
             is_mid_scan = in_flight == "01-scan"
-            step = self._make_scan_step(fetch_recent_prd_titles=not is_mid_scan)
+            step = self._make_scan_step(fetch_recent_spec_titles=not is_mid_scan)
             self._store.write_in_flight("01-scan")
             return step
 
@@ -380,8 +380,8 @@ class ImprovePhaseDriver:
                 )
                 self._store.write_cursor(0)
 
-        elif step.prompt_key == "02-prd.md":
-            self._store.mark_prd_completion(self._cursor)
+        elif step.prompt_key == "02-spec.md":
+            self._store.mark_spec_completion(self._cursor)
 
         elif step.prompt_key == "03-tickets.md":
             self._cursor += 1
@@ -432,7 +432,7 @@ class _ImproveDeps(Protocol):
 def _needs_candidate_gate(step: "Step | None") -> bool:
     return (
         step is not None
-        and step.prompt_key == "02-prd.md"
+        and step.prompt_key == "02-spec.md"
         and step.kind is PromptKind.FOLLOW_UP
     )
 
@@ -466,7 +466,7 @@ def _improve_step_body(
     improve_max: int | None,
 ) -> str | None:
     """Return the Improve phase body for the given step, or None for no change."""
-    if step.prompt_key in ("02-prd.md", "03-tickets.md"):
+    if step.prompt_key in ("02-spec.md", "03-tickets.md"):
         candidate_idx = int(step.cfg.namespace.split("/")[1])
         k = candidate_idx + 1
         if improve_max is not None:
@@ -485,7 +485,7 @@ def _announce_candidate(
     last_announced_idx: int,
 ) -> int:
     """Print the candidate start line if this is a new candidate. Returns updated last_announced_idx."""
-    if step.prompt_key not in ("02-prd.md", "03-tickets.md"):
+    if step.prompt_key not in ("02-spec.md", "03-tickets.md"):
         return last_announced_idx
     candidate_idx = int(step.cfg.namespace.split("/")[1])
     if candidate_idx == last_announced_idx:

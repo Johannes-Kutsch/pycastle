@@ -1681,7 +1681,7 @@ def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
-    mock_github.get_recent_improve_prds.return_value = []
+    mock_github.get_recent_improve_specs.return_value = []
 
     async def _fake_run_agent(request: RunRequest):
         nonlocal scan_call_count

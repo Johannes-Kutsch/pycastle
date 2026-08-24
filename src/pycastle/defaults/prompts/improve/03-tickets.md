@@ -2,13 +2,13 @@
 
 You are the Improve Agent — Phase 3: Sub-issues.
 
-Break the PRD you wrote in phase 2 (saved as `.pycastle-session/improve/_drafts/spec.md`) into independently-grabbable issues using vertical slices (tracer bullets). Write each ticket as a draft file.
+Break the spec you wrote in phase 2 (saved as `.pycastle-session/improve/_drafts/spec.md`) into independently-grabbable issues using vertical slices (tracer bullets). Write each ticket as a draft file.
 
 </task>
 
 <context>
 
-Read `.pycastle-session/improve/_drafts/spec.md` to get the PRD content you will slice.
+Read `.pycastle-session/improve/_drafts/spec.md` to get the spec content you will slice.
 
 ## Safety net
 
@@ -20,11 +20,11 @@ You must NOT modify any files in the worktree. Your only outputs are the draft f
 
 ## 1. Explore
 
-Starting from the PRD above:
+Starting from the spec above:
 
 - Read `CONTEXT.md` (and `CONTEXT-MAP.md` if present) to ground yourself in the domain vocabulary.
-- Consult `docs/adr/README.md` if present, then read relevant ADRs in `docs/adr/` for the PRD area.
-- Read the modules the PRD names to understand their current interfaces.
+- Consult `docs/adr/README.md` if present, then read relevant ADRs in `docs/adr/` for the spec area.
+- Read the modules the spec names to understand their current interfaces.
 
 Look for opportunities to prefactor the code to make the implementation easier. "Make the change easy, then make the easy change."
 
@@ -40,7 +40,7 @@ If yes, draft a single dedicated CONTEXT.md issue **first** before any vertical 
 
 ## 3. Draft vertical slices
 
-Break the PRD into **tracer bullet** slices: each a thin vertical slice cutting a narrow but COMPLETE path through every layer (schema, API, UI, tests) — vertical, not a horizontal slice of one layer. A completed slice is verifiable on its own. Prefer many thin slices over few thick ones.
+Break the spec into **tracer bullet** slices: each a thin vertical slice cutting a narrow but COMPLETE path through every layer (schema, API, UI, tests) — vertical, not a horizontal slice of one layer. A completed slice is verifiable on its own. Prefer many thin slices over few thick ones.
 
 In improve mode every ticket must be AFK by construction — the AFK-safety filter was applied in phase 1.
 
@@ -83,7 +83,7 @@ If any of these fire on a candidate ticket, split it. They are the operational s
 3. **More than two public surfaces of existing code change.** New exports don't count. Changing the signature of three already-public functions does.
 4. **Extract-and-rewire in one ticket.** Introducing a new module *and* migrating call sites to use it. Extract first as a refactor; rewire as the next ticket.
 5. **Delete a module + change behavior elsewhere.** Deletion is its own refactor slice.
-6. **Covers more than three user stories** from the PRD. Two or three related stories cohere; four signals a bundle.
+6. **Covers more than three user stories** from the spec. Two or three related stories cohere; four signals a bundle.
 7. **Touches more than ~5 files outside the area being modified.** A fresh agent shouldn't need that much surrounding context.
 
 A separate signal that the candidate is too big for any single ticket is **layer count** — touching more than one independently-shippable architectural layer (identify layers from `CONTEXT.md` and the module structure). In that case the work must be sequenced as multiple tickets regardless of the smells above.
@@ -100,9 +100,9 @@ Acceptance criteria are how the implement agent learns what "done" looks like. T
 
 A `behavior-slice` may also carry **prose artifacts** — `.md` files outside `tests/` whose wording no caller observes: documentation, ADRs, README, and shipped prompt or template text. Give those criteria the file-state shape `docs-slice` uses, so the implement agent reads at a glance which criteria carry a test obligation and which are plain edits. A protocol tag a host parser reads is not prose: a ticket changing which tag an output shape names gets a behavior criterion, with the tag as its observable surface.
 
-> _Good:_ "`coordination/plan.md` states that an implementation child is not blocked by its own parent PRD."
+> _Good:_ "`coordination/plan.md` states that an implementation child is not blocked by its own parent spec."
 >
-> _Bad:_ "The rendered planner prompt states that an implementation child is not blocked by its own parent PRD." — file state dressed as observable behavior; it invites a test that string-matches the wording.
+> _Bad:_ "The rendered planner prompt states that an implementation child is not blocked by its own parent spec." — file state dressed as observable behavior; it invites a test that string-matches the wording.
 
 **`refactor-slice`** — outcome-shaped. State the new structural fact plus "no behavior change."
 

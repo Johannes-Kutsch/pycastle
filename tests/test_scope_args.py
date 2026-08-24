@@ -200,7 +200,7 @@ def test_build_per_issue_scope_args_builds_exact_renderable_per_issue_args():
 
 
 def test_build_improve_scan_scope_args_includes_candidate_budget():
-    result = build_improve_scan_scope_args(recent_prds=[], candidate_budget=7)
+    result = build_improve_scan_scope_args(recent_specs=[], candidate_budget=7)
     assert result["CANDIDATE_BUDGET"] == "7"
     assert validated_scope_args_for_scope(Scope.IMPROVE_SCAN, result) is result
 

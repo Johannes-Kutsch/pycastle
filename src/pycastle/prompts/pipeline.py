@@ -86,14 +86,14 @@ class Scope(enum.Enum):
     )
     IMPROVE_SCAN = (
         "IMPROVE_SCAN",
-        frozenset({"RECENT_IMPROVE_PRD_TITLES", "CANDIDATE_BUDGET"}),
+        frozenset({"RECENT_IMPROVE_SPEC_TITLES", "CANDIDATE_BUDGET"}),
     )
     IMPROVE_SESSION = (
         "IMPROVE_SESSION",
         frozenset(
             {
                 "IMPROVE_SHORT_SID",
-                "RECENT_IMPROVE_PRDS",
+                "RECENT_IMPROVE_SPECS",
                 "CANDIDATE_RANK",
                 "CANDIDATE_TITLE",
             }
@@ -137,7 +137,7 @@ class PromptTemplate(enum.Enum):
     PREFLIGHT_ISSUE = ("diagnostics/preflight-issue.md", Scope.PREFLIGHT)
     HOST_CHECK_ISSUE = ("diagnostics/host-check-issue.md", Scope.HOST_CHECK)
     IMPROVE_SCAN = ("improve/01-scan.md", Scope.IMPROVE_SCAN)
-    IMPROVE_PRD = ("improve/02-prd.md", Scope.IMPROVE_SESSION)
+    IMPROVE_SPEC = ("improve/02-spec.md", Scope.IMPROVE_SESSION)
     IMPROVE_TICKETS = ("improve/03-tickets.md", Scope.IMPROVE_TICKETS)
     IMPROVE_DRAFT_CORRECTION = (
         "improve/_draft-correction.md",
@@ -236,8 +236,8 @@ class PromptRenderer:
         PromptTemplate.IMPROVE_SCAN: PromptReference(
             "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-01-scan.md"
         ),
-        PromptTemplate.IMPROVE_PRD: PromptReference(
-            "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-02-prd.md"
+        PromptTemplate.IMPROVE_SPEC: PromptReference(
+            "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-02-spec.md"
         ),
         PromptTemplate.IMPROVE_TICKETS: PromptReference(
             "EXPECTED_OUTPUT_SHAPE", "improve/_expected-output-shape-03-issues.md"

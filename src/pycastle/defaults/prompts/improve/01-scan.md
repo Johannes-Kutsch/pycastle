@@ -28,21 +28,21 @@ The forbidden list is about **reversibility**: internal seam decisions are rever
 
 If every candidate fails the filter, stop.
 
-## Recent Improve PRD titles
+## Recent Improve spec titles
 
 Apply a novelty gate during candidate selection.
-Treat repeated domain terms, module names, and architectural themes in recent PRD titles as negative evidence, even when the titles are not exact matches.
-Allow same-theme work only when the candidate names materially unresolved friction that prior PRDs did not address.
+Treat repeated domain terms, module names, and architectural themes in recent spec titles as negative evidence, even when the titles are not exact matches.
+Allow same-theme work only when the candidate names materially unresolved friction that prior specs did not address.
 Do not pick a weaker unrelated candidate merely to avoid repeating a recent theme.
 Keep novelty-rejected shortlist candidates visible with rejection reasons.
 
-Use this novelty context to avoid picking work that duplicates a recent Improve PRD:
+Use this novelty context to avoid picking work that duplicates a recent Improve spec:
 
-<recent_improve_prds>
+<recent_improve_specs>
 
-{{RECENT_IMPROVE_PRD_TITLES}}
+{{RECENT_IMPROVE_SPEC_TITLES}}
 
-</recent_improve_prds>
+</recent_improve_specs>
 
 </context>
 
@@ -79,7 +79,7 @@ Use `CONTEXT.md` vocabulary. If a candidate contradicts an existing ADR, only su
 Drop any candidate that fails the AFK-safety filter.
 Drop any candidate that fails the novelty gate, but keep it in the shortlist with the rejection reason.
 
-If you keep a same-theme candidate in the shortlist, include a `Novelty Check` covering matching recent PRDs, material remaining friction, and why prior PRDs did not cover it.
+If you keep a same-theme candidate in the shortlist, include a `Novelty Check` covering matching recent specs, material remaining friction, and why prior specs did not cover it.
 
 ### 3. Rank
 
