@@ -1888,6 +1888,50 @@ def test_close_issue_with_parents_warns_and_stops_recursive_parent_chain_when_pa
     transport.assert_exhausted()
 
 
+def test_close_issue_with_parents_warns_when_parent_cascade_write_fails():
+    """When the recursive parent close's write call raises GithubServiceError, warns and returns."""
+    transport = _ScriptedGithubTransport(
+        [
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/5",
+                data={"state": "closed"},
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/5",
+                payload={
+                    "parent_issue_url": "https://api.github.com/repos/owner/repo/issues/50"
+                },
+            ),
+            _script_step(
+                "GET",
+                "/repos/owner/repo/issues/50/sub_issues",
+                payload=[{"number": 5, "state": "closed"}],
+                headers={"Link": ""},
+            ),
+            _script_step(
+                "PATCH",
+                "/repos/owner/repo/issues/50",
+                data={"state": "closed"},
+                error=GithubHttpTransportAPIError(
+                    "GitHub API PATCH returned 422",
+                    status=422,
+                    body='{"message":"Validation Failed","errors":[]}',
+                    method="PATCH",
+                    path="/repos/owner/repo/issues/50",
+                ),
+            ),
+        ]
+    )
+    svc = _make_service(transport=transport)
+
+    with pytest.warns(UserWarning, match="parent"):
+        svc.close_issue_with_parents(5)
+
+    transport.assert_exhausted()
+
+
 def test_close_issue_with_parents_propagates_child_close_failure():
     transport = _ScriptedGithubTransport(
         [
@@ -1914,6 +1958,33 @@ def test_close_issue_with_parents_propagates_child_close_failure():
         )
     ]
     transport.assert_exhausted()
+
+
+def test_close_issue_with_parents_closes_shared_parent_at_most_once():
+    """Two siblings sharing a parent: the parent PATCH is issued exactly once across both calls."""
+    parent_patch_paths: list[str] = []
+
+    def _request(
+        method: str, path: str, data: Any | None = None
+    ) -> tuple[Any, dict[str, str]]:
+        if method == "PATCH" and "/issues/50" in path:
+            parent_patch_paths.append(path)
+            return None, {}
+        if method == "PATCH":
+            return None, {}
+        if "/sub_issues" in path:
+            return [], {"Link": ""}
+        return {
+            "parent_issue_url": "https://api.github.com/repos/owner/repo/issues/50"
+        }, {}
+
+    transport = _FakeGithubTransport(_request)
+    svc = _make_service(transport=transport)
+
+    svc.close_issue_with_parents(5)
+    svc.close_issue_with_parents(6)
+
+    assert len(parent_patch_paths) == 1
 
 
 # ── get_open_issues ──────────────────────────────────────────────────────────

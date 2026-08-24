@@ -38,6 +38,7 @@ from pycastle.services import (
     GitTimeoutError,
     OperatingBranchCheckedOutError,
 )
+from pycastle.services._github_http_transport import GithubHttpTransportAPIError
 from pycastle.session import RoleSession
 from tests.support import (
     FakeAgentRunner,
@@ -2498,6 +2499,66 @@ def test_close_failure_still_closes_remaining_issues_and_deletes_branches(
     assert "pycastle/issue-1" in deleted
     assert "pycastle/issue-2" in deleted
     assert result.close_failure_issue_numbers == [999]
+
+
+# ── Issue 2197: parent-cascade close failure ──────────────────────────────────
+
+
+def _make_cascade_failing_github_svc(
+    child_numbers: list[int], parent_number: int
+) -> GithubService:
+    """Real GithubService whose child closes succeed but parent cascade always fails with 422."""
+    transport = MagicMock()
+
+    def _handle_request(
+        method: str, path: str, data: object = None
+    ) -> tuple[object, dict]:
+        if method == "PATCH" and f"/issues/{parent_number}" in path:
+            raise GithubHttpTransportAPIError(
+                "GitHub API PATCH returned 422",
+                status=422,
+                body='{"message":"Validation Failed","errors":[]}',
+                method="PATCH",
+                path=path,
+            )
+        if method == "PATCH":
+            return None, {}
+        if "/sub_issues" in path:
+            return [], {"Link": ""}
+        return {
+            "parent_issue_url": (
+                f"https://api.github.com/repos/test/repo/issues/{parent_number}"
+            )
+        }, {}
+
+    transport.request.side_effect = _handle_request
+    return GithubService("test/repo", "token", Config(), transport=transport)
+
+
+def test_sibling_parent_cascade_failure_does_not_report_close_failure(
+    tmp_path, git_svc
+):
+    """Three siblings sharing one parent: parent cascade fails, run continues, nothing is filed.
+
+    Acceptance criterion from #2197: a merge phase whose issues all close but whose parent
+    close fails returns no close_failure_issue_numbers and files no issue.
+    """
+    github_svc = _make_cascade_failing_github_svc(
+        child_numbers=[1, 2, 3], parent_number=100
+    )
+    deps = _make_deps(
+        tmp_path, FakeAgentRunner([]), git_svc=git_svc, github_svc=github_svc
+    )
+
+    issues = [
+        {"number": 1, "title": "Sibling A"},
+        {"number": 2, "title": "Sibling B"},
+        {"number": 3, "title": "Sibling C"},
+    ]
+    result = _run(issues, deps)
+
+    assert result.close_failure_issue_numbers == []
+    assert result.clean == issues
 
 
 # ── Issue 1983: lifecycle-choice gate ─────────────────────────────────────────

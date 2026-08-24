@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 import warnings
 from datetime import UTC, datetime
@@ -102,6 +103,8 @@ class GithubService:
             token=token, timeout=self._timeout
         )
         self._recently_closed: set[int] = set()
+        self._cascade_attempted: set[int] = set()
+        self._cascade_lock = threading.Lock()
 
     def _request(
         self,
@@ -383,7 +386,14 @@ class GithubService:
             return
         if open_sub_issues:
             return
-        self.close_issue_with_parents(parent)
+        with self._cascade_lock:
+            if parent in self._cascade_attempted:
+                return
+            self._cascade_attempted.add(parent)
+        try:
+            self.close_issue_with_parents(parent)
+        except GithubServiceError as exc:
+            self._warn_parent_cascade_failure(number, exc)
 
     def _filter_recently_closed_open_issue_items(
         self, issues: list[dict[str, Any]]
