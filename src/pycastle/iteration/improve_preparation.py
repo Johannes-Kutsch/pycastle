@@ -28,12 +28,12 @@ class ImprovePreparationGithubPort(Protocol):
     """GitHub read contract for preparing Improve steps.
 
     Implementations must supply the narrow Improve reads this module needs:
-    recent Improve PRDs, a PRD issue fetch, and PRD comments. Read failures are
-    not translated here; callers should expect the underlying GitHub read
+    recent Improve specs, a spec issue fetch, and spec comments. Read failures
+    are not translated here; callers should expect the underlying GitHub read
     exception to propagate unchanged.
     """
 
-    def get_recent_improve_prds(self) -> list[dict[str, Any]]: ...
+    def get_recent_improve_specs(self) -> list[dict[str, Any]]: ...
 
     def get_issue(self, issue_number: int) -> dict[str, Any]: ...
 
@@ -62,10 +62,16 @@ class ImprovePreparationStep(Protocol):
     def kind(self) -> PromptKind: ...
 
     @property
-    def fetch_recent_prd_titles(self) -> bool: ...
+    def fetch_recent_spec_titles(self) -> bool: ...
 
     @property
     def candidate(self) -> ImproveCandidate | None: ...
+
+    @property
+    def scan_set_size(self) -> int | None: ...
+
+    @property
+    def candidate_ordinal(self) -> int | None: ...
 
 
 @dataclass(frozen=True)
@@ -73,7 +79,7 @@ class ImproveStepPreparationRequest:
     """Inputs required to prepare a single Improve step.
 
     `short_sid` is required for session-scoped placeholders.
-    `fetch_recent_prd_titles` preserves the existing scan-step retry behavior
+    `fetch_recent_spec_titles` preserves the existing scan-step retry behavior
     that skips the GitHub read. `candidate_budget` is required when preparing
     `PromptTemplate.IMPROVE_SCAN`.
     """
@@ -84,7 +90,7 @@ class ImproveStepPreparationRequest:
     work_body: str
     kind: PromptKind
     short_sid: str
-    fetch_recent_prd_titles: bool = False
+    fetch_recent_spec_titles: bool = False
     candidate_budget: int | None = None
     candidate: ImproveCandidate | None = None
 
@@ -130,6 +136,31 @@ def prepare_improve_step(
     )
 
 
+def _compute_work_body(
+    step: ImprovePreparationStep,
+    *,
+    candidate_budget: int | None,
+) -> str:
+    template = step.cfg.template
+    if template is PromptTemplate.IMPROVE_SCAN:
+        budget = candidate_budget or 0
+        if budget == 1:
+            return "picking 1 improvement"
+        return f"picking up to {budget} improvements"
+    candidate = step.candidate
+    if candidate is not None:
+        ordinal = step.candidate_ordinal
+        total = step.scan_set_size
+        if ordinal is not None and total is not None:
+            if template is PromptTemplate.IMPROVE_SPEC:
+                return (
+                    f'writing spec for candidate {ordinal}/{total} "{candidate.title}"'
+                )
+            if template is PromptTemplate.IMPROVE_TICKETS:
+                return f'filing tickets for candidate {ordinal}/{total} "{candidate.title}"'
+    return step.cfg.display_body
+
+
 def _coerce_request(
     request_or_step: ImproveStepPreparationRequest | ImprovePreparationStep,
     *,
@@ -146,10 +177,10 @@ def _coerce_request(
         prompt_template=step.cfg.template,
         session_namespace=step.cfg.namespace,
         display_name=step.cfg.display_name,
-        work_body=step.cfg.display_body,
+        work_body=_compute_work_body(step, candidate_budget=candidate_budget),
         kind=step.kind,
         short_sid=short_sid,
-        fetch_recent_prd_titles=step.fetch_recent_prd_titles,
+        fetch_recent_spec_titles=step.fetch_recent_spec_titles,
         candidate_budget=candidate_budget,
         candidate=step.candidate,
     )
@@ -160,11 +191,11 @@ def _build_scope_args(
     *,
     github_port: ImprovePreparationGithubPort,
 ) -> dict[str, str]:
-    if request.fetch_recent_prd_titles:
+    if request.fetch_recent_spec_titles:
         return _build_improve_scope_args(request, github_port=github_port)
     if request.prompt_template.scope is Scope.IMPROVE_SCAN:
-        return _build_scan_scope_args(request, recent_prds=[])
-    if request.prompt_template.scope in (Scope.IMPROVE_ISSUES, Scope.IMPROVE_SESSION):
+        return _build_scan_scope_args(request, recent_specs=[])
+    if request.prompt_template.scope in (Scope.IMPROVE_TICKETS, Scope.IMPROVE_SESSION):
         return _build_improve_scope_args(request, github_port=github_port)
     return {}
 
@@ -172,14 +203,14 @@ def _build_scope_args(
 def _build_scan_scope_args(
     request: ImproveStepPreparationRequest,
     *,
-    recent_prds: list[dict[str, Any]],
+    recent_specs: list[dict[str, Any]],
 ) -> dict[str, str]:
     if request.candidate_budget is None:
         raise PromptRenderError(
             "candidate_budget is required to render the improve scan prompt"
         )
     return build_improve_scan_scope_args(
-        recent_prds=recent_prds,
+        recent_specs=recent_specs,
         candidate_budget=request.candidate_budget,
     )
 
@@ -193,18 +224,18 @@ def _build_improve_scope_args(
     if template is PromptTemplate.IMPROVE_SCAN:
         return _build_scan_scope_args(
             request,
-            recent_prds=github_port.get_recent_improve_prds(),
+            recent_specs=github_port.get_recent_improve_specs(),
         )
 
-    if template is PromptTemplate.IMPROVE_PRD:
+    if template is PromptTemplate.IMPROVE_SPEC:
         if request.candidate is None:
             raise PromptRenderError("candidate is required to render the spec prompt")
         return validated_scope_args_for_template(
             template,
             {
                 "IMPROVE_SHORT_SID": request.short_sid,
-                "RECENT_IMPROVE_PRDS": _format_recent_improve_prds(
-                    github_port.get_recent_improve_prds()
+                "RECENT_IMPROVE_SPECS": _format_recent_improve_specs(
+                    github_port.get_recent_improve_specs()
                 ),
                 "CANDIDATE_RANK": str(request.candidate.rank),
                 "CANDIDATE_TITLE": request.candidate.title,
@@ -216,15 +247,15 @@ def _build_improve_scope_args(
             template,
             {
                 "IMPROVE_SHORT_SID": request.short_sid,
-                "RECENT_IMPROVE_PRDS": _format_recent_improve_prds(
-                    github_port.get_recent_improve_prds()
+                "RECENT_IMPROVE_SPECS": _format_recent_improve_specs(
+                    github_port.get_recent_improve_specs()
                 ),
                 "CANDIDATE_RANK": "",
                 "CANDIDATE_TITLE": "",
             },
         )
 
-    if template is PromptTemplate.IMPROVE_ISSUES:
+    if template is PromptTemplate.IMPROVE_TICKETS:
         return validated_scope_args_for_template(
             template,
             {"IMPROVE_SHORT_SID": request.short_sid},
@@ -233,9 +264,9 @@ def _build_improve_scope_args(
     raise TypeError(f"unsupported Improve template: {template.name}")
 
 
-def _format_recent_improve_prds(recent_prds: list[dict[str, Any]]) -> str:
-    if not recent_prds:
-        return "No recent improve PRDs found."
+def _format_recent_improve_specs(recent_specs: list[dict[str, Any]]) -> str:
+    if not recent_specs:
+        return "No recent improve specs found."
     return "\n".join(
-        f"#{prd['number']} {prd['state']} - {prd['title']}" for prd in recent_prds
+        f"#{spec['number']} {spec['state']} - {spec['title']}" for spec in recent_specs
     )

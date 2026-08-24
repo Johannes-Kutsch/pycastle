@@ -70,20 +70,20 @@ Used by: diagnostics/host-check-issue.md
 Used by: improve/01-scan.md
 
 - `{{CANDIDATE_BUDGET}}` — Number of candidates the scan is asked to nominate; the minimum of the configured width and the run's remaining improve budget.
-- `{{RECENT_IMPROVE_PRD_TITLES}}` — Plain-text recent Improve PRD title history for novelty checking, or `No recent improve PRDs found.` when the lookup is empty.
+- `{{RECENT_IMPROVE_SPEC_TITLES}}` — Plain-text recent Improve spec title history for novelty checking, or `No recent improve specs found.` when the lookup is empty.
 
 ## Scope: IMPROVE_SESSION
 
-Used by: improve/02-prd.md, improve/04-no-candidate-report.md
+Used by: improve/02-spec.md, improve/04-no-candidate-report.md
 
 - `{{IMPROVE_SHORT_SID}}` — Short session ID for the improve session.
-- `{{RECENT_IMPROVE_PRDS}}` — Plain-text recent Improve PRD history for novelty checking, or `No recent improve PRDs found.` when the lookup is empty.
+- `{{RECENT_IMPROVE_SPECS}}` — Plain-text recent Improve spec history for novelty checking, or `No recent improve specs found.` when the lookup is empty.
 - `{{CANDIDATE_RANK}}` — Rank of the candidate this fork is writing up (e.g. `1`, `2`); empty string for the no-candidate report.
 - `{{CANDIDATE_TITLE}}` — Title of the candidate this fork is writing up; empty string for the no-candidate report.
 
-## Scope: IMPROVE_ISSUES
+## Scope: IMPROVE_TICKETS
 
-Used by: improve/03-issues.md
+Used by: improve/03-tickets.md
 
 - `{{IMPROVE_SHORT_SID}}` — Short session ID for the improve session.
 

@@ -2,13 +2,13 @@
 
 You are the Improve Agent — Phase 3: Sub-issues.
 
-Break the PRD you wrote in phase 2 (saved as `.pycastle-session/improve/_drafts/spec.md`) into independently-grabbable issues using vertical slices (tracer bullets). Write each slice as a draft file.
+Break the spec you wrote in phase 2 (saved as `.pycastle-session/improve/_drafts/spec.md`) into independently-grabbable issues using vertical slices (tracer bullets). Write each ticket as a draft file.
 
 </task>
 
 <context>
 
-Read `.pycastle-session/improve/_drafts/spec.md` to get the PRD content you will slice.
+Read `.pycastle-session/improve/_drafts/spec.md` to get the spec content you will slice.
 
 ## Safety net
 
@@ -20,11 +20,11 @@ You must NOT modify any files in the worktree. Your only outputs are the draft f
 
 ## 1. Explore
 
-Starting from the PRD above:
+Starting from the spec above:
 
 - Read `CONTEXT.md` (and `CONTEXT-MAP.md` if present) to ground yourself in the domain vocabulary.
-- Consult `docs/adr/README.md` if present, then read relevant ADRs in `docs/adr/` for the PRD area.
-- Read the modules the PRD names to understand their current interfaces.
+- Consult `docs/adr/README.md` if present, then read relevant ADRs in `docs/adr/` for the spec area.
+- Read the modules the spec names to understand their current interfaces.
 
 Look for opportunities to prefactor the code to make the implementation easier. "Make the change easy, then make the easy change."
 
@@ -36,27 +36,27 @@ If yes, draft a single dedicated CONTEXT.md issue **first** before any vertical 
 
 - Spell out the **exact additions or edits** in the body, ready for an Implementer to apply verbatim.
 - Mark it highest priority — every other sub-issue lists it in its `Blocked by` field.
-- Use the same title prefix as the slice issues.
+- Use the same title prefix as the ticket issues.
 
 ## 3. Draft vertical slices
 
-Break the PRD into **tracer bullet** slices: each a thin vertical slice cutting a narrow but COMPLETE path through every layer (schema, API, UI, tests) — vertical, not a horizontal slice of one layer. A completed slice is verifiable on its own. Prefer many thin slices over few thick ones.
+Break the spec into **tracer bullet** slices: each a thin vertical slice cutting a narrow but COMPLETE path through every layer (schema, API, UI, tests) — vertical, not a horizontal slice of one layer. A completed slice is verifiable on its own. Prefer many thin slices over few thick ones.
 
-In improve mode every slice must be AFK by construction — the AFK-safety filter was applied in phase 1.
+In improve mode every ticket must be AFK by construction — the AFK-safety filter was applied in phase 1.
 
 **Blocking edges.** Give each issue its blocking edges — the other issues that must complete before it can start. An issue with no blockers can start immediately. Blocking comes only from a **genuine dependency** (an issue needing another's output), decided independently of file overlap.
 
-**Files touched.** Record each slice's tentative set of files (see the template's *Files touched* field) — a planning/scoping signal so the planner can see where slices overlap. Overlap alone does **not** create a blocking edge, and slices sharing files may still run in parallel. List `tests/` paths only for a slice that has testable criteria — naming them for a slice built of refactor steps or prose artifacts primes the implement agent to write tests that guard nothing.
+**Files touched.** Record each ticket's tentative set of files (see the template's *Files touched* field) — a planning/scoping signal so the planner can see where tickets overlap. Overlap alone does **not** create a blocking edge, and tickets sharing files may still run in parallel. List `tests/` paths only for a ticket that has testable criteria — naming them for a ticket built of refactor steps or prose artifacts primes the implement agent to write tests that guard nothing.
 
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own issue blocked by the expand, keeping the suite green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in an issue blocked by every migrate batch. When even the batches can't stay green alone, the wide refactor is too big to slice — narrow the batches until each lands green.
 
 ### Granularity check
 
-Each issue must fit in one usage window of an AFK agent; over-scoping is wasteful. Apply the "Smells that demand a split" checklist in step 3a below to every candidate slice before approving it.
+Each issue must fit in one usage window of an AFK agent; over-scoping is wasteful. Apply the "Smells that demand a split" checklist in step 3a below to every candidate ticket before approving it.
 
-## 3a. Classify each slice by mode
+## 3a. Classify each ticket by mode
 
-Every slice is exactly one of three **slice modes**. The mode determines which implement prompt the agent will run, and shapes the acceptance criteria you write in step 4.
+Every ticket is exactly one of three **slice modes**. The mode determines which implement prompt the agent will run, and shapes the acceptance criteria you write in step 4.
 
 **`{{BEHAVIOR_SLICE_LABEL}}`** — introduces or changes observable behavior verifiable by a new test.
 
@@ -68,7 +68,7 @@ Every slice is exactly one of three **slice modes**. The mode determines which i
 
 **If a step cannot be verified by a new test of observable behavior, draft it as its own `{{REFACTOR_SLICE_LABEL}}`. Refactor steps never ride along inside a `{{BEHAVIOR_SLICE_LABEL}}`.** **Prose artifacts** (see step 4) are the exception: they ride along inside any slice mode.
 
-By default, each refactor step is its own slice. Multiple refactor steps bundle into one `{{REFACTOR_SLICE_LABEL}}` only when they form a single atomic ripple — e.g., a rename propagating through call sites — that cannot land independently without leaving the tree inconsistent. Mixing refactor and behavior in the same slice is never allowed.
+By default, each refactor step is its own ticket. Multiple refactor steps bundle into one `{{REFACTOR_SLICE_LABEL}}` only when they form a single atomic ripple — e.g., a rename propagating through call sites — that cannot land independently without leaving the tree inconsistent. Mixing refactor and behavior in the same ticket is never allowed.
 
 Refactor slices land first. The dependent behavior slice lists the refactor in `Blocked by`.
 
@@ -76,17 +76,17 @@ Refactor slices land first. The dependent behavior slice lists the refactor in `
 
 ### Smells that demand a split
 
-If any of these fire on a candidate slice, split it. They are the operational signals behind the inverted default above — bundling needs a single-atomic-ripple justification, and any of these means you don't have one.
+If any of these fire on a candidate ticket, split it. They are the operational signals behind the inverted default above — bundling needs a single-atomic-ripple justification, and any of these means you don't have one.
 
-1. **"And" joining distinct outcomes.** The slice description joins a refactor + a behavior, or two independent behaviors, with "and". ("Rename and update callers" is fine — same outcome. "Externalize profile and hardcode protocol prompts" is two outcomes.)
-2. **Refactor + behavior in the same slice.** The hard rule from above, re-stated as a smell because it is the most common bundling failure.
+1. **"And" joining distinct outcomes.** The ticket description joins a refactor + a behavior, or two independent behaviors, with "and". ("Rename and update callers" is fine — same outcome. "Externalize profile and hardcode protocol prompts" is two outcomes.)
+2. **Refactor + behavior in the same ticket.** The hard rule from above, re-stated as a smell because it is the most common bundling failure.
 3. **More than two public surfaces of existing code change.** New exports don't count. Changing the signature of three already-public functions does.
-4. **Extract-and-rewire in one slice.** Introducing a new module *and* migrating call sites to use it. Extract first as a refactor; rewire as the next slice.
+4. **Extract-and-rewire in one ticket.** Introducing a new module *and* migrating call sites to use it. Extract first as a refactor; rewire as the next ticket.
 5. **Delete a module + change behavior elsewhere.** Deletion is its own refactor slice.
-6. **Covers more than three user stories** from the PRD. Two or three related stories cohere; four signals a bundle.
+6. **Covers more than three user stories** from the spec. Two or three related stories cohere; four signals a bundle.
 7. **Touches more than ~5 files outside the area being modified.** A fresh agent shouldn't need that much surrounding context.
 
-A separate signal that the candidate is too big for any single slice is **layer count** — touching more than one independently-shippable architectural layer (identify layers from `CONTEXT.md` and the module structure). In that case the work must be sequenced as multiple slices regardless of the smells above.
+A separate signal that the candidate is too big for any single ticket is **layer count** — touching more than one independently-shippable architectural layer (identify layers from `CONTEXT.md` and the module structure). In that case the work must be sequenced as multiple tickets regardless of the smells above.
 
 ## 4. Acceptance criteria shape per slice mode
 
@@ -98,11 +98,11 @@ Acceptance criteria are how the implement agent learns what "done" looks like. T
 >
 > _Bad:_ "A test asserts the log contains `http_get_start` with no matching `http_get_ok`."
 
-A `{{BEHAVIOR_SLICE_LABEL}}` may also carry **prose artifacts** — `.md` files outside `tests/` whose wording no caller observes: documentation, ADRs, README, and shipped prompt or template text. Give those criteria the file-state shape `{{DOCS_SLICE_LABEL}}` uses, so the implement agent reads at a glance which criteria carry a test obligation and which are plain edits. A protocol tag a host parser reads is not prose: a slice changing which tag an output shape names gets a behavior criterion, with the tag as its observable surface.
+A `{{BEHAVIOR_SLICE_LABEL}}` may also carry **prose artifacts** — `.md` files outside `tests/` whose wording no caller observes: documentation, ADRs, README, and shipped prompt or template text. Give those criteria the file-state shape `{{DOCS_SLICE_LABEL}}` uses, so the implement agent reads at a glance which criteria carry a test obligation and which are plain edits. A protocol tag a host parser reads is not prose: a ticket changing which tag an output shape names gets a behavior criterion, with the tag as its observable surface.
 
-> _Good:_ "`coordination/plan.md` states that an implementation child is not blocked by its own parent PRD."
+> _Good:_ "`coordination/plan.md` states that an implementation child is not blocked by its own parent spec."
 >
-> _Bad:_ "The rendered planner prompt states that an implementation child is not blocked by its own parent PRD." — file state dressed as observable behavior; it invites a test that string-matches the wording.
+> _Bad:_ "The rendered planner prompt states that an implementation child is not blocked by its own parent spec." — file state dressed as observable behavior; it invites a test that string-matches the wording.
 
 **`{{REFACTOR_SLICE_LABEL}}`** — outcome-shaped. State the new structural fact plus "no behavior change."
 
@@ -133,22 +133,22 @@ Phrase verification as the system's observable behavior, not as test-code struct
 Before drafting, answer:
 
 - Is the granularity right? (too coarse / too fine)
-- Did any of the seven split smells fire on a slice you left bundled?
+- Did any of the seven split smells fire on a ticket you left bundled?
 - Are the blocking edges correct — does each issue only depend on issues that genuinely gate it?
-- Should any slices be merged or split further?
-- Is every slice genuinely AFK-implementable?
+- Should any tickets be merged or split further?
+- Is every ticket genuinely AFK-implementable?
 - Is the mode classification right? Any refactor steps sneaking into a behavior slice?
 - Do all acceptance criteria use the mode-appropriate shape and avoid the banned sentence shapes?
 
 ## 6. Write the draft files
 
-For each approved slice, write a draft file to `.pycastle-session/improve/_drafts/`. Name each file with a two-digit prefix and a slug, e.g. `01-add-parser-seam.md`, `02-wire-tests.md`. Each title must start with `[improve-SLICE]`. Apply exactly one slice-mode label (step 3a) — the host applies the state label itself once the whole set is filed.
+For each approved ticket, write a draft file to `.pycastle-session/improve/_drafts/`. Name each file with a two-digit prefix and a slug, e.g. `01-add-parser-seam.md`, `02-wire-tests.md`. Each title must start with `[improve-TICKET]`. Apply exactly one slice-mode label (step 3a) — the host applies the state label itself once the whole set is filed.
 
 Use this frontmatter format:
 
 ```
 ---
-title: [improve-SLICE] <concise title>
+title: [improve-TICKET] <concise title>
 labels:
   - {{BEHAVIOR_SLICE_LABEL}}
 blocked_by:
@@ -181,11 +181,11 @@ Use the shape that matches the slice mode (see step 4). Never use the banned sen
 
 ## Files touched (tentative)
 
-The files this slice is expected to create or modify. A tentative planning/scoping signal so the planner can see where slices overlap — **not** a spec. Overlap alone does **not** create a blocking edge; blocking is decided on genuine dependency, which may or may not coincide with shared files.
+The files this ticket is expected to create or modify. A tentative planning/scoping signal so the planner can see where tickets overlap — **not** a spec. Overlap alone does **not** create a blocking edge; blocking is decided on genuine dependency, which may or may not coincide with shared files.
 
 ## AFK-Safety Confirmation
 
-Explicitly state that this slice is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
+Explicitly state that this ticket is autonomous-safe: no CLI surface changes, no breaking config changes, no ADR contradictions, no product/UX decisions.
 
 _Drafted by improve session [improve-{{IMPROVE_SHORT_SID}}]._
 ```

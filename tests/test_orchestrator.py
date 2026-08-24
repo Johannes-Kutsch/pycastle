@@ -1681,7 +1681,7 @@ def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
 
     mock_github = _make_github_svc()
     mock_github.get_open_issues.return_value = []
-    mock_github.get_recent_improve_prds.return_value = []
+    mock_github.get_recent_improve_specs.return_value = []
 
     async def _fake_run_agent(request: RunRequest):
         nonlocal scan_call_count
@@ -1690,7 +1690,7 @@ def test_usage_limit_in_improve_resumes_then_stops(tmp_path):
             if scan_call_count == 1:
                 raise UsageLimitError(reset_time=None)
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             draft_dir.mkdir(parents=True, exist_ok=True)
             body = "A" * 120

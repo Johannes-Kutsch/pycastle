@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 import warnings
 from datetime import UTC, datetime
@@ -27,7 +28,7 @@ _HTTP_SERVER_ERROR_MIN = 500
 _HTTP_SERVER_ERROR_MAX = 599
 _HTTP_FORBIDDEN = 403
 _HTTP_UNPROCESSABLE = 422
-_RECENT_PRD_PAGE_SIZE = 12
+_RECENT_SPEC_PAGE_SIZE = 12
 
 
 class GithubServiceError(RuntimeError):
@@ -81,7 +82,7 @@ class OperatorActionableGithubError(GithubServiceError):
         super().__init__(message)
 
 
-_IMPROVE_PRD_TITLE_PREFIX = "[improve-PRD] "
+_IMPROVE_SPEC_TITLE_PREFIX = "[improve-spec] "
 _READ_RETRY_MAX_ATTEMPTS = 4
 _READ_RETRY_BACKOFF_SECONDS = (10, 60, 300)
 
@@ -102,6 +103,8 @@ class GithubService:
             token=token, timeout=self._timeout
         )
         self._recently_closed: set[int] = set()
+        self._cascade_attempted: set[int] = set()
+        self._cascade_lock = threading.Lock()
 
     def _request(
         self,
@@ -301,25 +304,25 @@ class GithubService:
         labels = payload.get("labels") or []
         return [str(label["name"]) for label in labels if "name" in label]
 
-    def get_recent_improve_prds(self) -> list[dict[str, Any]]:
+    def get_recent_improve_specs(self) -> list[dict[str, Any]]:
         results = self._paginate(f"/repos/{self.repo}/issues?state=all&per_page=100")
-        recent_prds: list[dict[str, Any]] = []
+        recent_specs: list[dict[str, Any]] = []
         for item in results:
             if not isinstance(item, dict) or "pull_request" in item:
                 continue
             title = str(item.get("title") or "")
-            if not title.startswith(_IMPROVE_PRD_TITLE_PREFIX):
+            if not title.startswith(_IMPROVE_SPEC_TITLE_PREFIX):
                 continue
-            recent_prds.append(
+            recent_specs.append(
                 {
                     "number": int(item["number"]),
                     "state": str(item.get("state") or "").upper(),
-                    "title": title.removeprefix(_IMPROVE_PRD_TITLE_PREFIX),
+                    "title": title.removeprefix(_IMPROVE_SPEC_TITLE_PREFIX),
                 }
             )
-            if len(recent_prds) == _RECENT_PRD_PAGE_SIZE:
+            if len(recent_specs) == _RECENT_SPEC_PAGE_SIZE:
                 break
-        return recent_prds
+        return recent_specs
 
     def get_parent(self, number: int) -> int | None:
         payload, _ = self._request("GET", f"/repos/{self.repo}/issues/{number}")
@@ -383,7 +386,14 @@ class GithubService:
             return
         if open_sub_issues:
             return
-        self.close_issue_with_parents(parent)
+        with self._cascade_lock:
+            if parent in self._cascade_attempted:
+                return
+            self._cascade_attempted.add(parent)
+        try:
+            self.close_issue_with_parents(parent)
+        except GithubServiceError as exc:
+            self._warn_parent_cascade_failure(number, exc)
 
     def _filter_recently_closed_open_issue_items(
         self, issues: list[dict[str, Any]]

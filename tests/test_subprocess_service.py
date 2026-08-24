@@ -37,7 +37,7 @@ def test_run_returns_true_when_command_succeeds():
         stderr=b"",
     )
     with patch("subprocess.run", return_value=completed):
-        assert svc.is_ancestor("HEAD", Path("repo"))
+        assert svc.is_ancestor("HEAD", Path("repo"), "HEAD")
 
 
 def test_run_returns_false_when_command_reports_branch_is_not_ancestor():
@@ -49,7 +49,7 @@ def test_run_returns_false_when_command_reports_branch_is_not_ancestor():
         stderr=b"",
     )
     with patch("subprocess.run", return_value=completed):
-        assert not svc.is_ancestor("feature", Path("repo"))
+        assert not svc.is_ancestor("feature", Path("repo"), "HEAD")
 
 
 def test_run_raises_timeout_error_when_command_exceeds_timeout():
@@ -63,7 +63,7 @@ def test_run_raises_timeout_error_when_command_exceeds_timeout():
         ),
         pytest.raises(GitTimeoutError),
     ):
-        svc.is_ancestor("HEAD", Path("repo"))
+        svc.is_ancestor("HEAD", Path("repo"), "HEAD")
 
 
 def test_run_timeout_error_message_includes_cmd_and_duration():
@@ -77,7 +77,7 @@ def test_run_timeout_error_message_includes_cmd_and_duration():
         ),
         pytest.raises(GitTimeoutError, match=r"5\.0s"),
     ):
-        svc.is_ancestor("HEAD", Path("repo"))
+        svc.is_ancestor("HEAD", Path("repo"), "HEAD")
 
 
 def test_run_raises_not_found_error_when_executable_is_missing():
@@ -86,7 +86,7 @@ def test_run_raises_not_found_error_when_executable_is_missing():
         patch("subprocess.run", side_effect=FileNotFoundError()),
         pytest.raises(GitNotFoundError),
     ):
-        svc.is_ancestor("HEAD", Path("repo"))
+        svc.is_ancestor("HEAD", Path("repo"), "HEAD")
 
 
 def test_run_not_found_error_message_includes_executable_name():
@@ -95,7 +95,7 @@ def test_run_not_found_error_message_includes_executable_name():
         patch("subprocess.run", side_effect=FileNotFoundError()),
         pytest.raises(GitNotFoundError, match="executable not found: git"),
     ):
-        svc.is_ancestor("HEAD", Path("repo"))
+        svc.is_ancestor("HEAD", Path("repo"), "HEAD")
 
 
 # ── run_or_raise ───────────────────────────────────────────────────────────────

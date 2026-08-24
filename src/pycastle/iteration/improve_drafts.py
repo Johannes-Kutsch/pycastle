@@ -36,11 +36,11 @@ def read_draft_set(directory: Path, cfg: Config) -> list[IssueDraft]:
     if not md_files:
         raise DraftSetValidationError(["No draft files found in directory."])
 
-    slice_files = [f for f in md_files if _SLICE_RE.match(f.stem)]
+    ticket_files = [f for f in md_files if _SLICE_RE.match(f.stem)]
     spec_files = [f for f in md_files if not _SLICE_RE.match(f.stem)]
 
     ordered_files = sorted(spec_files, key=lambda f: f.stem) + sorted(
-        slice_files, key=lambda f: f.stem
+        ticket_files, key=lambda f: f.stem
     )
 
     handles = {f.stem for f in ordered_files}

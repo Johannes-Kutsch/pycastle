@@ -1109,7 +1109,7 @@ def test_run_iteration_improve_chains_into_planning_on_success(
             return _plan_output([filed_issue])
         if request.name == "Scan Agent":
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             draft_dir.mkdir(parents=True, exist_ok=True)
             body = "A" * 120
@@ -2256,7 +2256,7 @@ def _make_improve_deps(
     response_queue = list(agent_responses)
 
     async def _agent(request: RunRequest):
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             draft_dir.mkdir(parents=True, exist_ok=True)
             body = "A" * 120
@@ -4248,7 +4248,7 @@ def test_improve_continue_increments_dispatched_count_by_one(tmp_path, git_svc, 
             return _plan_output([filed_issue])
         if request.name == "Scan Agent":
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             draft_dir.mkdir(parents=True, exist_ok=True)
             body = "A" * 120

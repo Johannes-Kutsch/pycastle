@@ -28,7 +28,7 @@ from pycastle.iteration.improve import (
 )
 from pycastle.iteration.improve_role_session_store import (
     CandidateRecord,
-    FiledSlice,
+    FiledTicket,
     ImproveRoleSessionStore,
 )
 from pycastle.iteration.preflight import PreflightReady
@@ -43,6 +43,7 @@ from pycastle.session.service_session_store import (
 )
 from tests.support import (
     FakeAgentRunner,
+    RecordingStatusDisplay,
     _make_deps,
     functional_git_svc,
     make_scan_output,
@@ -69,7 +70,7 @@ def agent_runner():
     idx = [0]
 
     def _side_effect(request):
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             draft_dir.mkdir(parents=True, exist_ok=True)
             body = "A" * 120
@@ -150,18 +151,26 @@ def test_improve_phase_uses_scan_prompt_first(deps, agent_runner):
 
 
 def test_improve_phase_picked_path_runs_scan_then_prd(deps, agent_runner):
-    """Picked path runs IMPROVE_SCAN then IMPROVE_PRD in order."""
+    """Picked path runs IMPROVE_SCAN then IMPROVE_SPEC in order."""
     _run(deps)
     templates = [c.prompt.template for c in agent_runner.calls]
-    assert templates[:2] == [PromptTemplate.IMPROVE_SCAN, PromptTemplate.IMPROVE_PRD]
+    assert templates[:2] == [PromptTemplate.IMPROVE_SCAN, PromptTemplate.IMPROVE_SPEC]
 
 
 @pytest.mark.parametrize(
     ("template", "expected_name", "expected_body"),
     [
-        (PromptTemplate.IMPROVE_SCAN, "Scan Agent", "picking an improvement"),
-        (PromptTemplate.IMPROVE_PRD, "PRD Agent", "writing PRD"),
-        (PromptTemplate.IMPROVE_ISSUES, "Slice Agent", "filing sub-issues"),
+        (PromptTemplate.IMPROVE_SCAN, "Scan Agent", "picking up to 3 improvements"),
+        (
+            PromptTemplate.IMPROVE_SPEC,
+            "Spec Agent",
+            'writing spec for candidate 1/1 "Candidate"',
+        ),
+        (
+            PromptTemplate.IMPROVE_TICKETS,
+            "Tickets Agent",
+            'filing tickets for candidate 1/1 "Candidate"',
+        ),
         (
             PromptTemplate.IMPROVE_NO_CANDIDATE,
             "Rejection Report Agent",
@@ -266,14 +275,14 @@ def test_improve_phase_dispatches_scan_prd_and_issues_templates_in_order(
     _run(deps)
     assert [(call.role, call.prompt.template) for call in agent_runner.calls] == [
         (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SCAN),
-        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_PRD),
-        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_ISSUES),
+        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_SPEC),
+        (AgentRole.IMPROVE, PromptTemplate.IMPROVE_TICKETS),
     ]
 
 
 def test_improve_phase_dispatches_prd_step_with_expected_work_body(tmp_path, git_svc):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.return_value = [
+    github_svc.get_recent_improve_specs.return_value = [
         {"number": 12, "state": "OPEN", "title": "First candidate"},
         {"number": 11, "state": "CLOSED", "title": "Second candidate"},
     ]
@@ -286,16 +295,16 @@ def test_improve_phase_dispatches_prd_step_with_expected_work_body(tmp_path, git
     _run(deps)
 
     prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
-    assert prd_call.work_body == "writing PRD"
+    assert prd_call.work_body == 'writing spec for candidate 1/1 "Candidate"'
 
 
 def test_improve_phase_still_dispatches_prd_step_when_recent_prd_history_is_empty(
     tmp_path, git_svc
 ):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.return_value = []
+    github_svc.get_recent_improve_specs.return_value = []
     github_svc.create_issue_in.return_value = (0, 0)
     runner = _make_runner_with_drafts(
         make_scan_output(), CompletionOutput(), CompletionOutput()
@@ -305,14 +314,14 @@ def test_improve_phase_still_dispatches_prd_step_when_recent_prd_history_is_empt
     _run(deps)
 
     prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
-    assert prd_call.prompt.template == PromptTemplate.IMPROVE_PRD
+    assert prd_call.prompt.template == PromptTemplate.IMPROVE_SPEC
 
 
 def test_improve_phase_propagates_recent_improve_prd_lookup_failures(tmp_path, git_svc):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.side_effect = GithubNetworkError(
+    github_svc.get_recent_improve_specs.side_effect = GithubNetworkError(
         "transport error", cause=RuntimeError("boom")
     )
     runner = FakeAgentRunner([], preflight_responses=[[]])
@@ -328,7 +337,7 @@ def test_improve_phase_propagates_prd_preparation_lookup_failures_after_scan(
     tmp_path, git_svc
 ):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.side_effect = [
+    github_svc.get_recent_improve_specs.side_effect = [
         [{"number": 12, "state": "OPEN", "title": "First candidate"}],
         GithubNetworkError("transport error", cause=RuntimeError("boom")),
     ]
@@ -360,7 +369,7 @@ def test_improve_phase_propagates_no_candidate_report_preparation_lookup_failure
     tmp_path, git_svc
 ):
     github_svc = MagicMock()
-    github_svc.get_recent_improve_prds.side_effect = [
+    github_svc.get_recent_improve_specs.side_effect = [
         [{"number": 12, "state": "OPEN", "title": "First candidate"}],
         GithubNetworkError("transport error", cause=RuntimeError("boom")),
     ]
@@ -421,7 +430,7 @@ def _seed_candidate_record(
         spec_number=spec_number,
         spec_database_id=42 if spec_number is not None else None,
         spec_title="Seeded" if spec_number is not None else "",
-        filed_slices=(),
+        filed_tickets=(),
         labels_applied=labels_applied,
     )
     store.write_candidate_record(idx, record)
@@ -483,7 +492,7 @@ def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
         service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
     )
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert len(runner.calls) == 2
 
 
@@ -510,7 +519,7 @@ def test_improve_clean_phase_2_entry_dispatches_prd_prompt_for_exact_codex_trans
 
     _run(deps)
 
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert runner.calls[0].prompt.kind is PromptKind.FOLLOW_UP
     assert len(runner.calls) == 2
 
@@ -541,7 +550,7 @@ def test_improve_clean_phase_2_entry_accepts_recovered_exact_codex_transcript(
 
     _run(deps)
 
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert runner.calls[0].prompt.kind is PromptKind.FOLLOW_UP
     assert len(runner.calls) == 2
 
@@ -683,23 +692,23 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     runner = _make_runner_with_drafts(CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_TICKETS
     assert runner.calls[0].prompt.scope_args["IMPROVE_SHORT_SID"] != ""
     assert len(runner.calls) == 1
 
 
 def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc):
-    """Candidate with no record and in-flight='02-prd': PRD resumes as a continuation (no role prompt)."""
+    """Candidate with no record and in-flight='02-spec': PRD resumes as a continuation (no role prompt)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
-    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-prd")
+    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-spec")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
     _run(deps)
 
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert runner.calls[0].prompt.kind is PromptKind.ROLE_PROMPT
     assert len(runner.calls) == 2
 
@@ -728,17 +737,17 @@ def test_improve_is_terminal_after_report(tmp_path, git_svc):
 
 
 def test_mid_phase_2_retry_is_role_prompt_kind(tmp_path, git_svc):
-    """Resume mid-phase-2 (in-flight='02-prd'): kind=ROLE_PROMPT so the runner
+    """Resume mid-phase-2 (in-flight='02-spec'): kind=ROLE_PROMPT so the runner
     falls back to the continuation prompt (role prompt already in history)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
-    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-prd")
+    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-spec")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
     assert prd_call.prompt.kind is PromptKind.ROLE_PROMPT
 
@@ -764,7 +773,7 @@ def test_cross_teardown_resume_at_phase_2_is_follow_up_kind(tmp_path, git_svc):
     )
     _run(deps)
     prd_call = next(
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
     assert prd_call.prompt.kind is PromptKind.FOLLOW_UP
 
@@ -782,7 +791,9 @@ def test_phase_2_is_follow_up_kind_on_resumed_session(deps, agent_runner):
     so the PRD prompt is delivered rather than the continuation prompt."""
     _run(deps)
     prd_call = next(
-        c for c in agent_runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c
+        for c in agent_runner.calls
+        if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
     assert prd_call.prompt.kind is PromptKind.FOLLOW_UP
 
@@ -849,7 +860,7 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
         service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
     )
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert len(runner.calls) == 2
 
 
@@ -875,7 +886,9 @@ def test_improve_phase_02_uses_candidate_namespace(deps, agent_runner):
     """Phase 02-prd uses a per-candidate session namespace ('candidate/0' for first)."""
     _run(deps)
     prd_call = next(
-        c for c in agent_runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c
+        for c in agent_runner.calls
+        if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     )
     assert prd_call.session_namespace == "candidate/0"
 
@@ -886,7 +899,7 @@ def test_improve_phase_03_uses_candidate_namespace(deps, agent_runner):
     issues_call = next(
         c
         for c in agent_runner.calls
-        if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+        if c.prompt.template == PromptTemplate.IMPROVE_TICKETS
     )
     assert issues_call.session_namespace == "candidate/0"
 
@@ -896,9 +909,9 @@ def test_improve_all_phases_have_correct_namespace(deps, agent_runner):
     _run(deps)
     assert agent_runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
     assert agent_runner.calls[0].session_namespace == "main"
-    assert agent_runner.calls[1].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert agent_runner.calls[1].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert agent_runner.calls[1].session_namespace == "candidate/0"
-    assert agent_runner.calls[2].prompt.template == PromptTemplate.IMPROVE_ISSUES
+    assert agent_runner.calls[2].prompt.template == PromptTemplate.IMPROVE_TICKETS
     assert agent_runner.calls[2].session_namespace == "candidate/0"
 
 
@@ -997,7 +1010,7 @@ def test_scan_returning_candidates_output_continues_to_phase_2(tmp_path, git_svc
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
-    assert runner.calls[1].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[1].prompt.template == PromptTemplate.IMPROVE_SPEC
 
 
 # ── Host-side filing pass (AC3, AC5, AC6, AC7) ──────────────────────────────
@@ -1036,7 +1049,7 @@ def _make_runner_with_drafts(
     idx = [0]
 
     def _side_effect(request):
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             )
@@ -1245,7 +1258,7 @@ def test_multi_candidate_run_files_both_candidates_specs(tmp_path, git_svc):
                     ScanCandidateItem(rank=2, title="Second"),
                 )
             )
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             _write_spec_draft(draft_dir)
         return CompletionOutput()
@@ -1273,7 +1286,7 @@ def test_multi_candidate_run_files_all_candidates_in_rank_order(tmp_path, git_sv
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             issues_namespaces.append(request.session_namespace)
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
@@ -1301,7 +1314,7 @@ def test_dispatch_count_increments_per_completed_candidate(tmp_path, git_svc):
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             )
@@ -1328,7 +1341,7 @@ def test_improve_stops_at_cap_after_completing_first_candidate(tmp_path, git_svc
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             issues_namespaces.append(request.session_namespace)
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
@@ -1353,8 +1366,8 @@ def test_no_candidate_path_makes_no_forks(tmp_path, git_svc):
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     dispatched_templates = [c.prompt.template for c in runner.calls]
-    assert PromptTemplate.IMPROVE_PRD not in dispatched_templates
-    assert PromptTemplate.IMPROVE_ISSUES not in dispatched_templates
+    assert PromptTemplate.IMPROVE_SPEC not in dispatched_templates
+    assert PromptTemplate.IMPROVE_TICKETS not in dispatched_templates
 
 
 def test_gate_failure_for_next_candidate_ends_dispatch_without_touching_filed(
@@ -1406,7 +1419,7 @@ def test_cross_teardown_resume_checks_candidate_namespace_for_gate(tmp_path, git
         service_registry=ServiceRegistry({"opencode": OpenCodeService()}),
     )
     _run(deps)
-    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_PRD
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
     assert len(runner.calls) == 2
 
 
@@ -1440,7 +1453,7 @@ def _make_two_candidate_runner() -> FakeAgentRunner:
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
                 request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             )
@@ -1462,7 +1475,7 @@ def test_sha_change_mid_run_stops_further_agent_dispatch(tmp_path, git_svc):
     result = _run(deps)
 
     issues_calls = [
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_TICKETS
     ]
     assert len(issues_calls) == 1
     assert isinstance(result, ImproveContinue)
@@ -1482,7 +1495,7 @@ def test_sha_change_mid_run_does_not_start_next_candidate(tmp_path, git_svc):
     _run(deps)
 
     prd_calls = [
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_PRD
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
     ]
     assert len(prd_calls) == 1
     assert prd_calls[0].session_namespace == "candidate/0"
@@ -1499,7 +1512,7 @@ def test_sha_unchanged_run_is_unaffected(tmp_path, git_svc):
     assert isinstance(result, ImproveContinue)
     assert result.completed_count == 2
     issues_calls = [
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_ISSUES
+        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_TICKETS
     ]
     assert len(issues_calls) == 2
 
@@ -1561,7 +1574,7 @@ def test_draft_valid_on_third_correction_is_filed(tmp_path, git_svc):
         draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(draft_dir)
             _write_slice_draft(draft_dir, "01-slice", body="Too short.")
         if request.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION:
@@ -1588,7 +1601,7 @@ def test_unrepairable_draft_set_does_not_end_run(tmp_path, git_svc):
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             _write_spec_draft(draft_dir)
             _write_slice_draft(draft_dir, "01-slice", body="Too short.")
@@ -1608,7 +1621,7 @@ def test_unrepairable_draft_set_clears_draft_dir(tmp_path, git_svc):
     def side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
             return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_ISSUES:
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
             _write_spec_draft(draft_dir)
             _write_slice_draft(draft_dir, "01-slice", body="Too short.")
@@ -1643,8 +1656,10 @@ def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
         spec_number=200,
         spec_database_id=2000,
         spec_title="Spec",
-        filed_slices=(
-            FiledSlice(handle="slice-a", number=201, database_id=2001, title="Slice A"),
+        filed_tickets=(
+            FiledTicket(
+                handle="slice-a", number=201, database_id=2001, title="Slice A"
+            ),
         ),
         labels_applied=False,
     )
@@ -1675,3 +1690,305 @@ def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
     # No agent was dispatched to handle the partial candidate — wind-down is host-only
     old_ns_calls = [c for c in runner.calls if c.session_namespace == "candidate/1"]
     assert old_ns_calls == []
+
+
+def test_draft_correction_body_names_candidate_ordinal_title_and_attempt(
+    tmp_path, git_svc
+):
+    """Draft Correction work_body includes ordinal/total, title, and 1-based attempt.
+
+    Scan produces 3 candidates. Candidate 0 (ordinal 1/3, title "Alpha") needs two
+    correction attempts before its drafts are valid. Candidates 1 and 2 file cleanly.
+    """
+    call_count = [0]
+
+    def side_effect(request):
+        call_count[0] += 1
+        draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+        n = call_count[0]
+        if n == 1:
+            # Scan: 3 candidates
+            return ScanCandidatesOutput(
+                candidates=(
+                    ScanCandidateItem(rank=1, title="Alpha"),
+                    ScanCandidateItem(rank=2, title="Beta"),
+                    ScanCandidateItem(rank=3, title="Gamma"),
+                )
+            )
+        # n==2: PRD for candidate 0 → no-op
+        if n == 3:
+            # Issues for candidate 0: write invalid drafts
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+        elif n == 4:
+            # Correction attempt 1 for candidate 0: still invalid
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+        elif n == 5:
+            # Correction attempt 2 for candidate 0: valid now
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice")
+        # n==6: PRD for candidate 1 → no-op
+        elif n == 7:
+            # Issues for candidate 1: write valid drafts immediately
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice")
+        # n==8: PRD for candidate 2 → no-op
+        elif n == 9:
+            # Issues for candidate 2: write valid drafts immediately
+            _write_spec_draft(draft_dir)
+            _write_slice_draft(draft_dir, "01-slice")
+        return CompletionOutput()
+
+    from unittest.mock import MagicMock
+
+    github_svc = MagicMock()
+    github_svc.repo = "test/repo"
+    # 3 candidates x (spec + 1 slice) = 6 create_issue_in calls
+    github_svc.create_issue_in.side_effect = [
+        (100, 1000),
+        (101, 1001),
+        (102, 1002),
+        (103, 1003),
+        (104, 1004),
+        (105, 1005),
+    ]
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
+
+    _run(deps)
+
+    correction_calls = [
+        c
+        for c in runner.calls
+        if c.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
+    ]
+    assert len(correction_calls) == 2
+    assert (
+        correction_calls[0].work_body
+        == 'fixing draft validation errors for candidate 1/3 "Alpha" (attempt 1/3)'
+    )
+    assert (
+        correction_calls[1].work_body
+        == 'fixing draft validation errors for candidate 1/3 "Alpha" (attempt 2/3)'
+    )
+
+
+# ── Issue #2191: Improve phase row — constant name, live body ─────────────────
+
+
+def _three_candidate_runner_with_drafts(
+    *, preflight_responses: list | None = None
+) -> FakeAgentRunner:
+    """FakeAgentRunner for a 3-candidate scan; writes drafts on each issues call."""
+    scan_output = ScanCandidatesOutput(
+        candidates=(
+            ScanCandidateItem(rank=1, title="First candidate"),
+            ScanCandidateItem(rank=2, title="Second candidate"),
+            ScanCandidateItem(rank=3, title="Third candidate"),
+        )
+    )
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return scan_output
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        return CompletionOutput()
+
+    return FakeAgentRunner(
+        side_effect=side_effect,
+        preflight_responses=preflight_responses
+        if preflight_responses is not None
+        else [[]],
+    )
+
+
+def test_improve_row_name_is_improve_no_counter_with_improve_max(tmp_path, git_svc):
+    """With improve_max set, the Improve row registers under 'Improve'; no row name has a counter."""
+    status_display = RecordingStatusDisplay()
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    cfg = Config(improve_max=10)
+    deps = _make_deps(
+        tmp_path, runner, git_svc=git_svc, status_display=status_display, cfg=cfg
+    )
+    _run(deps)
+
+    caller_names = [c["caller"] for c in status_display.register_calls]
+    assert "Improve" in caller_names
+    assert not any("(" in name for name in caller_names)
+
+
+def test_improve_phase_body_scanning_before_scan_agent_runs(tmp_path, git_svc):
+    """The Improve phase body reads 'scanning for candidates' from the start (before scan returns)."""
+    status_display = RecordingStatusDisplay()
+    runner = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, status_display=status_display)
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    assert improve_updates[0] == "scanning for candidates"
+
+
+def test_improve_phase_body_first_candidate_with_improve_max(tmp_path, git_svc):
+    """First candidate of 3 with improve_max=10 and d=0: body reads 'candidate 1/3 · improvement 1/10'."""
+    status_display = RecordingStatusDisplay()
+    runner = _three_candidate_runner_with_drafts()
+    cfg = Config(improve_max=10)
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        cfg=cfg,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    assert "candidate 1/3 · improvement 1/10" in improve_updates
+
+
+def test_improve_phase_body_changes_for_second_candidate(tmp_path, git_svc):
+    """Body changes within a single improve_phase call: second candidate shows 'candidate 2/3 · improvement 2/10'."""
+    status_display = RecordingStatusDisplay()
+    runner = _three_candidate_runner_with_drafts()
+    cfg = Config(improve_max=10)
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        cfg=cfg,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    idx1 = improve_updates.index("candidate 1/3 · improvement 1/10")
+    idx2 = improve_updates.index("candidate 2/3 · improvement 2/10")
+    assert idx1 < idx2
+
+
+def test_improve_phase_body_candidate_without_improve_max(tmp_path, git_svc):
+    """With improve_max unset, body while working second of three candidates reads 'candidate 2/3'."""
+    status_display = RecordingStatusDisplay()
+    runner = _three_candidate_runner_with_drafts()
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    assert "candidate 2/3" in improve_updates
+    second_body = next(b for b in improve_updates if b.startswith("candidate 2/3"))
+    assert "improvement" not in second_body
+
+
+def test_improve_phase_prints_candidate_start_line(tmp_path, git_svc):
+    """Each candidate start emits a print on 'Improve' naming ordinal and title."""
+    status_display = RecordingStatusDisplay()
+    runner = _three_candidate_runner_with_drafts()
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    printed = [
+        msg
+        for event, caller, msg, *_ in status_display.calls
+        if event == "print" and caller == "Improve"
+    ]
+    assert any('→ candidate 2/3 "Second candidate"' in str(m) for m in printed)
+
+
+def test_improve_phase_closes_with_filed_count(tmp_path, git_svc):
+    """A run that files two improvements closes the Improve row with 'filed 2 improvement(s)'."""
+    scan_output = ScanCandidatesOutput(
+        candidates=(
+            ScanCandidateItem(rank=1, title="First"),
+            ScanCandidateItem(rank=2, title="Second"),
+        )
+    )
+
+    def side_effect(request):
+        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
+            return scan_output
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
+            _write_spec_draft(
+                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            )
+        return CompletionOutput()
+
+    status_display = RecordingStatusDisplay()
+    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
+    github_svc = _make_filing_github_svc()
+    deps = _make_deps(
+        tmp_path,
+        runner,
+        git_svc=git_svc,
+        status_display=status_display,
+        github_svc=github_svc,
+    )
+    _run(deps)
+
+    improve_close = next(
+        c for c in status_display.remove_calls if c["caller"] == "Improve"
+    )
+    assert improve_close["shutdown_message"] == "filed 2 improvement(s)"
+
+
+def test_improve_phase_no_candidate_closes_with_no_candidate(tmp_path, git_svc):
+    """Scan that nominates nothing closes the Improve row with 'no candidate'."""
+    status_display = RecordingStatusDisplay()
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, status_display=status_display)
+    _run(deps)
+
+    improve_close = next(
+        c for c in status_display.remove_calls if c["caller"] == "Improve"
+    )
+    assert improve_close["shutdown_message"] == "no candidate"
+
+
+def test_improve_phase_no_candidate_body_filing_report(tmp_path, git_svc):
+    """While the no-candidate report agent runs, the Improve body reads 'filing no-candidate report'."""
+    status_display = RecordingStatusDisplay()
+    runner = FakeAgentRunner(
+        [NoCandidateOutput(), CompletionOutput()], preflight_responses=[[]]
+    )
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, status_display=status_display)
+    _run(deps)
+
+    improve_updates = [
+        body for name, body in status_display.phase_updates if name == "Improve"
+    ]
+    assert "filing no-candidate report" in improve_updates

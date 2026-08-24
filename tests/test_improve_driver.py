@@ -68,7 +68,7 @@ def _seed_candidate_record(
         spec_number=spec_number,
         spec_database_id=42 if spec_number is not None else None,
         spec_title="Seeded" if spec_number is not None else "",
-        filed_slices=(),
+        filed_tickets=(),
         labels_applied=labels_applied,
     )
     store.write_candidate_record(idx, record)
@@ -113,12 +113,12 @@ def test_full_sequence_one_candidate(driver_dir: Path) -> None:
 
     step2 = driver.next()
     assert step2 is not None
-    assert step2.prompt_key == "02-prd.md"
+    assert step2.prompt_key == "02-spec.md"
     driver.record_outcome(step2, IssueOutput(number=10, labels=[]))
 
     step3 = driver.next()
     assert step3 is not None
-    assert step3.prompt_key == "03-issues.md"
+    assert step3.prompt_key == "03-tickets.md"
     driver.record_outcome(step3, CompletionOutput())
 
     assert driver.next() is None
@@ -221,7 +221,7 @@ def test_candidate_with_no_record_starts_at_prd(driver_dir: Path) -> None:
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "02-prd.md"
+    assert step.prompt_key == "02-spec.md"
 
 
 # ── AC 3: Existing record → slice (Issues) phase ─────────────────────────────
@@ -234,7 +234,7 @@ def test_candidate_with_existing_record_resumes_at_issues(driver_dir: Path) -> N
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "03-issues.md"
+    assert step.prompt_key == "03-tickets.md"
 
 
 # ── AC 4: Record with spec_number → Issues phase, not scan ───────────────────
@@ -247,7 +247,7 @@ def test_candidate_with_spec_number_starts_at_issues_not_scan(driver_dir: Path) 
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "03-issues.md"
+    assert step.prompt_key == "03-tickets.md"
 
 
 # ── AC 2: Per-candidate phase state ──────────────────────────────────────────
@@ -264,18 +264,18 @@ def test_advancing_one_candidate_leaves_other_unchanged(driver_dir: Path) -> Non
     driver_for_candidate_0 = _make_driver(driver_dir)
     step1 = driver_for_candidate_0.start()
     assert step1 is not None
-    assert step1.prompt_key == "02-prd.md"
+    assert step1.prompt_key == "02-spec.md"
     driver_for_candidate_0.record_outcome(step1, IssueOutput(number=1, labels=[]))
 
     step2 = driver_for_candidate_0.next()
     assert step2 is not None
-    assert step2.prompt_key == "03-issues.md"
+    assert step2.prompt_key == "03-tickets.md"
     driver_for_candidate_0.record_outcome(step2, CompletionOutput())
 
     # Now cursor is at 1. Candidate 1 has no record → PRD phase.
     step3 = driver_for_candidate_0.next()
     assert step3 is not None
-    assert step3.prompt_key == "02-prd.md"
+    assert step3.prompt_key == "02-spec.md"
 
     # Candidate 0's record (written by driver) is separate from candidate 1.
     store = ImproveRoleSessionStore(driver_dir)
@@ -332,19 +332,19 @@ def test_prd_step_is_follow_up_kind_after_scan(driver_dir: Path) -> None:
     )
     step2 = driver.next()
     assert step2 is not None
-    assert step2.prompt_key == "02-prd.md"
+    assert step2.prompt_key == "02-spec.md"
     assert step2.kind is PromptKind.FOLLOW_UP
 
 
 def test_mid_prd_retry_is_role_prompt_kind(driver_dir: Path) -> None:
-    """In-flight=02-prd → PRD step has kind=ROLE_PROMPT (mid-phase retry)."""
+    """In-flight=02-spec → PRD step has kind=ROLE_PROMPT (mid-phase retry)."""
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
     store = ImproveRoleSessionStore(driver_dir)
-    store.write_in_flight("02-prd")
+    store.write_in_flight("02-spec")
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "02-prd.md"
+    assert step.prompt_key == "02-spec.md"
     assert step.kind is PromptKind.ROLE_PROMPT
 
 
@@ -354,7 +354,23 @@ def test_clean_prd_entry_is_follow_up_kind(driver_dir: Path) -> None:
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "02-prd.md"
+    assert step.prompt_key == "02-spec.md"
+    assert step.kind is PromptKind.FOLLOW_UP
+
+
+def test_unrecognised_in_flight_marker_is_treated_as_not_mid_phase(
+    driver_dir: Path,
+) -> None:
+    """An old '02-prd' in-flight marker (or any other unrecognised value) must
+    not crash the driver and must be treated as 'not mid-spec' so the spec
+    phase restarts fresh with kind=FOLLOW_UP instead of ROLE_PROMPT."""
+    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    store = ImproveRoleSessionStore(driver_dir)
+    store.write_in_flight("02-prd")
+    driver = _make_driver(driver_dir)
+    step = driver.start()
+    assert step is not None
+    assert step.prompt_key == "02-spec.md"
     assert step.kind is PromptKind.FOLLOW_UP
 
 
@@ -384,7 +400,7 @@ def test_next_writes_in_flight_before_returning(driver_dir: Path) -> None:
     assert step2 is not None
 
     store = ImproveRoleSessionStore(driver_dir)
-    assert store.read_in_flight() == "02-prd"
+    assert store.read_in_flight() == "02-spec"
 
 
 # ── record_outcome disk effects ───────────────────────────────────────────────
@@ -410,12 +426,12 @@ def test_record_outcome_advances_cursor_after_issues(driver_dir: Path) -> None:
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "02-prd.md"
+    assert step.prompt_key == "02-spec.md"
     driver.record_outcome(step, IssueOutput(number=1, labels=[]))
 
     step2 = driver.next()
     assert step2 is not None
-    assert step2.prompt_key == "03-issues.md"
+    assert step2.prompt_key == "03-tickets.md"
     driver.record_outcome(step2, CompletionOutput())
 
     store = ImproveRoleSessionStore(driver_dir)
@@ -442,7 +458,7 @@ def test_prd_step_carries_candidate_with_rank_title_and_no_spec_number(
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "02-prd.md"
+    assert step.prompt_key == "02-spec.md"
     assert step.candidate == ImproveCandidate(rank=3, title="Foo Bar", spec_number=None)
 
 
@@ -455,7 +471,7 @@ def test_issues_step_carries_candidate_with_no_spec_number_before_filing(
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "03-issues.md"
+    assert step.prompt_key == "03-tickets.md"
     assert step.candidate == ImproveCandidate(rank=2, title="Alpha", spec_number=None)
 
 
@@ -468,7 +484,7 @@ def test_issues_step_carries_spec_number_once_filing_has_produced_one(
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "03-issues.md"
+    assert step.prompt_key == "03-tickets.md"
     assert step.candidate == ImproveCandidate(rank=1, title="Beta", spec_number=42)
 
 
@@ -483,7 +499,7 @@ def test_candidate_built_from_durable_scan_output_not_rederived(
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "02-prd.md"
+    assert step.prompt_key == "02-spec.md"
     assert step.candidate is not None
     assert step.candidate.rank == 5
     assert step.candidate.title == "Persisted Title"
@@ -494,10 +510,10 @@ def test_mid_issues_resume_preserves_candidate(driver_dir: Path) -> None:
     _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=7, title="Resume Me")])
     _seed_candidate_record(driver_dir, 0, spec_number=99)
     store = ImproveRoleSessionStore(driver_dir)
-    store.write_in_flight("03-issues")
+    store.write_in_flight("03-tickets")
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
-    assert step.prompt_key == "03-issues.md"
+    assert step.prompt_key == "03-tickets.md"
     assert step.kind is PromptKind.ROLE_PROMPT
     assert step.candidate == ImproveCandidate(rank=7, title="Resume Me", spec_number=99)

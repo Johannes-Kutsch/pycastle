@@ -227,6 +227,7 @@ async def run_issue(
                     intent=DurableIssueWorktreeIntent.IMPLEMENTER,
                     deps=deps,
                     planner_sha=sha,
+                    operating_branch=deps.cfg.operating_branch,
                 ) as impl_mount_path,
             ):
                 implementer_step = planned_steps["implementer"]
@@ -259,6 +260,7 @@ async def run_issue(
                     issue["number"],
                     intent=DurableIssueWorktreeIntent.REVIEWER,
                     deps=deps,
+                    operating_branch=deps.cfg.operating_branch,
                 ) as review_mount_path,
             ):
                 reviewer_step = planned_steps["reviewer"]

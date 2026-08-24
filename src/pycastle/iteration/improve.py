@@ -128,17 +128,17 @@ _PHASES: dict[str, _PhaseConfig] = {
         display_name="Scan Agent",
         display_body="picking an improvement",
     ),
-    "02-prd.md": _PhaseConfig(
-        template=PromptTemplate.IMPROVE_PRD,
+    "02-spec.md": _PhaseConfig(
+        template=PromptTemplate.IMPROVE_SPEC,
         namespace="main",
-        display_name="PRD Agent",
-        display_body="writing PRD",
+        display_name="Spec Agent",
+        display_body="writing spec",
     ),
-    "03-issues.md": _PhaseConfig(
-        template=PromptTemplate.IMPROVE_ISSUES,
+    "03-tickets.md": _PhaseConfig(
+        template=PromptTemplate.IMPROVE_TICKETS,
         namespace="main",
-        display_name="Slice Agent",
-        display_body="filing sub-issues",
+        display_name="Tickets Agent",
+        display_body="filing tickets",
     ),
     "04-no-candidate-report.md": _PhaseConfig(
         template=PromptTemplate.IMPROVE_NO_CANDIDATE,
@@ -154,8 +154,10 @@ class Step:
     prompt_key: str
     cfg: _PhaseConfig
     kind: PromptKind
-    fetch_recent_prd_titles: bool
+    fetch_recent_spec_titles: bool
     candidate: ImproveCandidate | None = None
+    scan_set_size: int | None = None
+    candidate_ordinal: int | None = None
 
 
 class ImprovePhaseDriver:
@@ -181,15 +183,15 @@ class ImprovePhaseDriver:
 
     # ── Step factories ────────────────────────────────────────────────────────
 
-    def _make_scan_step(self, *, fetch_recent_prd_titles: bool) -> Step:
+    def _make_scan_step(self, *, fetch_recent_spec_titles: bool) -> Step:
         return Step(
             prompt_key="01-scan.md",
             cfg=_PHASES["01-scan.md"],
             kind=PromptKind.ROLE_PROMPT,
-            fetch_recent_prd_titles=fetch_recent_prd_titles,
+            fetch_recent_spec_titles=fetch_recent_spec_titles,
         )
 
-    def _make_prd_step(
+    def _make_spec_step(
         self,
         *,
         kind: PromptKind,
@@ -197,26 +199,32 @@ class ImprovePhaseDriver:
         candidate: ImproveCandidate,
     ) -> Step:
         cfg = dataclasses.replace(
-            _PHASES["02-prd.md"], namespace=_candidate_namespace(idx)
+            _PHASES["02-spec.md"], namespace=_candidate_namespace(idx)
         )
+        candidates = self._candidates
         return Step(
-            prompt_key="02-prd.md",
+            prompt_key="02-spec.md",
             cfg=cfg,
             kind=kind,
-            fetch_recent_prd_titles=True,
+            fetch_recent_spec_titles=True,
             candidate=candidate,
+            scan_set_size=len(candidates) if candidates is not None else None,
+            candidate_ordinal=idx + 1,
         )
 
     def _make_issues_step(self, *, idx: int, candidate: ImproveCandidate) -> Step:
         cfg = dataclasses.replace(
-            _PHASES["03-issues.md"], namespace=_candidate_namespace(idx)
+            _PHASES["03-tickets.md"], namespace=_candidate_namespace(idx)
         )
+        candidates = self._candidates
         return Step(
-            prompt_key="03-issues.md",
+            prompt_key="03-tickets.md",
             cfg=cfg,
             kind=PromptKind.FOLLOW_UP,
-            fetch_recent_prd_titles=False,
+            fetch_recent_spec_titles=False,
             candidate=candidate,
+            scan_set_size=len(candidates) if candidates is not None else None,
+            candidate_ordinal=idx + 1,
         )
 
     def _make_report_step(self, *, kind: PromptKind) -> Step:
@@ -224,7 +232,7 @@ class ImprovePhaseDriver:
             prompt_key="04-no-candidate-report.md",
             cfg=_PHASES["04-no-candidate-report.md"],
             kind=kind,
-            fetch_recent_prd_titles=True,
+            fetch_recent_spec_titles=True,
         )
 
     # ── Core state resolution ─────────────────────────────────────────────────
@@ -246,18 +254,18 @@ class ImprovePhaseDriver:
         )
 
         if record is None:
-            # No record → spec (PRD) phase. Check in-flight for mid-PRD resume.
+            # No record → spec phase. Check in-flight for mid-spec resume.
             in_flight = self._store.read_in_flight() if from_start else None
-            is_mid_prd = in_flight == "02-prd"
-            return self._make_prd_step(
-                kind=PromptKind.ROLE_PROMPT if is_mid_prd else PromptKind.FOLLOW_UP,
+            is_mid_spec = in_flight == "02-spec"
+            return self._make_spec_step(
+                kind=PromptKind.ROLE_PROMPT if is_mid_spec else PromptKind.FOLLOW_UP,
                 idx=idx,
                 candidate=candidate,
             )
 
         # Record exists → slice (Issues) phase.
         in_flight = self._store.read_in_flight() if from_start else None
-        is_mid_issues = in_flight == "03-issues"
+        is_mid_issues = in_flight == "03-tickets"
         step = self._make_issues_step(idx=idx, candidate=candidate)
         # For mid-issues resume, override kind to ROLE_PROMPT.
         if is_mid_issues:
@@ -265,7 +273,7 @@ class ImprovePhaseDriver:
                 prompt_key=step.prompt_key,
                 cfg=step.cfg,
                 kind=PromptKind.ROLE_PROMPT,
-                fetch_recent_prd_titles=step.fetch_recent_prd_titles,
+                fetch_recent_spec_titles=step.fetch_recent_spec_titles,
                 candidate=step.candidate,
             )
         return step
@@ -294,7 +302,7 @@ class ImprovePhaseDriver:
             # Scan not done → return scan step.
             in_flight = self._store.read_in_flight()
             is_mid_scan = in_flight == "01-scan"
-            step = self._make_scan_step(fetch_recent_prd_titles=not is_mid_scan)
+            step = self._make_scan_step(fetch_recent_spec_titles=not is_mid_scan)
             self._store.write_in_flight("01-scan")
             return step
 
@@ -372,10 +380,10 @@ class ImprovePhaseDriver:
                 )
                 self._store.write_cursor(0)
 
-        elif step.prompt_key == "02-prd.md":
-            self._store.mark_prd_completion(self._cursor)
+        elif step.prompt_key == "02-spec.md":
+            self._store.mark_spec_completion(self._cursor)
 
-        elif step.prompt_key == "03-issues.md":
+        elif step.prompt_key == "03-tickets.md":
             self._cursor += 1
             self._store.write_cursor(self._cursor)
 
@@ -389,6 +397,10 @@ class ImprovePhaseDriver:
     @property
     def no_candidate(self) -> bool:
         return self._no_candidate
+
+    @property
+    def candidate_count(self) -> int | None:
+        return None if self._candidates is None else len(self._candidates)
 
 
 @dataclass(frozen=True)
@@ -420,7 +432,7 @@ class _ImproveDeps(Protocol):
 def _needs_candidate_gate(step: "Step | None") -> bool:
     return (
         step is not None
-        and step.prompt_key == "02-prd.md"
+        and step.prompt_key == "02-spec.md"
         and step.kind is PromptKind.FOLLOW_UP
     )
 
@@ -444,6 +456,58 @@ def _candidate_transcript_ok(
         session_namespace=step.cfg.namespace,
         service=cast("AgentService", service),
     )
+
+
+def _improve_step_body(
+    step: "Step",
+    *,
+    n_candidates: int,
+    improve_dispatched_count: int,
+    improve_max: int | None,
+) -> str | None:
+    """Return the Improve phase body for the given step, or None for no change."""
+    if step.prompt_key in ("02-spec.md", "03-tickets.md"):
+        candidate_idx = int(step.cfg.namespace.split("/")[1])
+        k = candidate_idx + 1
+        if improve_max is not None:
+            return f"candidate {k}/{n_candidates} · improvement {improve_dispatched_count + k}/{improve_max}"
+        return f"candidate {k}/{n_candidates}"
+    if step.prompt_key == "04-no-candidate-report.md":
+        return "filing no-candidate report"
+    return None
+
+
+def _announce_candidate(
+    step: "Step",
+    *,
+    status_display: "StatusDisplay",
+    candidate_count: int,
+    last_announced_idx: int,
+) -> int:
+    """Print the candidate start line if this is a new candidate. Returns updated last_announced_idx."""
+    if step.prompt_key not in ("02-spec.md", "03-tickets.md"):
+        return last_announced_idx
+    candidate_idx = int(step.cfg.namespace.split("/")[1])
+    if candidate_idx == last_announced_idx:
+        return last_announced_idx
+    title = step.candidate.title if step.candidate else ""
+    status_display.print(
+        "Improve",
+        f'→ candidate {candidate_idx + 1}/{candidate_count} "{title}"',
+    )
+    return candidate_idx
+
+
+def _verify_scan_output(step: "Step", output: "AgentOutput") -> None:
+    """Raise AgentOutputProtocolError if a scan step returned an unexpected output type."""
+    if step.prompt_key == "01-scan.md" and not isinstance(
+        output, (ScanCandidatesOutput, NoCandidateOutput)
+    ):
+        raise AgentOutputProtocolError(
+            f"Scan phase completed without a <candidates> block. "
+            f"Expected ScanCandidatesOutput or NoCandidateOutput, "
+            f"got {type(output).__name__}."
+        )
 
 
 def _cap_reached(deps: "_ImproveDeps", completed_count: int) -> bool:
@@ -487,6 +551,15 @@ async def _file_improve_drafts(
     store = ImproveRoleSessionStore(role_session_dir)
     prev_spec = _prev_spec(store, candidate_idx)
 
+    candidate_list = store.read_candidate_list()
+    scan_set_size = len(candidate_list.candidates) if candidate_list is not None else 0
+    candidate_title = (
+        candidate_list.candidates[candidate_idx].title
+        if candidate_list is not None and candidate_idx < len(candidate_list.candidates)
+        else ""
+    )
+    candidate_ordinal = candidate_idx + 1
+
     last_exc: DraftSetValidationError | None = None
     drafts = None
     for attempt in range(_MAX_CORRECTION_ATTEMPTS + 1):
@@ -506,6 +579,12 @@ async def _file_improve_drafts(
                     ),
                     kind=PromptKind.FOLLOW_UP,
                 )
+                correction_body = (
+                    f"fixing draft validation errors for candidate"
+                    f" {candidate_ordinal}/{scan_set_size}"
+                    f' "{candidate_title}"'
+                    f" (attempt {attempt + 1}/{_MAX_CORRECTION_ATTEMPTS})"
+                )
                 await deps.agent_runner.run(
                     RunRequest(
                         name="Draft Correction",
@@ -517,7 +596,7 @@ async def _file_improve_drafts(
                         service=deps.cfg.improve_override.service,
                         stage="improve-sandbox",
                         status_display=deps.status_display,
-                        work_body="fixing draft validation errors",
+                        work_body=correction_body,
                         session_namespace=candidate_namespace,
                         preserve_session_on_completion=True,
                     )
@@ -578,7 +657,7 @@ def _wind_down_partial_candidates(
         record = store.read_candidate_record(idx)
         if record is None or record.spec_number is None or record.labels_applied:
             continue
-        if not record.filed_slices:
+        if not record.filed_tickets:
             port.close_issue(record.spec_number)
         else:
             draft_dir = role_session_dir / _DRAFTS_SUBDIR
@@ -623,7 +702,7 @@ async def _complete_candidate(
     fingerprint: str,
     completed_count: int,
 ) -> tuple[int, bool]:
-    """File drafts and check stop conditions after a 03-issues.md step.
+    """File drafts and check stop conditions after a 03-tickets.md step.
 
     Returns (new_completed_count, should_stop) where should_stop is True when
     either the cap is reached or the safe SHA changed (AC1).  An abandoned
@@ -654,19 +733,14 @@ async def improve_phase(
     deps: _ImproveDeps,
 ) -> ImproveNoCandidate | ImproveContinue | PreflightHITL | PreflightAFK:
     """Run the improve pipeline."""
-    if deps.cfg.improve_max is not None:
-        phase_label = (
-            f"Improve ({deps.improve_dispatched_count}/{deps.cfg.improve_max})"
-        )
-    else:
-        phase_label = "Improve"
     async with status_row(
         deps.status_display,
-        phase_label,
+        "Improve",
         kind="phase",
         must_close=True,
         config=StatusRowConfig(initial_phase="Running"),
     ) as row:
+        deps.status_display.update_phase("Improve", "scanning for candidates")
         verdict = await deps.preflight_cache.get_safe_sha(deps)
         if isinstance(verdict, (PreflightHITL, PreflightAFK)):
             row.close(f"preflight gate blocked (issue #{verdict.issue_number})")
@@ -687,6 +761,7 @@ async def improve_phase(
             IMPROVE_SANDBOX_INTENT,
             sha=verdict.sha,
             deps=deps,
+            operating_branch=deps.cfg.operating_branch,
         ) as sandbox_path:
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
             short_sid = session_uuid(
@@ -717,7 +792,24 @@ async def improve_phase(
                 dispatched=deps.improve_dispatched_count,
             )
             completed_count = 0
+            last_announced_idx = -1
             while step is not None:
+                n_candidates = driver.candidate_count or 0
+                last_announced_idx = _announce_candidate(
+                    step,
+                    status_display=deps.status_display,
+                    candidate_count=n_candidates,
+                    last_announced_idx=last_announced_idx,
+                )
+                body = _improve_step_body(
+                    step,
+                    n_candidates=n_candidates,
+                    improve_dispatched_count=deps.improve_dispatched_count,
+                    improve_max=deps.cfg.improve_max,
+                )
+                if body is not None:
+                    deps.status_display.update_phase("Improve", body)
+
                 prepared_step = prepare_improve_step(
                     step,
                     github_port=deps.github_svc,
@@ -755,14 +847,7 @@ async def improve_phase(
                         preserve_session_on_completion=True,
                     )
                 )
-                if step.prompt_key == "01-scan.md" and not isinstance(
-                    output, (ScanCandidatesOutput, NoCandidateOutput)
-                ):
-                    raise AgentOutputProtocolError(
-                        f"Scan phase completed without a <candidates> block. "
-                        f"Expected ScanCandidatesOutput or NoCandidateOutput, "
-                        f"got {type(output).__name__}."
-                    )
+                _verify_scan_output(step, output)
                 driver.record_outcome(step, output)
 
                 # After scan, eagerly fork one namespace per candidate.
@@ -771,7 +856,7 @@ async def improve_phase(
                 ):
                     _fork_candidate_namespaces(sandbox_path, list(output.candidates))
 
-                if step.prompt_key == "03-issues.md":
+                if step.prompt_key == "03-tickets.md":
                     completed_count, stop = await _complete_candidate(
                         step_namespace=step_namespace,
                         deps=deps,
@@ -789,7 +874,10 @@ async def improve_phase(
 
             role_session.discard()
 
-        row.close("finished")
+        if no_candidate:
+            row.close("no candidate")
+        else:
+            row.close(f"filed {completed_count} improvement(s)")
     return (
         ImproveNoCandidate()
         if no_candidate

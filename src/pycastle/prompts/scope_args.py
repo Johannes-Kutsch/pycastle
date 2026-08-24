@@ -101,23 +101,23 @@ def compute_candidate_budget(
 
 def build_improve_scan_scope_args(
     *,
-    recent_prds: list[dict[str, Any]],
+    recent_specs: list[dict[str, Any]],
     candidate_budget: int,
 ) -> dict[str, str]:
     return validated_scope_args_for_template(
         PromptTemplate.IMPROVE_SCAN,
         {
             "CANDIDATE_BUDGET": str(candidate_budget),
-            "RECENT_IMPROVE_PRD_TITLES": _format_recent_improve_prds(recent_prds),
+            "RECENT_IMPROVE_SPEC_TITLES": _format_recent_improve_specs(recent_specs),
         },
     )
 
 
-def _format_recent_improve_prds(recent_prds: list[dict[str, Any]]) -> str:
-    if not recent_prds:
-        return "No recent improve PRDs found."
+def _format_recent_improve_specs(recent_specs: list[dict[str, Any]]) -> str:
+    if not recent_specs:
+        return "No recent improve specs found."
     return "\n".join(
-        f"#{prd['number']} {prd['state']} - {prd['title']}" for prd in recent_prds
+        f"#{spec['number']} {spec['state']} - {spec['title']}" for spec in recent_specs
     )
 
 

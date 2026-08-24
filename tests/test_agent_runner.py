@@ -1927,14 +1927,14 @@ def test_agent_runner_model_not_available_records_restriction_and_raises(
 
 
 def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
-    """PRD Agent must resume the Scan Agent's conversation in a same-run sequence.
+    """Spec Agent must resume the Scan Agent's conversation in a same-run sequence.
 
-    When phase 1 (Scan Agent) and phase 2 (PRD Agent) run sequentially inside the
+    When phase 1 (Scan Agent) and phase 2 (Spec Agent) run sequentially inside the
     same pycastle invocation, the runner must preserve the _continuation so phase 2
-    calls run_resumed_session — giving the PRD Agent access to the Scan Agent's
+    calls run_resumed_session — giving the Spec Agent access to the Scan Agent's
     codebase exploration without re-scanning.
 
-    Reproduces: PRD Agent saying "the prior phase-1 output isn't persisted anywhere I
+    Reproduces: Spec Agent saying "the prior phase-1 output isn't persisted anywhere I
     can find" because clear_provider_state_and_signal_completion() deletes _continuation
     after phase 1, forcing phase 2 into a fresh session with no prior context.
     """
@@ -2015,7 +2015,7 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
                 prompt=PromptInvocation(
                     template=PromptTemplate.IMPROVE_SCAN,
                     scope_args={
-                        "RECENT_IMPROVE_PRD_TITLES": "",
+                        "RECENT_IMPROVE_SPEC_TITLES": "",
                         "CANDIDATE_BUDGET": "3",
                     },
                 ),
@@ -2034,12 +2034,12 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
     asyncio.run(
         runner.run(
             RunRequest(
-                name="PRD Agent",
+                name="Spec Agent",
                 prompt=PromptInvocation(
-                    template=PromptTemplate.IMPROVE_PRD,
+                    template=PromptTemplate.IMPROVE_SPEC,
                     scope_args={
                         "IMPROVE_SHORT_SID": "abc123",
-                        "RECENT_IMPROVE_PRDS": "",
+                        "RECENT_IMPROVE_SPECS": "",
                         "CANDIDATE_RANK": "1",
                         "CANDIDATE_TITLE": "Deepen the parser module",
                     },
@@ -2058,7 +2058,7 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
 
     assert runtime_client.calls == ["new_session", "resumed_session"], (
         f"Expected phase 2 to resume phase 1's session but got: {runtime_client.calls}. "
-        "PRD Agent must call run_resumed_session to continue Scan Agent's conversation."
+        "Spec Agent must call run_resumed_session to continue Scan Agent's conversation."
     )
 
 

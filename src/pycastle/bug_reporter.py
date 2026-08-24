@@ -137,22 +137,15 @@ def _try_api_path(
     except (GithubServiceError, ImportError):
         return None
 
-    try:
-        existing = svc.search_open_issues_by_title(title)
-    except GithubServiceError:
-        existing = []
+    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
 
-    if existing:
-        html_url = f"https://github.com/{repo}/issues/{existing[0]}"
-        return existing[0], html_url
-
-    try:
-        number, _ = svc.create_issue_in(repo, title, body, BUG_REPORT_LABEL_LIST)
-        html_url = f"https://github.com/{repo}/issues/{number}"
-    except GithubServiceError:
+    number = file_deduped_upstream_issue(
+        title, title, body, BUG_REPORT_LABEL_LIST, svc, echo=False
+    )
+    if number is None:
         return None
-    else:
-        return number, html_url
+    html_url = f"https://github.com/{svc.repo}/issues/{number}"
+    return number, html_url
 
 
 def auto_file_issue(
@@ -200,32 +193,17 @@ def file_merge_close_failure_issue(
 ) -> int | None:
     """File one deduped issue on the consuming project's tracker when a child
     issue fails to close after merge. Never files on bug_report_repo."""
-    from pycastle.services import GithubServiceError
-
-    try:
-        existing = github_svc.search_open_issues_by_title(
-            _MERGE_CLOSE_FAILURE_TITLE_PREFIX
-        )
-    except GithubServiceError:
-        existing = []
-
-    if existing:
-        return existing[0]
+    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
 
     title = f"{_MERGE_CLOSE_FAILURE_TITLE_PREFIX}: #{issue_number}"
     body = _build_merge_close_failure_body(issue_number=issue_number, exc=exc)
-    try:
-        number, _ = github_svc.create_issue_in(
-            github_svc.repo,
-            title,
-            body,
-            _MERGE_CLOSE_FAILURE_LABELS,
-        )
-        click.echo(f"Filed issue #{number} on {github_svc.repo}: {title}")
-    except GithubServiceError:
-        return None
-    else:
-        return number
+    return file_deduped_upstream_issue(
+        _MERGE_CLOSE_FAILURE_TITLE_PREFIX,
+        title,
+        body,
+        _MERGE_CLOSE_FAILURE_LABELS,
+        github_svc,
+    )
 
 
 def _build_merge_close_failure_body(*, issue_number: int, exc: BaseException) -> str:
@@ -246,32 +224,19 @@ def file_operator_actionable_git_issue(
 ) -> None:
     """File one deduped issue on the consuming project's origin tracker for an
     OperatorActionableGitError. Never files on bug_report_repo."""
-    from pycastle.services import GithubServiceError
-
-    try:
-        existing = github_svc.search_open_issues_by_title(
-            _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX
-        )
-    except GithubServiceError:
-        existing = []
-
-    if existing:
-        return
+    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
 
     title = f"{_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX}: {op} failed after {attempt_count} attempt(s)"
     body = _build_operator_actionable_body(
         op=op, stderr=stderr, attempt_count=attempt_count
     )
-    try:
-        number, _ = github_svc.create_issue_in(
-            github_svc.repo,
-            title,
-            body,
-            _GIT_REMOTE_UNREACHABLE_LABELS,
-        )
-        click.echo(f"Filed issue #{number} on {github_svc.repo}: {title}")
-    except GithubServiceError:
-        pass
+    file_deduped_upstream_issue(
+        _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX,
+        title,
+        body,
+        _GIT_REMOTE_UNREACHABLE_LABELS,
+        github_svc,
+    )
 
 
 def _build_operator_actionable_body(*, op: str, stderr: str, attempt_count: int) -> str:
@@ -300,32 +265,17 @@ def file_unrepairable_draft_set_issue(
     """File one deduped issue on the consuming project's tracker when an improve
     draft set cannot be repaired after all correction attempts. Never files on
     bug_report_repo."""
-    from pycastle.services import GithubServiceError
-
-    try:
-        existing = github_svc.search_open_issues_by_title(
-            _UNREPAIRABLE_DRAFT_TITLE_PREFIX
-        )
-    except GithubServiceError:
-        existing = []
-
-    if existing:
-        return existing[0]
+    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
 
     title = _UNREPAIRABLE_DRAFT_TITLE_PREFIX
     body = _build_unrepairable_draft_body(problems=problems, draft_files=draft_files)
-    try:
-        number, _ = github_svc.create_issue_in(
-            github_svc.repo,
-            title,
-            body,
-            _UNREPAIRABLE_DRAFT_LABELS,
-        )
-        click.echo(f"Filed issue #{number} on {github_svc.repo}: {title}")
-    except GithubServiceError:
-        return None
-    else:
-        return number
+    return file_deduped_upstream_issue(
+        _UNREPAIRABLE_DRAFT_TITLE_PREFIX,
+        title,
+        body,
+        _UNREPAIRABLE_DRAFT_LABELS,
+        github_svc,
+    )
 
 
 def _build_unrepairable_draft_body(

@@ -26,7 +26,7 @@ from pycastle.errors import (
 from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.iteration._merge_conflict_recovery import recover_conflicts
 from pycastle.iteration._merge_reporting import MergeProgressReporter
-from pycastle.iteration.merge import MergeResult, merge_phase
+from pycastle.iteration.merge import MergeResult, _delete_merged_branches, merge_phase
 from pycastle.iteration.preflight import PreflightAFK, PreflightHITL, PreflightReady
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import (
@@ -38,6 +38,7 @@ from pycastle.services import (
     GitTimeoutError,
     OperatingBranchCheckedOutError,
 )
+from pycastle.services._github_http_transport import GithubHttpTransportAPIError
 from pycastle.session import RoleSession
 from tests.support import (
     FakeAgentRunner,
@@ -614,7 +615,7 @@ def test_non_ancestor_branch_not_deleted(deps, git_svc):
 
 
 def test_non_ancestor_branch_skipped_while_ancestor_is_deleted(deps, git_svc):
-    def _is_ancestor(branch, repo_root):
+    def _is_ancestor(branch, repo_root, ref):
         return "issue-1" in branch
 
     git_svc.is_ancestor.side_effect = _is_ancestor
@@ -670,7 +671,7 @@ def test_merger_without_active_branch_ancestry_leaves_branch_pending(
 ):
     git_svc.try_merge.return_value = False
 
-    def _is_ancestor(branch, repo_root):
+    def _is_ancestor(branch, repo_root, ref):
         return branch == _merge_sandbox_branch(1)
 
     git_svc.is_ancestor.side_effect = _is_ancestor
@@ -688,7 +689,7 @@ def test_merger_without_active_branch_ancestry_keeps_conflict_issue_open(
 ):
     git_svc.try_merge.return_value = False
 
-    def _is_ancestor(branch, repo_root):
+    def _is_ancestor(branch, repo_root, ref):
         return branch == _merge_sandbox_branch(1)
 
     git_svc.is_ancestor.side_effect = _is_ancestor
@@ -711,7 +712,7 @@ def test_merger_without_active_branch_ancestry_skips_conflict_branch_cleanup(
 ):
     git_svc.try_merge.return_value = False
 
-    def _is_ancestor(branch, repo_root):
+    def _is_ancestor(branch, repo_root, ref):
         return branch == _merge_sandbox_branch(1)
 
     git_svc.is_ancestor.side_effect = _is_ancestor
@@ -2165,7 +2166,7 @@ def test_teardown_progress_fires_for_every_branch_including_non_ancestor_skips(
     """on_progress fires for each branch including non-ancestors that are skipped."""
     deps, recording = recording_deps
 
-    def _is_ancestor(branch, repo_root):
+    def _is_ancestor(branch, repo_root, ref):
         return "issue-1" in branch  # issue-2 is NOT an ancestor
 
     git_svc.is_ancestor.side_effect = _is_ancestor
@@ -2249,7 +2250,7 @@ def test_uncaught_exception_in_teardown_does_not_cancel_siblings(
     """An uncaught exception from is_ancestor in one task does not abort sibling teardowns."""
     deps, _recording = recording_deps
 
-    def _is_ancestor_raises_for_one(branch, repo_root):
+    def _is_ancestor_raises_for_one(branch, repo_root, ref):
         if "issue-1" in branch:
             raise RuntimeError("is_ancestor failed")
         return True
@@ -2268,7 +2269,7 @@ def test_uncaught_exception_in_teardown_forwarded_to_status_display(
     """An uncaught exception escaping _teardown_one is forwarded to status_display.print as a warning."""
     deps, recording = recording_deps
 
-    def _is_ancestor_raises(branch, repo_root):
+    def _is_ancestor_raises(branch, repo_root, ref):
         raise RuntimeError("unexpected teardown failure")
 
     git_svc.is_ancestor.side_effect = _is_ancestor_raises
@@ -2408,7 +2409,7 @@ def test_conflict_branch_stays_incomplete_until_it_is_verified_merged_in_sandbox
     git_svc.try_merge.side_effect = _conflict_on([2])
     sandbox_path = _merge_sandbox_path(deps.repo_root, deps.cfg, 2)
 
-    def _is_ancestor(branch, repo_path):
+    def _is_ancestor(branch, repo_path, ref):
         # Simulate the agent failing to merge issue-2 into its sandbox.
         return not (branch == "pycastle/issue-2" and repo_path == sandbox_path)
 
@@ -2498,6 +2499,62 @@ def test_close_failure_still_closes_remaining_issues_and_deletes_branches(
     assert "pycastle/issue-1" in deleted
     assert "pycastle/issue-2" in deleted
     assert result.close_failure_issue_numbers == [999]
+
+
+# ── Issue 2197: parent-cascade close failure ──────────────────────────────────
+
+
+def _make_cascade_failing_github_svc(parent_number: int) -> GithubService:
+    """Real GithubService whose child closes succeed but parent cascade always fails with 422."""
+    transport = MagicMock()
+
+    def _handle_request(
+        method: str, path: str, data: object = None
+    ) -> tuple[object, dict]:
+        if method == "PATCH" and f"/issues/{parent_number}" in path:
+            raise GithubHttpTransportAPIError(
+                "GitHub API PATCH returned 422",
+                status=422,
+                body='{"message":"Validation Failed","errors":[]}',
+                method="PATCH",
+                path=path,
+            )
+        if method == "PATCH":
+            return None, {}
+        if "/sub_issues" in path:
+            return [], {"Link": ""}
+        return {
+            "parent_issue_url": (
+                f"https://api.github.com/repos/test/repo/issues/{parent_number}"
+            )
+        }, {}
+
+    transport.request.side_effect = _handle_request
+    return GithubService("test/repo", "token", Config(), transport=transport)
+
+
+def test_sibling_parent_cascade_failure_does_not_report_close_failure(
+    tmp_path, git_svc
+):
+    """Three siblings sharing one parent: parent cascade fails, run continues, nothing is filed.
+
+    Acceptance criterion from #2197: a merge phase whose issues all close but whose parent
+    close fails returns no close_failure_issue_numbers and files no issue.
+    """
+    github_svc = _make_cascade_failing_github_svc(parent_number=100)
+    deps = _make_deps(
+        tmp_path, FakeAgentRunner([]), git_svc=git_svc, github_svc=github_svc
+    )
+
+    issues = [
+        {"number": 1, "title": "Sibling A"},
+        {"number": 2, "title": "Sibling B"},
+        {"number": 3, "title": "Sibling C"},
+    ]
+    result = _run(issues, deps)
+
+    assert result.close_failure_issue_numbers == []
+    assert result.clean == issues
 
 
 # ── Issue 1983: lifecycle-choice gate ─────────────────────────────────────────
@@ -2891,3 +2948,102 @@ def test_merger_advance_waits_at_gate_when_operating_branch_checked_out(
     )
     # No issue was filed for the checkout condition
     github_svc.create_issue_in.assert_not_called()
+
+
+# ── Operating-branch ref for ancestry checks (#2195) ─────────────────────────
+
+
+def test_merge_phase_with_working_branch_deletes_merged_branch(
+    tmp_path, git_svc, github_svc
+):
+    """With working_branch set, teardown compares against operating_branch, not root HEAD."""
+    cfg = Config(dev_branch="main", working_branch="pycastle/work")
+
+    def _is_ancestor(branch, repo_path, ref="HEAD"):
+        return ref == "pycastle/work"
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([CompletionOutput()] * 5),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+    )
+
+    _run([{"number": 1, "title": "Fix A"}], deps)
+
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-1" in deleted
+
+
+def test_conflict_branch_deleted_when_merged_into_operating_branch_not_root_head(
+    tmp_path, git_svc, github_svc
+):
+    """Conflict-branch teardown uses operating_branch, not root HEAD.
+
+    A branch merged into pycastle/work but not into main (root HEAD) must still
+    be deleted — this verifies _delete_conflict_branch passes cfg.operating_branch.
+    """
+    cfg = Config(dev_branch="main", working_branch="pycastle/work")
+    git_svc.try_merge.side_effect = _conflict_on([2])
+
+    def _is_ancestor(branch, repo_path, ref):
+        # Merged into operating branch (pycastle/work) and into the sandbox
+        # worktree (repo_path != tmp_path), but NOT into root HEAD (main).
+        return ref == "pycastle/work" or repo_path != tmp_path
+
+    git_svc.is_ancestor.side_effect = _is_ancestor
+    deps = _make_deps(
+        tmp_path,
+        FakeAgentRunner([CompletionOutput()]),
+        git_svc=git_svc,
+        github_svc=github_svc,
+        cfg=cfg,
+    )
+    issues = [{"number": 1, "title": "Clean"}, {"number": 2, "title": "Conflict"}]
+    _run(issues, deps)
+
+    deleted = [call.args[0] for call in git_svc.delete_branch.call_args_list]
+    assert "pycastle/issue-2" in deleted
+
+
+def test_delete_merged_branches_uses_operating_branch_with_real_git(tmp_path):
+    """Integration: branch merged into working_branch but not root HEAD is deleted.
+
+    Root is on dev_branch (main); operating branch is pycastle/work.
+    Before this fix, is_ancestor compared against root HEAD, so the branch
+    was never deleted. After the fix it compares against cfg.operating_branch.
+    """
+
+    def _git(*args: str) -> None:
+        subprocess.run(list(args), cwd=tmp_path, check=True, capture_output=True)
+
+    _git("git", "init", "-b", "main")
+    _git("git", "config", "user.email", "t@t.com")
+    _git("git", "config", "user.name", "T")
+    (tmp_path / "f").write_text("initial")
+    _git("git", "add", ".")
+    _git("git", "commit", "-m", "initial")
+    _git("git", "branch", "pycastle/work")
+    _git("git", "checkout", "-b", "pycastle/issue-1")
+    (tmp_path / "f").write_text("fix")
+    _git("git", "commit", "-am", "fix")
+    _git("git", "checkout", "pycastle/work")
+    _git("git", "merge", "--ff-only", "pycastle/issue-1")
+    _git("git", "checkout", "main")
+
+    cfg = Config(dev_branch="main", working_branch="pycastle/work")
+    deps = _make_deps(tmp_path, FakeAgentRunner([]), git_svc=GitService(cfg), cfg=cfg)
+
+    deleted = asyncio.run(_delete_merged_branches(["pycastle/issue-1"], deps))
+
+    assert deleted == ["pycastle/issue-1"]
+    remaining = subprocess.run(
+        ["git", "branch", "--list", "pycastle/issue-1"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert remaining.stdout.strip() == ""

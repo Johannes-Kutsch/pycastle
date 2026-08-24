@@ -294,6 +294,7 @@ async def planning_phase(
             SandboxWorktreeIntent.PLAN,
             sha=sha,
             deps=deps,
+            operating_branch=deps.cfg.operating_branch,
         ) as wt:
             _plan_sandbox_session.write_fingerprint(fingerprint)
             issue_set, relabeled = await _relabel_issue_set(
