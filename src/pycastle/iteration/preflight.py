@@ -141,6 +141,7 @@ class BranchRefreshBoundary:
                     self._DIVERGE_SANDBOX_INTENT,
                     sha=current_sha,
                     deps=deps,
+                    operating_branch=deps.cfg.operating_branch,
                 ) as sandbox_path:
                     mount_decision = decide_managed_worktree_mount(
                         repo_root=deps.repo_root,

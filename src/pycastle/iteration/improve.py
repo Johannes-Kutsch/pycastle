@@ -761,6 +761,7 @@ async def improve_phase(
             IMPROVE_SANDBOX_INTENT,
             sha=verdict.sha,
             deps=deps,
+            operating_branch=deps.cfg.operating_branch,
         ) as sandbox_path:
             role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
             short_sid = session_uuid(

@@ -284,8 +284,9 @@ def _recreate_stale_branch(
     worktree_path: Path,
     branch: str,
     sha: str | None,
+    operating_branch: str = "HEAD",
 ) -> None:
-    if not svc.is_ancestor(branch, repo_path, "HEAD"):
+    if not svc.is_ancestor(branch, repo_path, target=operating_branch):
         raise WorktreeError(
             f"Branch {branch!r} has unique commits not yet on the base branch. "
             "Merge or remove these commits before retrying."
@@ -302,6 +303,7 @@ def _create_worktree(
     worktree_path: Path,
     branch: str,
     sha: str | None = None,
+    operating_branch: str = "HEAD",
 ) -> None:
     with _wrap_git_errors():
         branch_exists = svc.verify_ref_exists(branch, repo_path)
@@ -319,7 +321,9 @@ def _create_worktree(
         svc.create_worktree(repo_path, worktree_path, branch, sha)
 
         if not _has_project_files(worktree_path) and branch_exists:
-            _recreate_stale_branch(svc, repo_path, worktree_path, branch, sha)
+            _recreate_stale_branch(
+                svc, repo_path, worktree_path, branch, sha, operating_branch
+            )
 
         if not _has_project_files(worktree_path):
             error = _missing_files_error(worktree_path)
@@ -404,6 +408,7 @@ async def managed_worktree(
     sha: str | None,
     lifecycle: BranchWorktreeLifecycle,
     deps: _WorktreeDeps,
+    operating_branch: str = "HEAD",
 ) -> AsyncIterator[Path]:
     resolved_identity = identity
     if resolved_identity is None:
@@ -422,11 +427,21 @@ async def managed_worktree(
             lifecycle=lifecycle,
         )
         _create_worktree(
-            deps.git_svc, deps.repo_root, path, resolved_identity.branch, sha
+            deps.git_svc,
+            deps.repo_root,
+            path,
+            resolved_identity.branch,
+            sha,
+            operating_branch,
         )
     elif not is_worktree_reusable(path, resolved_identity.branch, deps.git_svc):
         _create_worktree(
-            deps.git_svc, deps.repo_root, path, resolved_identity.branch, sha
+            deps.git_svc,
+            deps.repo_root,
+            path,
+            resolved_identity.branch,
+            sha,
+            operating_branch,
         )
     log_worktree_lifecycle_event("worktree_create", path, repo_root=deps.repo_root)
     _preservation_worthy_exc = False
@@ -461,6 +476,7 @@ async def durable_issue_worktree(
     intent: DurableIssueWorktreeIntent,
     deps: _WorktreeDeps,
     planner_sha: str | None = None,
+    operating_branch: str = "HEAD",
 ) -> AsyncIterator[Path]:
     identity = worktree_identity(issue_branch(issue_number), deps.repo_root)
     sha = planner_sha if intent is DurableIssueWorktreeIntent.IMPLEMENTER else None
@@ -469,6 +485,7 @@ async def durable_issue_worktree(
         sha=sha,
         lifecycle=BranchWorktreeLifecycle.DURABLE_ISSUE,
         deps=deps,
+        operating_branch=operating_branch,
     ) as path:
         yield path
 
@@ -479,6 +496,7 @@ async def reusable_sandbox_worktree(
     *,
     sha: str | None,
     deps: _WorktreeDeps,
+    operating_branch: str = "HEAD",
 ) -> AsyncIterator[Path]:
     identity = reusable_sandbox_worktree_identity(intent, deps.repo_root)
     async with managed_worktree(
@@ -486,6 +504,7 @@ async def reusable_sandbox_worktree(
         sha=sha,
         lifecycle=BranchWorktreeLifecycle.REUSABLE_SANDBOX,
         deps=deps,
+        operating_branch=operating_branch,
     ) as path:
         yield path
 
@@ -496,6 +515,7 @@ async def replaceable_merge_sandbox_worktree(
     *,
     sha: str | None,
     deps: _WorktreeDeps,
+    operating_branch: str = "HEAD",
 ) -> AsyncIterator[Path]:
     identity = merge_sandbox_worktree_identity(issue_number, deps.repo_root)
     async with managed_worktree(
@@ -503,6 +523,7 @@ async def replaceable_merge_sandbox_worktree(
         sha=sha,
         lifecycle=BranchWorktreeLifecycle.REPLACEABLE_MERGE_SANDBOX,
         deps=deps,
+        operating_branch=operating_branch,
     ) as path:
         yield path
 
