@@ -759,3 +759,80 @@ def test_file_and_decide_resume_idempotent_when_labels_applied(
     assert isinstance(result, Advance)
     assert github_svc.create_issue_in.call_count == 0
     assert not github_svc.add_label_to_issue.called
+
+
+# ---------------------------------------------------------------------------
+# file_and_decide: fresh-candidate filing (Stage 1a → Stage 1b → Stage 2)
+# ---------------------------------------------------------------------------
+
+
+def test_file_and_decide_fresh_filing_creates_spec_and_slices(
+    tmp_path: Path, role_session_dir: Path
+) -> None:
+    """Fresh candidate: Stage 1a creates spec, Stage 1b creates slice."""
+    _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
+    draft_dir = role_session_dir / "_drafts"
+    _write_spec_draft(draft_dir)
+    _write_slice_draft(draft_dir, "01-slice")
+
+    github_svc = _make_github_svc(create_side_effect=[(100, 1000), (101, 1001)])
+
+    _run_file_and_decide(
+        role_session_dir=role_session_dir,
+        sandbox_path=tmp_path,
+        deps=_make_test_deps(tmp_path, github_svc=github_svc),
+    )
+
+    assert github_svc.create_issue_in.call_count == 2  # spec (1a) + slice (1b)
+
+
+def test_file_and_decide_fresh_filing_labels_slice_not_spec(
+    tmp_path: Path, role_session_dir: Path
+) -> None:
+    """Stage 2 applies state label to slice but not to spec (spec is tracking parent)."""
+    _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
+    draft_dir = role_session_dir / "_drafts"
+    _write_spec_draft(draft_dir)
+    _write_slice_draft(draft_dir, "01-slice")
+
+    github_svc = _make_github_svc(create_side_effect=[(100, 1000), (101, 1001)])
+
+    _run_file_and_decide(
+        role_session_dir=role_session_dir,
+        sandbox_path=tmp_path,
+        deps=_make_test_deps(tmp_path, github_svc=github_svc),
+    )
+
+    label_calls = github_svc.add_label_to_issue.call_args_list
+    labeled_numbers = {call.args[0] for call in label_calls}
+    assert 101 in labeled_numbers  # slice receives state label
+    assert 100 not in labeled_numbers  # spec must not receive state label
+
+
+# ---------------------------------------------------------------------------
+# file_and_decide: correction cap — failure report filing
+# ---------------------------------------------------------------------------
+
+
+def test_file_and_decide_drafts_abandoned_files_failure_report(
+    tmp_path: Path, role_session_dir: Path
+) -> None:
+    """After abandonment, an unrepairable-draft-set issue is filed on the tracker."""
+    _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
+    draft_dir = role_session_dir / "_drafts"
+    _write_spec_draft(draft_dir)
+    _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+
+    github_svc = _make_github_svc()
+    runner = FakeAgentRunner(
+        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
+        preflight_responses=None,
+    )
+
+    _run_file_and_decide(
+        role_session_dir=role_session_dir,
+        sandbox_path=tmp_path,
+        deps=_make_test_deps(tmp_path, agent_runner=runner, github_svc=github_svc),
+    )
+
+    assert github_svc.create_issue_in.call_count == 1  # failure report issue filed
