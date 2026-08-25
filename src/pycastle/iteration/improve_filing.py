@@ -11,6 +11,7 @@ from pycastle.iteration.improve_role_session_store import (
 
 if TYPE_CHECKING:
     from pycastle.iteration.improve_drafts import IssueDraft
+    from pycastle.services.github_service import GithubService
 
 
 class FilingPort(Protocol):
@@ -29,6 +30,26 @@ class FilingPort(Protocol):
     def apply_label(self, issue_number: int, label: str) -> None: ...
 
     def close_issue(self, issue_number: int) -> None: ...
+
+
+class GithubFilingPort:
+    def __init__(self, svc: GithubService) -> None:
+        self._svc = svc
+
+    def create_issue(self, title: str, body: str, labels: list[str]) -> tuple[int, int]:
+        return self._svc.create_issue_in(self._svc.repo, title, body, labels)
+
+    def register_sub_issue(self, parent_number: int, child_database_id: int) -> None:
+        self._svc.add_sub_issue(parent_number, child_database_id)
+
+    def add_issue_dependency(self, child_number: int, blocker_database_id: int) -> None:
+        self._svc.add_issue_dependency(child_number, blocker_database_id)
+
+    def apply_label(self, issue_number: int, label: str) -> None:
+        self._svc.add_label_to_issue(issue_number, label)
+
+    def close_issue(self, issue_number: int) -> None:
+        self._svc.close_issue(issue_number)
 
 
 def _parse_sections(body: str) -> list[tuple[str | None, str]]:

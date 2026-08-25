@@ -25,7 +25,7 @@ from pycastle.infrastructure.worktree import (
 )
 from pycastle.iteration._rows import StatusRowConfig, status_row
 from pycastle.iteration.improve_drafts import DraftSetValidationError, read_draft_set
-from pycastle.iteration.improve_filing import file_draft_set
+from pycastle.iteration.improve_filing import GithubFilingPort, file_draft_set
 from pycastle.iteration.improve_preparation import (
     ImproveCandidate,
     prepare_improve_step,
@@ -91,26 +91,6 @@ def _fork_candidate_namespaces(
         target = RoleSession(sandbox_path, AgentRole.IMPROVE, ns)
         if not target.path.is_dir():
             main_session.fork_namespace(ns)
-
-
-class _GithubFilingPort:
-    def __init__(self, svc: GithubService) -> None:
-        self._svc = svc
-
-    def create_issue(self, title: str, body: str, labels: list[str]) -> tuple[int, int]:
-        return self._svc.create_issue_in(self._svc.repo, title, body, labels)
-
-    def register_sub_issue(self, parent_number: int, child_database_id: int) -> None:
-        self._svc.add_sub_issue(parent_number, child_database_id)
-
-    def add_issue_dependency(self, child_number: int, blocker_database_id: int) -> None:
-        self._svc.add_issue_dependency(child_number, blocker_database_id)
-
-    def apply_label(self, issue_number: int, label: str) -> None:
-        self._svc.add_label_to_issue(issue_number, label)
-
-    def close_issue(self, issue_number: int) -> None:
-        self._svc.close_issue(issue_number)
 
 
 @dataclass(frozen=True)
@@ -621,7 +601,7 @@ async def _file_improve_drafts(
         return False  # unreachable; loop always sets drafts on break
     file_draft_set(
         drafts,
-        port=_GithubFilingPort(deps.github_svc),
+        port=GithubFilingPort(deps.github_svc),
         store=store,
         candidate_idx=candidate_idx,
         state_label=deps.cfg.issue_label,
@@ -636,7 +616,7 @@ async def _file_improve_drafts(
 def _wind_down_partial_candidates(
     role_session_dir: Path,
     *,
-    port: "_GithubFilingPort",
+    port: GithubFilingPort,
     cfg: "Config",
 ) -> None:
     """Handle partially-filed candidates when the safe SHA changes (AC2, AC3).
@@ -679,7 +659,7 @@ def _gate_and_wind_down(
     pre_sandbox_path: Path,
     *,
     fingerprint: str,
-    port: "_GithubFilingPort",
+    port: GithubFilingPort,
     cfg: "Config",
 ) -> None:
     """Discard the improve session if the fingerprint changed.
@@ -753,7 +733,7 @@ async def improve_phase(
         _gate_and_wind_down(
             pre_sandbox_path,
             fingerprint=fingerprint,
-            port=_GithubFilingPort(deps.github_svc),
+            port=GithubFilingPort(deps.github_svc),
             cfg=deps.cfg,
         )
 
