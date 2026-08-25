@@ -2,21 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import sys
 from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.errors import AgentTimeoutError, UsageLimitError
 from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import AgentService, ToolPolicy
 
 if TYPE_CHECKING:
-    import types
-
     from pycastle.config.types import StageOverride
+    from pycastle.errors import UsageLimitError
 
 RuntimeResultT = TypeVar("RuntimeResultT")
 
@@ -124,94 +121,6 @@ class RuntimeStatusRow(Protocol):
     ) -> None: ...
 
 
-class _PlainStatusDisplay:
-    def __init__(self) -> None:
-        self._last_caller: str | None = None
-        self._last_kind: str | None = None
-        self._kinds: dict[str, str] = {}
-
-    def _blank_before(self, caller: str) -> bool:
-        if caller == "":
-            return True
-        if caller == self._last_caller:
-            return False
-        kinds = {self._last_kind, self._kinds.get(caller)}
-        return not ("agent" in kinds and kinds <= {"phase", "agent"})
-
-    def register(
-        self,
-        caller: str,
-        kind: str,
-        startup_message: str = "started",
-        work_body: str = "",
-        initial_phase: str = "Setup",
-        color_key: int | None = None,
-        model_display: RuntimeModelDisplayMetadata | None = None,
-    ) -> None:
-        del work_body, initial_phase, color_key, model_display
-        if caller != "":
-            self._kinds[caller] = kind
-        self.print(caller, startup_message)
-
-    def update_phase(self, name: str, phase: str) -> None:
-        del name, phase
-
-    def reset_idle_timer(self, name: str) -> None:
-        del name
-
-    def update_tokens(self, name: str, current_tokens: int) -> None:
-        del name, current_tokens
-
-    def remove(
-        self,
-        caller: str,
-        shutdown_message: str = "finished",
-        shutdown_style: str = "success",
-    ) -> None:
-        del shutdown_style
-        self.print(caller, shutdown_message)
-        self._kinds.pop(caller, None)
-
-    def print(self, caller: str, message: object, style: str | None = None) -> None:
-        del style
-        lines = str(message).split("\n")
-        if self._blank_before(caller):
-            sys.stdout.write("\n")
-        self._last_caller = caller
-        self._last_kind = self._kinds.get(caller)
-        for line in lines:
-            if caller:
-                sys.stdout.write(f"[{caller}] {line}\n")
-            else:
-                sys.stdout.write(f"{line}\n")
-
-
-class _StatusRowHandle:
-    def __init__(self, status_display: RuntimeStatusDisplay, caller: str) -> None:
-        self._status_display = status_display
-        self._caller = caller
-        self._closed = False
-
-    def close(
-        self,
-        shutdown_message: str = "finished",
-        *,
-        shutdown_style: str = "success",
-    ) -> None:
-        if self._closed:
-            return
-        self._status_display.remove(
-            self._caller,
-            shutdown_message,
-            shutdown_style,
-        )
-        self._closed = True
-
-    @property
-    def closed(self) -> bool:
-        return self._closed
-
-
 @dataclasses.dataclass(frozen=True)
 class RuntimeStatusRowConfig:
     color_key: int | None = None
@@ -219,87 +128,6 @@ class RuntimeStatusRowConfig:
     initial_phase: str = "Setup"
     startup_message: str = "started"
     model_display: RuntimeModelDisplayMetadata | None = None
-
-
-class _DefaultStatusRow:
-    def __init__(
-        self,
-        status_display: RuntimeStatusDisplay,
-        caller: str,
-        *,
-        kind: str,
-        must_close: bool,
-        config: RuntimeStatusRowConfig | None = None,
-    ) -> None:
-        _cfg = config or RuntimeStatusRowConfig()
-        self._status_display = status_display
-        self._caller = caller
-        self._must_close = must_close
-        self._kind = kind
-        self._color_key = _cfg.color_key
-        self._work_body = _cfg.work_body
-        self._initial_phase = _cfg.initial_phase
-        self._startup_message = _cfg.startup_message
-        self._model_display = _cfg.model_display
-        self._row = _StatusRowHandle(status_display, caller)
-
-    async def __aenter__(self) -> RuntimeStatusRow:
-        self._status_display.register(
-            self._caller,
-            self._kind,
-            startup_message=self._startup_message,
-            work_body=self._work_body,
-            initial_phase=self._initial_phase,
-            color_key=self._color_key,
-            model_display=self._model_display,
-        )
-        return self._row
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: types.TracebackType | None,
-    ) -> bool:
-        del tb
-        if self._row.closed:
-            return False
-        if exc is None:
-            if self._must_close:
-                self._row.close("failed", shutdown_style="error")
-            else:
-                self._row.close()
-            return False
-        if exc_type is not None:
-            if isinstance(exc, UsageLimitError):
-                self._row.close("usage limit reached", shutdown_style="interrupted")
-                return False
-            if isinstance(exc, AgentTimeoutError):
-                self._row.close("timed out", shutdown_style="interrupted")
-                return False
-        self._row.close("failed", shutdown_style="error")
-        return False
-
-
-def _default_status_display_factory() -> RuntimeStatusDisplay:
-    return _PlainStatusDisplay()
-
-
-def _default_status_row_factory(
-    status_display: RuntimeStatusDisplay,
-    caller: str,
-    *,
-    kind: str,
-    must_close: bool,
-    config: RuntimeStatusRowConfig | None = None,
-) -> AbstractAsyncContextManager[RuntimeStatusRow]:
-    return _DefaultStatusRow(
-        status_display,
-        caller,
-        kind=kind,
-        must_close=must_close,
-        config=config,
-    )
 
 
 class PreparedProviderRunSession(Protocol):
@@ -422,8 +250,8 @@ class RuntimeInvocationDependencies:
     build_session: Callable[[Path, AgentService, str | None], Any]
     build_runner: Callable[[Any, Any, Path | None], RuntimeExecutionAdapter]
     get_git_identity: Callable[[], tuple[str, str]]
-    status_display_factory: StatusDisplayFactory = _default_status_display_factory
-    status_row_factory: StatusRowFactory = _default_status_row_factory
+    status_display_factory: StatusDisplayFactory
+    status_row_factory: StatusRowFactory
     translate_setup_failure: SetupFailureTranslator | None = None
     build_model_display_metadata: Callable[[str, str, str], Any | None] | None = None
     validate_mount_preconditions: MountPreconditionValidator | None = None

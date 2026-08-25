@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,8 +16,12 @@ from pycastle.agents.slice_classifier import (
     parse_classifier_output,
 )
 from pycastle.config.types import StageOverride
+from pycastle.display.rows import StatusRowConfig, status_row
+from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.execution_contracts import (
     RuntimeInvocationDependencies,
+    RuntimeStatusDisplay,
+    RuntimeStatusRowConfig,
     WorkSessionState,
     WorktreeMount,
 )
@@ -28,6 +32,23 @@ from pycastle.services.service_registry import ServiceRegistry
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _status_row_factory(status_display, caller, *, kind, must_close, config=None):
+    _cfg = config or RuntimeStatusRowConfig()
+    return status_row(
+        status_display,
+        caller,
+        kind=kind,
+        must_close=must_close,
+        config=StatusRowConfig(
+            color_key=_cfg.color_key,
+            work_body=_cfg.work_body,
+            initial_phase=_cfg.initial_phase,
+            startup_message=_cfg.startup_message,
+            model_display=None,
+        ),
+    )
 
 
 # ── Shared fake infrastructure for classify_slice tests ──────────────────────
@@ -110,6 +131,10 @@ def _deps_for_runner(runner: _CapturingRunner) -> RuntimeInvocationDependencies:
         build_session=lambda *_: MagicMock(),
         build_runner=lambda *_: runner,  # type: ignore[arg-type]
         get_git_identity=lambda: ("Test User", "test@example.com"),
+        status_display_factory=lambda: cast(
+            "RuntimeStatusDisplay", PlainStatusDisplay()
+        ),
+        status_row_factory=_status_row_factory,
         handle_provider_account_exhaustion=lambda svc, err: svc.mark_exhausted(
             err.reset_time
         ),
