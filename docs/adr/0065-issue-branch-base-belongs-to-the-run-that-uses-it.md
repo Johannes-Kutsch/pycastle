@@ -13,7 +13,9 @@ ADR 0060 withdrew every read of the repo root's checked-out branch, and #2195 an
 
 ```python
 # infrastructure/worktree.py, before
-_branch_has_commits = deps.git_svc.has_commits_ahead_of_main(path)   # git rev-list --count main..HEAD
+_branch_has_commits = deps.git_svc.has_commits_ahead_of_main(
+    path
+)  # git rev-list --count main..HEAD
 ```
 
 With a **working branch** configured, `main` is dozens of commits behind the operating branch, so a *brand-new empty* issue branch counts as carrying work and is kept at teardown. That is not a slow leak of disk; it is a leak of a **base**. A branch kept this way stays pinned to the operating-branch tip of the run that created it.
