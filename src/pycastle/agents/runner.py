@@ -65,6 +65,7 @@ from pycastle.execution_contracts import (
     RuntimeInvocationDependencies,
     RuntimeModelDisplayMetadata,
     RuntimeRunSession,
+    RuntimeStatusDisplay,
     RuntimeStatusRowConfig,
 )
 from pycastle.infrastructure.container_runner import (
@@ -483,6 +484,9 @@ class AgentRunner:
             get_git_identity=lambda: (
                 self._git_service.get_user_name(),
                 self._git_service.get_user_email(),
+            ),
+            status_display_factory=lambda: cast(
+                "RuntimeStatusDisplay", PlainStatusDisplay()
             ),
             status_row_factory=_status_row_factory,
             translate_setup_failure=_translate_setup_failure,
