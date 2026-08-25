@@ -15,6 +15,10 @@ from tests.support.iteration import (
     functional_git_svc,
     make_scan_output,
 )
+from tests.support.runtime import (
+    plain_runtime_status_row_factory,
+    plain_status_display_factory,
+)
 
 __all__ = [
     "CONNECTION_TIMEOUT_STDERR",
@@ -30,4 +34,6 @@ __all__ = [
     "_make_deps",
     "functional_git_svc",
     "make_scan_output",
+    "plain_runtime_status_row_factory",
+    "plain_status_display_factory",
 ]

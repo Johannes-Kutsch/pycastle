@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,33 +12,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.display.rows import StatusRowConfig, status_row
-from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.execution_contracts import (
     RuntimeInvocationDependencies,
     RuntimeInvocationRequest,
     RuntimeRunSession,
-    RuntimeStatusDisplay,
-    RuntimeStatusRowConfig,
 )
 from pycastle.runtime import _execute_runtime_request
 from pycastle.services.runtime_services import AgentService
-
-
-def _status_row_factory(status_display, caller, *, kind, must_close, config=None):
-    _cfg = config or RuntimeStatusRowConfig()
-    return status_row(
-        status_display,
-        caller,
-        kind=kind,  # type: ignore[arg-type]
-        must_close=must_close,
-        config=StatusRowConfig(
-            color_key=_cfg.color_key,
-            work_body=_cfg.work_body,
-            initial_phase=_cfg.initial_phase,
-            startup_message=_cfg.startup_message,
-        ),
-    )
+from tests.support.runtime import (
+    plain_runtime_status_row_factory,
+    plain_status_display_factory,
+)
 
 
 class _ExplodingExitSession:
@@ -66,10 +50,8 @@ def _make_request(tmp_path: Path) -> RuntimeInvocationRequest:
         build_session=lambda *_: exploding_session,
         build_runner=lambda *_: MagicMock(),
         get_git_identity=lambda: (_ for _ in ()).throw(ValueError("fail fast")),
-        status_display_factory=lambda: cast(
-            "RuntimeStatusDisplay", PlainStatusDisplay()
-        ),
-        status_row_factory=_status_row_factory,
+        status_display_factory=plain_status_display_factory,
+        status_row_factory=plain_runtime_status_row_factory,
     )
 
     run_session = RuntimeRunSession(

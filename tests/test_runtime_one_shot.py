@@ -4,20 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 from pycastle.config.types import StageOverride
-from pycastle.display.rows import StatusRowConfig, status_row
-from pycastle.display.status_display import PlainStatusDisplay
 from pycastle.errors import UsageLimitError
 from pycastle.execution_contracts import (
     RuntimeInvocationDependencies,
-    RuntimeStatusDisplay,
-    RuntimeStatusRowConfig,
     WorkSessionState,
     WorktreeMount,
 )
@@ -25,24 +21,10 @@ from pycastle.runtime import OneShotRunRequest, run_one_shot
 from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import ToolPolicy
 from pycastle.services.service_registry import ServiceRegistry
-
-
-def _status_row_factory(status_display, caller, *, kind, must_close, config=None):
-    _cfg = config or RuntimeStatusRowConfig()
-    return status_row(
-        status_display,
-        caller,
-        kind=kind,
-        must_close=must_close,
-        config=StatusRowConfig(
-            color_key=_cfg.color_key,
-            work_body=_cfg.work_body,
-            initial_phase=_cfg.initial_phase,
-            startup_message=_cfg.startup_message,
-            model_display=None,
-        ),
-    )
-
+from tests.support.runtime import (
+    plain_runtime_status_row_factory,
+    plain_status_display_factory,
+)
 
 # ---------------------------------------------------------------------------
 # Fake infrastructure
@@ -144,10 +126,8 @@ def _deps_for_runner(runner: _RecordingRunner) -> RuntimeInvocationDependencies:
         build_session=lambda *_: MagicMock(),
         build_runner=lambda *_: runner,  # type: ignore[arg-type]
         get_git_identity=lambda: ("Test User", "test@example.com"),
-        status_display_factory=lambda: cast(
-            "RuntimeStatusDisplay", PlainStatusDisplay()
-        ),
-        status_row_factory=_status_row_factory,
+        status_display_factory=plain_status_display_factory,
+        status_row_factory=plain_runtime_status_row_factory,
         handle_provider_account_exhaustion=lambda svc, err: svc.mark_exhausted(
             err.reset_time
         ),
