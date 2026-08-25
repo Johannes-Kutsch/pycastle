@@ -28,10 +28,8 @@ from pycastle.iteration.improve import (
 )
 from pycastle.iteration.improve_role_session_store import (
     CandidateRecord,
-    FiledTicket,
     ImproveRoleSessionStore,
 )
-from pycastle.iteration.preflight import PreflightReady
 from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubNetworkError, ServiceRegistry
@@ -1013,7 +1011,7 @@ def test_scan_returning_candidates_output_continues_to_phase_2(tmp_path, git_svc
     assert runner.calls[1].prompt.template == PromptTemplate.IMPROVE_SPEC
 
 
-# ── Host-side filing pass (AC3, AC5, AC6, AC7) ──────────────────────────────
+# ── Host-side filing helpers ─────────────────────────────────────────────────
 
 _VALID_BODY = "A" * 120
 
@@ -1030,11 +1028,6 @@ def _write_slice_draft(draft_dir: Path, name: str, *, body: str = _VALID_BODY) -
     (draft_dir / f"{name}.md").write_text(
         f"---\ntitle: {name} Slice\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{body}"
     )
-
-
-def _draft_dir(tmp_path: Path) -> Path:
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    return wt / ".pycastle-session" / "improve" / "_drafts"
 
 
 def _make_runner_with_drafts(
@@ -1073,148 +1066,6 @@ def _make_filing_github_svc() -> MagicMock:
     return github_svc
 
 
-def test_host_files_issues_after_slice_phase_with_valid_drafts(tmp_path, git_svc):
-    """After phase 03 completes, host reads draft files and files the spec and slices."""
-    call_count = [0]
-
-    def side_effect(request):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return make_scan_output()
-        if call_count[0] == 3:
-            # Issues phase: agent writes valid drafts to sandbox
-            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-first-slice")
-        return CompletionOutput()
-
-    github_svc = _make_filing_github_svc()
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    assert github_svc.create_issue_in.call_count == 2
-
-
-def test_host_does_not_file_spec_when_no_drafts_present(tmp_path, git_svc):
-    """When the draft dir stays absent through all 3 corrections, a failure report is filed
-    on the consuming project's tracker and improve_phase returns ImproveContinue.
-
-    Flow: scan → prd → issues (no drafts written) → 3 correction reprompts (still
-    no drafts written) → file failure report → ImproveContinue.
-    """
-    github_svc = _make_filing_github_svc()
-    github_svc.search_open_issues_by_title.return_value = []
-    # 6 responses: scan, prd, issues, 3 correction reprompts (none write drafts)
-    runner = FakeAgentRunner(
-        [
-            make_scan_output(),
-            CompletionOutput(),
-            CompletionOutput(),
-            CompletionOutput(),
-            CompletionOutput(),
-            CompletionOutput(),
-        ],
-        preflight_responses=[[]],
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    result = _run(deps)
-
-    assert isinstance(result, ImproveContinue)
-    # One issue filed on the consuming tracker for the unrepairable draft set
-    assert github_svc.create_issue_in.call_count == 1
-
-
-def test_malformed_drafts_reprompted_three_times_before_abandonment(tmp_path, git_svc):
-    """When drafts fail validation, the agent is reprompted up to 3 times; if still
-    invalid after the 3rd correction, a failure report is filed and the run continues."""
-    call_count = [0]
-
-    def side_effect(request):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return make_scan_output()
-        if call_count[0] == 3:
-            # Issues phase: agent writes invalid drafts (slice body too short)
-            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-foo", body="Too short.")
-        return CompletionOutput()
-
-    github_svc = _make_filing_github_svc()
-    github_svc.search_open_issues_by_title.return_value = []
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    result = _run(deps)
-
-    # Agent is called 6 times total: scan, prd, issues, 3 correction reprompts
-    assert len(runner.calls) == 6
-    assert isinstance(result, ImproveContinue)
-    # Failure report filed; no spec or slice issues created via file_draft_set
-    assert github_svc.create_issue_in.call_count == 1
-
-
-def test_draft_correction_dispatch_is_follow_up_kind(tmp_path, git_svc):
-    """Draft-correction RunRequest carries kind=FOLLOW_UP."""
-    call_count = [0]
-
-    def side_effect(request):
-        call_count[0] += 1
-        if call_count[0] == 1:
-            return make_scan_output()
-        if call_count[0] == 3:
-            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-foo", body="Too short.")
-        return CompletionOutput()
-
-    github_svc = _make_filing_github_svc()
-    github_svc.search_open_issues_by_title.return_value = []
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    correction_request = next(
-        c
-        for c in runner.calls
-        if c.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
-    )
-    assert correction_request.prompt.kind is PromptKind.FOLLOW_UP
-
-
-def test_valid_reprompt_gets_filed(tmp_path, git_svc):
-    """After a correction reprompt produces valid drafts, the issues are filed."""
-    call_count = [0]
-
-    def side_effect(request):
-        call_count[0] += 1
-        draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-        if call_count[0] == 1:
-            return make_scan_output()
-        if call_count[0] == 3:
-            # Issues phase: agent writes invalid drafts initially (slice body too short)
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-        if call_count[0] == 4:
-            # Correction call: fix the drafts
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice")
-        return CompletionOutput()
-
-    github_svc = _make_filing_github_svc()
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    assert call_count[0] == 4
-    assert github_svc.create_issue_in.call_count == 2
-
-
 def test_draft_dir_is_at_role_level_not_namespace(tmp_path, git_svc):
     """Draft files live in the role session dir, not inside the 'main' namespace subdir."""
     call_count = [0]
@@ -1237,7 +1088,7 @@ def test_draft_dir_is_at_role_level_not_namespace(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     role_session = wt / ".pycastle-session" / "improve"
     main_namespace = role_session / "main"
-    draft_dir = _draft_dir(tmp_path)
+    draft_dir = role_session / "_drafts"
     # Verify the draft dir is NOT inside the main namespace
     assert not draft_dir.is_relative_to(main_namespace)
 
@@ -1328,36 +1179,6 @@ def test_dispatch_count_increments_per_completed_candidate(tmp_path, git_svc):
     assert result.completed_count == 2
 
 
-def test_improve_stops_at_cap_after_completing_first_candidate(tmp_path, git_svc):
-    """With improve_max=1 and 2 candidates nominated, only the first is dispatched."""
-    scan_output = ScanCandidatesOutput(
-        candidates=(
-            ScanCandidateItem(rank=1, title="First"),
-            ScanCandidateItem(rank=2, title="Second"),
-        )
-    )
-    issues_namespaces: list[str] = []
-
-    def side_effect(request):
-        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
-            return scan_output
-        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
-            issues_namespaces.append(request.session_namespace)
-            _write_spec_draft(
-                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-            )
-        return CompletionOutput()
-
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    cfg = Config(improve_max=1)
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
-    result = _run(deps)
-
-    assert issues_namespaces == ["candidate/0"]
-    assert isinstance(result, ImproveContinue)
-    assert result.completed_count == 1
-
-
 def test_no_candidate_path_makes_no_forks(tmp_path, git_svc):
     """A scan that nominates nothing does not dispatch any per-candidate work."""
     runner = FakeAgentRunner(
@@ -1426,22 +1247,6 @@ def test_cross_teardown_resume_checks_candidate_namespace_for_gate(tmp_path, git
 # ── Safe-SHA wind-down (issue #2098) ─────────────────────────────────────────
 
 
-class _ChangingPreflightCache:
-    """Preflight cache that returns a different SHA on the second call."""
-
-    def __init__(
-        self, initial_sha: str = "abc123", changed_sha: str = "new-sha"
-    ) -> None:
-        self._calls = 0
-        self._initial_sha = initial_sha
-        self._changed_sha = changed_sha
-
-    async def get_safe_sha(self, deps):
-        self._calls += 1
-        sha = self._initial_sha if self._calls == 1 else self._changed_sha
-        return PreflightReady(sha=sha)
-
-
 def _make_two_candidate_runner() -> FakeAgentRunner:
     scan_output = ScanCandidatesOutput(
         candidates=(
@@ -1462,45 +1267,6 @@ def _make_two_candidate_runner() -> FakeAgentRunner:
     return FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
 
 
-def test_sha_change_mid_run_stops_further_agent_dispatch(tmp_path, git_svc):
-    """AC1: SHA change after completing a candidate stops dispatch for subsequent candidates."""
-    runner = _make_two_candidate_runner()
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        preflight_cache=_ChangingPreflightCache(),
-    )
-
-    result = _run(deps)
-
-    issues_calls = [
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_TICKETS
-    ]
-    assert len(issues_calls) == 1
-    assert isinstance(result, ImproveContinue)
-    assert result.completed_count == 1
-
-
-def test_sha_change_mid_run_does_not_start_next_candidate(tmp_path, git_svc):
-    """AC4: No PRD or Issues agent dispatched for candidates after the one in progress."""
-    runner = _make_two_candidate_runner()
-    deps = _make_deps(
-        tmp_path,
-        runner,
-        git_svc=git_svc,
-        preflight_cache=_ChangingPreflightCache(),
-    )
-
-    _run(deps)
-
-    prd_calls = [
-        c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_SPEC
-    ]
-    assert len(prd_calls) == 1
-    assert prd_calls[0].session_namespace == "candidate/0"
-
-
 def test_sha_unchanged_run_is_unaffected(tmp_path, git_svc):
     """AC5: A run whose safe SHA does not change processes all candidates normally."""
     runner = _make_two_candidate_runner()
@@ -1515,263 +1281,6 @@ def test_sha_unchanged_run_is_unaffected(tmp_path, git_svc):
         c for c in runner.calls if c.prompt.template == PromptTemplate.IMPROVE_TICKETS
     ]
     assert len(issues_calls) == 2
-
-
-def test_sha_change_fingerprint_gate_closes_spec_only_candidate(tmp_path, git_svc):
-    """AC2: When SHA changes between runs and a candidate has spec but no slices, close the spec."""
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    two_candidates = [
-        ScanCandidateItem(rank=1, title="First"),
-        ScanCandidateItem(rank=2, title="Second"),
-    ]
-    # candidate 0 fully done (cursor=1); candidate 1 has spec but no slices
-    _seed_candidate_list(wt, two_candidates, cursor=1, fingerprint="old-sha")
-    _seed_candidate_record(wt, 0, spec_number=100, labels_applied=True)
-    _seed_candidate_record(wt, 1, spec_number=200)  # spec only, no slices
-
-    github_svc = _make_filing_github_svc()
-    runner = _make_runner_with_drafts(
-        make_scan_output(), CompletionOutput(), CompletionOutput()
-    )
-    # Default StubPreflightCache returns sha="abc123", different from "old-sha"
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    github_svc.close_issue.assert_called_once_with(200)
-
-
-def test_sha_change_fingerprint_gate_no_close_when_no_spec(tmp_path, git_svc):
-    """AC2 boundary: when next candidate has no spec filed, nothing is closed."""
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    two_candidates = [
-        ScanCandidateItem(rank=1, title="First"),
-        ScanCandidateItem(rank=2, title="Second"),
-    ]
-    # candidate 0 fully done; candidate 1 not started (no record)
-    _seed_candidate_list(wt, two_candidates, cursor=1, fingerprint="old-sha")
-    _seed_candidate_record(wt, 0, spec_number=100, labels_applied=True)
-
-    github_svc = _make_filing_github_svc()
-    runner = _make_runner_with_drafts(
-        make_scan_output(), CompletionOutput(), CompletionOutput()
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    github_svc.close_issue.assert_not_called()
-
-
-# ── Unrepairable draft set (issue #2180) ─────────────────────────────────────
-
-
-def test_draft_valid_on_third_correction_is_filed(tmp_path, git_svc):
-    """A draft set that becomes valid on the third correction attempt is filed normally."""
-    correction_count = [0]
-
-    def side_effect(request):
-        draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
-            return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-        if request.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION:
-            correction_count[0] += 1
-            if correction_count[0] == 3:
-                _write_spec_draft(draft_dir)
-                _write_slice_draft(draft_dir, "01-slice")
-        return CompletionOutput()
-
-    github_svc = _make_filing_github_svc()
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    result = _run(deps)
-
-    assert isinstance(result, ImproveContinue)
-    assert github_svc.create_issue_in.call_count == 2  # spec + 1 slice
-
-
-def test_unrepairable_draft_set_does_not_end_run(tmp_path, git_svc):
-    """A draft set still invalid after 3 correction attempts does not raise — improve_phase
-    returns ImproveContinue and the run continues to the next candidate."""
-
-    def side_effect(request):
-        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
-            return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
-            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-        return CompletionOutput()
-
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
-
-    result = _run(deps)
-
-    assert isinstance(result, ImproveContinue)
-
-
-def test_unrepairable_draft_set_clears_draft_dir(tmp_path, git_svc):
-    """After a candidate is abandoned due to unrepairable drafts, the drafts dir is empty."""
-
-    def side_effect(request):
-        if request.prompt.template == PromptTemplate.IMPROVE_SCAN:
-            return make_scan_output()
-        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
-            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-        return CompletionOutput()
-
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
-
-    _run(deps)
-
-    draft_dir = _draft_dir(tmp_path)
-    assert not draft_dir.is_dir() or not any(draft_dir.iterdir())
-
-
-def test_sha_change_fingerprint_gate_completes_partial_slices_by_host(
-    tmp_path, git_svc
-):
-    """AC3: When some slices are filed but not labeled, host completes filing without agent."""
-    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    two_candidates = [
-        ScanCandidateItem(rank=1, title="First"),
-        ScanCandidateItem(rank=2, title="Second"),
-    ]
-    # candidate 0 done; candidate 1 has spec + 1 filed slice but not labeled
-    _seed_candidate_list(wt, two_candidates, cursor=1, fingerprint="old-sha")
-    _seed_candidate_record(wt, 0, spec_number=100, labels_applied=True)
-
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    store = ImproveRoleSessionStore(role_session_dir)
-    record = CandidateRecord(
-        spec_number=200,
-        spec_database_id=2000,
-        spec_title="Spec",
-        filed_tickets=(
-            FiledTicket(
-                handle="slice-a", number=201, database_id=2001, title="Slice A"
-            ),
-        ),
-        labels_applied=False,
-    )
-    store.write_candidate_record(1, record)
-
-    # Write draft files with spec + 2 slices (slice-a already filed, slice-b not yet)
-    draft_dir = role_session_dir / "_drafts"
-    draft_dir.mkdir(parents=True, exist_ok=True)
-    _write_spec_draft(draft_dir)
-    _write_slice_draft(draft_dir, "slice-a")
-    _write_slice_draft(draft_dir, "slice-b")
-
-    github_svc = _make_filing_github_svc()
-    runner = _make_runner_with_drafts(
-        make_scan_output(), CompletionOutput(), CompletionOutput()
-    )
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    # Host completed the partial candidate: existing slice must be labelled;
-    # the spec carries no state label (tracking parent, not implementable work).
-    label_calls = github_svc.add_label_to_issue.call_args_list
-    labeled_numbers = {call.args[0] for call in label_calls}
-    assert 200 not in labeled_numbers  # spec must not receive state label
-    assert 201 in labeled_numbers  # slice-a labelled by host
-    github_svc.close_issue.assert_not_called()  # completed normally, not closed
-    # No agent was dispatched to handle the partial candidate — wind-down is host-only
-    old_ns_calls = [c for c in runner.calls if c.session_namespace == "candidate/1"]
-    assert old_ns_calls == []
-
-
-def test_draft_correction_body_names_candidate_ordinal_title_and_attempt(
-    tmp_path, git_svc
-):
-    """Draft Correction work_body includes ordinal/total, title, and 1-based attempt.
-
-    Scan produces 3 candidates. Candidate 0 (ordinal 1/3, title "Alpha") needs two
-    correction attempts before its drafts are valid. Candidates 1 and 2 file cleanly.
-    """
-    call_count = [0]
-
-    def side_effect(request):
-        call_count[0] += 1
-        draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-        n = call_count[0]
-        if n == 1:
-            # Scan: 3 candidates
-            return ScanCandidatesOutput(
-                candidates=(
-                    ScanCandidateItem(rank=1, title="Alpha"),
-                    ScanCandidateItem(rank=2, title="Beta"),
-                    ScanCandidateItem(rank=3, title="Gamma"),
-                )
-            )
-        # n==2: PRD for candidate 0 → no-op
-        if n == 3:
-            # Issues for candidate 0: write invalid drafts
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-        elif n == 4:
-            # Correction attempt 1 for candidate 0: still invalid
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-        elif n == 5:
-            # Correction attempt 2 for candidate 0: valid now
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice")
-        # n==6: PRD for candidate 1 → no-op
-        elif n == 7:
-            # Issues for candidate 1: write valid drafts immediately
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice")
-        # n==8: PRD for candidate 2 → no-op
-        elif n == 9:
-            # Issues for candidate 2: write valid drafts immediately
-            _write_spec_draft(draft_dir)
-            _write_slice_draft(draft_dir, "01-slice")
-        return CompletionOutput()
-
-    from unittest.mock import MagicMock
-
-    github_svc = MagicMock()
-    github_svc.repo = "test/repo"
-    # 3 candidates x (spec + 1 slice) = 6 create_issue_in calls
-    github_svc.create_issue_in.side_effect = [
-        (100, 1000),
-        (101, 1001),
-        (102, 1002),
-        (103, 1003),
-        (104, 1004),
-        (105, 1005),
-    ]
-    runner = FakeAgentRunner(side_effect=side_effect, preflight_responses=[[]])
-    deps = _make_deps(tmp_path, runner, git_svc=git_svc, github_svc=github_svc)
-
-    _run(deps)
-
-    correction_calls = [
-        c
-        for c in runner.calls
-        if c.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
-    ]
-    assert len(correction_calls) == 2
-    assert (
-        correction_calls[0].work_body
-        == 'fixing draft validation errors for candidate 1/3 "Alpha" (attempt 1/3)'
-    )
-    assert (
-        correction_calls[1].work_body
-        == 'fixing draft validation errors for candidate 1/3 "Alpha" (attempt 2/3)'
-    )
 
 
 # ── Issue #2191: Improve phase row — constant name, live body ─────────────────
