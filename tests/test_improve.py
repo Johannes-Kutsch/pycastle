@@ -27,7 +27,6 @@ from pycastle.iteration.improve import (
     improve_phase,
 )
 from pycastle.iteration.improve_role_session_store import (
-    CandidateRecord,
     ImproveRoleSessionStore,
 )
 from pycastle.prompts.dispatch import PromptKind
@@ -43,6 +42,11 @@ from tests.support import (
     FakeAgentRunner,
     RecordingStatusDisplay,
     _make_deps,
+    _make_filing_github_svc,
+    _seed_candidate_list,
+    _seed_candidate_record,
+    _write_slice_draft,
+    _write_spec_draft,
     functional_git_svc,
     make_scan_output,
 )
@@ -384,56 +388,6 @@ def test_improve_phase_propagates_no_candidate_report_preparation_lookup_failure
 
 # ── Cross-teardown resume ─────────────────────────────────────────────────────
 
-
-def _seed_candidate_list(
-    worktree_path: Path,
-    candidates: list[ScanCandidateItem],
-    *,
-    no_candidate: bool = False,
-    cursor: int = 0,
-    fingerprint: str | None = "abc123",
-) -> None:
-    """Pre-seed the candidate list and cursor to simulate a prior scan.
-
-    Also writes a fingerprint so the fingerprint gate does not discard the
-    session on entry.
-    """
-    role_session_dir = worktree_path / ".pycastle-session" / "improve"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    data: dict = {
-        "candidates": [{"rank": c.rank, "title": c.title} for c in candidates]
-    }
-    if no_candidate:
-        data["no_candidate"] = True
-    (role_session_dir / "_candidate_list").write_text(
-        json.dumps(data), encoding="utf-8"
-    )
-    (role_session_dir / "_candidate_cursor").write_text(str(cursor), encoding="utf-8")
-    if fingerprint is not None:
-        (role_session_dir / "_fingerprint").write_text(fingerprint, encoding="utf-8")
-
-
-def _seed_candidate_record(
-    worktree_path: Path,
-    idx: int,
-    *,
-    spec_number: int | None = None,
-    labels_applied: bool = False,
-) -> None:
-    """Pre-seed a per-candidate record (simulates the filing pass having run)."""
-    role_session_dir = worktree_path / ".pycastle-session" / "improve"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    store = ImproveRoleSessionStore(role_session_dir)
-    record = CandidateRecord(
-        spec_number=spec_number,
-        spec_database_id=42 if spec_number is not None else None,
-        spec_title="Seeded" if spec_number is not None else "",
-        filed_tickets=(),
-        labels_applied=labels_applied,
-    )
-    store.write_candidate_record(idx, record)
-
-
 _DEFAULT_CANDIDATE = ScanCandidateItem(rank=1, title="Seeded candidate")
 
 
@@ -474,7 +428,7 @@ def _seed_exact_phase_1_main_transcript(
 def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
     """Resume with candidate list (scan done, cursor=0, no record) starts at PRD."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     _seed_exact_phase_1_main_transcript(
         wt,
         service_name="opencode",
@@ -498,7 +452,7 @@ def test_improve_clean_phase_2_entry_dispatches_prd_prompt_for_exact_codex_trans
     tmp_path, git_svc
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     _seed_exact_phase_1_main_transcript(
         wt,
         service_name="codex",
@@ -526,7 +480,7 @@ def test_improve_clean_phase_2_entry_accepts_recovered_exact_codex_transcript(
     tmp_path, git_svc
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     _seed_exact_phase_1_main_transcript(
         wt,
         service_name="codex",
@@ -557,7 +511,7 @@ def test_improve_clean_phase_2_entry_restarts_when_codex_rollout_thread_is_not_e
     tmp_path, git_svc
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     _seed_exact_phase_1_main_transcript(
         wt,
         service_name="codex",
@@ -604,7 +558,7 @@ def test_improve_clean_phase_2_entry_restarts_when_codex_rollout_thread_is_not_e
 
 def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     runner = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
@@ -627,7 +581,7 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_selected_service_m
     tmp_path, git_svc
 ):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     _seed_exact_phase_1_main_transcript(
         wt,
         service_name="claude",
@@ -661,7 +615,9 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_selected_service_m
 def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
     """Resume from no-candidate candidate list (cursor=0) starts at phase 4 (report)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [], no_candidate=True, cursor=0)
+    _seed_candidate_list(
+        RoleSession(wt, AgentRole.IMPROVE).path, [], no_candidate=True, cursor=0
+    )
     runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -683,8 +639,8 @@ def test_no_candidate_list_starts_at_scan_regardless_of_other_files(tmp_path, gi
 def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     """Candidate with a record (PRD done) and in-flight='03-issues' resumes at Issues phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
-    _seed_candidate_record(wt, 0)
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
+    _seed_candidate_record(RoleSession(wt, AgentRole.IMPROVE).path, 0)
     role_session_dir = wt / ".pycastle-session" / "improve"
     ImproveRoleSessionStore(role_session_dir).write_in_flight("03-issues")
     runner = _make_runner_with_drafts(CompletionOutput())
@@ -698,7 +654,7 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
 def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc):
     """Candidate with no record and in-flight='02-spec': PRD resumes as a continuation (no role prompt)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
     ImproveRoleSessionStore(role_session_dir).write_in_flight("02-spec")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
@@ -714,7 +670,9 @@ def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc)
 def test_improve_is_terminal_after_issues(tmp_path, git_svc):
     """All candidates filed (cursor past end) is immediately terminal — no agent calls."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE], cursor=1)
+    _seed_candidate_list(
+        RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE], cursor=1
+    )
     runner = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -724,7 +682,9 @@ def test_improve_is_terminal_after_issues(tmp_path, git_svc):
 def test_improve_is_terminal_after_report(tmp_path, git_svc):
     """No-candidate with cursor past end is immediately terminal — no agent calls."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [], no_candidate=True, cursor=1)
+    _seed_candidate_list(
+        RoleSession(wt, AgentRole.IMPROVE).path, [], no_candidate=True, cursor=1
+    )
     runner = FakeAgentRunner([], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -738,7 +698,7 @@ def test_mid_phase_2_retry_is_role_prompt_kind(tmp_path, git_svc):
     """Resume mid-phase-2 (in-flight='02-spec'): kind=ROLE_PROMPT so the runner
     falls back to the continuation prompt (role prompt already in history)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     role_session_dir = wt / ".pycastle-session" / "improve"
     ImproveRoleSessionStore(role_session_dir).write_in_flight("02-spec")
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
@@ -754,7 +714,7 @@ def test_cross_teardown_resume_at_phase_2_is_follow_up_kind(tmp_path, git_svc):
     """Resume with candidate list (scan done, no in-flight): PRD's kind=FOLLOW_UP
     so the PRD prompt is delivered, not the continuation prompt."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     _seed_exact_phase_1_main_transcript(
         wt,
         service_name="opencode",
@@ -841,7 +801,7 @@ def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git
     """Whitespace-padded cursor file value is parsed correctly — resumes at PRD phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     role_session_dir = wt / ".pycastle-session" / "improve"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     # Overwrite cursor with whitespace-padded integer
     (role_session_dir / "_candidate_cursor").write_text("  0  \n", encoding="utf-8")
     _seed_exact_phase_1_main_transcript(
@@ -971,7 +931,9 @@ def test_fingerprint_gate_discards_session_when_safe_sha_changes(tmp_path, git_s
 def test_fingerprint_gate_preserves_session_when_safe_sha_unchanged(tmp_path, git_svc):
     """When safe SHA is unchanged, session state (candidate list) survives into the new run."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [], no_candidate=True, cursor=0)
+    _seed_candidate_list(
+        RoleSession(wt, AgentRole.IMPROVE).path, [], no_candidate=True, cursor=0
+    )
 
     runner = FakeAgentRunner([CompletionOutput()], preflight_responses=[[]])
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
@@ -1011,25 +973,6 @@ def test_scan_returning_candidates_output_continues_to_phase_2(tmp_path, git_svc
     assert runner.calls[1].prompt.template == PromptTemplate.IMPROVE_SPEC
 
 
-# ── Host-side filing helpers ─────────────────────────────────────────────────
-
-_VALID_BODY = "A" * 120
-
-
-def _write_spec_draft(draft_dir: Path, *, body: str = _VALID_BODY) -> None:
-    draft_dir.mkdir(parents=True, exist_ok=True)
-    (draft_dir / "spec.md").write_text(
-        f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{body}"
-    )
-
-
-def _write_slice_draft(draft_dir: Path, name: str, *, body: str = _VALID_BODY) -> None:
-    draft_dir.mkdir(parents=True, exist_ok=True)
-    (draft_dir / f"{name}.md").write_text(
-        f"---\ntitle: {name} Slice\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{body}"
-    )
-
-
 def _make_runner_with_drafts(
     *responses: object,
     preflight_responses: list[list[PreflightCommandFailure] | BaseException]
@@ -1053,17 +996,6 @@ def _make_runner_with_drafts(
     return FakeAgentRunner(
         side_effect=_side_effect, preflight_responses=preflight_responses
     )
-
-
-def _make_filing_github_svc() -> MagicMock:
-    github_svc = MagicMock()
-    github_svc.repo = "test/repo"
-    github_svc.create_issue_in.side_effect = [
-        (100, 1000),
-        (101, 1001),
-        (102, 1002),
-    ]
-    return github_svc
 
 
 def test_draft_dir_is_at_role_level_not_namespace(tmp_path, git_svc):
@@ -1201,8 +1133,12 @@ def test_gate_failure_for_next_candidate_ends_dispatch_without_touching_filed(
         ScanCandidateItem(rank=1, title="First"),
         ScanCandidateItem(rank=2, title="Second"),
     ]
-    _seed_candidate_list(wt, two_candidates, cursor=1)
-    _seed_candidate_record(wt, 0, spec_number=101, labels_applied=True)
+    _seed_candidate_list(
+        RoleSession(wt, AgentRole.IMPROVE).path, two_candidates, cursor=1
+    )
+    _seed_candidate_record(
+        RoleSession(wt, AgentRole.IMPROVE).path, 0, spec_number=101, labels_applied=True
+    )
     # candidate/1 transcript deliberately NOT seeded → gate will fail
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(
@@ -1223,7 +1159,7 @@ def test_gate_failure_for_next_candidate_ends_dispatch_without_touching_filed(
 def test_cross_teardown_resume_checks_candidate_namespace_for_gate(tmp_path, git_svc):
     """Resume with candidate list (scan done) checks 'candidate/0' transcript, not 'main'."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    _seed_candidate_list(wt, [_DEFAULT_CANDIDATE])
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     # Seed 'candidate/0' namespace transcript (fork of main)
     _seed_exact_phase_1_main_transcript(
         wt,
