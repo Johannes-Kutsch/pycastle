@@ -9,8 +9,10 @@ from tests.support.git_errors import (
 from tests.support.improve import (
     _draft_dir,
     _make_filing_github_svc,
+    _overwrite_candidate_cursor_raw,
     _seed_candidate_list,
     _seed_candidate_record,
+    _write_malformed_candidate_list,
     _write_slice_draft,
     _write_spec_draft,
 )
@@ -42,8 +44,10 @@ __all__ = [
     "_draft_dir",
     "_make_deps",
     "_make_filing_github_svc",
+    "_overwrite_candidate_cursor_raw",
     "_seed_candidate_list",
     "_seed_candidate_record",
+    "_write_malformed_candidate_list",
     "_write_slice_draft",
     "_write_spec_draft",
     "functional_git_svc",

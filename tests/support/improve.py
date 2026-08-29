@@ -83,6 +83,17 @@ def _seed_candidate_record(
     store.write_candidate_record(idx, record)
 
 
+def _write_malformed_candidate_list(role_session_dir: Path, content: str) -> None:
+    """Write raw (unparseable) text to the candidate list file for edge-case tests."""
+    role_session_dir.mkdir(parents=True, exist_ok=True)
+    (role_session_dir / "_candidate_list").write_text(content, encoding="utf-8")
+
+
+def _overwrite_candidate_cursor_raw(role_session_dir: Path, content: str) -> None:
+    """Overwrite the cursor file with raw content for whitespace-parsing edge-case tests."""
+    (role_session_dir / "_candidate_cursor").write_text(content, encoding="utf-8")
+
+
 def _make_filing_github_svc() -> MagicMock:
     github_svc = MagicMock()
     github_svc.repo = "test/repo"

@@ -2,7 +2,6 @@
 
 import asyncio
 import dataclasses
-import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -41,10 +40,13 @@ from pycastle.session.service_session_store import (
 from tests.support import (
     FakeAgentRunner,
     RecordingStatusDisplay,
+    _draft_dir,
     _make_deps,
     _make_filing_github_svc,
+    _overwrite_candidate_cursor_raw,
     _seed_candidate_list,
     _seed_candidate_record,
+    _write_malformed_candidate_list,
     _write_slice_draft,
     _write_spec_draft,
     functional_git_svc,
@@ -73,11 +75,8 @@ def agent_runner():
 
     def _side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
-            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
-            draft_dir.mkdir(parents=True, exist_ok=True)
-            body = "A" * 120
-            (draft_dir / "spec.md").write_text(
-                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n  - ready-for-agent\n---\n\n{body}"
+            _write_spec_draft(
+                _draft_dir(RoleSession(request.mount_path, AgentRole.IMPROVE).path)
             )
         result = responses[idx[0]]
         idx[0] += 1
@@ -237,8 +236,7 @@ def test_improve_phase_removes_session_on_terminal_success(tmp_path, git_svc):
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
     worktree_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = worktree_path / ".pycastle-session" / "improve"
-    assert not role_session_dir.exists()
+    assert not RoleSession(worktree_path, AgentRole.IMPROVE).path.exists()
 
 
 def test_improve_phase_candidate_list_written_with_no_candidate_flag_after_scan(
@@ -247,7 +245,6 @@ def test_improve_phase_candidate_list_written_with_no_candidate_flag_after_scan(
     """After NO-CANDIDATE scan, candidate list is written with no_candidate=True."""
     candidate_list_values: list[bool] = []
     worktree_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    list_file = worktree_path / ".pycastle-session" / "improve" / "_candidate_list"
 
     call_count = 0
 
@@ -257,9 +254,11 @@ def test_improve_phase_candidate_list_written_with_no_candidate_flag_after_scan(
         if call_count == 1:
             return NoCandidateOutput()
         # Read candidate list before second call executes
-        if list_file.exists():
-            data = json.loads(list_file.read_text(encoding="utf-8"))
-            candidate_list_values.append(data.get("no_candidate", False))
+        candidate_list = ImproveRoleSessionStore(
+            RoleSession(worktree_path, AgentRole.IMPROVE).path
+        ).read_candidate_list()
+        if candidate_list is not None:
+            candidate_list_values.append(candidate_list.no_candidate)
         return CompletionOutput()
 
     runner = FakeAgentRunner(side_effect=_side_effect, preflight_responses=[[]])
@@ -487,8 +486,8 @@ def test_improve_clean_phase_2_entry_accepts_recovered_exact_codex_transcript(
         provider_session_id="thread-exact",
         namespace="candidate/0",
     )
-    (
-        wt / ".pycastle-session" / "improve" / "candidate" / "0" / "codex" / "thread_id"
+    RoleSession(wt, AgentRole.IMPROVE, "candidate/0").path.joinpath(
+        "codex", "thread_id"
     ).unlink()
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
@@ -517,17 +516,8 @@ def test_improve_clean_phase_2_entry_restarts_when_codex_rollout_thread_is_not_e
         service_name="codex",
         provider_session_id="thread-recorded",
     )
-    rollout_path = (
-        wt
-        / ".pycastle-session"
-        / "improve"
-        / "main"
-        / "codex"
-        / "sessions"
-        / "2026"
-        / "05"
-        / "30"
-        / "rollout-001.jsonl"
+    rollout_path = RoleSession(wt, AgentRole.IMPROVE, "main").path.joinpath(
+        "codex", "sessions", "2026", "05", "30", "rollout-001.jsonl"
     )
     rollout_path.write_text(
         '{"type":"thread.started","thread_id":"thread-other"}\n',
@@ -553,7 +543,7 @@ def test_improve_clean_phase_2_entry_restarts_when_codex_rollout_thread_is_not_e
         "Improve",
         "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
     )
-    assert not (wt / ".pycastle-session" / "improve").exists()
+    assert not RoleSession(wt, AgentRole.IMPROVE).path.exists()
 
 
 def test_improve_gate_failure_restarts_next_entry_from_scan_phase(tmp_path, git_svc):
@@ -609,7 +599,7 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_selected_service_m
         "Improve",
         "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
     )
-    assert not (wt / ".pycastle-session" / "improve").exists()
+    assert not RoleSession(wt, AgentRole.IMPROVE).path.exists()
 
 
 def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
@@ -641,8 +631,9 @@ def test_improve_resumes_at_issues_mid_phase(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     _seed_candidate_record(RoleSession(wt, AgentRole.IMPROVE).path, 0)
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    ImproveRoleSessionStore(role_session_dir).write_in_flight("03-issues")
+    ImproveRoleSessionStore(RoleSession(wt, AgentRole.IMPROVE).path).write_in_flight(
+        "03-issues"
+    )
     runner = _make_runner_with_drafts(CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -655,8 +646,9 @@ def test_improve_resumes_mid_phase_2_without_clean_entry_gate(tmp_path, git_svc)
     """Candidate with no record and in-flight='02-spec': PRD resumes as a continuation (no role prompt)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-spec")
+    ImproveRoleSessionStore(RoleSession(wt, AgentRole.IMPROVE).path).write_in_flight(
+        "02-spec"
+    )
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
 
@@ -699,8 +691,9 @@ def test_mid_phase_2_retry_is_role_prompt_kind(tmp_path, git_svc):
     falls back to the continuation prompt (role prompt already in history)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    ImproveRoleSessionStore(role_session_dir).write_in_flight("02-spec")
+    ImproveRoleSessionStore(RoleSession(wt, AgentRole.IMPROVE).path).write_in_flight(
+        "02-spec"
+    )
     runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
     deps = _make_deps(tmp_path, runner, git_svc=git_svc)
     _run(deps)
@@ -759,7 +752,7 @@ def test_phase_2_is_follow_up_kind_on_resumed_session(deps, agent_runner):
 def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
     """Malformed progress file falls back to a fresh run starting at phase 1 (scan)."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir = RoleSession(wt, AgentRole.IMPROVE).path
     role_session_dir.mkdir(parents=True, exist_ok=True)
     (role_session_dir / "_phase_progress").write_text(
         "corrupted-data", encoding="utf-8"
@@ -785,9 +778,8 @@ def test_improve_fresh_run_on_empty_progress_file(tmp_path, git_svc):
 def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
     """Malformed candidate list JSON falls back to fresh scan."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = wt / ".pycastle-session" / "improve"
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    (role_session_dir / "_candidate_list").write_text("\n  \t  \n", encoding="utf-8")
+    role_session_dir = RoleSession(wt, AgentRole.IMPROVE).path
+    _write_malformed_candidate_list(role_session_dir, "\n  \t  \n")
     (role_session_dir / "_fingerprint").write_text("abc123", encoding="utf-8")
     runner = _make_runner_with_drafts(
         make_scan_output(), CompletionOutput(), CompletionOutput()
@@ -800,10 +792,9 @@ def test_improve_fresh_run_on_whitespace_only_progress_file(tmp_path, git_svc):
 def test_improve_resumes_correctly_with_whitespace_padded_progress(tmp_path, git_svc):
     """Whitespace-padded cursor file value is parsed correctly — resumes at PRD phase."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = wt / ".pycastle-session" / "improve"
     _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
     # Overwrite cursor with whitespace-padded integer
-    (role_session_dir / "_candidate_cursor").write_text("  0  \n", encoding="utf-8")
+    _overwrite_candidate_cursor_raw(RoleSession(wt, AgentRole.IMPROVE).path, "  0  \n")
     _seed_exact_phase_1_main_transcript(
         wt, service_name="opencode", provider_session_id="sess-opencode-123"
     )
@@ -911,7 +902,7 @@ def test_improve_phase_returns_improve_no_candidate_when_report_disabled(
 def test_fingerprint_gate_discards_session_when_safe_sha_changes(tmp_path, git_svc):
     """When safe SHA changes between runs, session is discarded; ImprovePhaseDriver starts fresh at scan."""
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session_dir = wt / ".pycastle-session" / "improve"
+    role_session_dir = RoleSession(wt, AgentRole.IMPROVE).path
     role_session_dir.mkdir(parents=True, exist_ok=True)
     (role_session_dir / "_phase_progress").write_text(
         "01-scan:picked", encoding="utf-8"
@@ -987,7 +978,7 @@ def _make_runner_with_drafts(
     def _side_effect(request):
         if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
-                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+                _draft_dir(RoleSession(request.mount_path, AgentRole.IMPROVE).path)
             )
         result = resp_list[idx[0]]
         idx[0] += 1
@@ -1007,7 +998,9 @@ def test_draft_dir_is_at_role_level_not_namespace(tmp_path, git_svc):
         if call_count[0] == 1:
             return make_scan_output()
         if call_count[0] == 3:
-            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir = _draft_dir(
+                RoleSession(request.mount_path, AgentRole.IMPROVE).path
+            )
             _write_spec_draft(draft_dir)
             _write_slice_draft(draft_dir, "01-first-slice")
         return CompletionOutput()
@@ -1018,7 +1011,7 @@ def test_draft_dir_is_at_role_level_not_namespace(tmp_path, git_svc):
     _run(deps)
 
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
-    role_session = wt / ".pycastle-session" / "improve"
+    role_session = RoleSession(wt, AgentRole.IMPROVE).path
     main_namespace = role_session / "main"
     draft_dir = role_session / "_drafts"
     # Verify the draft dir is NOT inside the main namespace
@@ -1042,7 +1035,9 @@ def test_multi_candidate_run_files_both_candidates_specs(tmp_path, git_svc):
                 )
             )
         if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
-            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir = _draft_dir(
+                RoleSession(request.mount_path, AgentRole.IMPROVE).path
+            )
             _write_spec_draft(draft_dir)
         return CompletionOutput()
 
@@ -1072,7 +1067,7 @@ def test_multi_candidate_run_files_all_candidates_in_rank_order(tmp_path, git_sv
         if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             issues_namespaces.append(request.session_namespace)
             _write_spec_draft(
-                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+                _draft_dir(RoleSession(request.mount_path, AgentRole.IMPROVE).path)
             )
         return CompletionOutput()
 
@@ -1099,7 +1094,7 @@ def test_dispatch_count_increments_per_completed_candidate(tmp_path, git_svc):
             return scan_output
         if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
-                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+                _draft_dir(RoleSession(request.mount_path, AgentRole.IMPROVE).path)
             )
         return CompletionOutput()
 
@@ -1196,7 +1191,7 @@ def _make_two_candidate_runner() -> FakeAgentRunner:
             return scan_output
         if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
-                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+                _draft_dir(RoleSession(request.mount_path, AgentRole.IMPROVE).path)
             )
         return CompletionOutput()
 
@@ -1239,7 +1234,7 @@ def _three_candidate_runner_with_drafts(
             return scan_output
         if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
-                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+                _draft_dir(RoleSession(request.mount_path, AgentRole.IMPROVE).path)
             )
         return CompletionOutput()
 
@@ -1387,7 +1382,7 @@ def test_improve_phase_closes_with_filed_count(tmp_path, git_svc):
             return scan_output
         if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
             _write_spec_draft(
-                request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+                _draft_dir(RoleSession(request.mount_path, AgentRole.IMPROVE).path)
             )
         return CompletionOutput()
 
