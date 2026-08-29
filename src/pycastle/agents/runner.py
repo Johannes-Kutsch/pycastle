@@ -7,40 +7,23 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, Self, cast
 
-import agent_runtime
 import docker
 import docker.errors
 from agent_runtime import ProviderAuth
-from agent_runtime.contracts import ToolPolicy as RuntimeToolPolicy
-from agent_runtime.errors import (
-    AgentCredentialFailureError,
-    HardAgentError,
-    ProviderUnavailableReason,
-)
-from agent_runtime.errors import (
-    ContinuationUnrecoverableError as RuntimeContinuationUnrecoverableError,
-)
-from agent_runtime.runtime import (
-    Cancelled,
-    Completed,
-    ModelNotAvailable,
-    NewSessionRunRequest,
-    ProviderUnavailable,
-    ResumedSessionRunRequest,
-    TimedOut,
-    UsageLimited,
-)
 
 from pycastle import _time as _time_module
 from pycastle.agents import protocol_reprompt
+from pycastle.agents.attempt_loop import (
+    _AttemptLoopBundle,
+    _stage_key_for_role,
+    format_transient_status_message,
+    run_attempt_loop,
+)
 from pycastle.agents.output_protocol import (
     AgentOutput,
-    AgentOutputProtocolError,
     AgentRole,
     AgentSuccessOutput,
-    CompletionOutput,
     FailedOutput,
-    extract_output,
 )
 from pycastle.agents.result import CancellationToken
 from pycastle.config import Config, image_name_for
@@ -55,9 +38,7 @@ from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
     DockerError,
-    ModelNotAvailableError,
     SetupPhaseError,
-    TransientAgentError,
     UsageLimitError,
 )
 from pycastle.execution_contracts import (
@@ -79,7 +60,6 @@ from pycastle.infrastructure.preflight_failure_interpreter import (
 from pycastle.managed_worktree_mount_policy import enforce_managed_worktree_mount
 from pycastle.prompts.dispatch import PromptInvocation, render_prompt_invocation
 from pycastle.prompts.pipeline import PromptRenderer
-from pycastle.prompts.scope_args import build_interrupted_work_clause
 from pycastle.runtime import run_prompt as run_runtime_prompt
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services import GitService
@@ -100,34 +80,6 @@ from pycastle.session.service_session_store import ServiceSessionStore
 from pycastle.session_planning import ProviderRunStatePlan
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
-_MAX_PROTOCOL_RETRIES = 2
-
-
-@dataclasses.dataclass
-class _RetrySignal:
-    """Signals that _invoke_runtime_attempts should continue with a new attempt."""
-
-    prompt: str
-    run_kind: RunKind
-    retries_left: int | None
-
-
-def format_transient_status_message(err: TransientAgentError) -> str:
-    detail = str(err)
-    return f"transient API error: {detail}" if detail else "transient API error"
-
-
-def _stage_key_for_role(role: AgentRole) -> str | None:
-    mapping = {
-        AgentRole.PLANNER: "plan",
-        AgentRole.IMPLEMENTER: "implement",
-        AgentRole.REVIEWER: "review",
-        AgentRole.MERGER: "merge",
-        AgentRole.PREFLIGHT_ISSUE: "preflight_issue",
-        AgentRole.IMPROVE: "improve",
-        AgentRole.FAILURE_REPORT: "preflight_issue",
-    }
-    return mapping.get(role)
 
 
 def _minimum_unknown_reset_duration_for_provider(
@@ -167,12 +119,6 @@ def _provider_auth_from_env(env: dict[str, str]) -> ProviderAuth | None:
         claude_code_oauth_token=claude_token,
         opencode_api_key=opencode_api_key,
     )
-
-
-def _runtime_tool_policy_for_role(role: AgentRole) -> RuntimeToolPolicy:
-    if role is AgentRole.PLANNER:
-        return RuntimeToolPolicy.NO_FILE_MUTATION
-    return RuntimeToolPolicy.UNRESTRICTED
 
 
 def _default_effort() -> str:
@@ -223,23 +169,6 @@ class RunRequest:
     preserve_session_on_completion: bool = False
 
 
-@dataclasses.dataclass
-class _RuntimeAttemptContext:
-    request: RunRequest
-    service: AgentService
-    runner: ContainerRunner
-    runtime_client: Any  # agent_runtime.RuntimeClient or _DockerlessRuntimeClient
-    role_session: RoleSession
-    provider_state_dir: Path
-    provider_auth: ProviderAuth | None
-    resolved_model: str
-    resolved_effort: str
-    status_display: StatusDisplay
-    protocol_reprompt_plan: Callable[
-        [str | None], protocol_reprompt.ProtocolRepromptPlan
-    ]
-
-
 async def translate_run_outcome(
     inner: Coroutine[Any, Any, AgentOutput], request: RunRequest
 ) -> AgentSuccessOutput:
@@ -279,6 +208,30 @@ class AgentRunnerProtocol(Protocol):
         status_display: StatusDisplay | None = None,
         work_body: str = "",
     ) -> list[PreflightCommandFailure]: ...
+
+
+async def _render_runtime_prompt(
+    *,
+    prompt_invocation: PromptInvocation,
+    renderer: PromptRenderer,
+    runner: ContainerRunner,
+    run_kind: RunKind,
+) -> str:
+    loop = asyncio.get_running_loop()
+
+    async def _container_exec(command: str) -> str:
+        return await loop.run_in_executor(
+            None,
+            runner.exec_command,
+            command,
+        )
+
+    return await render_prompt_invocation(
+        prompt_invocation,
+        renderer=renderer,
+        run_kind=run_kind,
+        exec_fn=_container_exec,
+    )
 
 
 class AgentRunner:
@@ -580,23 +533,6 @@ class AgentRunner:
                 render_expected_output_shape=_render_expected_output_shape,
             )
 
-        return await self._run_with_runtime_client(
-            request=request,
-            service=service,
-            protocol_reprompt_plan=_planned_protocol_reprompt,
-            color_key=color_key,
-        )
-
-    async def _run_with_runtime_client(
-        self,
-        *,
-        request: RunRequest,
-        service: AgentService,
-        protocol_reprompt_plan: Callable[
-            [str | None], protocol_reprompt.ProtocolRepromptPlan
-        ],
-        color_key: int | None,
-    ) -> AgentOutput:
         token = request.token if request.token is not None else CancellationToken()
         if token.is_cancelled or not service.is_available():
             raise UsageLimitError(
@@ -667,6 +603,14 @@ class AgentRunner:
             effort=resolved_effort,
         )
 
+        async def _do_render_prompt(req: RunRequest, run_kind: RunKind) -> str:
+            return await _render_runtime_prompt(
+                prompt_invocation=req.prompt,
+                renderer=self._renderer,
+                runner=runner,
+                run_kind=run_kind,
+            )
+
         async with status_row(
             status_display,
             request.name,
@@ -684,8 +628,7 @@ class AgentRunner:
                 except DockerError as exc:
                     raise SetupPhaseError(request.role.value, str(exc)) from exc
                 status_display.update_phase(request.name, WORK_PHASE)
-                ctx = _RuntimeAttemptContext(
-                    request=request,
+                bundle = _AttemptLoopBundle(
                     service=service,
                     runner=runner,
                     runtime_client=runtime_client,
@@ -695,9 +638,14 @@ class AgentRunner:
                     resolved_model=resolved_model,
                     resolved_effort=resolved_effort,
                     status_display=status_display,
-                    protocol_reprompt_plan=protocol_reprompt_plan,
+                    protocol_reprompt_plan=_planned_protocol_reprompt,
+                    render_prompt=_do_render_prompt,
+                    handle_provider_account_exhaustion=self._handle_provider_account_exhaustion,
+                    is_working_tree_clean=self._git_service.is_working_tree_clean,
+                    timeout_retries=self._cfg.timeout_retries,
+                    idle_timeout=self._cfg.idle_timeout,
                 )
-                output = await self._invoke_runtime_attempts(ctx=ctx)
+                output = await run_attempt_loop(request, bundle)
                 if token.is_cancelled:
                     row.close("cancelled", shutdown_style="interrupted")
                 else:
@@ -706,315 +654,6 @@ class AgentRunner:
             finally:
                 with contextlib.suppress(OSError):
                     session.__exit__(None, None, None)
-
-    async def _invoke_runtime_attempts(
-        self,
-        *,
-        ctx: _RuntimeAttemptContext,
-    ) -> AgentOutput:
-        prompt = await self._render_runtime_prompt(
-            request=ctx.request,
-            runner=ctx.runner,
-            run_kind=ctx.role_session.run_kind(),
-        )
-        current_prompt = prompt
-        current_run_kind = ctx.role_session.run_kind()
-        retries_left = self._cfg.timeout_retries
-
-        for attempt in range(3):
-            _saved_service = (
-                ServiceSessionStore(
-                    ctx.role_session.path
-                ).exact_transcript_service_name()
-                if current_run_kind is RunKind.RESUME
-                and ctx.role_session.is_resumable()
-                else None
-            )
-            if _saved_service is not None and _saved_service != ctx.request.service:
-                ctx.request, current_prompt = await self._recover_stale_continuation(
-                    role_session=ctx.role_session,
-                    request=ctx.request,
-                    runner=ctx.runner,
-                )
-                current_run_kind = RunKind.FRESH
-            try:
-                outcome = await self._run_runtime_once(
-                    ctx=ctx,
-                    prompt=current_prompt,
-                    run_kind=current_run_kind,
-                )
-            except AgentCredentialFailureError as err:
-                err.caller = ctx.request.name
-                raise
-            except HardAgentError as err:
-                err.caller = ctx.request.name
-                raise
-            except RuntimeContinuationUnrecoverableError:
-                ctx.request, current_prompt = await self._recover_stale_continuation(
-                    role_session=ctx.role_session,
-                    request=ctx.request,
-                    runner=ctx.runner,
-                )
-                current_run_kind = RunKind.FRESH
-                continue
-
-            action = await self._handle_attempt_outcome(
-                outcome,
-                ctx=ctx,
-                attempt=attempt,
-                retries_left=retries_left,
-            )
-            if isinstance(action, _RetrySignal):
-                current_prompt = action.prompt
-                current_run_kind = action.run_kind
-                if action.retries_left is not None:
-                    retries_left = action.retries_left
-                continue
-            return action
-
-        raise RuntimeError("Runtime reprompt loop exhausted unexpectedly")
-
-    async def _handle_attempt_outcome(
-        self,
-        outcome: Any,  # noqa: ANN401  # agent_runtime.RuntimeOutcome or duck-typed
-        *,
-        ctx: _RuntimeAttemptContext,
-        attempt: int,
-        retries_left: int,
-    ) -> AgentOutput | _RetrySignal:
-        if not hasattr(outcome, "kind") and hasattr(outcome, "output"):
-            outcome = agent_runtime.RuntimeOutcome(
-                kind=Completed(),
-                result=outcome,
-            )
-        continuation = outcome.result.continuation
-        if continuation is not None and continuation.serialized is not None:
-            ctx.role_session.write_continuation(continuation.serialized)
-        if isinstance(outcome.kind, Cancelled):
-            return CompletionOutput()
-        if isinstance(outcome.kind, Completed):
-            return self._handle_completed_outcome(
-                outcome,
-                ctx=ctx,
-                attempt=attempt,
-            )
-        if isinstance(outcome.kind, UsageLimited):
-            error = UsageLimitError(
-                reset_time=outcome.kind.reset_time,
-                provider=outcome.result.selected.service,
-                is_permanent=outcome.kind.is_permanent,
-            )
-            self._handle_provider_account_exhaustion(ctx.service, error)
-            raise error
-        if isinstance(outcome.kind, ProviderUnavailable):
-            if outcome.kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
-                ctx.status_display.print(
-                    ctx.request.name,
-                    format_transient_status_message(
-                        TransientAgentError(message=outcome.kind.detail)
-                    ),
-                )
-                raise TransientAgentError(message=outcome.kind.detail)
-            error = UsageLimitError(
-                provider=outcome.result.selected.service,
-                raw_message=outcome.kind.detail,
-            )
-            self._handle_provider_account_exhaustion(ctx.service, error)
-            raise error
-        if isinstance(outcome.kind, TimedOut):
-            return await self._handle_timed_out(
-                request=ctx.request,
-                runner=ctx.runner,
-                status_display=ctx.status_display,
-                retries_left=retries_left,
-            )
-        if isinstance(outcome.kind, ModelNotAvailable):
-            model = outcome.result.selected.model
-            ctx.service.mark_model_restricted(model)
-            raise ModelNotAvailableError(
-                service=outcome.result.selected.service,
-                model=model,
-                stage_key=_stage_key_for_role(ctx.request.role),
-            )
-        raise RuntimeError("Unexpected runtime outcome kind")
-
-    def _handle_completed_outcome(
-        self,
-        outcome: Any,  # noqa: ANN401  # agent_runtime.RuntimeOutcome
-        *,
-        ctx: _RuntimeAttemptContext,
-        attempt: int,
-    ) -> AgentOutput | _RetrySignal:
-        try:
-            parsed = extract_output(outcome.result.output, ctx.request.role)
-        except AgentOutputProtocolError as exc:
-            if attempt == _MAX_PROTOCOL_RETRIES:
-                raise AgentFailedError(
-                    role_value=ctx.request.role.value,
-                    worktree_path=ctx.request.mount_path,
-                    namespace=ctx.request.session_namespace,
-                    failure_class="protocol_error",
-                    service_name=ctx.service.name,
-                    session_store=ctx.role_session.path,
-                    agent_invocation_log_path=getattr(ctx.runner, "log_path", None),
-                ) from exc
-            reprompt = ctx.protocol_reprompt_plan(str(exc))
-            reprompt_message = (
-                protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
-                if isinstance(reprompt, protocol_reprompt.UnsupportedProtocolReprompt)
-                else reprompt.message
-            )
-            return _RetrySignal(
-                prompt=reprompt_message,
-                run_kind=RunKind.RESUME,
-                retries_left=None,
-            )
-        if not ctx.request.preserve_session_on_completion:
-            ctx.role_session.clear_provider_state_and_signal_completion()
-        return parsed
-
-    async def _handle_timed_out(
-        self,
-        *,
-        request: RunRequest,
-        runner: ContainerRunner,
-        status_display: StatusDisplay,
-        retries_left: int,
-    ) -> _RetrySignal:
-        if retries_left <= 0:
-            raise AgentTimeoutError(
-                "Provider timed out",
-                role_value=request.role.value,
-            )
-        restart_num = self._cfg.timeout_retries - retries_left + 1
-        status_display.print(
-            request.name,
-            f"Timeout — restarting (attempt {restart_num}/{self._cfg.timeout_retries})",
-        )
-        new_run_kind = RunKind.RESUME
-        new_prompt = await self._render_runtime_prompt(
-            request=request,
-            runner=runner,
-            run_kind=new_run_kind,
-        )
-        return _RetrySignal(
-            prompt=new_prompt,
-            run_kind=new_run_kind,
-            retries_left=retries_left - 1,
-        )
-
-    async def _recover_stale_continuation(
-        self,
-        *,
-        role_session: RoleSession,
-        request: RunRequest,
-        runner: ContainerRunner,
-    ) -> tuple[RunRequest, str]:
-        role_session.start_fresh()
-        is_dirty = not self._git_service.is_working_tree_clean(request.mount_path)
-        if is_dirty:
-            request = dataclasses.replace(
-                request,
-                prompt=PromptInvocation(
-                    template=request.prompt.template,
-                    scope_args={
-                        **request.prompt.scope_args,
-                        "INTERRUPTED_WORK": build_interrupted_work_clause(
-                            RunKind.FRESH, is_dirty=True
-                        ),
-                    },
-                    kind=request.prompt.kind,
-                ),
-            )
-        new_prompt = await self._render_runtime_prompt(
-            request=request, runner=runner, run_kind=RunKind.FRESH
-        )
-        return request, new_prompt
-
-    async def _render_runtime_prompt(
-        self,
-        *,
-        request: RunRequest,
-        runner: ContainerRunner,
-        run_kind: RunKind,
-    ) -> str:
-        loop = asyncio.get_running_loop()
-
-        async def _container_exec(command: str) -> str:
-            return await loop.run_in_executor(
-                None,
-                runner.exec_command,
-                command,
-            )
-
-        return await render_prompt_invocation(
-            request.prompt,
-            renderer=self._renderer,
-            run_kind=run_kind,
-            exec_fn=_container_exec,
-        )
-
-    async def _run_runtime_once(
-        self,
-        *,
-        ctx: _RuntimeAttemptContext,
-        prompt: str,
-        run_kind: RunKind,
-    ) -> Any:  # noqa: ANN401  # returns agent_runtime.RuntimeOutcome or compatible duck-typed object
-        invocation_dir = ctx.request.mount_path
-        logged_lines = [False]
-
-        def _on_live_output(event: agent_runtime.AgentEvent) -> None:
-            if ctx.runner.on_live_output(event):
-                logged_lines[0] = True
-
-        with ctx.runner.open_work_invocation(
-            role=ctx.request.role,
-            run_kind=run_kind,
-            session_uuid=None,
-            prompt=prompt,
-        ):
-            if run_kind is RunKind.RESUME and ctx.role_session.is_resumable():
-                outcome = await ctx.runtime_client.run_resumed_session(
-                    ResumedSessionRunRequest(
-                        prompt=prompt,
-                        invocation_dir=invocation_dir,
-                        continuation=agent_runtime.Continuation(
-                            serialized=ctx.role_session.read_continuation()
-                        ),
-                        provider_auth=ctx.provider_auth,
-                        session_store=ctx.provider_state_dir,
-                        timeout_seconds=self._cfg.idle_timeout,
-                        on_live_output=_on_live_output,
-                        token=cast("Any", ctx.request.token),
-                        argv_transform=ctx.runner.provider_argv_transform(),
-                    )
-                )
-            else:
-                outcome = await ctx.runtime_client.run_new_session(
-                    NewSessionRunRequest(
-                        prompt=prompt,
-                        invocation_dir=invocation_dir,
-                        provider_selection=agent_runtime.ProviderSelection(
-                            service=ctx.request.service,
-                            model=ctx.resolved_model,
-                            effort=ctx.resolved_effort,
-                            auth=ctx.provider_auth,
-                        ),
-                        tool_policy=_runtime_tool_policy_for_role(ctx.request.role),
-                        session_store=ctx.provider_state_dir,
-                        timeout_seconds=self._cfg.idle_timeout,
-                        name=ctx.request.name,
-                        status_display=ctx.request.status_display,
-                        work_body=ctx.request.work_body,
-                        token=cast("Any", ctx.request.token),
-                        on_live_output=_on_live_output,
-                        argv_transform=ctx.runner.provider_argv_transform(),
-                    )
-                )
-            if not logged_lines[0] and outcome.result.output:
-                ctx.runner.append_chunk(outcome.result.output)
-        return outcome
 
     async def run_preflight(
         self,
