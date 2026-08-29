@@ -358,8 +358,7 @@ def _run_agent_with_live_event(tmp_path, monkeypatch, event: object):
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -447,8 +446,7 @@ def test_agent_runner_captures_raw_provider_output_for_all_live_events_in_log(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -524,8 +522,7 @@ def test_agent_runner_captures_final_response_when_live_output_has_no_raw_provid
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -642,8 +639,7 @@ def test_agent_runner_switches_runtime_rows_to_work_before_runtime_invocation(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -726,8 +722,7 @@ def test_agent_runner_parallel_runtime_rows_switch_to_work_independently(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
 
@@ -898,8 +893,7 @@ def test_agent_runner_routes_opencode_timeout_to_usage_limit_without_retries(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -991,8 +985,7 @@ def test_agent_runner_keeps_retry_loop_for_non_opencode_timeouts(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1080,8 +1073,7 @@ def test_agent_runner_retries_malformed_planner_output_with_planner_specific_pro
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="initial planner prompt"),
     )
     monkeypatch.setattr(
@@ -1227,7 +1219,8 @@ def test_stale_continuation_fresh_retry_succeeds_on_unrecoverable_error(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
@@ -1273,13 +1266,11 @@ def test_stale_continuation_fresh_retry_sets_interrupted_work_on_dirty_tree(
     status_display = RecordingStatusDisplay()
     render_calls: list[dict] = []
 
-    async def recording_render(*, request, runner, run_kind):
+    async def recording_render(invocation, *, renderer, run_kind, exec_fn):
         render_calls.append(
             {
                 "run_kind": run_kind,
-                "interrupted_work": request.prompt.scope_args.get(
-                    "INTERRUPTED_WORK", ""
-                ),
+                "interrupted_work": invocation.scope_args.get("INTERRUPTED_WORK", ""),
             }
         )
         return "prompt"
@@ -1287,7 +1278,9 @@ def test_stale_continuation_fresh_retry_sets_interrupted_work_on_dirty_tree(
     monkeypatch.setattr(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
-    monkeypatch.setattr(runner, "_render_runtime_prompt", recording_render)
+    monkeypatch.setattr(
+        "pycastle.agents.runner.render_prompt_invocation", recording_render
+    )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
         AsyncMock(return_value=None),
@@ -1380,7 +1373,8 @@ def test_stale_continuation_proactive_service_mismatch_skips_resumed_session(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
@@ -1452,13 +1446,11 @@ def test_stale_continuation_proactive_service_mismatch_sets_interrupted_work_on_
     status_display = RecordingStatusDisplay()
     render_calls: list[dict] = []
 
-    async def recording_render(*, request, runner, run_kind):
+    async def recording_render(invocation, *, renderer, run_kind, exec_fn):
         render_calls.append(
             {
                 "run_kind": run_kind,
-                "interrupted_work": request.prompt.scope_args.get(
-                    "INTERRUPTED_WORK", ""
-                ),
+                "interrupted_work": invocation.scope_args.get("INTERRUPTED_WORK", ""),
             }
         )
         return "prompt"
@@ -1483,7 +1475,9 @@ def test_stale_continuation_proactive_service_mismatch_sets_interrupted_work_on_
     monkeypatch.setattr(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
-    monkeypatch.setattr(runner, "_render_runtime_prompt", recording_render)
+    monkeypatch.setattr(
+        "pycastle.agents.runner.render_prompt_invocation", recording_render
+    )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
         AsyncMock(return_value=None),
@@ -1700,7 +1694,8 @@ def _setup_runner_for_token_tests(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
@@ -1793,8 +1788,7 @@ def test_agent_runner_uses_provider_state_dir_as_runtime_session_store(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1878,8 +1872,7 @@ def test_agent_runner_model_not_available_records_restriction_and_raises(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner,
-        "_render_runtime_prompt",
+        "pycastle.agents.runner.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1997,7 +1990,8 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
@@ -2401,9 +2395,7 @@ def test_run_propagates_non_docker_exceptions_from_session_build(tmp_path, monke
         )
 
 
-def test_run_with_runtime_client_propagates_non_oserror_from_session_exit(
-    tmp_path, monkeypatch
-):
+def test_run_propagates_non_oserror_from_session_exit(tmp_path, monkeypatch):
     mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2007"
     mount_path.mkdir(parents=True)
 
@@ -2421,7 +2413,8 @@ def test_run_with_runtime_client_propagates_non_oserror_from_session_exit(
         runner, "_build_session", lambda *_a, **_kw: _ExplodingExitDockerSession()
     )
     monkeypatch.setattr(
-        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
@@ -2498,7 +2491,8 @@ def _make_runner_for_policy_test(tmp_path, monkeypatch, *, issue: int, runtime_c
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        runner, "_render_runtime_prompt", AsyncMock(return_value="prompt")
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
