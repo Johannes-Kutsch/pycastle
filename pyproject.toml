@@ -140,6 +140,7 @@ max-args = 7
 "src/pycastle/commands/init.py" = ["PLC0415"]                     # lazy CLI submodule loading
 "src/pycastle/infrastructure/shutdown_hook.py" = ["PLC0415"]      # deferred urllib3 import for startup performance
 "src/pycastle/iteration/__init__.py" = ["PLC0415"]                # cycle: hard_agent_error_report → iteration
+"src/pycastle/iteration/failure_report_dispatch.py" = ["PLC0415"]  # cycle: failure_report_dispatch → iteration
 "src/pycastle/iteration/preflight.py" = ["PLC0415"]              # lazy import required for test-mock patchability at pycastle.infrastructure.worktree
 "src/pycastle/prompts/pipeline.py" = ["PLC0415"]                  # cycle: scope_args → pipeline
 "src/pycastle/prompts/scope_args.py" = ["PLC0415"]               # cycle: dispatch → scope_args → implement → ... → agents.runner → dispatch

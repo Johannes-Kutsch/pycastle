@@ -2902,7 +2902,7 @@ def test_run_iteration_failure_report_includes_evidence_path_and_copies_invocati
 def test_run_iteration_failure_report_normalizes_windows_style_evidence_path(
     tmp_path, git_svc, logger, monkeypatch
 ):
-    from pycastle import iteration
+    from pycastle.iteration import failure_report_dispatch
 
     calls: list[RunRequest] = []
     expected_path = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
@@ -2922,7 +2922,7 @@ def test_run_iteration_failure_report_normalizes_windows_style_evidence_path(
         return response_queue.pop(0)
 
     monkeypatch.setattr(
-        iteration,
+        failure_report_dispatch,
         "_EVIDENCE_DIR",
         PureWindowsPath(".pycastle-session") / "failure-report",
     )
