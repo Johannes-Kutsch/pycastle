@@ -13,14 +13,10 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import ImproveCandidate
-from pycastle.iteration.improve_role_session_store import (
-    CandidateItem,
-    CandidateList,
-    CandidateRecord,
-    ImproveRoleSessionStore,
-)
+from pycastle.iteration.improve_role_session_store import ImproveRoleSessionStore
 from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
+from tests.support.improve import _seed_candidate_list, _seed_candidate_record
 
 
 @pytest.fixture
@@ -32,46 +28,6 @@ def _make_driver(
     driver_dir: Path, *, no_candidate_report: bool = True
 ) -> ImprovePhaseDriver:
     return ImprovePhaseDriver(driver_dir, no_candidate_report=no_candidate_report)
-
-
-def _seed_candidate_list(
-    driver_dir: Path,
-    candidates: list[ScanCandidateItem],
-    *,
-    no_candidate: bool = False,
-    cursor: int = 0,
-) -> None:
-    """Pre-seed the candidate list and cursor to simulate a prior scan."""
-    store = ImproveRoleSessionStore(driver_dir)
-    store.write_candidate_list(
-        CandidateList(
-            candidates=tuple(
-                CandidateItem(rank=c.rank, title=c.title) for c in candidates
-            ),
-            no_candidate=no_candidate,
-        )
-    )
-    store.write_cursor(cursor)
-
-
-def _seed_candidate_record(
-    driver_dir: Path,
-    idx: int,
-    *,
-    spec_number: int | None = None,
-    labels_applied: bool = False,
-) -> None:
-    """Pre-seed a per-candidate record."""
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    store = ImproveRoleSessionStore(driver_dir)
-    record = CandidateRecord(
-        spec_number=spec_number,
-        spec_database_id=42 if spec_number is not None else None,
-        spec_title="Seeded" if spec_number is not None else "",
-        filed_tickets=(),
-        labels_applied=labels_applied,
-    )
-    store.write_candidate_record(idx, record)
 
 
 # ── start() sequence ──────────────────────────────────────────────────────────
@@ -92,6 +48,7 @@ def test_start_returns_none_when_all_candidates_done(driver_dir: Path) -> None:
         driver_dir,
         [ScanCandidateItem(rank=1, title="A")],
         cursor=1,  # past end
+        fingerprint=None,
     )
     driver = _make_driver(driver_dir)
     assert driver.start() is None
@@ -161,6 +118,7 @@ def test_terminal_after_all_candidates_cursor_at_end(driver_dir: Path) -> None:
         driver_dir,
         [ScanCandidateItem(rank=1, title="A"), ScanCandidateItem(rank=2, title="B")],
         cursor=2,
+        fingerprint=None,
     )
     driver = _make_driver(driver_dir)
     assert driver.start() is None
@@ -168,7 +126,7 @@ def test_terminal_after_all_candidates_cursor_at_end(driver_dir: Path) -> None:
 
 def test_terminal_after_no_candidate_report_done(driver_dir: Path) -> None:
     """Resume from no-candidate with report cursor=1 → immediately terminal."""
-    _seed_candidate_list(driver_dir, [], no_candidate=True, cursor=1)
+    _seed_candidate_list(driver_dir, [], no_candidate=True, cursor=1, fingerprint=None)
     driver = _make_driver(driver_dir)
     assert driver.start() is None
 
@@ -217,7 +175,9 @@ def test_candidate_list_is_at_role_level_not_inside_namespace(driver_dir: Path) 
 
 def test_candidate_with_no_record_starts_at_prd(driver_dir: Path) -> None:
     """Candidate with no per-candidate record starts from the spec (PRD) phase."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=1, title="A")], fingerprint=None
+    )
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
@@ -229,7 +189,9 @@ def test_candidate_with_no_record_starts_at_prd(driver_dir: Path) -> None:
 
 def test_candidate_with_existing_record_resumes_at_issues(driver_dir: Path) -> None:
     """Candidate whose record exists (PRD done) resumes at the slice (Issues) phase."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=1, title="A")], fingerprint=None
+    )
     _seed_candidate_record(driver_dir, 0)
     driver = _make_driver(driver_dir)
     step = driver.start()
@@ -242,7 +204,9 @@ def test_candidate_with_existing_record_resumes_at_issues(driver_dir: Path) -> N
 
 def test_candidate_with_spec_number_starts_at_issues_not_scan(driver_dir: Path) -> None:
     """Candidate whose record names a filed spec issue goes to Issues, never back to scan."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=1, title="A")], fingerprint=None
+    )
     _seed_candidate_record(driver_dir, 0, spec_number=99)
     driver = _make_driver(driver_dir)
     step = driver.start()
@@ -259,6 +223,7 @@ def test_advancing_one_candidate_leaves_other_unchanged(driver_dir: Path) -> Non
         driver_dir,
         [ScanCandidateItem(rank=1, title="A"), ScanCandidateItem(rank=2, title="B")],
         cursor=0,
+        fingerprint=None,
     )
     # Candidate 0 has completed Issues (cursor advanced to 1)
     driver_for_candidate_0 = _make_driver(driver_dir)
@@ -291,6 +256,7 @@ def test_all_candidates_complete_makes_no_further_dispatch(driver_dir: Path) -> 
         driver_dir,
         [ScanCandidateItem(rank=1, title="A"), ScanCandidateItem(rank=2, title="B")],
         cursor=0,
+        fingerprint=None,
     )
     # Both candidates are fully complete.
     _seed_candidate_record(driver_dir, 0, spec_number=10, labels_applied=True)
@@ -306,6 +272,7 @@ def test_cursor_at_end_of_list_is_terminal(driver_dir: Path) -> None:
         driver_dir,
         [ScanCandidateItem(rank=1, title="A")],
         cursor=1,  # Past end of single-element list.
+        fingerprint=None,
     )
     driver = _make_driver(driver_dir)
     assert driver.start() is None
@@ -338,7 +305,9 @@ def test_prd_step_is_follow_up_kind_after_scan(driver_dir: Path) -> None:
 
 def test_mid_prd_retry_is_role_prompt_kind(driver_dir: Path) -> None:
     """In-flight=02-spec → PRD step has kind=ROLE_PROMPT (mid-phase retry)."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=1, title="A")], fingerprint=None
+    )
     store = ImproveRoleSessionStore(driver_dir)
     store.write_in_flight("02-spec")
     driver = _make_driver(driver_dir)
@@ -350,7 +319,9 @@ def test_mid_prd_retry_is_role_prompt_kind(driver_dir: Path) -> None:
 
 def test_clean_prd_entry_is_follow_up_kind(driver_dir: Path) -> None:
     """No in-flight at PRD start → kind=FOLLOW_UP (cross-teardown resume)."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=1, title="A")], fingerprint=None
+    )
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
@@ -364,7 +335,9 @@ def test_unrecognised_in_flight_marker_is_treated_as_not_mid_phase(
     """An old '02-prd' in-flight marker (or any other unrecognised value) must
     not crash the driver and must be treated as 'not mid-spec' so the spec
     phase restarts fresh with kind=FOLLOW_UP instead of ROLE_PROMPT."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=1, title="A")], fingerprint=None
+    )
     store = ImproveRoleSessionStore(driver_dir)
     store.write_in_flight("02-prd")
     driver = _make_driver(driver_dir)
@@ -422,7 +395,9 @@ def test_record_outcome_clears_in_flight_after_scan(driver_dir: Path) -> None:
 
 def test_record_outcome_advances_cursor_after_issues(driver_dir: Path) -> None:
     """record_outcome for Issues increments cursor on disk."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="A")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=1, title="A")], fingerprint=None
+    )
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
@@ -454,7 +429,9 @@ def test_prd_step_carries_candidate_with_rank_title_and_no_spec_number(
     driver_dir: Path,
 ) -> None:
     """PRD step carries the candidate identity from the scan; spec_number is absent before filing."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=3, title="Foo Bar")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=3, title="Foo Bar")], fingerprint=None
+    )
     driver = _make_driver(driver_dir)
     step = driver.start()
     assert step is not None
@@ -466,7 +443,9 @@ def test_issues_step_carries_candidate_with_no_spec_number_before_filing(
     driver_dir: Path,
 ) -> None:
     """Issues step has spec_number=None when the candidate record has no spec yet."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=2, title="Alpha")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=2, title="Alpha")], fingerprint=None
+    )
     _seed_candidate_record(driver_dir, 0)  # record with spec_number=None
     driver = _make_driver(driver_dir)
     step = driver.start()
@@ -479,7 +458,9 @@ def test_issues_step_carries_spec_number_once_filing_has_produced_one(
     driver_dir: Path,
 ) -> None:
     """Issues step carries a real spec_number when filing has already produced one (resume after partial filing)."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=1, title="Beta")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=1, title="Beta")], fingerprint=None
+    )
     _seed_candidate_record(driver_dir, 0, spec_number=42)
     driver = _make_driver(driver_dir)
     step = driver.start()
@@ -495,6 +476,7 @@ def test_candidate_built_from_durable_scan_output_not_rederived(
     _seed_candidate_list(
         driver_dir,
         [ScanCandidateItem(rank=5, title="Persisted Title")],
+        fingerprint=None,
     )
     driver = _make_driver(driver_dir)
     step = driver.start()
@@ -507,7 +489,9 @@ def test_candidate_built_from_durable_scan_output_not_rederived(
 
 def test_mid_issues_resume_preserves_candidate(driver_dir: Path) -> None:
     """Mid-issues resume keeps candidate intact when overriding kind to ROLE_PROMPT."""
-    _seed_candidate_list(driver_dir, [ScanCandidateItem(rank=7, title="Resume Me")])
+    _seed_candidate_list(
+        driver_dir, [ScanCandidateItem(rank=7, title="Resume Me")], fingerprint=None
+    )
     _seed_candidate_record(driver_dir, 0, spec_number=99)
     store = ImproveRoleSessionStore(driver_dir)
     store.write_in_flight("03-tickets")
