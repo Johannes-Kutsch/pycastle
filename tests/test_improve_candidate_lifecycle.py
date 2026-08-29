@@ -35,7 +35,15 @@ from pycastle.iteration.improve_role_session_store import (
 from pycastle.iteration.preflight import PreflightAFK, PreflightReady
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import RoleSession
-from tests.support import FakeAgentRunner, StubPreflightCache, _make_deps
+from tests.support import (
+    FakeAgentRunner,
+    StubPreflightCache,
+    _draft_dir,
+    _make_deps,
+    _seed_candidate_list,
+    _write_slice_draft,
+    _write_spec_draft,
+)
 
 _VALID_BODY = "A" * 120
 _STATE_LABEL = "ready-for-agent"
@@ -73,42 +81,6 @@ class FakeFilingPort:
 
     def close_issue(self, issue_number: int) -> None:
         self.closed.append(issue_number)
-
-
-# ---------------------------------------------------------------------------
-# Draft-writing helpers
-# ---------------------------------------------------------------------------
-
-
-def _write_spec_draft(draft_dir: Path, *, body: str = _VALID_BODY) -> None:
-    draft_dir.mkdir(parents=True, exist_ok=True)
-    (draft_dir / "spec.md").write_text(
-        f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n  - {_STATE_LABEL}\n---\n\n{body}"
-    )
-
-
-def _write_slice_draft(draft_dir: Path, name: str, *, body: str = _VALID_BODY) -> None:
-    draft_dir.mkdir(parents=True, exist_ok=True)
-    (draft_dir / f"{name}.md").write_text(
-        f"---\ntitle: {name} Slice\nlabels:\n  - behavior-slice\n  - {_STATE_LABEL}\n---\n\n{body}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Seeding helpers
-# ---------------------------------------------------------------------------
-
-
-def _seed_candidate_list(
-    role_session_dir: Path,
-    candidates: list[CandidateItem],
-    *,
-    cursor: int = 0,
-) -> None:
-    role_session_dir.mkdir(parents=True, exist_ok=True)
-    store = ImproveRoleSessionStore(role_session_dir)
-    store.write_candidate_list(CandidateList(candidates=tuple(candidates)))
-    store.write_cursor(cursor)
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +326,7 @@ def test_reconcile_ac3_completes_partial_slice_candidate(tmp_path: Path) -> None
         ),
     )
 
-    draft_dir = pre_session.path / "_drafts"
+    draft_dir = _draft_dir(pre_session.path)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "slice-a")
 
@@ -420,7 +392,7 @@ def test_file_and_decide_advance_on_valid_drafts(
 ) -> None:
     """Valid drafts → Advance with completed_count incremented by 1."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    _write_spec_draft(role_session_dir / "_drafts")
+    _write_spec_draft(_draft_dir(role_session_dir))
 
     result = _run_file_and_decide(
         role_session_dir=role_session_dir,
@@ -437,7 +409,7 @@ def test_file_and_decide_stop_cap_reached(
 ) -> None:
     """When dispatched + completed reaches improve_max, Stop(cap-reached) is returned."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    _write_spec_draft(role_session_dir / "_drafts")
+    _write_spec_draft(_draft_dir(role_session_dir))
 
     # improve_dispatched_count=0, completed becomes 1 → 0+1 >= 1 → cap reached
     result = _run_file_and_decide(
@@ -458,7 +430,7 @@ def test_file_and_decide_stop_safe_sha_changed(
 ) -> None:
     """When mid-run preflight returns a different SHA, Stop(safe-sha-changed) is returned."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    _write_spec_draft(role_session_dir / "_drafts")
+    _write_spec_draft(_draft_dir(role_session_dir))
 
     result = _run_file_and_decide(
         role_session_dir=role_session_dir,
@@ -480,7 +452,7 @@ def test_file_and_decide_stop_safe_sha_non_preflight_ready(
 ) -> None:
     """Non-PreflightReady verdict from preflight → Stop(safe-sha-changed)."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    _write_spec_draft(role_session_dir / "_drafts")
+    _write_spec_draft(_draft_dir(role_session_dir))
 
     result = _run_file_and_decide(
         role_session_dir=role_session_dir,
@@ -507,7 +479,7 @@ def test_file_and_decide_stop_drafts_abandoned_after_correction_cap(
 ) -> None:
     """After 3 failed correction attempts, Stop(drafts-abandoned, completed_count=0) returned."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice", body="Too short.")
 
@@ -532,7 +504,7 @@ def test_file_and_decide_drafts_abandoned_clears_draft_dir(
 ) -> None:
     """After abandonment, the _drafts directory is removed."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice", body="Too short.")
 
@@ -555,7 +527,7 @@ def test_file_and_decide_correction_reprompts_agent_three_times(
 ) -> None:
     """Invalid drafts trigger exactly 3 correction reprompts before abandonment."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice", body="Too short.")
 
@@ -583,7 +555,7 @@ def test_file_and_decide_correction_valid_on_third_attempt_is_filed(
 ) -> None:
     """Drafts that become valid on the 3rd correction attempt are filed; Advance returned."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice", body="Too short.")
 
@@ -620,7 +592,7 @@ def test_file_and_decide_prev_spec_none_for_candidate_0(
 ) -> None:
     """Candidate 0 passes prev_spec=None — no cross-candidate dependency wired."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="First")])
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice")
 
@@ -663,7 +635,7 @@ def test_file_and_decide_prev_spec_forwarded_for_candidate_n(
         ),
     )
 
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice")
 
@@ -706,7 +678,7 @@ def test_file_and_decide_resume_skips_already_filed_spec(
         ),
     )
 
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
 
     github_svc = _make_github_svc()
@@ -744,7 +716,7 @@ def test_file_and_decide_resume_idempotent_when_labels_applied(
         ),
     )
 
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice")
 
@@ -771,7 +743,7 @@ def test_file_and_decide_fresh_filing_creates_spec_and_slices(
 ) -> None:
     """Fresh candidate: Stage 1a creates spec, Stage 1b creates slice."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice")
 
@@ -791,7 +763,7 @@ def test_file_and_decide_fresh_filing_labels_slice_not_spec(
 ) -> None:
     """Stage 2 applies state label to slice but not to spec (spec is tracking parent)."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice")
 
@@ -819,7 +791,7 @@ def test_file_and_decide_drafts_abandoned_files_failure_report(
 ) -> None:
     """After abandonment, an unrepairable-draft-set issue is filed on the tracker."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = role_session_dir / "_drafts"
+    draft_dir = _draft_dir(role_session_dir)
     _write_spec_draft(draft_dir)
     _write_slice_draft(draft_dir, "01-slice", body="Too short.")
 
