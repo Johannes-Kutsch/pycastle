@@ -6,6 +6,14 @@ from tests.support.git_errors import (
     PERMISSION_DENIED_STDERR,
     REPO_NOT_FOUND_STDERR,
 )
+from tests.support.improve import (
+    _draft_dir,
+    _make_filing_github_svc,
+    _seed_candidate_list,
+    _seed_candidate_record,
+    _write_slice_draft,
+    _write_spec_draft,
+)
 from tests.support.iteration import (
     FakeAgentRunner,
     RecordingLogger,
@@ -31,7 +39,13 @@ __all__ = [
     "RecordingLogger",
     "RecordingStatusDisplay",
     "StubPreflightCache",
+    "_draft_dir",
     "_make_deps",
+    "_make_filing_github_svc",
+    "_seed_candidate_list",
+    "_seed_candidate_record",
+    "_write_slice_draft",
+    "_write_spec_draft",
     "functional_git_svc",
     "make_scan_output",
     "plain_runtime_status_row_factory",
