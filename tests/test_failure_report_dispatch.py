@@ -14,7 +14,7 @@ from pathlib import Path, PureWindowsPath
 from unittest.mock import MagicMock, patch
 
 import pytest
-from agent_runtime.errors import AgentCredentialFailureError
+from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
 from pycastle.agent_credential_failure_routing import AgentCredentialFailureRouteResult
 from pycastle.agents.output_protocol import AgentRole, IssueOutput
@@ -22,6 +22,12 @@ from pycastle.config import Config, StageOverride
 from pycastle.errors import (
     AgentFailedError,
     AgentTimeoutError,
+    ModelNotAvailableError,
+    SetupPhaseError,
+    TransientAgentError,
+    UsageLimitError,
+    WorktreeError,
+    WorktreeTimeoutError,
 )
 from pycastle.iteration import (
     AbortedAgentCredentialFailure,
@@ -32,7 +38,7 @@ from pycastle.iteration.failure_report_dispatch import (
     translate_agent_failed_error_to_abort,
 )
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import GithubService
+from pycastle.services import GithubService, GithubServiceError
 from tests.support import (
     FakeAgentRunner,
     RecordingLogger,
@@ -338,21 +344,45 @@ def test_missing_worktree_mount_does_not_materialize_evidence_dir(tmp_path, logg
 # ── Crash funnel ──────────────────────────────────────────────────────────────
 
 
+@pytest.mark.parametrize(
+    "report_crash",
+    [
+        AgentTimeoutError("crash"),
+        TransientAgentError("crash"),
+        HardAgentError(message="crash"),
+        UsageLimitError(),
+        SetupPhaseError("phase", "crash"),
+        WorktreeError("crash"),
+        WorktreeTimeoutError("crash"),
+        ModelNotAvailableError(),
+        GithubServiceError("crash"),
+        OSError("crash"),
+    ],
+    ids=[
+        "AgentTimeoutError",
+        "TransientAgentError",
+        "HardAgentError",
+        "UsageLimitError",
+        "SetupPhaseError",
+        "WorktreeError",
+        "WorktreeTimeoutError",
+        "ModelNotAvailableError",
+        "GithubServiceError",
+        "OSError",
+    ],
+)
 def test_crash_funnel_logs_warning_and_internal_error_and_returns_aborted(
-    tmp_path, logger
+    tmp_path, logger, report_crash
 ):
-    """When the Failure-Report agent crashes with an exception in the funnel,
-    a status-display warning is printed, the error is logged via
-    deps.logger.log_internal_error, and AbortedAgentFailure(issue_number=None) is returned."""
+    """Each member of the crash-funnel exception list causes a status-display warning
+    to be printed, the error to be logged via deps.logger.log_internal_error, and
+    AbortedAgentFailure(issue_number=None) to be returned."""
     expected_path = _make_valid_worktree(tmp_path)
     original_error = AgentFailedError(
         role_value="improve",
         worktree_path=expected_path,
         failure_class="protocol_error",
         service_name="codex",
-    )
-    report_crash = AgentTimeoutError(
-        role_value="failure-report", worktree_path=tmp_path
     )
 
     runner = FakeAgentRunner([report_crash])
