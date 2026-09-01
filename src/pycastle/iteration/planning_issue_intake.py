@@ -117,7 +117,8 @@ class BlockerSummaryInputs:
 
 
 @dataclasses.dataclass(frozen=True)
-class PlanningReadinessResult:
+class PreparedPlanningIssueSet:
+    prepared_issues: tuple[dict, ...] = ()
     ready_candidates: tuple[dict, ...] = ()
     ready_readiness_by_number: dict[int, IssueReadiness] = dataclasses.field(
         default_factory=dict
@@ -128,11 +129,6 @@ class PlanningReadinessResult:
     blocker_summary_inputs: BlockerSummaryInputs = dataclasses.field(
         default_factory=BlockerSummaryInputs
     )
-
-
-@dataclasses.dataclass(frozen=True)
-class PreparedPlanningIssueSet(PlanningReadinessResult):
-    prepared_issues: tuple[dict, ...] = ()
 
 
 _BLOCKED_BY_LINE_RE = re.compile(r"^Blocked by\s+((?:#\d+[\s,]*)+)$")
@@ -263,14 +259,11 @@ def _needs_slice_type_actions(
 
 
 def _classify_planning_issue_set(
-    issues: list[dict], cfg: Config, *, prepare: bool
+    issues: list[dict], cfg: Config
 ) -> PreparedPlanningIssueSet:
     open_issue_numbers = {issue["number"] for issue in issues}
     prepared_issues = tuple(
-        _prepare_issue(issue, open_issue_numbers=open_issue_numbers)
-        if prepare
-        else issue
-        for issue in issues
+        _prepare_issue(issue, open_issue_numbers=open_issue_numbers) for issue in issues
     )
     issues_with_readiness: list[tuple[dict, IssueReadiness]] = []
     slice_malformed: list[dict] = []
@@ -342,24 +335,10 @@ def _planning_ready_readiness(
     return resolved_raw_readiness
 
 
-def evaluate_planning_readiness(
-    issues: list[dict], cfg: Config
-) -> PlanningReadinessResult:
-    classified = _classify_planning_issue_set(issues, cfg, prepare=False)
-    return PlanningReadinessResult(
-        ready_candidates=classified.ready_candidates,
-        ready_readiness_by_number=classified.ready_readiness_by_number,
-        malformed_body_issues=classified.malformed_body_issues,
-        malformed_slice_mode_issues=classified.malformed_slice_mode_issues,
-        label_sync_actions=classified.label_sync_actions,
-        blocker_summary_inputs=classified.blocker_summary_inputs,
-    )
-
-
 def prepare_planning_issue_set(
     issues: list[dict], cfg: Config
 ) -> PreparedPlanningIssueSet:
-    return _classify_planning_issue_set(issues, cfg, prepare=True)
+    return _classify_planning_issue_set(issues, cfg)
 
 
 def _prepare_issue(issue: dict, *, open_issue_numbers: set[int]) -> dict:
