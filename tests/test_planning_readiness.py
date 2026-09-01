@@ -2,12 +2,12 @@ from pycastle.config import Config
 from pycastle.iteration.planning_issue_intake import (
     BlockerSummaryInputs,
     LabelSyncAction,
-    evaluate_planning_readiness,
     planning_blocker_summary,
+    prepare_planning_issue_set,
 )
 
 
-def test_evaluate_planning_readiness_reports_malformed_bodies_and_excludes_them():
+def test_prepare_planning_issue_set_reports_malformed_bodies_and_excludes_them():
     cfg = Config()
     ready = {
         "number": 1,
@@ -38,20 +38,20 @@ def test_evaluate_planning_readiness_reports_malformed_bodies_and_excludes_them(
         "labels": ["refactor-slice"],
     }
 
-    result = evaluate_planning_readiness(
+    result = prepare_planning_issue_set(
         [ready, none_body, whitespace_body, at_marker_body],
         cfg,
     )
 
     assert result.ready_candidates == (ready,)
     assert result.malformed_body_issues == (
-        none_body,
+        {**none_body, "body": ""},
         whitespace_body,
         at_marker_body,
     )
 
 
-def test_evaluate_planning_readiness_reports_needs_info_label_actions():
+def test_prepare_planning_issue_set_reports_needs_info_label_actions():
     cfg = Config(needs_info_label="awaiting-details")
     malformed_unflagged = {
         "number": 2,
@@ -75,7 +75,7 @@ def test_evaluate_planning_readiness_reports_needs_info_label_actions():
         "labels": ["refactor-slice", "awaiting-details"],
     }
 
-    result = evaluate_planning_readiness(
+    result = prepare_planning_issue_set(
         [malformed_unflagged, well_formed_flagged, malformed_flagged],
         cfg,
     )
@@ -102,7 +102,7 @@ def test_evaluate_planning_readiness_reports_needs_info_label_actions():
     )
 
 
-def test_evaluate_planning_readiness_keeps_needs_info_adds_before_removes():
+def test_prepare_planning_issue_set_keeps_needs_info_adds_before_removes():
     cfg = Config(needs_info_label="awaiting-details")
     well_formed_flagged = {
         "number": 3,
@@ -119,7 +119,7 @@ def test_evaluate_planning_readiness_keeps_needs_info_adds_before_removes():
         "labels": ["behavior-slice"],
     }
 
-    result = evaluate_planning_readiness(
+    result = prepare_planning_issue_set(
         [well_formed_flagged, malformed_unflagged],
         cfg,
     )
@@ -146,7 +146,7 @@ def test_evaluate_planning_readiness_keeps_needs_info_adds_before_removes():
     )
 
 
-def test_evaluate_planning_readiness_both_malformed_body_and_missing_slice_produces_both_actions():
+def test_prepare_planning_issue_set_both_malformed_body_and_missing_slice_produces_both_actions():
     cfg = Config()
     issue = {
         "number": 1,
@@ -156,7 +156,7 @@ def test_evaluate_planning_readiness_both_malformed_body_and_missing_slice_produ
         "labels": [],
     }
 
-    result = evaluate_planning_readiness([issue], cfg)
+    result = prepare_planning_issue_set([issue], cfg)
 
     assert result.ready_candidates == ()
     assert result.malformed_body_issues == (issue,)
@@ -166,7 +166,7 @@ def test_evaluate_planning_readiness_both_malformed_body_and_missing_slice_produ
     assert (cfg.needs_slice_type_label, "add") in action_intents
 
 
-def test_evaluate_planning_readiness_syncs_needs_slice_type_for_missing_and_multiple_modes():
+def test_prepare_planning_issue_set_syncs_needs_slice_type_for_missing_and_multiple_modes():
     cfg = Config(needs_slice_type_label="needs-mode")
     ready_flagged = {
         "number": 1,
@@ -197,7 +197,7 @@ def test_evaluate_planning_readiness_syncs_needs_slice_type_for_missing_and_mult
         "labels": ["refactor-slice", "docs-slice", "needs-mode"],
     }
 
-    result = evaluate_planning_readiness(
+    result = prepare_planning_issue_set(
         [ready_flagged, missing_unflagged, multiple_unflagged, multiple_flagged],
         cfg,
     )
@@ -249,7 +249,7 @@ def test_evaluate_planning_readiness_syncs_needs_slice_type_for_missing_and_mult
     )
 
 
-def test_evaluate_planning_readiness_exposes_blocker_summary_readiness_groups():
+def test_prepare_planning_issue_set_exposes_blocker_summary_readiness_groups():
     from pycastle.issue_readiness import IssueReadinessKind
 
     cfg = Config()
@@ -275,7 +275,7 @@ def test_evaluate_planning_readiness_exposes_blocker_summary_readiness_groups():
         "labels": ["docs-slice", "behavior-slice"],
     }
 
-    result = evaluate_planning_readiness(
+    result = prepare_planning_issue_set(
         [missing_slice, short_body, doubly_malformed],
         cfg,
     )
@@ -297,7 +297,7 @@ def test_evaluate_planning_readiness_exposes_blocker_summary_readiness_groups():
     assert result.ready_readiness_by_number == {}
 
 
-def test_evaluate_planning_readiness_exposes_ready_readiness_by_number():
+def test_prepare_planning_issue_set_exposes_ready_readiness_by_number():
     from pycastle.issue_readiness import IssueReadinessKind, SliceMode
 
     cfg = Config()
@@ -309,7 +309,7 @@ def test_evaluate_planning_readiness_exposes_ready_readiness_by_number():
         "labels": ["docs-slice"],
     }
 
-    result = evaluate_planning_readiness([ready], cfg)
+    result = prepare_planning_issue_set([ready], cfg)
 
     assert result.ready_candidates == (ready,)
     assert result.ready_readiness_by_number[9].kind == IssueReadinessKind.READY_AFK
@@ -473,7 +473,6 @@ def test_prepare_planning_issue_set_normalizes_missing_fields_and_preserves_bloc
     }
 
     prepared = prepare_planning_issue_set([raw_issue], cfg)
-    legacy = evaluate_planning_readiness([raw_issue], cfg)
 
     assert prepared.prepared_issues == (
         {
@@ -485,13 +484,17 @@ def test_prepare_planning_issue_set_normalizes_missing_fields_and_preserves_bloc
         },
     )
     assert prepared.ready_candidates == ()
-    assert prepared.label_sync_actions == legacy.label_sync_actions
+    action_intents = [(a.label_name, a.intent) for a in prepared.label_sync_actions]
+    assert (cfg.needs_info_label, "add") in action_intents
+    assert (cfg.needs_slice_type_label, "add") in action_intents
     assert planning_blocker_summary(prepared.blocker_summary_inputs) == (
-        planning_blocker_summary(legacy.blocker_summary_inputs)
+        "Planning blockers: 1 missing exactly one slice-mode label; "
+        "1 body is below the minimum length floor."
     )
 
 
 def test_prepare_planning_issue_set_matches_compatibility_readiness_on_normalized_issue_facts():
+    from pycastle.issue_readiness import IssueReadinessKind
     from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
 
     cfg = Config()
@@ -511,17 +514,22 @@ def test_prepare_planning_issue_set_matches_compatibility_readiness_on_normalize
     }
 
     prepared = prepare_planning_issue_set([ready_issue, malformed_issue], cfg)
-    legacy = evaluate_planning_readiness(list(prepared.prepared_issues), cfg)
 
-    assert prepared.ready_candidates == legacy.ready_candidates
-    assert prepared.ready_readiness_by_number == legacy.ready_readiness_by_number
-    assert prepared.malformed_body_issues == legacy.malformed_body_issues
-    assert prepared.malformed_slice_mode_issues == legacy.malformed_slice_mode_issues
-    assert prepared.label_sync_actions == legacy.label_sync_actions
-    assert prepared.blocker_summary_inputs == legacy.blocker_summary_inputs
+    assert prepared.ready_candidates == (ready_issue,)
+    assert prepared.ready_readiness_by_number[31].kind == IssueReadinessKind.READY_AFK
+    assert prepared.malformed_body_issues == (malformed_issue,)
+    assert prepared.malformed_slice_mode_issues == (malformed_issue,)
+    action_intents = [(a.label_name, a.intent) for a in prepared.label_sync_actions]
+    assert (cfg.needs_info_label, "add") in action_intents
+    assert (cfg.needs_slice_type_label, "add") in action_intents
+    assert planning_blocker_summary(prepared.blocker_summary_inputs) == (
+        "Planning blockers: 1 missing exactly one slice-mode label; "
+        "1 body is below the minimum length floor."
+    )
 
 
 def test_prepare_planning_issue_set_reuses_compatibility_readiness_after_stale_blocker_stripping():
+    from pycastle.issue_readiness import IssueReadinessKind
     from pycastle.iteration.planning_issue_intake import prepare_planning_issue_set
 
     cfg = Config()
@@ -534,23 +542,20 @@ def test_prepare_planning_issue_set_reuses_compatibility_readiness_after_stale_b
     }
 
     prepared = prepare_planning_issue_set([raw_issue], cfg)
-    legacy = evaluate_planning_readiness(list(prepared.prepared_issues), cfg)
+    stripped_issue = {
+        "number": 33,
+        "title": "Ready after stale blocker stripping",
+        "body": "Summary\n\n" + ("x" * 120),
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
 
-    assert prepared.prepared_issues == (
-        {
-            "number": 33,
-            "title": "Ready after stale blocker stripping",
-            "body": "Summary\n\n" + ("x" * 120),
-            "comments": [],
-            "labels": ["behavior-slice"],
-        },
-    )
-    assert prepared.ready_candidates == legacy.ready_candidates
-    assert prepared.ready_readiness_by_number == legacy.ready_readiness_by_number
-    assert prepared.malformed_body_issues == legacy.malformed_body_issues
-    assert prepared.malformed_slice_mode_issues == legacy.malformed_slice_mode_issues
-    assert prepared.label_sync_actions == legacy.label_sync_actions
-    assert prepared.blocker_summary_inputs == legacy.blocker_summary_inputs
+    assert prepared.prepared_issues == (stripped_issue,)
+    assert prepared.ready_candidates == (stripped_issue,)
+    assert prepared.ready_readiness_by_number[33].kind == IssueReadinessKind.READY_AFK
+    assert prepared.malformed_body_issues == ()
+    assert prepared.malformed_slice_mode_issues == ()
+    assert prepared.label_sync_actions == ()
 
 
 def test_prepare_planning_issue_set_recomputes_readiness_from_normalized_prepared_issue():
