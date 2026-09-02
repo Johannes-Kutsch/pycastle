@@ -39,3 +39,16 @@ Phase 03 receives the PRD's number, title, body, comments inlined via `{{ISSUE_N
 > **Note (ADR 0036).** Phase 03 later moved back into the `main` namespace and now resumes the Scan/PRD transcript; the `issues` namespace is retired. ADR 0036 supersedes the phase-03-split above, but this ADR's namespace mechanism, strict phase-1→2 gate, and PRD-as-durable-handoff still stand.
 
 > **Amendment (multiple candidates + persisted candidate list).** The single-candidate model above is superseded by multi-candidate scanning (ADR 0058). Two earlier decisions are reversed: (1) **Persisting the candidate list is now permitted.** After scan, `ImprovePhaseDriver` writes a `_candidate_list` file (ordered `ScanCandidateItem`s) and a `_candidate_cursor` file to the role session dir, letting the host resume multi-candidate processing across interruptions without repeating the scan. The strict-transcript invariant that guarded the single-candidate handoff is satisfied differently — the scan transcript is forked into per-candidate namespaces (`candidate/N`) after scan completes, so each PRD and Issues phase runs in an isolated namespace copy rather than sharing `main`. (2) **The orphan-after-02 reset is retired.** The in-memory PRD number loss that motivated the reset is eliminated: the host records the PRD number in the per-candidate `candidates/<N>/_candidate_record` file immediately after phase 02 completes, so a crash between phase 02 and phase 03 no longer means unrecoverable loss. On resume the driver reads the record and proceeds to phase 03; the orphan PRD manual-cleanup trade-off no longer applies.
+
+> **Amendment (what the phase-1→2 gate actually asks).** The gate's intent stands: phase 2 must not write a spec
+> from partial context. Its *signal* changes. The exact-transcript check compared `_service_session_metadata.json`
+> against a derived provider session id, but nothing on the `AgentRunner` path ever writes that file —
+> `record_successful_run` is reachable only through `pycastle.runtime.run_prompt`, which has no caller — so the
+> check was unconditionally false in production and every application of the gate restarted improve from phase 1
+> and discarded the session. The gate now asks whether the candidate namespace has a continuation to resume
+> (`RoleSession(sandbox, IMPROVE, "candidate/<idx>").is_resumable()`), which is the signal `fork_namespace`
+> actually copies and the signal a resume actually consumes. Retiring the gate outright was rejected: ADR 0058
+> permits persisting the candidate list but satisfies this invariant "differently — the scan transcript is forked
+> into per-candidate namespaces", so it still leans on the forked transcript, and a spec written from a one-line
+> candidate title can be a spec for a different improvement than the one the scan found. Making the metadata real
+> is tracked separately; see ADR 0066.
