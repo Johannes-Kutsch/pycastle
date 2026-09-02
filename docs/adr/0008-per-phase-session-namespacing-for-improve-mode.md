@@ -52,3 +52,39 @@ Phase 03 receives the PRD's number, title, body, comments inlined via `{{ISSUE_N
 > into per-candidate namespaces", so it still leans on the forked transcript, and a spec written from a one-line
 > candidate title can be a spec for a different improvement than the one the scan found. Making the metadata real
 > is tracked separately; see ADR 0066.
+
+> **Amendment (a session namespace is path-valued).** This ADR introduced the namespace as "a small
+> string", and every namespace it named — `main`, `issues` — was one path segment. ADR 0058's
+> per-candidate fork then introduced `candidate/<idx>`, which is two. The writer side absorbed that
+> without comment (`RoleSession.path` and `provider_state_relpath` both join the namespace as a
+> relative path), but the reader that turns a role-session path back into `(worktree, role,
+> namespace)` still took a single segment, so `candidate/0` and `candidate/1` both read back as
+> `candidate`. Every candidate therefore derived the *same* session UUID, and the seed that
+> stabilises that UUID was written one level too high, at the `candidate/` group directory. The
+> collision is latent rather than live only because `AgentRunner` passes `session_uuid=None` and
+> discards the derived id; it becomes real the moment improve is routed through the resident runtime
+> (#2238).
+>
+> **A namespace is a relative path of one or more segments, not a single segment.** The reader takes
+> every segment after the role. Flattening improve's namespaces to one segment (`candidate-0`) was
+> the alternative and was rejected: the writer side is already path-valued, `candidate/N` is the
+> shape ADR 0058 and the glossary already committed to, and a flat scheme fixes a reader by moving
+> the on-disk layout. Path-valued also gives the reader a real inverse, which is what makes a
+> round-trip assertion meaningful.
+>
+> Consequences. (1) The reader is **one** implementation, not two — the mechanism sits in
+> `runtime_session.py` beside the forward formatters and parameterised by session root, with
+> `RoleSession.from_path` as the typed pycastle-flavoured wrapper. The duplicate in
+> `services/runtime_services.py` carried the identical defect, which is how one bug became two.
+> (2) A namespace has a **canonical form** — no leading or trailing separator, never absolute, no
+> `..`. This is not tidiness: the string is joined onto a path *and* folded into the UUID key, and
+> those two disagree about a trailing separator, so `candidate/0/` and `candidate/0` name one
+> directory but two session ids. (3) The reader's precondition — its input is a role-session
+> directory — is carried by `RoleSession.from_path` being the named inverse of `RoleSession.path`,
+> not by an active guard. A guard that rejected a trailing provider-named segment was rejected for
+> putting provider names inside a layout function, which `provider_state_relpath` deliberately
+> avoids. (4) `fork_namespace` keeps copying `_session_uuid_seed` into the target. A fork is a
+> transcript copy, not a reset, so inheriting the source's seed lineage is correct; the ids differ
+> because the namespace name is folded into the key. (5) The stray `improve/candidate/_session_uuid_seed`
+> left in reused sandboxes is inert after the fix and is not cleaned up — `RoleSession(sandbox,
+> IMPROVE).discard()` removes the whole `improve/` tree whenever improve resets.
