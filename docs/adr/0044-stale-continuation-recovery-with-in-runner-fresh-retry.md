@@ -31,3 +31,11 @@ The same loop arose when the configured service changed (e.g. a fallback from Co
 - The `INTERRUPTED_WORK` clause correctly fires for dirty working trees regardless of whether the Fresh restart was planned (service mismatch at plan time) or reactive (stale continuation caught at runtime).
 - The runner requires access to `git_svc` inside `_invoke_runtime_attempts` to perform the dirty-tree check.
 - `PromptInvocation.scope_args` must be mutable (or replaced) at recovery time to update `INTERRUPTED_WORK`; the runner constructs a new `PromptInvocation` with the updated scope_args dict rather than mutating the frozen dataclass.
+
+> **Amendment (ADR 0068 — what the proactive check reads).** The proactive service-mismatch detection above is
+> described as comparing `load_exact_transcript_service_name(role_session.path)` against `request.service`. That
+> name resolved to the `_service_session_metadata.json` reader, and nothing on the `AgentRunner` path ever wrote
+> that file, so the proactive trigger never fired in production and only the reactive
+> `ContinuationUnrecoverableError` catch was live. The comparison now reads **transcript ownership** — the single
+> service subdirectory holding provider state under the role session — which the runtime creates as a byproduct of
+> running rather than as a record it must remember to write. The decision is unchanged; only its signal is.
