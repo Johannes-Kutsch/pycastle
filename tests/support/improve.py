@@ -25,11 +25,7 @@ _PYPROJECT_CONTENT = "[project]\nname='t'\n"
 
 
 def _seed_worktree_project_files(role_session_dir: Path) -> None:
-    """Write pyproject.toml to the worktree root when role_session_dir has the expected structure.
-
-    Needed so that worktrees seeded directly (bypassing the fake create-worktree path)
-    satisfy the worktree contents check, which requires pyproject.toml or requirements.txt.
-    """
+    """Ensure pyproject.toml exists so paths that bypass fake create-worktree pass the contents check."""
     if role_session_dir.parent.name != SESSION_DIR_NAME:
         return
     worktree_root = role_session_dir.parent.parent
