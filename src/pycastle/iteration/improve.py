@@ -1,7 +1,7 @@
 import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import Protocol, cast
 
 from pycastle.agents.output_protocol import (
     AgentOutput,
@@ -51,12 +51,9 @@ from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import compute_candidate_budget
 from pycastle.runtime_session import session_uuid
-from pycastle.services import GitService, ServiceRegistry
+from pycastle.services import GitService
 from pycastle.services.github_service import GithubService
-from pycastle.session import RoleSession, has_exact_transcript_match
-
-if TYPE_CHECKING:
-    from pycastle.services.runtime_services import AgentService
+from pycastle.session import RoleSession
 
 IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
@@ -399,7 +396,6 @@ class _ImproveDeps(Protocol):
     repo_root: Path
     git_svc: GitService
     github_svc: GithubService
-    service_registry: ServiceRegistry | None
     preflight_cache: PreflightCache
     improve_dispatched_count: int
 
@@ -414,23 +410,11 @@ def _needs_candidate_gate(step: "Step | None") -> bool:
 
 def _candidate_transcript_ok(
     step: "Step",
-    deps: "_ImproveDeps",
     sandbox_path: Path,
 ) -> bool:
-    service_registry = deps.service_registry
-    service = (
-        service_registry[deps.cfg.improve_override.service]
-        if service_registry is not None
-        else None
-    )
-    if service is None:
-        return False
-    return has_exact_transcript_match(
-        worktree=sandbox_path,
-        role=AgentRole.IMPROVE,
-        session_namespace=step.cfg.namespace,
-        service=cast("AgentService", service),
-    )
+    return RoleSession(
+        sandbox_path, AgentRole.IMPROVE, step.cfg.namespace
+    ).is_resumable()
 
 
 def _improve_step_body(
@@ -530,7 +514,7 @@ async def improve_phase(
 
             step = driver.start()
             if _needs_candidate_gate(step) and not _candidate_transcript_ok(
-                cast("Step", step), deps, sandbox_path
+                cast("Step", step), sandbox_path
             ):
                 deps.status_display.print(
                     "Improve",

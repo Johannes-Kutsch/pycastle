@@ -422,6 +422,7 @@ def _seed_exact_phase_1_main_transcript(
         )
     if service_name == "claude":
         (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+    role_session.write_continuation(provider_session_id)
 
 
 def test_improve_resumes_at_prd_after_scan_picked(tmp_path, git_svc):
@@ -600,6 +601,74 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_selected_service_m
         "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
     )
     assert not RoleSession(wt, AgentRole.IMPROVE).path.exists()
+
+
+# ── Issue #2241: Phase-1→2 gate rebased on continuation presence ──────────────
+
+
+def test_spec_phase_dispatches_when_candidate_namespace_has_continuation(
+    tmp_path, git_svc
+):
+    """AC1: candidate namespace with _continuation → Spec Agent dispatched, session survives."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
+    RoleSession(wt, AgentRole.IMPROVE, "candidate/0").write_continuation(
+        "session-token"
+    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc)
+
+    _run(deps)
+
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
+    assert len(runner.calls) == 2
+
+
+def test_spec_phase_restarts_from_phase_1_when_candidate_namespace_has_no_continuation(
+    tmp_path, git_svc
+):
+    """AC2: candidate namespace without _continuation → restart notice, session discarded,
+    next improve pass begins at Scan Agent."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
+    status_display = MagicMock()
+    runner = FakeAgentRunner([], preflight_responses=[[]])
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, status_display=status_display)
+
+    result = _run(deps)
+
+    assert isinstance(result, ImproveContinue)
+    assert runner.calls == []
+    status_display.print.assert_any_call(
+        "Improve",
+        "Restarting improve from phase 1 because the phase 1 transcript handoff is unavailable for a clean phase 2 entry.",
+    )
+    assert not RoleSession(wt, AgentRole.IMPROVE).path.exists()
+
+    follow_up = _make_runner_with_drafts(
+        make_scan_output(), CompletionOutput(), CompletionOutput()
+    )
+    follow_up_deps = _make_deps(tmp_path, follow_up, git_svc=git_svc)
+    _run(follow_up_deps)
+    assert follow_up.calls[0].prompt.template == PromptTemplate.IMPROVE_SCAN
+
+
+def test_spec_phase_dispatches_regardless_of_service_sidecar(tmp_path, git_svc):
+    """AC3: gate checks continuation only; service sidecar is immaterial."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
+    # _continuation only — no codex thread_id sidecar or rollout files seeded
+    RoleSession(wt, AgentRole.IMPROVE, "candidate/0").write_continuation(
+        "session-token"
+    )
+    runner = _make_runner_with_drafts(CompletionOutput(), CompletionOutput())
+    cfg = Config(improve_override=StageOverride(service="codex", effort="medium"))
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, cfg=cfg)
+
+    _run(deps)
+
+    assert runner.calls[0].prompt.template == PromptTemplate.IMPROVE_SPEC
+    assert len(runner.calls) == 2
 
 
 def test_improve_resumes_at_report_after_scan_no_candidate(tmp_path, git_svc):
