@@ -42,7 +42,6 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.execution_contracts import (
-    PromptRunRequest,
     RuntimeInvocationDependencies,
     RuntimeModelDisplayMetadata,
     RuntimeRunSession,
@@ -60,7 +59,6 @@ from pycastle.infrastructure.preflight_failure_interpreter import (
 from pycastle.managed_worktree_mount_policy import enforce_managed_worktree_mount
 from pycastle.prompts.dispatch import PromptInvocation, render_prompt_invocation
 from pycastle.prompts.pipeline import PromptRenderer
-from pycastle.runtime import run_prompt as run_runtime_prompt
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services import GitService
 from pycastle.services._wake_time import compute_wake_time
@@ -495,18 +493,6 @@ class AgentRunner:
             role=request.role,
         )
         return await translate_run_outcome(self._run(request), request)
-
-    async def run_prompt(self, request: PromptRunRequest) -> str:
-        self._enforce_role_mount_precondition(
-            name=request.name,
-            mount_path=request.worktree.host_path,
-            role=AgentRole.IMPLEMENTER,
-        )
-        return await run_runtime_prompt(
-            runner=cast("Any", self),
-            service_registry=self._runtime_service_registry(),
-            request=request,
-        )
 
     async def _run(self, request: RunRequest) -> AgentOutput:
         invocation = request.prompt

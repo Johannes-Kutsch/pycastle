@@ -29,7 +29,6 @@ from pycastle.execution_contracts import (
     RuntimeRunSession,
     RuntimeStatusRow,
     RuntimeStatusRowConfig,
-    TextOutputAdapter,
     WorkSessionState,
     WorktreeMount,
 )
@@ -39,11 +38,9 @@ from pycastle.stage_priority_chain import iter_stage_chain
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
-    from pathlib import Path
 
     from pycastle.config.types import StageOverride
     from pycastle.services.service_registry import ServiceRegistry
-    from pycastle.session_planning import ResidentSessionPlan
 
 __all__ = [
     "OneShotRunRequest",
@@ -52,14 +49,9 @@ __all__ = [
     "PromptRunRequest",
     "PromptRunSession",
     "PromptRuntimeExecutionAdapter",
-    "ResidentRunRequest",
-    "ResidentRunResult",
-    "ResidentRuntimeMetadata",
     "ToolPolicy",
     "WorktreeMount",
     "run_one_shot",
-    "run_prompt",
-    "run_resident_prompt",
 ]
 
 OneShotRunRequest = PromptRunRequest
@@ -81,91 +73,6 @@ class OneShotRunResult:
     selected_service_path: tuple[str, ...]
     raw_output: Any
     runtime_metadata: OneShotRuntimeMetadata
-
-
-@dataclasses.dataclass(frozen=True)
-class ResidentRuntimeMetadata:
-    service_name: str
-    provider_session_id: str | None
-    run_kind: RunKind
-    session_namespace: str
-    exact_transcript_match: bool
-
-
-@dataclasses.dataclass(frozen=True)
-class ResidentRunResult:
-    output: str
-    runtime_metadata: ResidentRuntimeMetadata
-
-
-@dataclasses.dataclass(frozen=True)
-class ResidentRunRequest:
-    prompt: str
-    worktree: WorktreeMount
-    model: str
-    effort: str
-    session_plan: ResidentSessionPlan
-    tool_policy: ToolPolicy = ToolPolicy.FULL
-    name: str = "Runtime Agent"
-    status_display: Any = None
-    work_body: str = ""
-    token: CancellationToken | None = None
-
-    @property
-    def mount_path(self) -> Path:
-        return self.worktree.host_path
-
-
-@dataclasses.dataclass
-class _ResidentPreparedProviderRunSession:
-    run_kind: RunKind
-    provider_session_id: str | None
-    _session_plan: ResidentSessionPlan = dataclasses.field(repr=False)
-
-    def record_provider_session_id(self, provider_session_id: str) -> None:
-        self.provider_session_id = provider_session_id
-        self._session_plan.record_provider_session_id(provider_session_id)
-
-    def record_successful_run(self) -> None:
-        self._session_plan.record_successful_run()
-
-
-@dataclasses.dataclass
-class _ResidentPreparedRuntimeState(PreparedRunSessionState):
-    session_plan: ResidentSessionPlan
-    provider_state_dir_container_path: str | None
-    _initial_session: _ResidentPreparedProviderRunSession = dataclasses.field(
-        init=False,
-        repr=False,
-    )
-
-    def __post_init__(self) -> None:
-        self._initial_session = _ResidentPreparedProviderRunSession(
-            run_kind=self.session_plan.run_kind,
-            provider_session_id=self.session_plan.provider_session_id,
-            _session_plan=self.session_plan,
-        )
-
-    @property
-    def provider_session_id(self) -> str | None:
-        return self._initial_session.provider_session_id
-
-    def prepare_for_run(self) -> None:
-        self.session_plan.prepare_provider_state_dir()
-        self._initial_session.provider_session_id = (
-            self.session_plan.prepared_provider_session_id()
-        )
-
-    def initial_provider_run_session(self) -> PreparedProviderRunSession:
-        return self._initial_session
-
-    def resumable_provider_run_session(self) -> PreparedProviderRunSession:
-        return self._initial_session
-
-    def protocol_reprompt_provider_run_session(
-        self,
-    ) -> PreparedProviderRunSession | None:
-        return None
 
 
 def _selected_service_path(
@@ -278,59 +185,6 @@ class _OneShotOutputAdapter:
         return result
 
 
-async def run_prompt(
-    *,
-    runner: PromptRuntimeExecutionAdapter,
-    service_registry: ServiceRegistry,
-    request: PromptRunRequest,
-) -> str:
-    resolved_override = service_registry.resolve(
-        request.override,
-        _time_module.now_local(),
-    )
-    role = AgentRole.IMPLEMENTER
-    resolve_service = _require_execution_adapter_method(runner, "resolve_service")
-    build_work_dependencies = _require_execution_adapter_method(
-        runner,
-        "build_work_dependencies",
-    )
-    resolved_service = resolve_service(resolved_override.service)
-    dependencies = build_work_dependencies(
-        name=request.name,
-        model=resolved_override.model,
-        effort=resolved_override.effort,
-        service=resolved_service,
-    )
-    run_session = RuntimeRunSession(
-        mount_path=request.mount_path,
-        role=role,
-        session_namespace=request.session_namespace,
-        service=resolved_service,
-        container_workspace=dependencies.container_workspace,
-        run_session_plan=request.run_session_plan,
-    )
-
-    return await _execute_runtime_request(
-        RuntimeInvocationRequest(
-            name=request.name,
-            mount_path=request.mount_path,
-            role=role,
-            service=resolved_service,
-            model=resolved_override.model,
-            effort=resolved_override.effort,
-            output_adapter=TextOutputAdapter(
-                prompt=request.prompt,
-                tool_policy=request.tool_policy,
-            ),
-            dependencies=dependencies,
-            status_display=request.status_display,
-            token=request.token,
-            work_body=request.work_body,
-            run_session=run_session,
-        )
-    )
-
-
 async def run_one_shot(
     *,
     runner: PromptRuntimeExecutionAdapter,
@@ -430,71 +284,6 @@ async def run_one_shot(
             raw_output=raw_output,
             runtime_metadata=output_adapter.runtime_metadata,
         )
-
-
-async def run_resident_prompt(
-    *,
-    runner: PromptRuntimeExecutionAdapter,
-    request: ResidentRunRequest,
-) -> ResidentRunResult:
-    build_work_dependencies = _require_execution_adapter_method(
-        runner,
-        "build_work_dependencies",
-    )
-    plan = request.session_plan
-    dependencies = build_work_dependencies(
-        name=request.name,
-        model=request.model,
-        effort=request.effort,
-        service=plan.service,
-    )
-    prepared_session = _ResidentPreparedRuntimeState(
-        session_plan=plan,
-        provider_state_dir_container_path=plan.provider_state_dir_container_path(
-            dependencies.container_workspace
-        ),
-    )
-    resident_dependencies = dataclasses.replace(
-        dependencies,
-        prepare_session=lambda _run_session: prepared_session,
-    )
-    run_session = RuntimeRunSession(
-        mount_path=plan.worktree,
-        role=plan.role,
-        session_namespace=plan.namespace,
-        service=plan.service,
-        container_workspace=dependencies.container_workspace,
-        run_session_plan=plan,
-    )
-    output = await _execute_runtime_request(
-        RuntimeInvocationRequest(
-            name=request.name,
-            mount_path=plan.worktree,
-            role=plan.role,
-            service=plan.service,
-            model=request.model,
-            effort=request.effort,
-            output_adapter=TextOutputAdapter(
-                prompt=request.prompt,
-                tool_policy=request.tool_policy,
-            ),
-            dependencies=resident_dependencies,
-            status_display=request.status_display,
-            token=request.token,
-            work_body=request.work_body,
-            run_session=run_session,
-        )
-    )
-    return ResidentRunResult(
-        output=output,
-        runtime_metadata=ResidentRuntimeMetadata(
-            service_name=plan.service.name,
-            provider_session_id=prepared_session.provider_session_id,
-            run_kind=plan.run_kind,
-            session_namespace=plan.namespace,
-            exact_transcript_match=plan.exact_transcript_match,
-        ),
-    )
 
 
 _RETRY_TIMEOUT = object()
