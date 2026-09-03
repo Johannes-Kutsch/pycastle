@@ -13,6 +13,7 @@ from pycastle.iteration.improve_role_session_store import (
     ImproveRoleSessionStore,
 )
 from pycastle.session import RoleSession
+from pycastle.session.role import SESSION_DIR_NAME
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -20,6 +21,23 @@ if TYPE_CHECKING:
 _VALID_BODY = "A" * 120
 _STATE_LABEL = "ready-for-agent"
 _DRAFTS_SUBDIR = "_drafts"
+_PYPROJECT_CONTENT = "[project]\nname='t'\n"
+
+
+def _seed_worktree_project_files(role_session_dir: Path) -> None:
+    """Write pyproject.toml to the worktree root when role_session_dir has the expected structure.
+
+    Needed so that worktrees seeded directly (bypassing the fake create-worktree path)
+    satisfy the worktree contents check, which requires pyproject.toml or requirements.txt.
+    """
+    if role_session_dir.parent.name != SESSION_DIR_NAME:
+        return
+    worktree_root = role_session_dir.parent.parent
+    if (
+        not (worktree_root / "pyproject.toml").exists()
+        and not (worktree_root / "requirements.txt").exists()
+    ):
+        (worktree_root / "pyproject.toml").write_text(_PYPROJECT_CONTENT)
 
 
 def _draft_dir(role_session_dir: Path) -> Path:
@@ -49,6 +67,7 @@ def _seed_candidate_list(
     fingerprint: str | None = "abc123",
 ) -> None:
     role_session_dir.mkdir(parents=True, exist_ok=True)
+    _seed_worktree_project_files(role_session_dir)
     normalised = tuple(
         c if isinstance(c, CandidateItem) else CandidateItem(rank=c.rank, title=c.title)
         for c in candidates
@@ -86,6 +105,7 @@ def _seed_candidate_record(
 def _write_malformed_candidate_list(role_session_dir: Path, content: str) -> None:
     """Write raw (unparseable) text to the candidate list file for edge-case tests."""
     role_session_dir.mkdir(parents=True, exist_ok=True)
+    _seed_worktree_project_files(role_session_dir)
     (role_session_dir / "_candidate_list").write_text(content, encoding="utf-8")
 
 

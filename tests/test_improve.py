@@ -754,6 +754,7 @@ def test_improve_fresh_run_on_malformed_progress(tmp_path, git_svc):
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     role_session_dir = RoleSession(wt, AgentRole.IMPROVE).path
     role_session_dir.mkdir(parents=True, exist_ok=True)
+    (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
     (role_session_dir / "_phase_progress").write_text(
         "corrupted-data", encoding="utf-8"
     )
@@ -904,6 +905,7 @@ def test_fingerprint_gate_discards_session_when_safe_sha_changes(tmp_path, git_s
     wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
     role_session_dir = RoleSession(wt, AgentRole.IMPROVE).path
     role_session_dir.mkdir(parents=True, exist_ok=True)
+    (wt / "pyproject.toml").write_text("[project]\nname='t'\n")
     (role_session_dir / "_phase_progress").write_text(
         "01-scan:picked", encoding="utf-8"
     )
