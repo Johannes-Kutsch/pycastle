@@ -786,7 +786,10 @@ def _codex_auth_seed_action(
     )
 
 
+KNOWN_SERVICE_NAMES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
+
 __all__ = [
+    "KNOWN_SERVICE_NAMES",
     "AgentService",
     "ClaudeService",
     "CodexService",

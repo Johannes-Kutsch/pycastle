@@ -79,6 +79,20 @@ class ServiceSessionStore(ServiceResumeIdentityStore):
         metadata = parse_service_session_metadata(payload, service_name)
         return None if metadata is None else metadata["service"]
 
+    def transcript_owner_service_name(
+        self, known_service_names: frozenset[str]
+    ) -> str | None:
+        if not self.path.is_dir():
+            return None
+        qualifying = [
+            entry.name
+            for entry in self.path.iterdir()
+            if entry.is_dir()
+            and entry.name in known_service_names
+            and any(f.is_file() for f in entry.rglob("*"))
+        ]
+        return qualifying[0] if len(qualifying) == 1 else None
+
     # --- Extended interface ---
 
     def get_service_session_id(self, service_name: str) -> str | None:
