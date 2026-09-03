@@ -377,7 +377,7 @@ def is_worktree_reusable(path: Path, branch: str, git_svc: GitService) -> bool:
     return current == branch and any_role_dir_present(path)
 
 
-def _deletes_branch_on_teardown(lifecycle: BranchWorktreeLifecycle) -> bool:
+def _branch_is_disposable(lifecycle: BranchWorktreeLifecycle) -> bool:
     return lifecycle is not BranchWorktreeLifecycle.DURABLE_ISSUE
 
 
@@ -434,7 +434,7 @@ def _teardown_worktree_branch(
         except GitServiceError:
             _branch_has_commits = True
         teardown_worktree(deps.git_svc, deps.repo_root, path)
-        if _deletes_branch_on_teardown(lifecycle) or not _branch_has_commits:
+        if _branch_is_disposable(lifecycle) or not _branch_has_commits:
             deps.git_svc.delete_branch(identity.branch, deps.repo_root)
 
 
@@ -457,7 +457,7 @@ async def managed_worktree(
             )
         resolved_identity = worktree_identity(branch, deps.repo_root, name=name)
     path = resolved_identity.path
-    if _deletes_branch_on_teardown(lifecycle):
+    if _branch_is_disposable(lifecycle):
         _cleanup_stale_named_worktree(
             deps.git_svc,
             deps.repo_root,
