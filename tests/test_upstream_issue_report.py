@@ -53,19 +53,6 @@ def test_bug_and_triage_labels_constant():
     assert BUG_AND_TRIAGE_LABELS == ["bug", "needs-triage"]
 
 
-# ── Env block ─────────────────────────────────────────────────────────────────
-
-
-def test_env_block_contains_expected_sections():
-    from pycastle.upstream_issue_report import _env_block
-
-    block = _env_block()
-    assert "## Environment" in block
-    assert "- pycastle:" in block
-    assert "- Python:" in block
-    assert "- OS:" in block
-
-
 # ── Dedupe: existing open issue is returned ───────────────────────────────────
 
 
@@ -146,6 +133,9 @@ def test_filer_prepends_env_block_to_body():
 
     filed_body = svc.create_issue_in.call_args.args[2]
     assert "## Environment" in filed_body
+    assert "- pycastle:" in filed_body
+    assert "- Python:" in filed_body
+    assert "- OS:" in filed_body
     assert "caller-supplied body" in filed_body
     env_pos = filed_body.index("## Environment")
     body_pos = filed_body.index("caller-supplied body")
@@ -463,17 +453,24 @@ def test_agent_credential_failure_body_redacts_credentials():
     assert "[REDACTED]" in body
 
 
-def test_diagnostic_mount_fallback_body_contains_expected_sections():
-    from unittest.mock import MagicMock
+def test_diagnostic_mount_fallback_body_contains_expected_sections(tmp_path):
+    from pathlib import Path
 
+    from pycastle.managed_worktree_mount_policy import ManagedWorktreeMountRejected
     from pycastle.upstream_issue_report import diagnostic_mount_fallback_body
 
-    rejection = MagicMock()
-    rejection.expected_mount_path = "/worktrees/feat"
-    rejection.mount_path = "/bad/path"
-    rejection.expected_worktrees_dir = "/worktrees"
-    rejection.rejection_code = "invalid_mount_path"
-    rejection.detail = "Expected parent /worktrees, got /bad."
+    rejection = ManagedWorktreeMountRejected(
+        caller="diagnose-agent",
+        role="implement",
+        repo_root=tmp_path,
+        mount_path=Path("/bad/path"),
+        expected_worktrees_dir=Path("/worktrees"),
+        expected_mount_path=Path("/worktrees/feat"),
+        rejection_code="invalid_mount_path",
+        invariant="mount must be inside worktrees dir",
+        detail="Expected parent /worktrees, got /bad.",
+        actual_parent=Path("/bad"),
+    )
 
     body = diagnostic_mount_fallback_body(
         caller="diagnose-agent",
