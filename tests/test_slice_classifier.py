@@ -18,6 +18,7 @@ from pycastle.agents.slice_classifier import (
 from pycastle.config.types import StageOverride
 from pycastle.execution_contracts import (
     RuntimeInvocationDependencies,
+    RuntimeRunSession,
     WorkSessionState,
     WorktreeMount,
 )
@@ -333,3 +334,172 @@ def test_classify_slice_prompt_excludes_other_issue_metadata(tmp_path):
     # or parent body can reach the prompt.
     assert "ready-for-agent" not in prompt
     assert "needs-triage" not in prompt
+
+
+# ── Sessionless one-shot infrastructure ──────────────────────────────────────
+
+
+class _DirCreatingPreparedRunSessionState:
+    """Simulates production prepare_session: wipes and recreates role session dir on prepare_for_run()."""
+
+    def __init__(self, run_session: RuntimeRunSession) -> None:
+        import shutil
+
+        self._run_session = run_session
+        self._shutil = shutil
+        self.provider_state_dir_container_path: str | None = "/state/implementer/claude"
+
+    def prepare_for_run(self) -> None:
+        role_dir = (
+            self._run_session.mount_path
+            / ".pycastle-session"
+            / self._run_session.role.value
+        )
+        if self._run_session.session_namespace:
+            role_dir = role_dir / self._run_session.session_namespace
+        if role_dir.exists():
+            self._shutil.rmtree(role_dir)
+        role_dir.mkdir(parents=True)
+
+    def initial_provider_run_session(self) -> object:
+        return _make_session_mock().initial_provider_run_session()
+
+    def resumable_provider_run_session(self) -> object:
+        return _make_session_mock().resumable_provider_run_session()
+
+    def protocol_reprompt_provider_run_session(self) -> None:
+        return None
+
+
+def _deps_with_dir_creation(
+    runner: _CapturingRunner,
+    captured_state_paths: list[str | None],
+) -> RuntimeInvocationDependencies:
+    def _capturing_build_session(
+        mount_path: object,
+        service: object,
+        provider_state_dir_container_path: str | None,
+    ) -> MagicMock:
+        captured_state_paths.append(provider_state_dir_container_path)
+        return MagicMock()
+
+    return RuntimeInvocationDependencies(
+        container_workspace="/workspace",
+        timeout_retries=0,
+        stage_key_for_role=lambda _: None,
+        prepare_session=_DirCreatingPreparedRunSessionState,  # type: ignore[arg-type]
+        build_session=_capturing_build_session,  # type: ignore[arg-type]
+        build_runner=lambda *_: runner,  # type: ignore[arg-type]
+        get_git_identity=lambda: ("Test User", "test@example.com"),
+        status_display_factory=plain_status_display_factory,
+        status_row_factory=plain_runtime_status_row_factory,
+        handle_provider_account_exhaustion=lambda svc, err: svc.mark_exhausted(
+            err.reset_time
+        ),
+    )
+
+
+class _TrackingAdapter:
+    def __init__(self, service: _SimpleService, runner: _CapturingRunner) -> None:
+        self._service = service
+        self._runner = runner
+        self.captured_state_paths: list[str | None] = []
+
+    def resolve_service(self, service_name: str = "") -> _SimpleService:
+        return self._service
+
+    def build_work_dependencies(
+        self, *, name: str, model: str, effort: str, service: object
+    ) -> RuntimeInvocationDependencies:
+        return _deps_with_dir_creation(self._runner, self.captured_state_paths)
+
+
+# ── Behavior 6: classify_slice leaves no Implementer session dir ──────────────
+
+
+def test_classify_slice_leaves_no_implementer_session_dir_in_plan_sandbox(tmp_path):
+    service = _SimpleService("claude")
+    runner = _CapturingRunner(return_value='{"mode": "behavior"}')
+    adapter = _TrackingAdapter(service, runner)
+    registry = ServiceRegistry({"claude": service})
+    override = StageOverride(service="claude", model="haiku", effort="low")
+    worktree = _make_worktree(tmp_path)
+
+    asyncio.run(
+        classify_slice(
+            issue_title="Add retry logic",
+            issue_body="Retry on transient errors.",
+            worktree=worktree,
+            plan_override=override,
+            runner=adapter,
+            service_registry=registry,
+        )
+    )
+
+    role_dir = worktree.host_path / ".pycastle-session" / "implementer"
+    assert not role_dir.exists(), (
+        "classify_slice must not create the Implementer role session dir in the plan-sandbox"
+    )
+
+
+# ── Behavior 7: classify_slice preserves existing Implementer session dir ─────
+
+
+def test_classify_slice_preserves_existing_implementer_session_dir(tmp_path):
+    service = _SimpleService("claude")
+    runner = _CapturingRunner(return_value='{"mode": "refactor"}')
+    adapter = _TrackingAdapter(service, runner)
+    registry = ServiceRegistry({"claude": service})
+    override = StageOverride(service="claude", model="haiku", effort="low")
+    worktree = _make_worktree(tmp_path)
+
+    role_dir = worktree.host_path / ".pycastle-session" / "implementer"
+    role_dir.mkdir(parents=True)
+    sentinel = role_dir / "_done"
+    sentinel.write_text("prior-work")
+
+    asyncio.run(
+        classify_slice(
+            issue_title="Rename method",
+            issue_body="Rename foo to bar.",
+            worktree=worktree,
+            plan_override=override,
+            runner=adapter,
+            service_registry=registry,
+        )
+    )
+
+    assert role_dir.exists(), (
+        "Existing Implementer session dir must survive classification"
+    )
+    assert sentinel.read_text() == "prior-work", (
+        "Contents of existing Implementer session dir must be intact after classification"
+    )
+
+
+# ── Behavior 8: classify_slice mounts no provider state in role session dir ───
+
+
+def test_classify_slice_mounts_no_provider_state_in_role_session_dir(tmp_path):
+    service = _SimpleService("claude")
+    runner = _CapturingRunner(return_value='{"mode": "docs"}')
+    adapter = _TrackingAdapter(service, runner)
+    registry = ServiceRegistry({"claude": service})
+    override = StageOverride(service="claude", model="haiku", effort="low")
+    worktree = _make_worktree(tmp_path)
+
+    asyncio.run(
+        classify_slice(
+            issue_title="Update docs",
+            issue_body="Add section on new feature.",
+            worktree=worktree,
+            plan_override=override,
+            runner=adapter,
+            service_registry=registry,
+        )
+    )
+
+    assert adapter.captured_state_paths == [None], (
+        "One-shot run must pass None provider state path to session builder "
+        f"(got {adapter.captured_state_paths!r})"
+    )

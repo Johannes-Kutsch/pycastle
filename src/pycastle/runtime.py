@@ -102,6 +102,41 @@ def _require_execution_adapter_method(
     )
 
 
+@dataclasses.dataclass
+class _SessionlessProviderRunSession:
+    run_kind: RunKind = RunKind.FRESH
+    provider_session_id: str | None = None
+
+    def record_provider_session_id(self, provider_session_id: str) -> None:
+        pass
+
+    def record_successful_run(self) -> None:
+        pass
+
+
+@dataclasses.dataclass
+class _SessionlessPreparedRunSessionState:
+    provider_state_dir_container_path: str | None = None
+
+    def prepare_for_run(self) -> None:
+        pass
+
+    def initial_provider_run_session(self) -> _SessionlessProviderRunSession:
+        return _SessionlessProviderRunSession()
+
+    def resumable_provider_run_session(self) -> _SessionlessProviderRunSession:
+        return _SessionlessProviderRunSession()
+
+    def protocol_reprompt_provider_run_session(
+        self,
+    ) -> _SessionlessProviderRunSession | None:
+        return None
+
+
+def _sessionless_prepare_session(_: object) -> _SessionlessPreparedRunSessionState:
+    return _SessionlessPreparedRunSessionState()
+
+
 class _OneShotOutputAdapter:
     def __init__(
         self,
@@ -233,6 +268,10 @@ async def run_one_shot(
             effort=resolved_override.effort,
             service=resolved_service,
         )
+        sessionless_deps = dataclasses.replace(
+            dependencies,
+            prepare_session=_sessionless_prepare_session,
+        )
         run_session = RuntimeRunSession(
             mount_path=request.mount_path,
             role=role,
@@ -259,7 +298,7 @@ async def run_one_shot(
                     model=resolved_override.model,
                     effort=resolved_override.effort,
                     output_adapter=output_adapter,
-                    dependencies=dependencies,
+                    dependencies=sessionless_deps,
                     status_display=request.status_display,
                     token=attempt_token,
                     work_body=request.work_body,
