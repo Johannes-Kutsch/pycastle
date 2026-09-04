@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import dataclasses
 import platform
-import re
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
@@ -30,27 +29,6 @@ if TYPE_CHECKING:
     from pycastle.services import GithubService
 
 BUG_AND_TRIAGE_LABELS: list[str] = ["bug", "needs-triage"]
-
-# ── Credential-redaction helpers (private) ────────────────────────────────────
-
-_CREDENTIAL_KEY_RE = (
-    r"(?:api(?:[_ -]?|)key|access(?:[_ -]?|)token|refresh(?:[_ -]?|)token|"
-    r"token|secret|password)"
-)
-_CREDENTIAL_NAMED_VALUE_RE = re.compile(
-    rf'(?i)(["\']?{_CREDENTIAL_KEY_RE}["\']?\s*[:=]\s*)(["\']?)([^"\'\s,;}}]+)(\2)'
-)
-_CREDENTIAL_AFTER_LABEL_RE = re.compile(
-    r"(?i)\b(access token|refresh token|api key|token|secret|password)\s+([A-Za-z0-9._:-]{8,})"
-)
-_SK_STYLE_TOKEN_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
-
-
-def _redact_credential_material(text: str) -> str:
-    redacted = _CREDENTIAL_NAMED_VALUE_RE.sub(r"\1\2[REDACTED]\4", text)
-    redacted = _CREDENTIAL_AFTER_LABEL_RE.sub(r"\1 [REDACTED]", redacted)
-    return _SK_STYLE_TOKEN_RE.sub("[REDACTED]", redacted)
-
 
 # ── Env-block helper ─────────────────────────────────────────────────────────
 
@@ -228,16 +206,12 @@ def agent_credential_failure_body(
 ) -> str:
     """Body for an operator-actionable agent credential failure report.
 
-    Redacts credential material from observations and the raw result envelope
-    before composing the body.
+    Inputs must be already-redacted; credential redaction is owned by the
+    caller (``agent_credential_failure_routing``), not by this composer.
     """
-    redacted_observations = tuple(
-        (source_stream, _redact_credential_material(raw_text))
-        for source_stream, raw_text in observations
-    )
     observation_blocks = "\n\n".join(
         f"### {source_stream}\n\n```\n{raw_text}\n```"
-        for source_stream, raw_text in redacted_observations
+        for source_stream, raw_text in observations
     )
     return (
         "Repair local agent credentials/account access and rerun pycastle.\n\n"
@@ -250,7 +224,7 @@ def agent_credential_failure_body(
         f"Status: {status_code}\n\n"
         f"{observation_blocks}\n\n"
         "### Raw result envelope\n\n"
-        f"```json\n{_redact_credential_material(raw_result_envelope)}\n```\n\n"
+        f"```json\n{raw_result_envelope}\n```\n\n"
     )
 
 

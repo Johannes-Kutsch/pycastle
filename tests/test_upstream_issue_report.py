@@ -436,23 +436,6 @@ def test_agent_credential_failure_body_contains_expected_sections():
     assert "## Environment" not in body
 
 
-def test_agent_credential_failure_body_redacts_credentials():
-    from pycastle.upstream_issue_report import agent_credential_failure_body
-
-    body = agent_credential_failure_body(
-        service_name="claude",
-        role_name="agent",
-        status_code=None,
-        raw_result_envelope='{"token": "sk-abc123def456"}',
-        remediation="Fix credentials.",
-        observations=(("stderr", 'api_key: "sk-secret12345678"'),),
-    )
-
-    assert "sk-abc123def456" not in body
-    assert "sk-secret12345678" not in body
-    assert "[REDACTED]" in body
-
-
 def test_diagnostic_mount_fallback_body_contains_expected_sections(tmp_path):
     from pathlib import Path
 
