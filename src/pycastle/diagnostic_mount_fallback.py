@@ -10,14 +10,16 @@ if TYPE_CHECKING:
 
 from pycastle.managed_worktree_mount_policy import (
     ManagedWorktreeMountAccepted,
-    ManagedWorktreeMountRejected,
     decide_managed_worktree_mount,
     should_reject_managed_worktree_mount,
 )
 from pycastle.services.github_service import GithubServiceError
-from pycastle.upstream_issue_filing import file_deduped_upstream_issue
-
-_DIAGNOSTIC_MOUNT_FALLBACK_LABELS = ["bug", "needs-triage"]
+from pycastle.upstream_issue_report import (
+    BUG_AND_TRIAGE_LABELS,
+    UpstreamIssueReport,
+    diagnostic_mount_fallback_body,
+    file_upstream_issue,
+)
 
 
 @dataclass(frozen=True)
@@ -62,47 +64,24 @@ def decide_diagnostic_mount_dispatch(
         f"[pycastle] {caller} skipped for role {role_name}: "
         f"managed mount {decision.rejection_code}"
     )
-    body = _build_fallback_issue_body(
+    body = diagnostic_mount_fallback_body(
         caller=caller,
         diagnostic_role=diagnostic_role,
         role_name=role_name,
         original_failure_summary=original_failure_summary,
         rejection=decision,
     )
-    issue_number = file_deduped_upstream_issue(
-        dedupe_query=title,
-        title=title,
-        body=body,
-        labels=_DIAGNOSTIC_MOUNT_FALLBACK_LABELS,
-        github_svc=github_svc,
+    issue_number = file_upstream_issue(
+        UpstreamIssueReport(
+            dedupe_key=title,
+            title=title,
+            body=body,
+            labels=BUG_AND_TRIAGE_LABELS,
+            github_svc=github_svc,
+        )
     )
     if issue_number is None:
         raise GithubServiceError(
             "create_issue_in failed in decide_diagnostic_mount_dispatch"
         )
     return DiagnosticMountFallbackIssue(issue_number=issue_number, title=title)
-
-
-def _build_fallback_issue_body(
-    *,
-    caller: str,
-    diagnostic_role: str,
-    role_name: str,
-    original_failure_summary: str,
-    rejection: ManagedWorktreeMountRejected,
-) -> str:
-    return (
-        "## Diagnostic fallback\n\n"
-        "No diagnostic agent ran.\n\n"
-        f"Pycastle skipped `{caller}` because the managed worktree mount "
-        "preconditions were invalid before provider setup.\n\n"
-        f"- Role: {role_name}\n"
-        f"- Diagnostic role: {diagnostic_role}\n"
-        f"- Expected mount path: {rejection.expected_mount_path}\n"
-        f"- Provided mount path: {rejection.mount_path}\n"
-        f"- Expected worktrees dir: {rejection.expected_worktrees_dir}\n"
-        f"- Reason: {rejection.rejection_code}\n"
-        f"- Rejection detail: {rejection.detail}\n\n"
-        "## Original failure summary\n\n"
-        f"{original_failure_summary}\n"
-    )
