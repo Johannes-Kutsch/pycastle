@@ -2689,11 +2689,10 @@ def test_fingerprint_match_with_continuation_resumes_merger_session(
     git_svc = _make_functional_git_svc(tmp_path)
     git_svc.try_merge.return_value = False
     _pre_seed_sandbox(tmp_path, "sha-abc", 1, with_continuation=True)
-    # Mark as preserved-failure so _cleanup_stale_named_worktree skips removal for REUSABLE
     sandbox_path = _merge_sandbox_path(tmp_path, Config(), 1)
-    (sandbox_path / ".pycastle-session" / ".preserved-failure").write_text("")
     git_svc.get_branch_sha.return_value = "sha-abc"
-    # Register sandbox so _create_worktree returns early (skips fresh create)
+    # Stub get_current_branch so is_worktree_reusable sees the right branch and role dir
+    git_svc.get_current_branch.return_value = "pycastle/merge-sandbox-issue-1"
     git_svc.list_worktrees.side_effect = lambda repo: [sandbox_path]
 
     seen = _continuation_present_in_sandbox(tmp_path, git_svc, github_svc)

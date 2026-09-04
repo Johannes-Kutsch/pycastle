@@ -390,8 +390,6 @@ def _cleanup_stale_named_worktree(
     repo_path: Path,
     wt_path: Path,
     branch: str,
-    *,
-    lifecycle: BranchWorktreeLifecycle,
 ) -> None:
     """Remove stale worktree state when the named lifecycle requires a fresh branch.
 
@@ -400,11 +398,6 @@ def _cleanup_stale_named_worktree(
     fresh at the caller-supplied SHA, regardless of what a prior run left
     behind. Best-effort: subsequent _create_worktree surfaces real errors.
     """
-    if (
-        lifecycle is not BranchWorktreeLifecycle.REPLACEABLE_MERGE_SANDBOX
-        and is_failure_worktree_preserved(wt_path)
-    ):
-        return
     try:
         registered = svc.list_worktrees(repo_path)
     except GitServiceError:
@@ -470,7 +463,6 @@ async def managed_worktree(
                 deps.repo_root,
                 path,
                 resolved_identity.branch,
-                lifecycle=lifecycle,
             )
         _create_worktree(
             deps.git_svc,

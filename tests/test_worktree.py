@@ -2902,6 +2902,58 @@ def test_reusable_sandbox_keeps_preserved_failure_state_intact(repo):
     assert (wt_dir / ".pycastle-session" / ".preserved-failure").is_file()
 
 
+def test_reusable_sandbox_with_marker_but_no_role_dir_rebuilds_at_new_sha(repo):
+    """Reusable sandbox with preserved-failure marker but no role session dir is rebuilt."""
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "main_marker_rebuild.txt").write_text("marker rebuild")
+    _git(repo, "add", "main_marker_rebuild.txt")
+    _git(repo, "commit", "-m", "main marker rebuild")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    wt_dir = repo / "pycastle" / ".worktrees" / "improve-sandbox"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/improve-sandbox",
+            str(wt_dir),
+            sha_base,
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    # Plant only the preserved-failure marker — no role session dir
+    (wt_dir / ".pycastle-session").mkdir(parents=True)
+    (wt_dir / ".pycastle-session" / ".preserved-failure").write_text("")
+
+    head_inside: list[str] = []
+
+    async def _run():
+        async with reusable_sandbox_worktree(
+            "improve-sandbox",
+            sha=sha_main,
+            deps=deps,
+            operating_branch="HEAD",
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main], (
+        f"worktree HEAD was {head_inside[0]!r}, expected sha_main={sha_main!r}"
+    )
+    assert not (wt_dir / ".pycastle-session" / ".preserved-failure").exists()
+
+
 def test_reusable_sandbox_tears_down_clean_branch_on_success(repo):
     """Reusable sandboxes remove their clean worktree and branch after success."""
     cfg = Config()
