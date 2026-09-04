@@ -450,10 +450,16 @@ def _announce_candidate(
     if candidate_idx == last_announced_idx:
         return last_announced_idx
     title = step.candidate.title if step.candidate else ""
-    status_display.print(
-        "Improve",
-        f'→ candidate {candidate_idx + 1}/{candidate_count} "{title}"',
-    )
+    if step.kind is PromptKind.ROLE_PROMPT:
+        status_display.print(
+            "Improve",
+            f'→ resuming candidate {candidate_idx + 1}/{candidate_count} "{title}" at {step.cfg.display_name}',
+        )
+    else:
+        status_display.print(
+            "Improve",
+            f'→ candidate {candidate_idx + 1}/{candidate_count} "{title}"',
+        )
     return candidate_idx
 
 
