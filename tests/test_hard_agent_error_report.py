@@ -360,8 +360,6 @@ def test_body_contains_status_agent_service_lines():
 
 
 def test_bug_filer_called_with_bug_report_labels():
-    from pycastle.bug_reporter import BUG_REPORT_LABEL_LIST
-
     filer = RecordingBugFiler(return_url=None)
     display = RecordingStatusDisplay()
     err = _make_err(message="error")
@@ -369,4 +367,4 @@ def test_bug_filer_called_with_bug_report_labels():
     translate_hard_agent_error_to_abort(err, Config(), display, filer)
 
     _, _, labels = filer.calls[0]
-    assert labels == BUG_REPORT_LABEL_LIST
+    assert labels == ["bug", "needs-triage"]

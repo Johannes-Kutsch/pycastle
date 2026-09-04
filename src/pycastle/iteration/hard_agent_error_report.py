@@ -14,8 +14,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from pycastle.bug_reporter import BUG_REPORT_LABEL_LIST
 from pycastle.iteration import AbortedHardApiError
+from pycastle.upstream_issue_report import BUG_AND_TRIAGE_LABELS, hard_agent_error_body
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -90,13 +90,13 @@ def translate_hard_agent_error_to_abort(
     service_label = _SERVICE_LABEL_MAP.get(service_name, service_name)
 
     title = f"[pycastle] {service_label} API {effective_status_code}: {first_line}"
-    body = (
-        f"## Raw result envelope\n\n```json\n{raw}\n```\n\n"
-        f"Status: {effective_status_code}\n"
-        f"Agent: {err.caller or '<unknown>'}\n"
-        f"Service: {service_name}\n"
+    body = hard_agent_error_body(
+        raw=raw,
+        effective_status_code=effective_status_code,
+        caller=err.caller,
+        service_name=service_name,
     )
-    url = bug_filer(title, body, BUG_REPORT_LABEL_LIST, cfg=cfg)
+    url = bug_filer(title, body, BUG_AND_TRIAGE_LABELS, cfg=cfg)
 
     status_code_str = (
         str(effective_status_code) if effective_status_code is not None else "no status"
