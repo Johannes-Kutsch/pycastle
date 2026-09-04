@@ -129,13 +129,17 @@ def _file_or_reuse_agent_credential_failure_issue(
             reused_issue_number=existing[0],
         )
 
+    redacted_observations = tuple(
+        (source_stream, _redact_credential_material(raw_text))
+        for source_stream, raw_text in observations
+    )
     body = _upstream_agent_credential_failure_body(
         service_name=service_name,
         role_name=role_name,
         status_code=status_code,
-        raw_result_envelope=raw_result_envelope,
+        raw_result_envelope=_redact_credential_material(raw_result_envelope),
         remediation=remediation,
-        observations=observations,
+        observations=redacted_observations,
     )
     number = file_upstream_issue(
         UpstreamIssueReport(
