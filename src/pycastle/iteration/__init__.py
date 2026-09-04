@@ -292,7 +292,13 @@ async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
         operating_branch=deps.cfg.operating_branch,
     )
 
-    if not open_issues and not in_flight:
+    # An interrupted improve cycle widens the idle gate: even when ready-for-agent
+    # tickets exist (filed by an earlier improve pass), improve owns this iteration.
+    # `had_pending_work` distinguishes this path from the normal idle path so that
+    # planning is deferred to the following iteration rather than chained in the
+    # same one (which would let improve-filed tickets preempt remaining candidates).
+    had_pending_work = bool(open_issues) or bool(in_flight)
+    if (not open_issues and not in_flight) or deps.improve_cycle_interrupted:
         try:
             outcome = await _run_improve_phase(deps)
         except UsageLimitError as err:
@@ -305,6 +311,11 @@ async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
             raise
         if outcome is not None:
             return outcome
+        if had_pending_work:
+            # We entered via improve_cycle_interrupted with existing open issues.
+            # Return now so planning picks them up in the following iteration with
+            # the flag cleared, rather than preempting remaining candidates.
+            return Continue()
         open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
         prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
         prepared_open_issues = list(prepared_issue_set.prepared_issues)
