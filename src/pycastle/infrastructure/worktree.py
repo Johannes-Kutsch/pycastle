@@ -381,6 +381,10 @@ def _branch_is_disposable(lifecycle: BranchWorktreeLifecycle) -> bool:
     return lifecycle is not BranchWorktreeLifecycle.DURABLE_ISSUE
 
 
+def _rebuilds_on_enter(lifecycle: BranchWorktreeLifecycle) -> bool:
+    return lifecycle is BranchWorktreeLifecycle.REPLACEABLE_MERGE_SANDBOX
+
+
 def _cleanup_stale_named_worktree(
     svc: GitService,
     repo_path: Path,
@@ -457,23 +461,17 @@ async def managed_worktree(
             )
         resolved_identity = worktree_identity(branch, deps.repo_root, name=name)
     path = resolved_identity.path
-    if _branch_is_disposable(lifecycle):
-        _cleanup_stale_named_worktree(
-            deps.git_svc,
-            deps.repo_root,
-            path,
-            resolved_identity.branch,
-            lifecycle=lifecycle,
-        )
-        _create_worktree(
-            deps.git_svc,
-            deps.repo_root,
-            path,
-            resolved_identity.branch,
-            sha,
-            operating_branch=operating_branch,
-        )
-    elif not is_worktree_reusable(path, resolved_identity.branch, deps.git_svc):
+    if _rebuilds_on_enter(lifecycle) or not is_worktree_reusable(
+        path, resolved_identity.branch, deps.git_svc
+    ):
+        if _branch_is_disposable(lifecycle):
+            _cleanup_stale_named_worktree(
+                deps.git_svc,
+                deps.repo_root,
+                path,
+                resolved_identity.branch,
+                lifecycle=lifecycle,
+            )
         _create_worktree(
             deps.git_svc,
             deps.repo_root,

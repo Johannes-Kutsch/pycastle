@@ -3256,3 +3256,56 @@ def test_reused_issue_branch_with_own_commits_keeps_its_base(real_branch_deps):
     _durable_worktree(real_branch_deps, new_tip, "working")
 
     assert _git(repo, "rev-parse", "pycastle/issue-99") == own_tip
+
+
+# ── AC4: reusable sandbox reuse when branch + role dir present ────────────────
+
+
+def test_reusable_sandbox_reuses_worktree_when_branch_and_role_dir_present(repo):
+    """A reusable sandbox whose expected branch is checked out and whose role session
+    dir is present is entered without being removed or recreated; files seeded in its
+    session dir are readable inside the context."""
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    wt_dir = repo / "pycastle" / ".worktrees" / "plan-sandbox"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/plan-sandbox",
+            str(wt_dir),
+            sha_main,
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    session_file = wt_dir / ".pycastle-session" / "planner" / "_continuation"
+    session_file.parent.mkdir(parents=True)
+    session_file.write_text("continuation-data")
+
+    session_readable: list[bool] = []
+
+    async def _run():
+        async with reusable_sandbox_worktree(
+            SandboxWorktreeIntent.PLAN,
+            sha=sha_main,
+            deps=deps,
+            operating_branch="HEAD",
+        ) as path:
+            session_readable.append(
+                (path / ".pycastle-session" / "planner" / "_continuation").is_file()
+            )
+
+    asyncio.run(_run())
+
+    assert session_readable == [True], (
+        "Session dir must survive reuse; files seeded before entry must be readable inside the context"
+    )
