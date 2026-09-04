@@ -59,7 +59,6 @@ from pycastle.infrastructure.preflight_failure_interpreter import (
 from pycastle.managed_worktree_mount_policy import enforce_managed_worktree_mount
 from pycastle.prompts.dispatch import PromptInvocation, render_prompt_invocation
 from pycastle.prompts.pipeline import PromptRenderer
-from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services import GitService
 from pycastle.services._wake_time import compute_wake_time
 from pycastle.services.runtime_services import AgentService, ClaudeService
@@ -74,7 +73,6 @@ from pycastle.session.run_dispatch import (
     RunSessionRequest,
     prepare_run_session,
 )
-from pycastle.session.service_session_store import ServiceSessionStore
 from pycastle.session_planning import ProviderRunStatePlan
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
@@ -549,15 +547,9 @@ class AgentRunner:
                 Path(_CONTAINER_WORKSPACE)
                 / role_session.path.relative_to(request.mount_path)
             )
-        _seed_state = service.provider_session_state(
-            ProviderSessionStateRequest(
-                role_session=ServiceSessionStore(role_session.path, role_session),
-                provider_state_dir=provider_state_dir,
-                has_resumable_provider_state=role_session.is_resumable(),
-            )
-        )
-        if _seed_state.auth_seed_action is not None:
-            _seed_state.auth_seed_action.apply()
+        _auth_seed_action = service.auth_seed_action(provider_state_dir)
+        if _auth_seed_action is not None:
+            _auth_seed_action.apply()
         provider_auth = _provider_auth_from_env(
             service.build_env(state_dir_container_path)
         )

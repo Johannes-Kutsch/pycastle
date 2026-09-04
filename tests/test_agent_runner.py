@@ -98,6 +98,10 @@ class _FakeService:
             auth_seed_action=None,
         )
 
+    def auth_seed_action(self, provider_state_dir) -> None:
+        del provider_state_dir
+        return None
+
     def summary_line(self) -> str | None:
         return None
 
