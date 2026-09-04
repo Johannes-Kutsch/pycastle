@@ -3309,3 +3309,165 @@ def test_reusable_sandbox_reuses_worktree_when_branch_and_role_dir_present(repo)
     assert session_readable == [True], (
         "Session dir must survive reuse; files seeded before entry must be readable inside the context"
     )
+
+
+# ── AC5: reusable sandbox rebuilds when no role dir or different branch ────────
+
+
+def test_reusable_sandbox_rebuilds_when_no_role_dir_present(repo):
+    """AC5: A reusable sandbox whose expected branch is checked out but whose role
+    session dir is absent is rebuilt at the requested safe SHA."""
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "advance.txt").write_text("advance")
+    _git(repo, "add", "advance.txt")
+    _git(repo, "commit", "-m", "advance main")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    wt_dir = repo / "pycastle" / ".worktrees" / "improve-sandbox"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/improve-sandbox",
+            str(wt_dir),
+            sha_base,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    # No role session dir is created — is_worktree_reusable returns False
+
+    head_inside: list[str] = []
+
+    async def _run():
+        async with reusable_sandbox_worktree(
+            SandboxWorktreeIntent.IMPROVE,
+            sha=sha_main,
+            deps=deps,
+            operating_branch="HEAD",
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main], (
+        f"Sandbox without a role session dir must be rebuilt at sha_main={sha_main!r}; "
+        f"got {head_inside}"
+    )
+
+
+def test_reusable_sandbox_rebuilds_when_different_branch_checked_out(repo):
+    """AC5: A reusable sandbox with a different branch checked out is rebuilt at the
+    requested safe SHA, even when a role session dir is present."""
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "diverge.txt").write_text("diverge")
+    _git(repo, "add", "diverge.txt")
+    _git(repo, "commit", "-m", "diverge main")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    wt_dir = repo / "pycastle" / ".worktrees" / "improve-sandbox"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            "-b",
+            "pycastle/wrong-branch",
+            str(wt_dir),
+            sha_base,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    # Seed a role dir — but the wrong branch is checked out
+    (wt_dir / ".pycastle-session" / "improve").mkdir(parents=True)
+
+    head_inside: list[str] = []
+
+    async def _run():
+        async with reusable_sandbox_worktree(
+            SandboxWorktreeIntent.IMPROVE,
+            sha=sha_main,
+            deps=deps,
+            operating_branch="HEAD",
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main], (
+        f"Sandbox with wrong branch checked out must be rebuilt at sha_main={sha_main!r}; "
+        f"got {head_inside}"
+    )
+
+
+# ── AC6: merge sandbox always rebuilds, even with a role session dir ──────────
+
+
+def test_replaceable_merge_sandbox_rebuilds_when_role_dir_present_without_preserved_failure(
+    repo,
+):
+    """AC6: The merge sandbox is rebuilt on entry even when a role session dir is
+    present but no .preserved-failure marker exists."""
+    cfg = Config()
+    deps = SimpleNamespace(repo_root=repo, cfg=cfg, git_svc=GitService(cfg))
+
+    sha_base = _git(repo, "rev-parse", "HEAD")
+
+    (repo / "merge_advance.txt").write_text("merge advance")
+    _git(repo, "add", "merge_advance.txt")
+    _git(repo, "commit", "-m", "advance main for merge")
+    sha_main = _git(repo, "rev-parse", "HEAD")
+
+    issue_number = 77
+    wt_dir = repo / "pycastle" / ".worktrees" / f"merge-sandbox-issue-{issue_number}"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "worktree",
+            "add",
+            "-b",
+            f"pycastle/merge-sandbox-issue-{issue_number}",
+            str(wt_dir),
+            sha_base,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    # Role dir present but NO .preserved-failure marker
+    (wt_dir / ".pycastle-session" / "merger").mkdir(parents=True)
+    assert not (wt_dir / ".pycastle-session" / ".preserved-failure").exists()
+
+    head_inside: list[str] = []
+
+    async def _run():
+        async with replaceable_merge_sandbox_worktree(
+            issue_number=issue_number,
+            sha=sha_main,
+            deps=deps,
+            operating_branch="HEAD",
+        ) as path:
+            head_inside.append(_git(path, "rev-parse", "HEAD"))
+
+    asyncio.run(_run())
+
+    assert head_inside == [sha_main], (
+        f"Merge sandbox must rebuild at sha_main={sha_main!r} even with a role session dir; "
+        f"got {head_inside}"
+    )
