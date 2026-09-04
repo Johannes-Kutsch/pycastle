@@ -506,3 +506,40 @@ def test_unhandled_exception_files_issue_when_auto_file_bugs_enabled_and_search_
     assert "Filed issue #42:" in result.stdout
     assert "issues/new" not in result.stdout
     assert result.exit_code == 1
+
+
+def test_api_path_body_contains_env_block_and_traceback(monkeypatch):
+    """The body filed via the API path must include the env block and traceback."""
+    from pycastle.config import Config
+    from pycastle.main import main as cli
+
+    captured: list[str] = []
+
+    def _capture_create(self, owner_repo, title, body, labels):
+        captured.append(body)
+        return (7, 10007)
+
+    monkeypatch.setenv("GH_TOKEN", "tkn")
+    monkeypatch.setattr(
+        "pycastle.bug_reporter._safe_load_config",
+        lambda: Config(auto_file_bugs=True),
+    )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.search_open_issues_by_title",
+        lambda self, prefix: [],
+    )
+    monkeypatch.setattr(
+        "pycastle.services.GithubService.create_issue_in", _capture_create
+    )
+
+    _install_crashing_subcommand(monkeypatch, RuntimeError("env-block-marker"))
+    CliRunner().invoke(cli, ["build"])
+
+    assert len(captured) == 1
+    body = captured[0]
+    assert "## Environment" in body
+    assert "pycastle:" in body
+    assert "Python:" in body
+    assert "OS:" in body
+    assert "## Traceback" in body
+    assert "RuntimeError: env-block-marker" in body
