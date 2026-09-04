@@ -131,6 +131,7 @@ max-args = 7
 # PLC0415 — deferred imports justified by circular cycles or startup-performance / robustness
 "src/pycastle/bug_reporter.py" = ["PLC0415"]                      # try/except deferred imports for robustness
 "src/pycastle/upstream_issue_filing.py" = ["PLC0415"]             # deferred GithubServiceError import mirrors bug_reporter.py robustness pattern
+"src/pycastle/upstream_issue_report.py" = ["PLC0415"]             # deferred GithubServiceError import mirrors upstream_issue_filing.py robustness pattern
 "src/pycastle/main.py" = ["PLC0415"]                              # lazy CLI submodule loading
 "src/pycastle/orchestration.py" = ["PLC0415"]                     # thin entry-point; defers heavy orchestrator load
 "src/pycastle/run_lock.py" = ["PLC0415"]                          # platform-conditional (msvcrt / fcntl)
