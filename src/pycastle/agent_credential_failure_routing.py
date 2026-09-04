@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import dataclasses
-import platform
 import re
-import sys
-from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
 from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
-from pycastle.upstream_issue_filing import file_deduped_upstream_issue
+from pycastle.upstream_issue_report import (
+    BUG_AND_TRIAGE_LABELS,
+    UpstreamIssueReport,
+    file_upstream_issue,
+)
+from pycastle.upstream_issue_report import (
+    agent_credential_failure_body as _upstream_agent_credential_failure_body,
+)
 
 if TYPE_CHECKING:
     from pycastle.services import GithubService
@@ -21,7 +25,6 @@ _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION = "codex_auth_lineage_exhausted"
 _AGENT_CREDENTIAL_FAILURE_TITLE = (
     "[pycastle] operator-actionable agent credential failure"
 )
-_AGENT_CREDENTIAL_FAILURE_LABELS = ["bug", "needs-triage"]
 _CREDENTIAL_KEY_RE = (
     r"(?:api(?:[_ -]?|)key|access(?:[_ -]?|)token|refresh(?:[_ -]?|)token|"
     r"token|secret|password)"
@@ -52,23 +55,6 @@ class _CredentialFailureIssueLookupResult:
 class _CredentialFailureInterpretation:
     remediation: str
     rendered_observations: tuple[tuple[str, str], ...]
-
-
-def _pycastle_version() -> str:
-    try:
-        return version("pycastle")
-    except PackageNotFoundError:
-        return "unknown"
-
-
-def _env_block() -> str:
-    py = sys.version_info
-    return (
-        "## Environment\n"
-        f"- pycastle: {_pycastle_version()}\n"
-        f"- Python: {py.major}.{py.minor}.{py.micro}\n"
-        f"- OS: {platform.platform()}\n"
-    )
 
 
 def _is_codex_refresh_token_reused_signature(text: str) -> bool:
@@ -126,40 +112,6 @@ def _redact_credential_material(text: str) -> str:
     return _SK_STYLE_TOKEN_RE.sub("[REDACTED]", redacted)
 
 
-def _build_agent_credential_failure_body(
-    *,
-    service_name: str,
-    role_name: str,
-    status_code: int | None,
-    raw_result_envelope: str,
-    remediation: str,
-    observations: tuple[tuple[str, str], ...],
-) -> str:
-    env = _env_block()
-    redacted_observations = tuple(
-        (source_stream, _redact_credential_material(raw_text))
-        for source_stream, raw_text in observations
-    )
-    observation_blocks = "\n\n".join(
-        f"### {source_stream}\n\n```\n{raw_text}\n```"
-        for source_stream, raw_text in redacted_observations
-    )
-    return (
-        "Repair local agent credentials/account access and rerun pycastle.\n\n"
-        "This issue is about local agent-provider credentials/account access, "
-        "not a source-code defect in the consuming project.\n\n"
-        "## Operator-actionable agent credential failure\n\n"
-        f"{remediation}\n\n"
-        f"Service: {service_name}\n"
-        f"Agent: {role_name or '<unknown>'}\n"
-        f"Status: {status_code}\n\n"
-        f"{observation_blocks}\n\n"
-        "### Raw result envelope\n\n"
-        f"```json\n{_redact_credential_material(raw_result_envelope)}\n```\n\n"
-        f"{env}"
-    )
-
-
 def _file_or_reuse_agent_credential_failure_issue(
     *,
     service_name: str,
@@ -177,7 +129,7 @@ def _file_or_reuse_agent_credential_failure_issue(
             reused_issue_number=existing[0],
         )
 
-    body = _build_agent_credential_failure_body(
+    body = _upstream_agent_credential_failure_body(
         service_name=service_name,
         role_name=role_name,
         status_code=status_code,
@@ -185,12 +137,14 @@ def _file_or_reuse_agent_credential_failure_issue(
         remediation=remediation,
         observations=observations,
     )
-    number = file_deduped_upstream_issue(
-        _AGENT_CREDENTIAL_FAILURE_TITLE,
-        _AGENT_CREDENTIAL_FAILURE_TITLE,
-        body,
-        _AGENT_CREDENTIAL_FAILURE_LABELS,
-        github_svc,
+    number = file_upstream_issue(
+        UpstreamIssueReport(
+            dedupe_key=_AGENT_CREDENTIAL_FAILURE_TITLE,
+            title=_AGENT_CREDENTIAL_FAILURE_TITLE,
+            body=body,
+            labels=BUG_AND_TRIAGE_LABELS,
+            github_svc=github_svc,
+        )
     )
     if number is None:
         return _CredentialFailureIssueLookupResult(issue_url=None)
