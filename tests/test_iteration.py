@@ -2548,6 +2548,79 @@ def test_usage_limit_in_improve_leaves_dispatched_count_unchanged(
     )
 
 
+# ── Improve cycle interrupted: improve owns next iteration ────────────────────
+
+
+def test_run_iteration_improve_cycle_interrupted_outranks_open_issues(
+    tmp_path, git_svc, logger
+):
+    """improve_cycle_interrupted=True with open ready-for-agent issues → improve dispatched, Planner not called.
+
+    When a usage limit interrupts an improve cycle and the candidates already
+    drafted have filed ready-for-agent tickets, the next iteration must dispatch
+    improve (not the Planner) and return Continue with the flag cleared.
+    Covers AC1 and AC4: the Scan Agent is called, proving improve owns the iteration.
+    """
+    filed_issue = {
+        "number": 7,
+        "title": "A spec from improve",
+        "body": "x" * 100,
+        "comments": [],
+        "labels": ["behavior-slice"],
+    }
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.get_open_issues.return_value = [filed_issue]
+    github_svc.get_all_open_issues_lightweight.return_value = []
+    github_svc.repo = "test/repo"
+    github_svc.create_issue_in.return_value = (0, 0)
+
+    planner_dispatched = False
+    scan_dispatched = False
+
+    async def _fake_agent(request: RunRequest):
+        nonlocal planner_dispatched, scan_dispatched
+        if request.name == "Plan Agent":
+            planner_dispatched = True
+            return _plan_output([filed_issue])
+        if request.name == "Scan Agent":
+            scan_dispatched = True
+            return make_scan_output()
+        if request.prompt.template == PromptTemplate.IMPROVE_TICKETS:
+            draft_dir = request.mount_path / ".pycastle-session" / "improve" / "_drafts"
+            draft_dir.mkdir(parents=True, exist_ok=True)
+            body = "A" * 120
+            (draft_dir / "spec.md").write_text(
+                f"---\ntitle: Spec Issue\nlabels:\n  - behavior-slice\n---\n\n{body}"
+            )
+        return CompletionOutput()
+
+    deps = dataclasses.replace(
+        _make_deps(
+            tmp_path,
+            _fake_agent,
+            git_svc=git_svc,
+            github_svc=github_svc,
+            logger=logger,
+            cfg=Config(),
+        ),
+        improve_mode="endless",
+        improve_cycle_interrupted=True,
+    )
+
+    result = asyncio.run(run_iteration(deps))
+
+    assert isinstance(result, Continue)
+    assert scan_dispatched, (
+        "Scan Agent (improve) must be dispatched when improve cycle is interrupted"
+    )
+    assert not planner_dispatched, (
+        "Plan Agent must not be dispatched when improve_cycle_interrupted is True"
+    )
+    assert not deps.improve_cycle_interrupted, (
+        "improve_cycle_interrupted must be cleared after the cycle completes"
+    )
+
+
 # ── Centralized UsageLimitError → AbortedUsageLimit conversion ───────────────
 
 
