@@ -14,6 +14,7 @@ import dataclasses
 from typing import TYPE_CHECKING
 
 from pycastle.bug_reporter import BUG_REPORT_LABEL_LIST
+from pycastle.upstream_issue_report import aborted_setup_body
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -47,16 +48,9 @@ def translate_aborted_setup_to_directive(
 
     first_line = next(iter(message.splitlines()), "")
     title = f"[pycastle] {phase} setup failure: {first_line}"
-    body_parts = [
-        "## Setup phase failure\n",
-        f"Phase: {phase}\n",
-        f"```\n{message}\n```\n",
-    ]
-    if command:
-        body_parts.append(f"Command: `{command}`\n")
-    if output:
-        body_parts.append(f"Output:\n\n```\n{output}\n```\n")
-    body = "\n".join(body_parts)
+    body = aborted_setup_body(
+        phase=phase, message=message, command=command, output=output
+    )
     url = bug_filer(title, body, BUG_REPORT_LABEL_LIST, cfg=cfg)
 
     local_parts = [f"{phase} setup failed: {message}"]
