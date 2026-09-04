@@ -21,6 +21,8 @@ from urllib.parse import quote
 
 import click
 
+from pycastle import upstream_issue_report
+
 if TYPE_CHECKING:
     from pycastle.config import Config
     from pycastle.services import GithubService
@@ -193,25 +195,18 @@ def file_merge_close_failure_issue(
 ) -> int | None:
     """File one deduped issue on the consuming project's tracker when a child
     issue fails to close after merge. Never files on bug_report_repo."""
-    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
-
     title = f"{_MERGE_CLOSE_FAILURE_TITLE_PREFIX}: #{issue_number}"
-    body = _build_merge_close_failure_body(issue_number=issue_number, exc=exc)
-    return file_deduped_upstream_issue(
-        _MERGE_CLOSE_FAILURE_TITLE_PREFIX,
-        title,
-        body,
-        _MERGE_CLOSE_FAILURE_LABELS,
-        github_svc,
+    body = upstream_issue_report.merge_close_failure_body(
+        issue_number=issue_number, exc=exc
     )
-
-
-def _build_merge_close_failure_body(*, issue_number: int, exc: BaseException) -> str:
-    env = _env_block()
-    return (
-        f"## Merge close failure: issue #{issue_number} could not be closed after merge\n\n"
-        f"### Error\n\n```\n{exc}\n```\n\n"
-        f"{env}"
+    return upstream_issue_report.file_upstream_issue(
+        upstream_issue_report.UpstreamIssueReport(
+            dedupe_key=_MERGE_CLOSE_FAILURE_TITLE_PREFIX,
+            title=title,
+            body=body,
+            labels=_MERGE_CLOSE_FAILURE_LABELS,
+            github_svc=github_svc,
+        )
     )
 
 
@@ -224,31 +219,18 @@ def file_operator_actionable_git_issue(
 ) -> None:
     """File one deduped issue on the consuming project's origin tracker for an
     OperatorActionableGitError. Never files on bug_report_repo."""
-    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
-
     title = f"{_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX}: {op} failed after {attempt_count} attempt(s)"
-    body = _build_operator_actionable_body(
+    body = upstream_issue_report.operator_actionable_body(
         op=op, stderr=stderr, attempt_count=attempt_count
     )
-    file_deduped_upstream_issue(
-        _GIT_REMOTE_UNREACHABLE_TITLE_PREFIX,
-        title,
-        body,
-        _GIT_REMOTE_UNREACHABLE_LABELS,
-        github_svc,
-    )
-
-
-def _build_operator_actionable_body(*, op: str, stderr: str, attempt_count: int) -> str:
-    env = _env_block()
-    return (
-        f"## git remote unreachable: `{op}` failed after {attempt_count} attempt(s)\n\n"
-        f"### Last stderr\n\n```\n{stderr}\n```\n\n"
-        f"### Troubleshooting hints\n\n"
-        f"- Check your SSH key or HTTPS credentials are valid for the remote.\n"
-        f"- Verify the remote URL with `git remote get-url origin`.\n"
-        f"- Confirm network connectivity to the remote host.\n\n"
-        f"{env}"
+    upstream_issue_report.file_upstream_issue(
+        upstream_issue_report.UpstreamIssueReport(
+            dedupe_key=_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX,
+            title=title,
+            body=body,
+            labels=_GIT_REMOTE_UNREACHABLE_LABELS,
+            github_svc=github_svc,
+        )
     )
 
 
@@ -265,33 +247,18 @@ def file_unrepairable_draft_set_issue(
     """File one deduped issue on the consuming project's tracker when an improve
     draft set cannot be repaired after all correction attempts. Never files on
     bug_report_repo."""
-    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
-
     title = _UNREPAIRABLE_DRAFT_TITLE_PREFIX
-    body = _build_unrepairable_draft_body(problems=problems, draft_files=draft_files)
-    return file_deduped_upstream_issue(
-        _UNREPAIRABLE_DRAFT_TITLE_PREFIX,
-        title,
-        body,
-        _UNREPAIRABLE_DRAFT_LABELS,
-        github_svc,
+    body = upstream_issue_report.unrepairable_draft_body(
+        problems=problems, draft_files=draft_files
     )
-
-
-def _build_unrepairable_draft_body(
-    *, problems: list[str], draft_files: dict[str, str]
-) -> str:
-    env = _env_block()
-    problems_text = "\n".join(f"- {p}" for p in problems)
-    files_section = "\n\n".join(
-        f"### `{name}`\n\n```\n{content}\n```"
-        for name, content in sorted(draft_files.items())
-    )
-    return (
-        f"## Improve draft set could not be repaired\n\n"
-        f"### Validation problems\n\n{problems_text}\n\n"
-        f"### Draft file contents\n\n{files_section}\n\n"
-        f"{env}"
+    return upstream_issue_report.file_upstream_issue(
+        upstream_issue_report.UpstreamIssueReport(
+            dedupe_key=_UNREPAIRABLE_DRAFT_TITLE_PREFIX,
+            title=title,
+            body=body,
+            labels=_UNREPAIRABLE_DRAFT_LABELS,
+            github_svc=github_svc,
+        )
     )
 
 
