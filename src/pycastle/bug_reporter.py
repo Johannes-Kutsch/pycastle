@@ -137,11 +137,21 @@ def _try_api_path(
     except (GithubServiceError, ImportError):
         return None
 
-    from pycastle.upstream_issue_filing import file_deduped_upstream_issue
+    from pycastle.upstream_issue_report import UpstreamIssueReport, file_upstream_issue
 
-    number = file_deduped_upstream_issue(
-        title, title, body, BUG_REPORT_LABEL_LIST, svc, echo=False
+    class _SilentDisplay:
+        def print(self, caller: str, message: object, style: str | None = None) -> None:
+            pass
+
+    report = UpstreamIssueReport(
+        dedupe_key=title,
+        title=title,
+        body=body,
+        labels=BUG_REPORT_LABEL_LIST,
+        github_svc=svc,
+        status_display=_SilentDisplay(),  # type: ignore[arg-type]
     )
+    number = file_upstream_issue(report)
     if number is None:
         return None
     html_url = f"https://github.com/{svc.repo}/issues/{number}"
@@ -164,10 +174,9 @@ def auto_file_issue(
         cfg = _safe_load_config()
     token = _safe_resolve_token(cfg)
     repo = cfg.bug_report_repo if cfg is not None else BUG_REPORT_REPO
-    full_body = _env_block() + "\n" + body
 
     if cfg is not None and cfg.auto_file_bugs and token:
-        result = _try_api_path(title, full_body, repo, token, cfg)
+        result = _try_api_path(title, body, repo, token, cfg)
         if result is not None:
             number, html_url = result
             click.echo(f"Filed issue #{number}: {html_url}")
