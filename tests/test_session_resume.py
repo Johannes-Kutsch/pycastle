@@ -681,6 +681,68 @@ def test_exact_transcript_service_name_is_ambiguous_with_multiple_services(rs):
     assert ServiceSessionStore(rs.path).exact_transcript_service_name() is None
 
 
+_KNOWN = frozenset({"claude", "codex", "opencode"})
+
+
+def test_transcript_owner_returns_none_when_session_dir_absent(tmp_path):
+    store = ServiceSessionStore(tmp_path / "nonexistent")
+    assert store.transcript_owner_service_name(_KNOWN) is None
+
+
+def test_transcript_owner_returns_none_when_no_qualifying_subdirs(tmp_path):
+    store = ServiceSessionStore(tmp_path)
+    assert store.transcript_owner_service_name(_KNOWN) is None
+
+
+def test_transcript_owner_returns_service_when_single_service_subdir_has_files(
+    tmp_path,
+):
+    (tmp_path / "claude").mkdir()
+    (tmp_path / "claude" / "thread_id").write_text("abc", encoding="utf-8")
+    store = ServiceSessionStore(tmp_path)
+    assert store.transcript_owner_service_name(_KNOWN) == "claude"
+
+
+def test_transcript_owner_returns_none_when_service_subdir_is_empty(tmp_path):
+    (tmp_path / "claude").mkdir()
+    store = ServiceSessionStore(tmp_path)
+    assert store.transcript_owner_service_name(_KNOWN) is None
+
+
+def test_transcript_owner_returns_none_when_multiple_services_have_files(tmp_path):
+    (tmp_path / "claude").mkdir()
+    (tmp_path / "claude" / "thread_id").write_text("abc", encoding="utf-8")
+    (tmp_path / "codex").mkdir()
+    (tmp_path / "codex" / "thread_id").write_text("xyz", encoding="utf-8")
+    store = ServiceSessionStore(tmp_path)
+    assert store.transcript_owner_service_name(_KNOWN) is None
+
+
+def test_transcript_owner_ignores_non_service_namespace_subdirs(tmp_path):
+    (tmp_path / "claude").mkdir()
+    (tmp_path / "claude" / "thread_id").write_text("abc", encoding="utf-8")
+    (tmp_path / "candidate").mkdir()
+    (tmp_path / "candidate" / "some_file").write_text("data", encoding="utf-8")
+    store = ServiceSessionStore(tmp_path)
+    assert store.transcript_owner_service_name(_KNOWN) == "claude"
+
+
+def test_transcript_owner_ignores_unknown_subdirs_with_files(tmp_path):
+    (tmp_path / "unknown-service").mkdir()
+    (tmp_path / "unknown-service" / "thread_id").write_text("abc", encoding="utf-8")
+    store = ServiceSessionStore(tmp_path)
+    assert store.transcript_owner_service_name(_KNOWN) is None
+
+
+def test_transcript_owner_counts_nested_files_in_service_subdir(tmp_path):
+    (tmp_path / "opencode").mkdir()
+    nested = tmp_path / "opencode" / "nested"
+    nested.mkdir()
+    (nested / "session_id").write_text("sess-123", encoding="utf-8")
+    store = ServiceSessionStore(tmp_path)
+    assert store.transcript_owner_service_name(_KNOWN) == "opencode"
+
+
 def test_role_session_reports_exact_provider_transcript_available_for_selected_opencode_service(
     worktree,
 ):
