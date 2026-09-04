@@ -41,6 +41,7 @@ from pycastle.errors import (
 )
 from pycastle.prompts.dispatch import PromptInvocation
 from pycastle.prompts.scope_args import build_interrupted_work_clause
+from pycastle.services.runtime_services import KNOWN_SERVICE_NAMES
 from pycastle.session import RoleSession, RunKind
 from pycastle.session.service_session_store import ServiceSessionStore
 
@@ -110,9 +111,9 @@ async def run_attempt_loop(
 
     for attempt in range(3):
         _saved_service = (
-            ServiceSessionStore(
-                bundle.role_session.path
-            ).exact_transcript_service_name()
+            ServiceSessionStore(bundle.role_session.path).transcript_owner_service_name(
+                KNOWN_SERVICE_NAMES
+            )
             if current_run_kind is RunKind.RESUME and bundle.role_session.is_resumable()
             else None
         )

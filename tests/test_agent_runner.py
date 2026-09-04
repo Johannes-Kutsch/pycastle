@@ -1325,10 +1325,9 @@ def test_stale_continuation_proactive_service_mismatch_skips_resumed_session(
     (session_dir / "_continuation").write_text(
         _VALID_STALE_CONTINUATION, encoding="utf-8"
     )
-    session_dir.joinpath("_service_session_metadata.json").write_text(
-        json.dumps({"codex": {"service": "codex", "provider_session_id": "codex-123"}}),
-        encoding="utf-8",
-    )
+    codex_state_dir = session_dir / "codex"
+    codex_state_dir.mkdir(parents=True)
+    (codex_state_dir / "thread_id").write_text("codex-session-id", encoding="utf-8")
 
     git_service = MagicMock(spec=GitService)
     git_service.get_user_name.return_value = "Test User"
@@ -1426,10 +1425,9 @@ def test_stale_continuation_proactive_service_mismatch_sets_interrupted_work_on_
     (session_dir / "_continuation").write_text(
         _VALID_STALE_CONTINUATION, encoding="utf-8"
     )
-    session_dir.joinpath("_service_session_metadata.json").write_text(
-        json.dumps({"codex": {"service": "codex", "provider_session_id": "codex-123"}}),
-        encoding="utf-8",
-    )
+    codex_state_dir = session_dir / "codex"
+    codex_state_dir.mkdir(parents=True)
+    (codex_state_dir / "thread_id").write_text("codex-session-id", encoding="utf-8")
 
     git_service = MagicMock(spec=GitService)
     git_service.get_user_name.return_value = "Test User"
@@ -2613,3 +2611,299 @@ def test_run_preflight_propagates_non_oserror_from_session_exit(tmp_path, monkey
                 mount_path=mount_path,
             )
         )
+
+
+# ── Issue 2252: proactive service-mismatch via transcript ownership ───────────
+
+
+def _make_session_with_transcript_owner(
+    tmp_path,
+    *,
+    issue: int,
+    owner_service: str,
+    dispatch_service: str,
+    is_working_tree_clean: bool = True,
+) -> tuple:
+    """Return (runner, mount_path, session_dir, git_service) for mismatch tests.
+
+    Signals transcript ownership through directory layout: creates
+    ``<session>/<owner_service>/thread_id`` so ``transcript_owner_service_name``
+    returns the owner's name without relying on the dead JSON sidecar.
+    """
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / f"issue-{issue}"
+    mount_path.mkdir(parents=True)
+    session_dir = mount_path / ".pycastle-session" / "implementer"
+    session_dir.mkdir(parents=True)
+    (session_dir / "_continuation").write_text(
+        _VALID_STALE_CONTINUATION, encoding="utf-8"
+    )
+    owner_state_dir = session_dir / owner_service
+    owner_state_dir.mkdir(parents=True)
+    (owner_state_dir / "thread_id").write_text("owner-session-id", encoding="utf-8")
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    git_service.is_working_tree_clean.return_value = is_working_tree_clean
+
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={dispatch_service: _RecordingService(dispatch_service)},
+    )
+    return runner, mount_path, session_dir, git_service
+
+
+def test_cross_service_fallback_with_transcript_owner_starts_fresh_without_resume(
+    tmp_path, monkeypatch
+):
+    """AC1+AC2: session owned by codex, dispatched for opencode → fresh start, no resume."""
+    runner, mount_path, session_dir, _ = _make_session_with_transcript_owner(
+        tmp_path,
+        issue=2252,
+        owner_service="codex",
+        dispatch_service="opencode",
+    )
+    status_display = RecordingStatusDisplay()
+    call_log: list[str] = []
+
+    class _MismatchRuntimeClient:
+        async def run_resumed_session(self, request):
+            call_log.append("resumed")
+            raise AssertionError(
+                "run_resumed_session must not fire on service mismatch"
+            )
+
+        async def run_new_session(self, request):
+            call_log.append("new")
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output="<commit_message>done</commit_message>",
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="opencode",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: _MismatchRuntimeClient(),
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #2252",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "2252",
+                        "ISSUE_TITLE": "Service switched from codex to opencode",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-2252",
+                        "INTERRUPTED_WORK": "",
+                        "OPERATING_BRANCH": "main",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="opencode",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert call_log == ["new"], "must start fresh without a resume attempt"
+    assert not (session_dir / "_continuation").is_file()
+
+
+def test_same_service_transcript_owner_resumes_without_fresh_start(
+    tmp_path, monkeypatch
+):
+    """AC3: session owned by codex, dispatched for codex → resumes normally."""
+    runner, mount_path, _session_dir, _ = _make_session_with_transcript_owner(
+        tmp_path,
+        issue=2252,
+        owner_service="codex",
+        dispatch_service="codex",
+    )
+    status_display = RecordingStatusDisplay()
+    call_log: list[str] = []
+
+    class _SameServiceRuntimeClient:
+        async def run_resumed_session(self, request):
+            call_log.append("resumed")
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output="<commit_message>done</commit_message>",
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="codex",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+        async def run_new_session(self, request):
+            call_log.append("new")
+            raise AssertionError(
+                "run_new_session must not fire when service matches owner"
+            )
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: _SameServiceRuntimeClient(),
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #2252",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "2252",
+                        "ISSUE_TITLE": "Service unchanged — still codex",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-2252",
+                        "INTERRUPTED_WORK": "",
+                        "OPERATING_BRANCH": "main",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert call_log == ["resumed"], "must resume, not start fresh"
+
+
+def test_no_transcript_owner_does_not_trigger_fresh_start(tmp_path, monkeypatch):
+    """AC4: session with _continuation but no service subdir → resumes normally."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2252-no-owner"
+    mount_path.mkdir(parents=True)
+    session_dir = mount_path / ".pycastle-session" / "implementer"
+    session_dir.mkdir(parents=True)
+    (session_dir / "_continuation").write_text(
+        _VALID_STALE_CONTINUATION, encoding="utf-8"
+    )
+
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = "Test User"
+    git_service.get_user_email.return_value = "test@example.com"
+    runner = AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={"codex": _FakeService()},
+    )
+    status_display = RecordingStatusDisplay()
+    call_log: list[str] = []
+
+    class _OwnerlessRuntimeClient:
+        async def run_resumed_session(self, request):
+            call_log.append("resumed")
+            return RuntimeOutcome(
+                kind=Completed(),
+                result=RunResult(
+                    output="<commit_message>done</commit_message>",
+                    usage=None,
+                    continuation=None,
+                    selected=ResolvedProvider(
+                        service="codex",
+                        model="gpt-5.5",
+                        effort="medium",
+                    ),
+                ),
+            )
+
+        async def run_new_session(self, request):
+            call_log.append("new")
+            raise AssertionError("no owner must not trigger a fresh start")
+
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: _OwnerlessRuntimeClient(),
+    )
+
+    result = asyncio.run(
+        runner.run(
+            RunRequest(
+                name="Implement Agent #2252",
+                prompt=PromptInvocation(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    scope_args={
+                        "ISSUE_NUMBER": "2252",
+                        "ISSUE_TITLE": "No owner — should still resume",
+                        "ISSUE_BODY": "",
+                        "ISSUE_COMMENTS": "",
+                        "BRANCH": "issue-2252-no-owner",
+                        "INTERRUPTED_WORK": "",
+                        "OPERATING_BRANCH": "main",
+                    },
+                ),
+                mount_path=mount_path,
+                role=AgentRole.IMPLEMENTER,
+                model="gpt-5.5",
+                effort="medium",
+                service="codex",
+                status_display=status_display,
+            )
+        )
+    )
+
+    assert isinstance(result, CommitMessageOutput)
+    assert call_log == ["resumed"], "no transcript owner must not trigger fresh start"
