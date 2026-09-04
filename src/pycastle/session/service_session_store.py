@@ -189,25 +189,15 @@ def has_exact_transcript(
     role: AgentRole,
     namespace: str,
     service: AgentService,
+    known_service_names: frozenset[str],
 ) -> bool:
     store = ServiceSessionStore(_role_session_path(worktree, role, namespace))
-    if store.exact_transcript_service_name() != service.name:
-        return False
-    metadata = store.service_session_metadata(service.name)
-    if metadata is None:
-        return False
-    provider_session_id = store.get_service_session_id(service.name)
-    if (
-        provider_session_id is None
-        or metadata["provider_session_id"] != provider_session_id
-    ):
+    if store.transcript_owner_service_name(known_service_names) != service.name:
         return False
     state_dir = _service_state_dir(worktree, role, namespace, service)
-    if state_dir is None or not service.is_resumable(state_dir):
+    if state_dir is None:
         return False
-    return _is_exact_resumable_provider_session(
-        service.name, provider_session_id, state_dir
-    )
+    return service.is_resumable(state_dir)
 
 
 def is_exact_resumable_service_session(

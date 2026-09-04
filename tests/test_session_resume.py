@@ -752,16 +752,8 @@ def test_role_session_reports_exact_provider_transcript_available_for_selected_o
         relpath="custom/opencode-state/",
         resumable=True,
     )
-    state_dir = worktree / "custom" / "opencode-state"
-    state_dir.mkdir(parents=True)
-    state_dir.joinpath("session_id").write_text(
-        "sess-opencode-123\n",
-        encoding="utf-8",
-    )
-    ServiceSessionStore(rs.path).save_service_session_id(
-        "opencode", "sess-opencode-123"
-    )
-    ServiceSessionStore(rs.path).record_successful_run("opencode", "sess-opencode-123")
+    (rs.path / "opencode").mkdir(parents=True)
+    (rs.path / "opencode" / "seed").write_text("seed", encoding="utf-8")
     registry = ServiceRegistry({"opencode": cast("AgentService", service)})
 
     _svc = registry["opencode"]
@@ -771,6 +763,7 @@ def test_role_session_reports_exact_provider_transcript_available_for_selected_o
             role=AgentRole.REVIEWER,
             namespace="main",
             service=_svc,
+            known_service_names=frozenset(registry.services.keys()),
         )
         if _svc is not None
         else False
@@ -782,6 +775,7 @@ def test_role_session_reports_exact_provider_transcript_available_for_selected_o
             role=AgentRole.REVIEWER,
             namespace="main",
             service=_svc,
+            known_service_names=frozenset(registry.services.keys()),
         )
         if _svc is not None
         else False
@@ -832,6 +826,7 @@ def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_
             role=AgentRole.IMPROVE,
             namespace="main",
             service=_svc,
+            known_service_names=frozenset(registry.services.keys()),
         )
         if _svc is not None
         else False
@@ -847,31 +842,27 @@ def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_
             role=AgentRole.IMPROVE,
             namespace="main",
             service=_svc,
+            known_service_names=frozenset(registry.services.keys()),
         )
         if _svc is not None
         else False
     ) is False
 
 
-def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous_codex_identity(
+def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous_ownership(
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
-    state_dir = rs.path / "codex"
-    dir_a = state_dir / "sessions" / "2026" / "05" / "30"
-    dir_b = state_dir / "sessions" / "2026" / "05" / "31"
-    dir_a.mkdir(parents=True)
-    dir_b.mkdir(parents=True)
-    dir_a.joinpath("rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-old"}\n',
+    codex_dir = rs.path / "codex"
+    rollout_dir = codex_dir / "sessions" / "2026" / "05" / "30"
+    rollout_dir.mkdir(parents=True)
+    rollout_dir.joinpath("rollout-001.jsonl").write_text(
+        '{"type":"thread.started","thread_id":"thread-exact"}\n',
         encoding="utf-8",
     )
-    dir_b.joinpath("rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-new"}\n',
-        encoding="utf-8",
-    )
-    ServiceSessionStore(rs.path).save_service_session_id("codex", "thread-old")
-    ServiceSessionStore(rs.path).record_successful_run("codex", "thread-old")
+    opencode_dir = rs.path / "opencode"
+    opencode_dir.mkdir(parents=True)
+    (opencode_dir / "seed").write_text("seed", encoding="utf-8")
     registry = ServiceRegistry({"codex": CodexService()})
 
     _svc = registry["codex"]
@@ -881,6 +872,7 @@ def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous
             role=AgentRole.IMPROVE,
             namespace="main",
             service=_svc,
+            known_service_names=frozenset({"codex", "opencode"}),
         )
         if _svc is not None
         else False
@@ -892,6 +884,7 @@ def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous
             role=AgentRole.IMPROVE,
             namespace="main",
             service=_svc,
+            known_service_names=frozenset({"codex", "opencode"}),
         )
         if _svc is not None
         else False
@@ -899,36 +892,36 @@ def test_role_session_reports_exact_transcript_handoff_unavailable_for_ambiguous
 
 
 @pytest.mark.parametrize(
-    ("metadata_value", "sidecar_value", "resumable"),
+    "scenario",
     [
-        (None, "sess-opencode-123", True),
-        ("sess-opencode-123", None, True),
-        ("sess-opencode-metadata", "sess-opencode-sidecar", True),
-        ("sess-opencode-123", "sess-opencode-123", False),
+        "no_service_dir",
+        "two_service_dirs",
+        "service_dir_not_resumable",
     ],
 )
 def test_role_session_reports_exact_provider_transcript_unavailable_without_exact_identity_evidence(
     worktree,
-    metadata_value: str | None,
-    sidecar_value: str | None,
-    resumable: bool,
+    scenario: str,
 ):
     rs = RoleSession(worktree, AgentRole.REVIEWER, "main")
     service = _FakeService(
         name="opencode",
         relpath="custom/opencode-state/",
-        resumable=resumable,
+        resumable=(scenario != "service_dir_not_resumable"),
     )
-    state_dir = worktree / "custom" / "opencode-state"
-    state_dir.mkdir(parents=True)
-    state_dir.joinpath("session_id").write_text(
-        "sess-opencode-123\n",
-        encoding="utf-8",
+    if scenario in ("two_service_dirs", "service_dir_not_resumable"):
+        svc_dir = rs.path / "opencode"
+        svc_dir.mkdir(parents=True)
+        (svc_dir / "seed").write_text("seed", encoding="utf-8")
+    if scenario == "two_service_dirs":
+        codex_dir = rs.path / "codex"
+        codex_dir.mkdir(parents=True)
+        (codex_dir / "seed").write_text("seed", encoding="utf-8")
+    known = (
+        frozenset({"opencode", "codex"})
+        if scenario == "two_service_dirs"
+        else frozenset({"opencode"})
     )
-    if sidecar_value is not None:
-        ServiceSessionStore(rs.path).save_service_session_id("opencode", sidecar_value)
-    if metadata_value is not None:
-        ServiceSessionStore(rs.path).record_successful_run("opencode", metadata_value)
 
     _svc = ServiceRegistry({service.name: cast("AgentService", service)})[service.name]
     assert (
@@ -937,13 +930,14 @@ def test_role_session_reports_exact_provider_transcript_unavailable_without_exac
             role=AgentRole.REVIEWER,
             namespace="main",
             service=_svc,
+            known_service_names=known,
         )
         if _svc is not None
         else False
     ) is False
 
 
-def test_role_session_reports_exact_provider_transcript_codex_availability_for_duplicate_and_ambiguous_rollouts(
+def test_role_session_reports_exact_provider_transcript_codex_availability_for_single_and_ambiguous_ownership(
     worktree,
 ):
     rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
@@ -954,12 +948,9 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
     rollout_path = rollout_dir / "rollout-001.jsonl"
 
     rollout_path.write_text(
-        '{"type":"thread.started","thread_id":"thread-exact"}\n'
         '{"type":"thread.started","thread_id":"thread-exact"}\n',
         encoding="utf-8",
     )
-    ServiceSessionStore(rs.path).save_service_session_id("codex", "thread-exact")
-    ServiceSessionStore(rs.path).record_successful_run("codex", "thread-exact")
 
     _svc = ServiceRegistry({service.name: service})[service.name]
     assert (
@@ -968,16 +959,15 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
             role=AgentRole.IMPROVE,
             namespace="main",
             service=_svc,
+            known_service_names=frozenset({"codex"}),
         )
         if _svc is not None
         else False
     ) is True
 
-    rollout_path.write_text(
-        '{"type":"thread.started","thread_id":"thread-exact"}\n'
-        '{"type":"thread.started","thread_id":"thread-other"}\n',
-        encoding="utf-8",
-    )
+    opencode_dir = rs.path / "opencode"
+    opencode_dir.mkdir(parents=True)
+    (opencode_dir / "seed").write_text("seed", encoding="utf-8")
 
     _svc = ServiceRegistry({service.name: service})[service.name]
     assert (
@@ -986,6 +976,7 @@ def test_role_session_reports_exact_provider_transcript_codex_availability_for_d
             role=AgentRole.IMPROVE,
             namespace="main",
             service=_svc,
+            known_service_names=frozenset({"codex", "opencode"}),
         )
         if _svc is not None
         else False

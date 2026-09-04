@@ -362,11 +362,17 @@ def _prompt_run_state_for_role(
         if deps.service_registry is not None and service_name
         else None
     )
+    known_service_names = (
+        frozenset(deps.service_registry.services.keys())
+        if deps.service_registry is not None
+        else frozenset()
+    )
     has_exact_transcript_handoff = service is not None and has_exact_transcript(
         worktree=mount_path,
         role=role,
         namespace="",
         service=service,
+        known_service_names=known_service_names,
     )
     run_kind = (
         role_session.run_kind()

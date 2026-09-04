@@ -88,6 +88,24 @@ def _seed_prior_role_session_with_service(
     (state_dir / "seed").write_text("seed", encoding="utf-8")
 
 
+def _seed_role_session_with_service_dir_only(
+    worktree: Path,
+    *,
+    role: AgentRole,
+    service_name: str,
+) -> None:
+    """Seed a role session using only directory layout — no metadata file."""
+    role_session = RoleSession(worktree, role)
+    role_session.start_fresh()
+    (role_session.path / "_continuation").write_text(
+        "opaque-continuation",
+        encoding="utf-8",
+    )
+    state_dir = worktree / f".pycastle-session/{role.value}/{service_name}"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "seed").write_text("seed", encoding="utf-8")
+
+
 def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     deps = _make_deps(tmp_path, FakeAgentRunner([]))
     implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
@@ -895,3 +913,144 @@ def test_reviewer_scope_args_reflect_custom_dev_branch_as_diff_base(tmp_path):
     )
 
     assert plan.reviewer_step.prompt_scope_args["OPERATING_BRANCH"] == "develop"
+
+
+@pytest.mark.parametrize(
+    ("role", "cfg"),
+    [
+        (
+            AgentRole.IMPLEMENTER,
+            Config(implement_override=StageOverride(service="opencode")),
+        ),
+        (
+            AgentRole.REVIEWER,
+            Config(review_override=StageOverride(service="opencode")),
+        ),
+    ],
+)
+def test_plan_issue_execution_recognises_handoff_when_session_namespace_dir_sits_beside_service_dir(
+    tmp_path,
+    role,
+    cfg,
+):
+    registry = ServiceRegistry({"opencode": _CrossServiceTestService("opencode")})
+    deps = _make_deps(tmp_path, FakeAgentRunner([]), cfg=cfg, service_registry=registry)
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+    target_mount_path = (
+        implement_mount_path if role is AgentRole.IMPLEMENTER else review_mount_path
+    )
+    _seed_role_session_with_service_dir_only(
+        target_mount_path,
+        role=role,
+        service_name="opencode",
+    )
+    role_session = RoleSession(target_mount_path, role)
+    namespace_dir = role_session.path / "main"
+    namespace_dir.mkdir(parents=True, exist_ok=True)
+    (namespace_dir / "something").write_text("data", encoding="utf-8")
+
+    plan = plan_issue_execution(
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
+    )
+
+    step = (
+        plan.implementer_step if role is AgentRole.IMPLEMENTER else plan.reviewer_step
+    )
+    assert step.run_kind is RunKind.RESUME
+    assert step.prompt_scope_args["INTERRUPTED_WORK"] == ""
+
+
+def test_plan_issue_execution_does_not_treat_role_session_with_no_service_dir_as_handoff(
+    tmp_path,
+):
+    cfg = Config(implement_override=StageOverride(service="opencode"))
+    registry = ServiceRegistry({"opencode": _CrossServiceTestService("opencode")})
+    deps = _make_deps(tmp_path, FakeAgentRunner([]), cfg=cfg, service_registry=registry)
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+    role_session = RoleSession(implement_mount_path, AgentRole.IMPLEMENTER)
+    role_session.start_fresh()
+    (role_session.path / "_continuation").write_text(
+        "opaque-continuation", encoding="utf-8"
+    )
+
+    plan = plan_issue_execution(
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
+    )
+
+    assert plan.implementer_step.run_kind is RunKind.FRESH
+
+
+@pytest.mark.parametrize(
+    ("role", "cfg"),
+    [
+        (
+            AgentRole.IMPLEMENTER,
+            Config(implement_override=StageOverride(service="opencode")),
+        ),
+        (
+            AgentRole.REVIEWER,
+            Config(review_override=StageOverride(service="opencode")),
+        ),
+    ],
+)
+def test_plan_issue_execution_does_not_treat_role_session_with_two_service_dirs_as_handoff(
+    tmp_path,
+    role,
+    cfg,
+):
+    registry = ServiceRegistry(
+        {
+            "codex": _CrossServiceTestService("codex"),
+            "opencode": _CrossServiceTestService("opencode"),
+        }
+    )
+    deps = _make_deps(tmp_path, FakeAgentRunner([]), cfg=cfg, service_registry=registry)
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+    target_mount_path = (
+        implement_mount_path if role is AgentRole.IMPLEMENTER else review_mount_path
+    )
+    _seed_prior_role_session_with_service(
+        target_mount_path,
+        role=role,
+        service_name="opencode",
+        session_id="session-1",
+    )
+    codex_state_dir = target_mount_path / f".pycastle-session/{role.value}/codex"
+    codex_state_dir.mkdir(parents=True, exist_ok=True)
+    (codex_state_dir / "seed").write_text("seed", encoding="utf-8")
+
+    plan = plan_issue_execution(
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
+    )
+
+    step = (
+        plan.implementer_step if role is AgentRole.IMPLEMENTER else plan.reviewer_step
+    )
+    assert step.run_kind is RunKind.FRESH
