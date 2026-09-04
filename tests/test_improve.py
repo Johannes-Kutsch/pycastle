@@ -1532,6 +1532,31 @@ def test_mid_phase_2_resume_prints_resume_announcement(tmp_path, git_svc):
     )
 
 
+def test_mid_phase_3_resume_prints_resume_announcement(tmp_path, git_svc):
+    """Resuming mid-phase-3 prints a status line naming candidate ordinal, title, and phase."""
+    wt = tmp_path / "pycastle" / ".worktrees" / "improve-sandbox"
+    _seed_candidate_list(RoleSession(wt, AgentRole.IMPROVE).path, [_DEFAULT_CANDIDATE])
+    _seed_candidate_record(RoleSession(wt, AgentRole.IMPROVE).path, 0)
+    ImproveRoleSessionStore(RoleSession(wt, AgentRole.IMPROVE).path).write_in_flight(
+        "03-tickets"
+    )
+    status_display = RecordingStatusDisplay()
+    runner = _make_runner_with_drafts(CompletionOutput())
+    deps = _make_deps(tmp_path, runner, git_svc=git_svc, status_display=status_display)
+
+    _run(deps)
+
+    printed = [
+        msg
+        for event, caller, msg, *_ in status_display.calls
+        if event == "print" and caller == "Improve"
+    ]
+    assert any(
+        "resuming" in str(m) and "1/1" in str(m) and "Seeded candidate" in str(m)
+        for m in printed
+    )
+
+
 def test_fresh_improve_cycle_prints_no_resume_announcement(tmp_path, git_svc):
     """A fresh improve cycle (no mid-candidate in-flight state) prints no resume announcement."""
     status_display = RecordingStatusDisplay()
