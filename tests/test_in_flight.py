@@ -11,7 +11,6 @@ from pycastle.iteration.implement import branch_for
 from pycastle.iteration.in_flight import select_in_flight_issues
 from pycastle.services import GitService
 from pycastle.session.role import SESSION_DIR_NAME, RoleSession
-from pycastle.session.service_session_store import ServiceSessionStore
 
 
 def _commit(repo_root: Path, message: str, content: str) -> None:
@@ -149,13 +148,13 @@ def test_select_in_flight_issues_treats_any_role_session_dir_under_issue_worktre
     ) == [issue]
 
 
-def test_select_in_flight_issues_omits_metadata_only_role_session_without_branch_evidence(
+def test_select_in_flight_issues_omits_done_role_session_without_branch_evidence(
     tmp_path: Path,
 ):
     git_svc = MagicMock(spec=GitService)
     issue = {
         "number": 1,
-        "title": "Done role session keeps only metadata",
+        "title": "Done role session has no continuation",
         "body": "Issue body 1",
         "comments": [{"author": "alice", "body": "done"}],
         "labels": ["ready-for-agent", "behavior-slice"],
@@ -165,7 +164,7 @@ def test_select_in_flight_issues_omits_metadata_only_role_session_without_branch
         AgentRole.IMPLEMENTER,
     )
     role_session.start_fresh()
-    ServiceSessionStore(role_session.path).record_successful_run("claude", "thread-123")
+    role_session.clear_provider_state_and_signal_completion()
 
     git_svc.verify_ref_exists.return_value = False
 

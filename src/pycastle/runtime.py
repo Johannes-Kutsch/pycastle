@@ -110,9 +110,6 @@ class _SessionlessProviderRunSession:
     def record_provider_session_id(self, provider_session_id: str) -> None:
         pass
 
-    def record_successful_run(self) -> None:
-        pass
-
 
 @dataclasses.dataclass
 class _SessionlessPreparedRunSessionState:
@@ -422,14 +419,12 @@ async def _run_attempt_loop(ctx: _AttemptLoopContext) -> Any:  # noqa: ANN401
                 run_kind=provider_run_session.run_kind,
                 container_exec=ctx.container_exec,
             )
-            result, successful_run_session = await _execute_runtime_attempt(
+            result, _ = await _execute_runtime_attempt(
                 ctx,
                 prompt=prompt,
                 provider_run_session=provider_run_session,
             )
-            if ctx.request.output_adapter.is_successful_result(result):
-                successful_run_session.record_successful_run()
-            else:
+            if not ctx.request.output_adapter.is_successful_result(result):
                 ctx.row.close("failed", shutdown_style="error")
             return ctx.request.output_adapter.finalize_result(
                 result,

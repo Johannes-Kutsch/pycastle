@@ -190,7 +190,6 @@ def test_has_exact_provider_transcript_for_service_returns_true_for_codex_with_m
     state_dir = role_dir / "codex"
     _write_codex_rollout(state_dir, "thread-exact", "thread-exact")
     ServiceSessionStore(role_dir).save_service_session_id("codex", "thread-exact")
-    ServiceSessionStore(role_dir).record_successful_run("codex", "thread-exact")
 
     assert (
         has_exact_transcript(

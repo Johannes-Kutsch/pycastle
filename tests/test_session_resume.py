@@ -397,24 +397,6 @@ def test_service_session_id_sidecars_follow_role_session_provider_state_layout(
     ).read_text(encoding="utf-8") == "default-123"
 
 
-def test_service_session_metadata_stays_at_role_session_level(worktree):
-    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
-
-    ServiceSessionStore(rs.path).record_successful_run("codex", "thread-123")
-
-    assert ServiceSessionStore(rs.path).metadata_path() == (
-        worktree
-        / ".pycastle-session"
-        / "improve"
-        / "main"
-        / "_service_session_metadata.json"
-    )
-    assert ServiceSessionStore(rs.path).metadata_path().is_file()
-    assert not (
-        rs.provider_state_dir("codex") / "_service_session_metadata.json"
-    ).exists()
-
-
 def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thread_id(
     worktree,
 ):
@@ -643,42 +625,16 @@ def test_provider_run_state_for_opencode_downgrades_resumable_state_without_sess
     )
 
 
-def test_completion_signal_preserves_service_session_metadata_without_counting_as_resumable(
-    rs,
-):
+def test_completion_signal_clears_provider_state_and_marks_done(rs):
     rs.start_fresh()
-    ServiceSessionStore(rs.path).record_successful_run("codex", "thread-from-run")
     ServiceSessionStore(rs.path).save_service_session_id("codex", "thread-from-run")
+    (rs.path / "_continuation").write_text("opaque", encoding="utf-8")
 
     rs.clear_provider_state_and_signal_completion()
 
-    assert ServiceSessionStore(rs.path).service_session_metadata("codex") == {
-        "service": "codex",
-        "provider_session_id": "thread-from-run",
-    }
     assert rs.is_done() is True
     assert rs.is_resumable() is False
     assert rs.run_kind() == RunKind.FRESH
-
-
-def test_malformed_service_session_metadata_is_ignored(rs):
-    rs.start_fresh()
-    ServiceSessionStore(rs.path).metadata_path().write_text(
-        "{not-json", encoding="utf-8"
-    )
-
-    assert ServiceSessionStore(rs.path).service_session_metadata("claude") is None
-    assert ServiceSessionStore(rs.path).exact_transcript_service_name() is None
-    assert rs.is_resumable() is False
-    assert rs.run_kind() == RunKind.FRESH
-
-
-def test_exact_transcript_service_name_is_ambiguous_with_multiple_services(rs):
-    rs.start_fresh()
-    ServiceSessionStore(rs.path).record_successful_run("claude", "thread-claude")
-    ServiceSessionStore(rs.path).record_successful_run("opencode", "sess-opencode")
-
-    assert ServiceSessionStore(rs.path).exact_transcript_service_name() is None
 
 
 _KNOWN = frozenset({"claude", "codex", "opencode"})
@@ -812,7 +768,6 @@ def test_role_session_reports_exact_provider_transcript_unavailable_for_missing_
         encoding="utf-8",
     )
     ServiceSessionStore(rs.path).save_service_session_id("codex", "thread-exact")
-    ServiceSessionStore(rs.path).record_successful_run("codex", "thread-exact")
     registry = ServiceRegistry(cast("dict[str, AgentService]", registry_services))
 
     _svc = (

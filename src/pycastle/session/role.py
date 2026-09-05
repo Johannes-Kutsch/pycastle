@@ -13,7 +13,6 @@ from pycastle.runtime_session import (
 from pycastle.runtime_session import (
     session_uuid as runtime_session_uuid,
 )
-from pycastle.session.service_session_store import is_service_session_metadata_path
 
 SESSION_DIR_NAME = ".pycastle-session"
 _CONTINUATION_FILENAME = "_continuation"
@@ -158,8 +157,6 @@ class RoleSession:
         if not self.path.is_dir():
             return
         for child in self.path.iterdir():
-            if is_service_session_metadata_path(child):
-                continue
             if child.is_file() or child.is_symlink():
                 child.unlink(missing_ok=True)
             elif child.is_dir():

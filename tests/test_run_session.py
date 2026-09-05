@@ -175,11 +175,9 @@ class _FakeResumeIdentityStore:
         del service_name
         self.provider_session_id = session_id
 
-    def service_session_metadata(self, service_name: str) -> dict[str, str] | None:
-        del service_name
-        return None
-
-    def exact_transcript_service_name(self) -> str | None:
+    def transcript_owner_service_name(
+        self, known_service_names: frozenset[str] | None = None
+    ) -> str | None:
         return None
 
 
@@ -514,10 +512,6 @@ def test_run_session_plan_uses_claude_provider_session_adapter_for_resume_exact_
     state_dir = tmp_path / ".pycastle-session" / "implementer" / "claude"
     state_dir.mkdir(parents=True)
     (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-    ServiceSessionStore(role_session.path).record_successful_run(
-        "claude",
-        _role_session_session_uuid(role_session),
-    )
 
     plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
@@ -665,9 +659,6 @@ def test_has_exact_transcript_match_accepts_sidecar_backed_opencode_handoff_with
     ServiceSessionStore(role_session.path).save_service_session_id(
         "opencode", "sess-opencode-123"
     )
-    ServiceSessionStore(role_session.path).record_successful_run(
-        "opencode", "sess-opencode-123"
-    )
 
     assert (
         has_exact_transcript_match(
@@ -770,7 +761,6 @@ def test_run_session_plan_rotates_claude_provider_session_identity_when_role_ses
     worktree.mkdir(parents=True)
     (worktree / "pyproject.toml").write_text("[project]\nname='t'\n", encoding="utf-8")
     service = ClaudeService()
-    role_session = RoleSession(worktree, AgentRole.IMPLEMENTER)
 
     initial_plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
@@ -783,9 +773,6 @@ def test_run_session_plan_rotates_claude_provider_session_identity_when_role_ses
     state_dir = worktree / ".pycastle-session" / "implementer" / "claude"
     state_dir.mkdir(parents=True)
     (state_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
-    ServiceSessionStore(role_session.path).record_successful_run(
-        "claude", initial_plan.provider_session_id
-    )
 
     resumed_plan = RunSessionPlan.for_service(
         role=AgentRole.IMPLEMENTER,
@@ -1112,76 +1099,6 @@ def test_run_session_plan_skips_auth_seed_action_for_fresh_codex_with_auth_json(
     assert plan.auth_seed_action is None
 
 
-@pytest.mark.parametrize(
-    ("service", "role", "namespace", "expected_session_id"),
-    [
-        (ClaudeService(), AgentRole.PLANNER, "", "claude-session-id"),
-        (CodexService(), AgentRole.IMPLEMENTER, "", "thread-codex-123"),
-        (OpenCodeService(), AgentRole.IMPROVE, "main", "sess-opencode-123"),
-    ],
-)
-def test_run_session_plan_records_service_session_metadata_on_success(
-    tmp_path: Path,
-    service: AgentService,
-    role: AgentRole,
-    namespace: str,
-    expected_session_id: str,
-):
-    plan = RunSessionPlan.for_service(
-        role=role,
-        worktree=tmp_path,
-        namespace=namespace,
-        service=service,
-    )
-
-    plan.record_successful_run(expected_session_id)
-
-    assert ServiceSessionStore(
-        RoleSession(tmp_path, role, namespace).path
-    ).service_session_metadata(
-        service.name,
-    ) == {
-        "service": service.name,
-        "provider_session_id": expected_session_id,
-    }
-
-
-@pytest.mark.parametrize(
-    ("service", "role", "namespace", "runtime_session_id"),
-    [
-        (CodexService(), AgentRole.IMPLEMENTER, "", "thread-codex-runtime"),
-        (OpenCodeService(), AgentRole.IMPROVE, "main", "sess-opencode-runtime"),
-    ],
-)
-def test_run_session_plan_records_runtime_provider_session_id_in_sidecar_and_metadata_on_success(
-    tmp_path: Path,
-    service: AgentService,
-    role: AgentRole,
-    namespace: str,
-    runtime_session_id: str,
-) -> None:
-    plan = RunSessionPlan.for_service(
-        role=role,
-        worktree=tmp_path,
-        namespace=namespace,
-        service=service,
-    )
-
-    plan.record_successful_run(runtime_session_id)
-
-    role_session = RoleSession(tmp_path, role, namespace)
-    assert (
-        _role_session_service_session_id(role_session, service.name)
-        == runtime_session_id
-    )
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        service.name
-    ) == {
-        "service": service.name,
-        "provider_session_id": runtime_session_id,
-    }
-
-
 def test_run_session_plan_captures_codex_provider_session_id_for_same_plan_reuse(
     tmp_path: Path,
 ):
@@ -1193,15 +1110,10 @@ def test_run_session_plan_captures_codex_provider_session_id_for_same_plan_reuse
     )
 
     plan.capture_provider_session_id("thread-codex-456")
-    plan.record_successful_run()
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     assert plan.provider_session_id == "thread-codex-456"
     assert _role_session_service_session_id(role_session, "codex") == "thread-codex-456"
-    assert ServiceSessionStore(role_session.path).service_session_metadata("codex") == {
-        "service": "codex",
-        "provider_session_id": "thread-codex-456",
-    }
 
 
 def test_record_observed_provider_session_id_persists_codex_thread_id_sidecar(
@@ -1272,7 +1184,6 @@ def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_re
     )
 
     plan.capture_provider_session_id("sess-opencode-456")
-    plan.record_successful_run()
 
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     assert plan.provider_session_id == "sess-opencode-456"
@@ -1280,12 +1191,6 @@ def test_run_session_plan_captures_opencode_provider_session_id_for_same_plan_re
         _role_session_service_session_id(role_session, "opencode")
         == "sess-opencode-456"
     )
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "opencode"
-    ) == {
-        "service": "opencode",
-        "provider_session_id": "sess-opencode-456",
-    }
 
 
 def test_run_session_plan_captures_generic_provider_session_id_for_same_plan_reuse(
@@ -1303,15 +1208,10 @@ def test_run_session_plan_captures_generic_provider_session_id_for_same_plan_reu
     )
 
     plan.capture_provider_session_id("thread-fake-456")
-    plan.record_successful_run()
 
     role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
     assert plan.provider_session_id == "thread-fake-456"
     assert _role_session_service_session_id(role_session, "fake") == "thread-fake-456"
-    assert ServiceSessionStore(role_session.path).service_session_metadata("fake") == {
-        "service": "fake",
-        "provider_session_id": "thread-fake-456",
-    }
 
 
 def test_run_session_plan_requires_auth_seeding_for_resume_codex_without_auth_json(
@@ -1604,7 +1504,7 @@ def test_local_auth_seed_action_require_source_raises_agent_credential_failure_w
     assert exc_info.value.service_name == "codex"
 
 
-def test_run_session_plan_capture_without_record_persists_session_id_but_not_metadata(
+def test_run_session_plan_capture_persists_session_id(
     tmp_path: Path,
 ) -> None:
     plan = RunSessionPlan.for_service(
@@ -1618,7 +1518,3 @@ def test_run_session_plan_capture_without_record_persists_session_id_but_not_met
 
     role_session = RoleSession(tmp_path, AgentRole.PLANNER)
     assert _role_session_service_session_id(role_session, "opencode") == "sess-captured"
-    assert (
-        ServiceSessionStore(role_session.path).service_session_metadata("opencode")
-        is None
-    )

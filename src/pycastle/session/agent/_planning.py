@@ -87,15 +87,6 @@ class RunSessionPlan:
     def capture_provider_session_id(self, provider_session_id: str) -> None:
         self.record_provider_session_id(provider_session_id)
 
-    def record_successful_run(self, provider_session_id: str | None = None) -> None:
-        session_id = provider_session_id or self.provider_session_id
-        if provider_session_id is not None:
-            self.record_provider_session_id(provider_session_id)
-        provider_run_state_plan = self._provider_run_state_plan
-        if provider_run_state_plan is None:
-            return
-        provider_run_state_plan.record_successful_run(session_id)
-
     def prepare_host_provider_state_dir(self) -> None:
         self.prepare_provider_state_dir()
 

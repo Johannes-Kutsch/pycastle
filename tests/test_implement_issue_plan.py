@@ -80,9 +80,6 @@ def _seed_prior_role_session_with_service(
     ServiceSessionStore(role_session.path).save_service_session_id(
         service_name, session_id
     )
-    ServiceSessionStore(role_session.path).record_successful_run(
-        service_name, session_id
-    )
     state_dir = worktree / f".pycastle-session/{role.value}/{service_name}"
     state_dir.mkdir(parents=True, exist_ok=True)
     (state_dir / "seed").write_text("seed", encoding="utf-8")

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -41,9 +40,6 @@ from pycastle.session.run_dispatch import (
 )
 from pycastle.session.run_dispatch import (
     prepare_run_session as prepare_agent_session,
-)
-from pycastle.session.run_dispatch import (
-    record_successful_provider_session_metadata,
 )
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
@@ -374,40 +370,6 @@ def test_session_package_public_interface_prepares_resumed_run_session(
     assert session.provider_state_dir_container_path == (
         "/workspace/.pycastle-session/implementer/claude/"
     )
-
-
-def test_session_package_public_interface_records_success_metadata_for_runtime_session_id(
-    tmp_path: Path,
-):
-    from pycastle.session import (
-        RunSessionRequest,
-        prepare_run_session,
-    )
-    from pycastle.session import (
-        record_successful_provider_session_metadata as record_public_success_metadata,
-    )
-
-    session = prepare_run_session(
-        RunSessionRequest(
-            worktree=tmp_path,
-            role=AgentRole.IMPROVE,
-            session_namespace="main",
-            service=OpenCodeService(),
-            container_workspace="/workspace",
-        )
-    )
-
-    session.initial_provider_run_session().record_provider_session_id(
-        "sess-opencode-runtime"
-    )
-    record_public_success_metadata(session)
-
-    assert ServiceSessionStore(
-        RoleSession(tmp_path, AgentRole.IMPROVE, "main").path
-    ).service_session_metadata("opencode") == {
-        "service": "opencode",
-        "provider_session_id": "sess-opencode-runtime",
-    }
 
 
 def test_prepare_provider_session_state_fresh_claude_uses_deterministic_uuid_and_state_path(
@@ -1476,7 +1438,6 @@ def test_prepare_provider_session_state_captures_opencode_session_id_in_selected
 
     state.prepare_for_run()
     state.record_provider_session_id("sess-opencode-runtime")
-    state.record_successful_run()
 
     role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
     session_file_text = {
@@ -1497,130 +1458,7 @@ def test_prepare_provider_session_state_captures_opencode_session_id_in_selected
         _role_session_service_session_id(role_session, "opencode")
         == "sess-opencode-runtime"
     )
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "opencode"
-    ) == {
-        "service": "opencode",
-        "provider_session_id": "sess-opencode-runtime",
-    }
     assert all("go-key" not in contents for contents in session_file_text.values())
-
-
-def test_prepared_provider_run_session_records_success_metadata_with_runtime_session_id(
-    tmp_path: Path,
-):
-    state = prepare_provider_session_state(
-        _provider_request(
-            tmp_path,
-            role=AgentRole.IMPROVE,
-            service=OpenCodeService(),
-            namespace="main",
-        )
-    )
-
-    run_session = state.initial_provider_run_session()
-    run_session.record_provider_session_id("sess-opencode-runtime")
-    run_session.record_successful_run()
-
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "opencode"
-    ) == {
-        "service": "opencode",
-        "provider_session_id": "sess-opencode-runtime",
-    }
-    assert json.loads(
-        ServiceSessionStore(role_session.path)
-        .metadata_path()
-        .read_text(encoding="utf-8")
-    ) == {
-        "opencode": {
-            "service": "opencode",
-            "provider_session_id": "sess-opencode-runtime",
-        }
-    }
-
-
-def test_prepared_provider_resume_run_session_records_success_metadata_with_latest_runtime_session_id(
-    tmp_path: Path,
-):
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    ServiceSessionStore(role_session.path).save_service_session_id(
-        "opencode", "sess-opencode-previous"
-    )
-
-    state = prepare_provider_session_state(
-        _provider_request(
-            tmp_path,
-            role=AgentRole.IMPROVE,
-            service=OpenCodeService(),
-            namespace="main",
-        )
-    )
-
-    run_session = state.resumable_provider_run_session()
-    run_session.record_provider_session_id("sess-opencode-latest")
-    run_session.record_successful_run()
-
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "opencode"
-    ) == {
-        "service": "opencode",
-        "provider_session_id": "sess-opencode-latest",
-    }
-
-
-def test_prepared_provider_run_session_capture_without_success_leaves_metadata_absent(
-    tmp_path: Path,
-):
-    state = prepare_provider_session_state(
-        _provider_request(
-            tmp_path,
-            role=AgentRole.IMPROVE,
-            service=OpenCodeService(),
-            namespace="main",
-        )
-    )
-
-    run_session = state.initial_provider_run_session()
-    run_session.record_provider_session_id("sess-opencode-runtime")
-
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    assert (
-        _role_session_service_session_id(role_session, "opencode")
-        == "sess-opencode-runtime"
-    )
-    assert (
-        ServiceSessionStore(role_session.path).service_session_metadata("opencode")
-        is None
-    )
-
-
-def test_prepared_provider_run_session_metadata_survives_completion_cleanup(
-    tmp_path: Path,
-):
-    state = prepare_provider_session_state(
-        _provider_request(
-            tmp_path,
-            role=AgentRole.IMPROVE,
-            service=OpenCodeService(),
-            namespace="main",
-        )
-    )
-
-    run_session = state.initial_provider_run_session()
-    run_session.record_provider_session_id("sess-opencode-runtime")
-    run_session.record_successful_run()
-
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-    role_session.clear_provider_state_and_signal_completion()
-
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "opencode"
-    ) == {
-        "service": "opencode",
-        "provider_session_id": "sess-opencode-runtime",
-    }
 
 
 def test_remember_provider_session_id_updates_session_id(tmp_path: Path):
@@ -1642,172 +1480,6 @@ def test_remember_provider_session_id_persists_sidecar_for_codex(tmp_path: Path)
     assert (
         _role_session_service_session_id(role_session, "codex") == "thread-sidecar-id"
     )
-
-
-def test_record_successful_provider_session_metadata_saves_metadata(tmp_path: Path):
-    session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
-
-    record_successful_provider_session_metadata(session)
-
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    metadata = ServiceSessionStore(role_session.path).service_session_metadata("claude")
-    assert metadata is not None
-    assert metadata["service"] == "claude"
-    assert metadata["provider_session_id"] == session.provider_session_id
-
-
-def test_prepare_agent_session_does_not_write_metadata_before_prepared_success_recording(
-    tmp_path: Path,
-):
-    session = prepare_agent_session(_request(tmp_path, service=ClaudeService()))
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-
-    assert ServiceSessionStore(role_session.path).metadata_path().exists() is False
-
-    session.record_successful_run()
-
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "claude"
-    ) == {
-        "service": "claude",
-        "provider_session_id": session.provider_session_id,
-    }
-
-
-def test_prepared_success_recorder_without_provider_session_id_leaves_metadata_unchanged(
-    tmp_path: Path,
-):
-    _seed_codex_auth(tmp_path)
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    ServiceSessionStore(role_session.path).record_successful_run(
-        "claude", "thread-existing"
-    )
-    before = (
-        ServiceSessionStore(role_session.path)
-        .metadata_path()
-        .read_text(encoding="utf-8")
-    )
-    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-
-    assert session.provider_session_id is None
-
-    session.record_successful_run()
-
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "claude"
-    ) == {
-        "service": "claude",
-        "provider_session_id": "thread-existing",
-    }
-    assert (
-        ServiceSessionStore(role_session.path).service_session_metadata("codex") is None
-    )
-    assert (
-        ServiceSessionStore(role_session.path)
-        .metadata_path()
-        .read_text(encoding="utf-8")
-        == before
-    )
-
-
-def test_prepared_provider_run_session_without_provider_session_id_clears_stale_metadata_for_service(
-    tmp_path: Path,
-):
-    _seed_codex_auth(tmp_path)
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    ServiceSessionStore(role_session.path).record_successful_run(
-        "claude", "thread-claude"
-    )
-    ServiceSessionStore(role_session.path).record_successful_run(
-        "codex", "thread-stale"
-    )
-
-    state = prepare_provider_session_state(
-        SessionProviderStateRequest(
-            worktree=tmp_path,
-            role=AgentRole.IMPLEMENTER,
-            session_namespace="",
-            service=CodexService(),
-        )
-    )
-
-    state.initial_provider_run_session().record_successful_run()
-
-    assert (
-        ServiceSessionStore(role_session.path).service_session_metadata("codex") is None
-    )
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "claude"
-    ) == {
-        "service": "claude",
-        "provider_session_id": "thread-claude",
-    }
-
-
-def test_prepared_provider_run_session_without_provider_session_id_deletes_file_when_sole_service(
-    tmp_path: Path,
-):
-    _seed_codex_auth(tmp_path)
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    ServiceSessionStore(role_session.path).record_successful_run(
-        "codex", "thread-stale"
-    )
-
-    state = prepare_provider_session_state(
-        SessionProviderStateRequest(
-            worktree=tmp_path,
-            role=AgentRole.IMPLEMENTER,
-            session_namespace="",
-            service=CodexService(),
-        )
-    )
-
-    state.initial_provider_run_session().record_successful_run()
-
-    assert (
-        ServiceSessionStore(role_session.path).service_session_metadata("codex") is None
-    )
-    assert not ServiceSessionStore(role_session.path).metadata_path().exists()
-
-
-def test_prepared_success_recorder_preserves_metadata_for_other_services(
-    tmp_path: Path,
-):
-    _seed_codex_auth(tmp_path)
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    ServiceSessionStore(role_session.path).record_successful_run(
-        "claude", "thread-claude"
-    )
-    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-    session.record_provider_session_id("thread-codex")
-
-    session.record_successful_run()
-
-    assert ServiceSessionStore(role_session.path).service_session_metadata(
-        "claude"
-    ) == {
-        "service": "claude",
-        "provider_session_id": "thread-claude",
-    }
-    assert ServiceSessionStore(role_session.path).service_session_metadata("codex") == {
-        "service": "codex",
-        "provider_session_id": "thread-codex",
-    }
-
-
-def test_record_successful_provider_session_metadata_uses_updated_session_id(
-    tmp_path: Path,
-):
-    _seed_codex_auth(tmp_path)
-    session = prepare_agent_session(_request(tmp_path, service=CodexService()))
-    session.record_provider_session_id("thread-runtime-id")
-
-    record_successful_provider_session_metadata(session)
-
-    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
-    metadata = ServiceSessionStore(role_session.path).service_session_metadata("codex")
-    assert metadata is not None
-    assert metadata["provider_session_id"] == "thread-runtime-id"
 
 
 def test_prepare_host_provider_state_dir_creates_directory(tmp_path: Path):

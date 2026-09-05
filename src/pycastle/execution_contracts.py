@@ -136,8 +136,6 @@ class PreparedProviderRunSession(Protocol):
 
     def record_provider_session_id(self, provider_session_id: str) -> None: ...
 
-    def record_successful_run(self) -> None: ...
-
 
 class PreparedRunSessionState(Protocol):
     provider_state_dir_container_path: str | None

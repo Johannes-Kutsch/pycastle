@@ -22,9 +22,9 @@ else:
 class ServiceResumeIdentityStore(Protocol):
     def save_service_session_id(self, service_name: str, session_id: str) -> None: ...
 
-    def service_session_metadata(self, service_name: str) -> dict[str, str] | None: ...
-
-    def exact_transcript_service_name(self) -> str | None: ...
+    def transcript_owner_service_name(
+        self, known_service_names: frozenset[str] | None = None
+    ) -> str | None: ...
 
 
 _DEFAULT_PROVIDER_SESSION_ID_FILENAME = "thread_id"
@@ -269,12 +269,7 @@ def is_exact_resumable_service_session(
     exact_provider_session_matcher: Callable[[str | None, Path | None], bool]
     | None = None,
 ) -> bool:
-    metadata = role_session.service_session_metadata(service_name)
-    if (
-        role_session.exact_transcript_service_name() != service_name
-        or metadata is None
-        or metadata["provider_session_id"] != provider_session_id
-    ):
+    if role_session.transcript_owner_service_name() != service_name:
         return False
     if exact_provider_session_matcher is not None:
         return exact_provider_session_matcher(provider_session_id, provider_state_dir)

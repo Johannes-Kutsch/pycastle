@@ -25,7 +25,6 @@ from pycastle.session.run_dispatch import (
     has_exact_transcript_match,
     prepare_agent_run_session_state,
     prepare_run_session,
-    record_successful_provider_session_metadata,
 )
 from pycastle.session.run_state import ProviderFreshFallbackReason, ProviderRunState
 
@@ -105,5 +104,4 @@ __all__ = [
     "prepare_provider_session_state",
     "prepare_run_session",
     "provider_state_relpath",
-    "record_successful_provider_session_metadata",
 ]

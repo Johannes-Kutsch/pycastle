@@ -19,8 +19,7 @@ _NOW = datetime(2026, 1, 1, 12, 0, tzinfo=UTC).astimezone()
 
 def _role_session_mock() -> MagicMock:
     m = MagicMock()
-    m.service_session_metadata.return_value = None
-    m.exact_transcript_service_name.return_value = None
+    m.transcript_owner_service_name.return_value = None
     return m
 
 

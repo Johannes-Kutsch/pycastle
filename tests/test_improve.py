@@ -398,9 +398,6 @@ def _seed_exact_phase_1_main_transcript(
     namespace: str = "main",
 ) -> None:
     role_session = RoleSession(worktree_path, AgentRole.IMPROVE, namespace)
-    ServiceSessionStore(role_session.path).record_successful_run(
-        service_name, provider_session_id
-    )
     if service_name == "opencode":
         state_dir = worktree_path / "opencode"
     elif service_name == "codex":

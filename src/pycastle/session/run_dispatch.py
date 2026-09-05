@@ -50,9 +50,6 @@ class PreparedAgentProviderRunSession:
         self.provider_session_id = provider_session_id
         self._state.record_provider_session_id(provider_session_id)
 
-    def record_successful_run(self) -> None:
-        self._state.record_successful_run()
-
 
 @dataclasses.dataclass
 class AgentRunSessionState:
@@ -132,9 +129,6 @@ class AgentRunSessionState:
         self.provider_session_id = provider_session_id
         self._observed_provider_session_id = True
         self._plan.capture_provider_session_id(provider_session_id)
-
-    def record_successful_run(self) -> None:
-        self._plan.record_successful_run(self.provider_session_id)
 
     def _preserved_codex_auth_bytes(self) -> bytes | None:
         auth_path = self._codex_auth_path()
@@ -245,12 +239,6 @@ def record_observed_provider_session_id(
     session_state.record_provider_session_id(provider_session_id)
 
 
-def record_successful_provider_session_metadata(
-    session_state: AgentRunSessionState,
-) -> None:
-    session_state.record_successful_run()
-
-
 def has_exact_transcript_match(
     *,
     worktree: Path,
@@ -300,5 +288,4 @@ __all__ = [
     "prepare_agent_run_session_state",
     "prepare_run_session",
     "record_observed_provider_session_id",
-    "record_successful_provider_session_metadata",
 ]
