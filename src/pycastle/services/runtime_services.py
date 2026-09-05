@@ -26,7 +26,7 @@ from pycastle.services.credential_pool import CredentialPool
 
 if TYPE_CHECKING:
     from pycastle.agents.output_protocol import AgentRole
-    from pycastle.session.agent import AuthSeedingRequirement, LocalAuthSeedAction
+    from pycastle.session.auth_seed import AuthSeedingRequirement, LocalAuthSeedAction
 else:
     AuthSeedingRequirement = object
     LocalAuthSeedAction = object
@@ -738,7 +738,7 @@ def _is_exact_resumable_codex_session(
 def _codex_auth_seeding_requirement(
     provider_state_dir: Path | None,
 ) -> AuthSeedingRequirement:
-    from pycastle.session.agent import (
+    from pycastle.session.auth_seed import (
         AuthSeedingRequirement as RuntimeAuthSeedingRequirement,
     )
 
@@ -750,10 +750,12 @@ def _codex_auth_seeding_requirement(
 def _codex_auth_seed_action(
     provider_state_dir: Path | None,
 ) -> LocalAuthSeedAction | None:
-    from pycastle.session.agent import (
+    from pycastle.session.auth_seed import (
         AuthSeedingRequirement as RuntimeAuthSeedingRequirement,
     )
-    from pycastle.session.agent import LocalAuthSeedAction as RuntimeLocalAuthSeedAction
+    from pycastle.session.auth_seed import (
+        LocalAuthSeedAction as RuntimeLocalAuthSeedAction,
+    )
 
     if (
         _codex_auth_seeding_requirement(provider_state_dir)
