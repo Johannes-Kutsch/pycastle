@@ -30,10 +30,10 @@ from pycastle.iteration.improve_role_session_store import (
 )
 from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
+from pycastle.runtime_session import session_uuid as runtime_session_uuid
 from pycastle.services import GithubNetworkError, ServiceRegistry
 from pycastle.services.runtime_services import CodexService, OpenCodeService
 from pycastle.session import RoleSession
-from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
 )
@@ -92,18 +92,6 @@ def deps(tmp_path, git_svc, agent_runner):
 
 def _run(deps):
     return asyncio.run(improve_phase(deps))
-
-
-def _role_session_session_uuid(role_session: object) -> str:
-    role_session_path = getattr(role_session, "path", None)
-    if isinstance(role_session_path, Path):
-        identity_uuid = session_uuid_for_role_session_path(role_session_path)
-        if identity_uuid is not None:
-            return identity_uuid
-    legacy = getattr(role_session, "session_uuid", None)
-    if callable(legacy):
-        return legacy()
-    raise AssertionError("Unable to derive role session identifier")
 
 
 # ── improve_phase: integration behavior ──────────────────────────────────────
@@ -573,9 +561,7 @@ def test_improve_clean_phase_2_entry_restarts_from_phase_1_on_selected_service_m
     _seed_exact_phase_1_main_transcript(
         wt,
         service_name="claude",
-        provider_session_id=_role_session_session_uuid(
-            RoleSession(wt, AgentRole.IMPROVE, "main")
-        ),
+        provider_session_id=runtime_session_uuid(wt, AgentRole.IMPROVE.value, "main"),
     )
     status_display = MagicMock()
     runner = FakeAgentRunner([], preflight_responses=[[]])

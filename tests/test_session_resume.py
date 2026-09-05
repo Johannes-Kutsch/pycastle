@@ -17,6 +17,9 @@ from pycastle.runtime_session import (
     ProviderSessionState,
     ProviderSessionStateRequest,
 )
+from pycastle.runtime_session import (
+    session_uuid as runtime_session_uuid,
+)
 from pycastle.services import ServiceRegistry
 from pycastle.services.runtime_services import (
     AgentService,
@@ -28,7 +31,6 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
-from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
     has_exact_transcript,
@@ -36,14 +38,14 @@ from pycastle.session.service_session_store import (
 
 
 def _role_session_session_uuid(role_session: object) -> str:
-    role_session_path = getattr(role_session, "path", None)
-    if isinstance(role_session_path, Path):
-        identity_uuid = session_uuid_for_role_session_path(role_session_path)
-        if identity_uuid is not None:
-            return identity_uuid
     legacy = getattr(role_session, "session_uuid", None)
     if callable(legacy):
         return legacy()
+    worktree = getattr(role_session, "_worktree", None)
+    role = getattr(role_session, "_role", None)
+    namespace = getattr(role_session, "_namespace", "")
+    if isinstance(worktree, Path) and role is not None:
+        return runtime_session_uuid(worktree, role.value, namespace)
     raise AssertionError("Unable to derive role session identifier")
 
 

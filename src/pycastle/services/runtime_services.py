@@ -21,7 +21,6 @@ from pycastle.runtime_session import (
     provider_state_relpath,
     select_resumable_provider_session_id,
 )
-from pycastle.runtime_session import session_uuid as runtime_session_uuid
 from pycastle.services._wake_time import compute_wake_time
 from pycastle.services.credential_pool import CredentialPool
 
@@ -101,26 +100,7 @@ def _provider_session_preferences_for_request(
 def _provider_session_id_for_request(
     request: ProviderSessionStateRequest,
 ) -> str | None:
-    return request.preferred_provider_session_id or _provider_session_uuid_for_request(
-        request
-    )
-
-
-def _provider_session_uuid_for_request(
-    request: ProviderSessionStateRequest,
-) -> str | None:
-    legacy_session_uuid = getattr(request.role_session, "session_uuid", None)
-    if callable(legacy_session_uuid):
-        return legacy_session_uuid()
-
-    role_session_path = getattr(request.role_session, "path", None)
-    if not isinstance(role_session_path, Path):
-        return None
-    identity = _role_session_identity_from_path(role_session_path)
-    if identity is None:
-        return None
-    worktree, role_name, namespace = identity
-    return runtime_session_uuid(worktree, role_name, namespace)
+    return request.preferred_provider_session_id
 
 
 def _provider_session_state_for_request(
@@ -714,26 +694,6 @@ def _resolved_provider_session_id(
     return load_provider_state_session_id(
         _service_session_id_path(role_session_path, service_name)
     )
-
-
-def _role_session_identity_from_path(
-    role_session_path: Path,
-) -> tuple[Path, str, str] | None:
-    path = role_session_path.resolve()
-    parts = path.parts
-    try:
-        session_root_index = (
-            len(parts) - 1 - tuple(reversed(parts)).index(".pycastle-session")
-        )
-    except ValueError:
-        return None
-    role_index = session_root_index + 1
-    if role_index >= len(parts):
-        return None
-    role_name = parts[role_index]
-    namespace = parts[role_index + 1] if role_index + 1 < len(parts) else ""
-    worktree = Path(*parts[:session_root_index])
-    return worktree, role_name, namespace
 
 
 def _service_session_id_path(role_session_path: Path, service_name: str) -> Path:

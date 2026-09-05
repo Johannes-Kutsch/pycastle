@@ -19,7 +19,6 @@ from pycastle.session import (
     RoleSession,
     provider_state_relpath,
 )
-from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -28,18 +27,6 @@ from pycastle.session.service_session_store import (
     ServiceSessionStore,
     store_for_role_session,
 )
-
-
-def _role_session_session_uuid(role_session: object) -> str:
-    role_session_path = getattr(role_session, "path", None)
-    if isinstance(role_session_path, Path):
-        identity_uuid = session_uuid_for_role_session_path(role_session_path)
-        if identity_uuid is not None:
-            return identity_uuid
-    legacy = getattr(role_session, "session_uuid", None)
-    if callable(legacy):
-        return legacy()
-    raise AssertionError("Unable to derive role session identifier")
 
 
 def _role_session_service_session_id(

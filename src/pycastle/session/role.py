@@ -10,45 +10,11 @@ from pycastle.runtime_session import (
 from pycastle.runtime_session import (
     provider_state_relpath as runtime_provider_state_relpath,
 )
-from pycastle.runtime_session import (
-    session_uuid as runtime_session_uuid,
-)
 
 SESSION_DIR_NAME = ".pycastle-session"
 _CONTINUATION_FILENAME = "_continuation"
 _DONE_FILENAME = "_done"
 _FINGERPRINT_FILENAME = "_fingerprint"
-
-
-def session_uuid_for_role_session_path(role_session_path: Path) -> str | None:
-    identity = _role_session_identity_from_path(role_session_path)
-    if identity is None:
-        return None
-    worktree, role, namespace = identity
-    return runtime_session_uuid(worktree, role.value, namespace)
-
-
-def _role_session_identity_from_path(
-    role_session_path: Path,
-) -> tuple[Path, AgentRole, str] | None:
-    path = role_session_path.resolve()
-    parts = path.parts
-    try:
-        session_root_index = (
-            len(parts) - 1 - tuple(reversed(parts)).index(SESSION_DIR_NAME)
-        )
-    except ValueError:
-        return None
-    role_index = session_root_index + 1
-    if role_index >= len(parts):
-        return None
-    try:
-        role = AgentRole(parts[role_index])
-    except ValueError:
-        return None
-    namespace = parts[role_index + 1] if role_index + 1 < len(parts) else ""
-    worktree = Path(*parts[:session_root_index])
-    return worktree, role, namespace
 
 
 def _force_remove_readonly(

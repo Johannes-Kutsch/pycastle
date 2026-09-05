@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 from pycastle.runtime_session import (
@@ -16,9 +15,10 @@ from pycastle.runtime_session import (
     provider_state_relpath,
 )
 from pycastle.services.runtime_services import AgentService, ClaudeService
-from pycastle.session.role import session_uuid_for_role_session_path
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from pycastle.agents.output_protocol import AgentRole
 
 
@@ -232,10 +232,7 @@ class _ClaudeProviderSessionAdapter(_BaseProviderSessionAdapter):
             if request.force_resume or request.has_resumable_provider_state
             else RunKind.FRESH
         )
-        provider_session_id = (
-            request.preferred_provider_session_id
-            or _provider_session_uuid_for_request(request)
-        )
+        provider_session_id = request.preferred_provider_session_id
         if (
             request.require_exact_transcript_match
             and request.has_resumable_provider_state
@@ -380,19 +377,6 @@ def provider_session_adapter_for_service_name(
     if service_name == "opencode":
         return cast("ProviderSessionAdapter", _OpenCodeProviderSessionAdapter())
     return cast("ProviderSessionAdapter", _BaseProviderSessionAdapter(service_name))
-
-
-def _provider_session_uuid_for_request(
-    request: ProviderSessionStateRequest,
-) -> str | None:
-    legacy_session_uuid = getattr(request.role_session, "session_uuid", None)
-    if callable(legacy_session_uuid):
-        return legacy_session_uuid()
-
-    role_session_path = getattr(request.role_session, "path", None)
-    if not isinstance(role_session_path, Path):
-        return None
-    return session_uuid_for_role_session_path(role_session_path)
 
 
 def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
