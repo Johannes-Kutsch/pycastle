@@ -64,16 +64,6 @@ from pycastle.services._wake_time import compute_wake_time
 from pycastle.services.runtime_services import AgentService, ClaudeService
 from pycastle.services.service_registry import ServiceRegistry
 from pycastle.session import RoleSession, RunKind
-from pycastle.session.agent import (
-    RunSessionPlan,
-    run_session_plan_from_provider_run_state_plan,
-)
-from pycastle.session.run_dispatch import (
-    AgentRunSessionState,
-    RunSessionRequest,
-    prepare_run_session,
-)
-from pycastle.session_planning import ProviderRunStatePlan
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
 
@@ -161,7 +151,7 @@ class RunRequest:
     issue_title: str = ""
     work_body: str = ""
     session_namespace: str = ""
-    run_session_plan: RunSessionPlan | None = None
+    run_session_plan: Any = None
     preserve_session_on_completion: bool = False
 
 
@@ -359,40 +349,9 @@ class AgentRunner:
                 ),
             )
 
-        def _prepare_session(
-            run_session_plan: RuntimeRunSession,
-        ) -> AgentRunSessionState:
-            plan_payload = run_session_plan.run_session_plan
-            if isinstance(plan_payload, ProviderRunStatePlan):
-                return prepare_run_session(
-                    RunSessionRequest(
-                        worktree=run_session_plan.mount_path,
-                        role=cast("AgentRole", run_session_plan.role),
-                        session_namespace=run_session_plan.session_namespace,
-                        service=cast("AgentService", run_session_plan.service),
-                        container_workspace=run_session_plan.container_workspace,
-                        run_session_plan=run_session_plan_from_provider_run_state_plan(
-                            role=cast("AgentRole", run_session_plan.role),
-                            worktree=run_session_plan.mount_path,
-                            namespace=run_session_plan.session_namespace,
-                            service=cast("AgentService", run_session_plan.service),
-                            provider_run_state_plan=plan_payload,
-                        ),
-                        require_exact_transcript_for_strict_resume=True,
-                    )
-                )
-            return prepare_run_session(
-                RunSessionRequest(
-                    worktree=run_session_plan.mount_path,
-                    role=cast("AgentRole", run_session_plan.role),
-                    session_namespace=run_session_plan.session_namespace,
-                    service=cast("AgentService", run_session_plan.service),
-                    container_workspace=run_session_plan.container_workspace,
-                    run_session_plan=cast(
-                        "RunSessionPlan | None",
-                        run_session_plan.run_session_plan,
-                    ),
-                )
+        def _prepare_session(_: object) -> Any:
+            raise RuntimeError(
+                "prepare_session is always overridden in the one-shot path"
             )
 
         def _translate_setup_failure(

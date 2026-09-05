@@ -11,7 +11,6 @@ from typing import cast
 import pytest
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.provider_session_adapter import provider_session_adapter_for_service
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -22,11 +21,8 @@ from pycastle.services import ServiceRegistry
 from pycastle.services.runtime_services import (
     AgentService,
     CodexService,
-    OpenCodeService,
 )
 from pycastle.session import (
-    ProviderFreshFallbackReason,
-    ProviderRunState,
     RoleSession,
     RunKind,
     any_role_dir_present,
@@ -36,12 +32,6 @@ from pycastle.session.role import session_uuid_for_role_session_path
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
     has_exact_transcript,
-    store_for_role_session,
-)
-from pycastle.session_planning import (
-    ProviderRunStatePlanRequest,
-    RecoveredSessionIdPersistence,
-    plan_provider_run_state,
 )
 
 
@@ -95,41 +85,6 @@ def _role_session_service_session_id(
     if callable(legacy):
         return legacy(service_name)
     return None
-
-
-def _provider_run_state_for_service(
-    role_session: object,
-    service: AgentService,
-) -> ProviderRunState:
-    worktree, role, namespace = _role_session_identity(role_session)
-    plan = plan_provider_run_state(
-        ProviderRunStatePlanRequest(
-            worktree=worktree,
-            role=role,
-            namespace=namespace,
-            service=service,
-            role_session=store_for_role_session(RoleSession(worktree, role, namespace)),
-            provider_session_adapter=provider_session_adapter_for_service(service),
-        )
-    )
-    fallback_reason = None
-    if (
-        plan.run_kind is RunKind.FRESH
-        and plan.provider_session_id is None
-        and plan.provider_state_dir is not None
-        and service.is_resumable(plan.provider_state_dir)
-    ):
-        fallback_reason = ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY
-    return ProviderRunState(
-        run_kind=plan.run_kind,
-        provider_session_id=plan.provider_session_id,
-        persist_provider_session_id=(
-            plan.recovered_session_id_persistence
-            is RecoveredSessionIdPersistence.PERSIST
-        ),
-        provider_state_dir=plan.provider_state_dir,
-        fresh_fallback_reason=fallback_reason,
-    )
 
 
 @dataclass(frozen=True)
@@ -395,234 +350,6 @@ def test_service_session_id_sidecars_follow_role_session_provider_state_layout(
         / "unknown-service"
         / "thread_id"
     ).read_text(encoding="utf-8") == "default-123"
-
-
-def test_provider_run_state_for_codex_service_recovers_single_nested_rollout_thread_id(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
-    service = CodexService()
-    state_dir = rs.path / "codex"
-    rollout_dir = state_dir / "sessions" / "2026" / "05" / "30" / "nested"
-    rollout_dir.mkdir(parents=True)
-    (rollout_dir / "rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"   "}\n'
-        '{"type":"thread.started","thread_id":"thread-from-rollout"}\n',
-        encoding="utf-8",
-    )
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.RESUME,
-        provider_session_id="thread-from-rollout",
-        persist_provider_session_id=True,
-        provider_state_dir=state_dir,
-    )
-    assert _role_session_service_session_id(rs, "codex") == "thread-from-rollout"
-
-
-def test_provider_run_state_for_codex_service_preserves_provider_state_dir_and_session_id(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
-    service = CodexService()
-    provider_state_dir = rs.path / "codex"
-    provider_state_dir.mkdir(parents=True)
-    provider_state_dir.joinpath("thread_id").write_text(
-        "thread-from-sidecar\n",
-        encoding="utf-8",
-    )
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.RESUME,
-        provider_session_id="thread-from-sidecar",
-        provider_state_dir=provider_state_dir,
-    )
-
-
-def test_provider_run_state_for_codex_service_reports_unrecoverable_fallback_reason(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
-    service = CodexService()
-    provider_state_dir = rs.path / "codex"
-    dir_a = provider_state_dir / "sessions" / "2026" / "05" / "30"
-    dir_b = provider_state_dir / "sessions" / "2026" / "05" / "31"
-    dir_a.mkdir(parents=True)
-    dir_b.mkdir(parents=True)
-    dir_a.joinpath("rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-old"}\n',
-        encoding="utf-8",
-    )
-    dir_b.joinpath("rollout-001.jsonl").write_text(
-        '{"type":"thread.started","thread_id":"thread-new"}\n',
-        encoding="utf-8",
-    )
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.FRESH,
-        provider_session_id=None,
-        provider_state_dir=provider_state_dir,
-        fresh_fallback_reason=(ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY),
-    )
-
-
-def test_provider_run_state_for_non_codex_service_is_fresh_without_provider_session_id_when_state_dir_is_not_resumable(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
-    service = _FakeService(
-        name="opencode",
-        relpath="custom/opencode-state/",
-        resumable=False,
-    )
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.FRESH,
-        provider_session_id=None,
-        provider_state_dir=worktree / "custom" / "opencode-state",
-    )
-
-
-def test_provider_run_state_for_claude_service_resumes_with_role_session_uuid_without_sidecar(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPROVE, "main")
-    service = _FakeService(
-        name="claude",
-        relpath="custom/claude-state/",
-        resumable=True,
-    )
-    provider_state_dir = worktree / "custom" / "claude-state"
-    provider_state_dir.mkdir(parents=True)
-    provider_state_dir.joinpath("session.jsonl").write_text("{}\n", encoding="utf-8")
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.RESUME,
-        provider_session_id=_role_session_session_uuid(rs),
-        provider_state_dir=provider_state_dir,
-    )
-
-
-def test_provider_run_state_for_codex_service_prefers_saved_thread_id_without_sessions_dir(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
-    service = CodexService()
-    provider_state_dir = worktree / ".pycastle-session" / "implementer" / "codex"
-    provider_state_dir.mkdir(parents=True)
-    ServiceSessionStore(rs.path).save_service_session_id("codex", "thread-from-sidecar")
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.RESUME,
-        provider_session_id="thread-from-sidecar",
-        provider_state_dir=provider_state_dir,
-    )
-
-
-def test_provider_run_state_for_codex_service_is_fresh_when_rollouts_are_unreadable(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
-    service = CodexService()
-    provider_state_dir = worktree / ".pycastle-session" / "implementer" / "codex"
-    rollout_path = (
-        provider_state_dir / "sessions" / "2026" / "05" / "31" / "rollout-001.jsonl"
-    )
-    rollout_path.parent.mkdir(parents=True)
-    rollout_path.write_bytes(b"\xff\xfe\x00")
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.FRESH,
-        provider_session_id=None,
-        provider_state_dir=provider_state_dir,
-        fresh_fallback_reason=ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY,
-    )
-
-
-def test_provider_run_state_for_sidecar_backed_service_resumes_with_saved_service_session_id(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
-    service = _FakeService(
-        name="opencode",
-        relpath="custom/opencode-state/",
-        resumable=True,
-    )
-    provider_state_dir = worktree / "custom" / "opencode-state"
-    provider_state_dir.mkdir(parents=True)
-    provider_state_dir.joinpath("session_id").write_text(
-        "sess-opencode-123\n",
-        encoding="utf-8",
-    )
-    ServiceSessionStore(rs.path).save_service_session_id(
-        "opencode", "sess-opencode-123"
-    )
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.RESUME,
-        provider_session_id="sess-opencode-123",
-        provider_state_dir=provider_state_dir,
-    )
-
-
-def test_provider_run_state_for_sidecar_backed_service_falls_back_to_fresh_without_inventing_session_id(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
-    service = _FakeService(
-        name="opencode",
-        relpath="custom/opencode-state/",
-        resumable=True,
-    )
-    provider_state_dir = worktree / "custom" / "opencode-state"
-    provider_state_dir.mkdir(parents=True)
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.FRESH,
-        provider_session_id=None,
-        provider_state_dir=provider_state_dir,
-        fresh_fallback_reason=ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY,
-    )
-
-
-def test_provider_run_state_for_opencode_downgrades_resumable_state_without_session_id_to_fresh(
-    worktree,
-):
-    rs = RoleSession(worktree, AgentRole.IMPLEMENTER)
-    service = OpenCodeService()
-    provider_state_dir = worktree / ".pycastle-session" / "implementer" / "opencode"
-    provider_state_dir.mkdir(parents=True)
-    provider_state_dir.joinpath("resume.jsonl").write_text(
-        "{}\n",
-        encoding="utf-8",
-    )
-
-    provider_run_state = _provider_run_state_for_service(rs, service)
-
-    assert provider_run_state == ProviderRunState(
-        run_kind=RunKind.FRESH,
-        provider_session_id=None,
-        provider_state_dir=provider_state_dir,
-        fresh_fallback_reason=ProviderFreshFallbackReason.UNRECOVERABLE_IDENTITY,
-    )
 
 
 def test_completion_signal_clears_provider_state_and_marks_done(rs):
