@@ -10,12 +10,7 @@ if TYPE_CHECKING:
 
 
 class PoolAvailabilityHelper:
-    """Pool-backed availability helper for credential-based services.
-
-    Owns a CredentialPool and the currently-picked credential, and
-    translates pool exhaustion into UsageLimitError (ADR 0049).
-    Private to the services package.
-    """
+    """Pool-backed availability helper; translates pick() exhaustion into UsageLimitError (ADR 0049)."""
 
     def __init__(
         self,

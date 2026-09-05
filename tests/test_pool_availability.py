@@ -112,3 +112,20 @@ def test_single_string_account_accepted():
     helper = PoolAvailabilityHelper("tok-single", provider="svc")
     assert helper.pick_token() == "tok-single"
     assert helper.account_names() == ["account 1"]
+
+
+def test_next_wake_time_returns_earliest_finite_wake_time():
+    reset_time = datetime(2099, 1, 1, 14, 30, tzinfo=UTC).astimezone()
+    helper = _helper(("account 1", "tok-1"), provider="svc")
+    helper.pick_token()
+    helper.mark_exhausted(reset_time, now=_NOW)
+    wake = helper.next_wake_time()
+    assert wake > reset_time
+
+
+def test_mutation_methods_are_no_ops_before_pick_token():
+    helper = _helper(("account 1", "tok-1"), provider="svc")
+    helper.mark_exhausted(_FAR, now=_NOW)
+    helper.mark_model_restricted("sonnet")
+    assert helper.mark_permanently_exhausted() is None
+    assert helper.is_available(now=_NOW) is True
