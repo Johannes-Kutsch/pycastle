@@ -37,41 +37,6 @@ from pycastle.session.service_session_store import (
 )
 
 
-def _role_session_session_uuid(role_session: object) -> str:
-    legacy = getattr(role_session, "session_uuid", None)
-    if callable(legacy):
-        return legacy()
-    worktree = getattr(role_session, "_worktree", None)
-    role = getattr(role_session, "_role", None)
-    namespace = getattr(role_session, "_namespace", "")
-    if isinstance(worktree, Path) and role is not None:
-        return runtime_session_uuid(worktree, role.value, namespace)
-    raise AssertionError("Unable to derive role session identifier")
-
-
-def _role_session_identity(role_session: object) -> tuple[Path, AgentRole, str]:
-    role_session_path = getattr(role_session, "path", None)
-    if not isinstance(role_session_path, Path):
-        raise AssertionError("RoleSession path is unavailable")
-    parts = role_session_path.resolve().parts
-    try:
-        session_root_index = (
-            len(parts) - 1 - tuple(reversed(parts)).index(".pycastle-session")
-        )
-    except ValueError as exc:
-        raise AssertionError("Unable to locate role session root") from exc
-    role_index = session_root_index + 1
-    if role_index >= len(parts):
-        raise AssertionError("Unable to parse role session identity")
-    try:
-        role = AgentRole(parts[role_index])
-    except ValueError as exc:
-        raise AssertionError("Unable to parse role session identity") from exc
-    namespace = parts[role_index + 1] if role_index + 1 < len(parts) else ""
-    worktree = Path(*parts[:session_root_index])
-    return worktree, role, namespace
-
-
 def _role_session_service_session_id(
     role_session: object,
     service_name: str,
@@ -105,28 +70,20 @@ class _FakeService:
         self,
         request: ProviderSessionPreferencesRequest,
     ) -> ProviderSessionPreferences:
-        if self.name == "claude":
-            return ProviderSessionPreferences(
-                preferred_provider_session_id=_role_session_session_uuid(
-                    request.role_session
-                )
-            )
-        return ProviderSessionPreferences()
+        return ProviderSessionPreferences(
+            preferred_provider_session_id=request.preferred_provider_session_id
+        )
 
     def provider_session_state(
         self,
         request: ProviderSessionStateRequest,
     ) -> ProviderSessionState:
         if self.name == "claude":
-            provider_session_id = (
-                request.preferred_provider_session_id
-                or _role_session_session_uuid(request.role_session)
-            )
             return ProviderSessionState(
                 RunKind.RESUME
                 if request.has_resumable_provider_state
                 else RunKind.FRESH,
-                provider_session_id,
+                request.preferred_provider_session_id,
             )
         if not request.has_resumable_provider_state:
             return ProviderSessionState(RunKind.FRESH, None)
@@ -155,49 +112,43 @@ def rs(worktree):
 
 
 def test_session_uuid_is_deterministic(worktree):
-    assert _role_session_session_uuid(
-        RoleSession(worktree, AgentRole.IMPLEMENTER)
-    ) == _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPLEMENTER))
+    assert runtime_session_uuid(
+        worktree, AgentRole.IMPLEMENTER.value, ""
+    ) == runtime_session_uuid(worktree, AgentRole.IMPLEMENTER.value, "")
 
 
 def test_session_uuid_differs_by_role(worktree):
-    assert _role_session_session_uuid(
-        RoleSession(worktree, AgentRole.IMPLEMENTER)
-    ) != _role_session_session_uuid(RoleSession(worktree, AgentRole.REVIEWER))
+    assert runtime_session_uuid(
+        worktree, AgentRole.IMPLEMENTER.value, ""
+    ) != runtime_session_uuid(worktree, AgentRole.REVIEWER.value, "")
 
 
 def test_session_uuid_differs_by_worktree(tmp_path):
-    a = _role_session_session_uuid(
-        RoleSession(tmp_path / "issue-1", AgentRole.IMPLEMENTER)
-    )
-    b = _role_session_session_uuid(
-        RoleSession(tmp_path / "issue-2", AgentRole.IMPLEMENTER)
-    )
+    a = runtime_session_uuid(tmp_path / "issue-1", AgentRole.IMPLEMENTER.value, "")
+    b = runtime_session_uuid(tmp_path / "issue-2", AgentRole.IMPLEMENTER.value, "")
     assert a != b
 
 
 def test_session_uuid_differs_by_namespace(worktree):
-    a = _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPROVE, "main"))
-    b = _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPROVE, "issues"))
+    a = runtime_session_uuid(worktree, AgentRole.IMPROVE.value, "main")
+    b = runtime_session_uuid(worktree, AgentRole.IMPROVE.value, "issues")
     assert a != b
 
 
 def test_session_uuid_empty_namespace_equals_no_namespace(worktree):
-    assert _role_session_session_uuid(
-        RoleSession(worktree, AgentRole.IMPLEMENTER)
-    ) == _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPLEMENTER, ""))
+    assert runtime_session_uuid(
+        worktree, AgentRole.IMPLEMENTER.value, ""
+    ) == runtime_session_uuid(worktree, AgentRole.IMPLEMENTER.value, "")
 
 
 def test_session_uuid_resolved_path_equals_direct(worktree):
-    assert _role_session_session_uuid(
-        RoleSession(worktree, AgentRole.IMPLEMENTER)
-    ) == _role_session_session_uuid(
-        RoleSession(worktree.resolve(), AgentRole.IMPLEMENTER)
-    )
+    assert runtime_session_uuid(
+        worktree, AgentRole.IMPLEMENTER.value, ""
+    ) == runtime_session_uuid(worktree.resolve(), AgentRole.IMPLEMENTER.value, "")
 
 
 def test_session_uuid_is_valid_uuid_string(worktree):
-    result = _role_session_session_uuid(RoleSession(worktree, AgentRole.IMPLEMENTER))
+    result = runtime_session_uuid(worktree, AgentRole.IMPLEMENTER.value, "")
     assert str(uuid.UUID(result)) == result
 
 
