@@ -15,6 +15,7 @@ from pycastle.agents.slice_classifier import (
     classify_slice,
 )
 from pycastle.config import Config
+from pycastle.display.rows import StatusRow, StatusRowConfig, status_row
 from pycastle.display.status_display import StatusDisplay
 from pycastle.errors import SetupPhaseError
 from pycastle.execution_contracts import WorktreeMount
@@ -25,7 +26,6 @@ from pycastle.infrastructure.worktree import (
 )
 from pycastle.iteration import planning_issue_intake
 from pycastle.iteration._fingerprint import prepare_fingerprint_gate
-from pycastle.iteration._rows import StatusRow, StatusRowConfig, status_row
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.planning_issue_intake import (
     PlanReady,

@@ -13,6 +13,7 @@ from pycastle.agents.output_protocol import (
 )
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
 from pycastle.config import Config
+from pycastle.display.rows import StatusRowConfig, status_row
 from pycastle.display.status_display import StatusDisplay
 from pycastle.errors import SetupPhaseError
 from pycastle.infrastructure.worktree import (
@@ -20,7 +21,6 @@ from pycastle.infrastructure.worktree import (
     reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
-from pycastle.iteration._rows import StatusRowConfig, status_row
 from pycastle.iteration.improve_candidate_lifecycle import (
     Stop,
     file_and_decide,

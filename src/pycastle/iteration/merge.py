@@ -7,6 +7,7 @@ from typing import Protocol
 from pycastle.agents.runner import AgentRunnerProtocol
 from pycastle.bug_reporter import file_merge_close_failure_issue
 from pycastle.config import Config
+from pycastle.display.rows import StatusRowConfig, status_row
 from pycastle.display.status_display import StatusDisplay
 from pycastle.infrastructure.worktree import (
     BranchWorktreeLifecycle,
@@ -19,7 +20,6 @@ from pycastle.iteration._merge_reporting import (
     MergeProgressReporter,
     build_merge_close_message,
 )
-from pycastle.iteration._rows import StatusRowConfig, status_row
 from pycastle.iteration._utils import (
     _advance_branch_ref_through_gate,
     _wait_for_operating_branch_release,

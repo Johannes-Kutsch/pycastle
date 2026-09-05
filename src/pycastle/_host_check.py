@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from pycastle.display.rows import status_row
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
-from pycastle.iteration._rows import status_row
 
 if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
