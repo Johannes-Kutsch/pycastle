@@ -82,6 +82,11 @@ class AgentService(Protocol):
         request: ProviderSessionStateRequest,
     ) -> ProviderSessionState: ...
 
+    def auth_seed_action(
+        self,
+        provider_state_dir: Path | None,
+    ) -> LocalAuthSeedAction | None: ...
+
     def summary_line(self) -> str | None: ...
 
 
@@ -227,6 +232,13 @@ class ClaudeService:
         request: ProviderSessionStateRequest,
     ) -> ProviderSessionState:
         return _provider_session_state_for_request(request)
+
+    def auth_seed_action(
+        self,
+        provider_state_dir: Path | None,
+    ) -> LocalAuthSeedAction | None:
+        del provider_state_dir
+        return None
 
     def account_names(self) -> list[str]:
         if self._pool is None:
@@ -438,6 +450,12 @@ class CodexService:
             auth_seeding_requirement=auth_seeding_requirement,
             auth_seed_action=auth_seed_action,
         )
+
+    def auth_seed_action(
+        self,
+        provider_state_dir: Path | None,
+    ) -> LocalAuthSeedAction | None:
+        return _codex_auth_seed_action(provider_state_dir)
 
     def valid_models(self) -> frozenset[str]:
         return frozenset(
@@ -668,6 +686,13 @@ class OpenCodeService:
 
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"medium"})
+
+    def auth_seed_action(
+        self,
+        provider_state_dir: Path | None,
+    ) -> LocalAuthSeedAction | None:
+        del provider_state_dir
+        return None
 
     def summary_line(self) -> str | None:
         return "OpenCode auth: API key configured"
