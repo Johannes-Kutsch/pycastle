@@ -72,6 +72,39 @@ def test_codex_provider_session_state_skips_auth_seed_when_auth_json_present(
     assert state.auth_seed_action is None
 
 
+def test_codex_auth_seed_action_returns_action_when_auth_json_absent(
+    tmp_path: Path,
+) -> None:
+    provider_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+
+    action = CodexService().auth_seed_action(provider_state_dir)
+
+    assert action is not None, (
+        "auth_seed_action must return an action when auth.json is absent; "
+        "the runner applies it to seed Codex credentials before the container starts"
+    )
+
+
+def test_codex_auth_seed_action_returns_none_when_auth_json_present(
+    tmp_path: Path,
+) -> None:
+    provider_state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    provider_state_dir.mkdir(parents=True)
+    (provider_state_dir / "auth.json").write_text('{"token": "x"}', encoding="utf-8")
+
+    action = CodexService().auth_seed_action(provider_state_dir)
+
+    assert action is None
+
+
+def test_claude_service_auth_seed_action_returns_none(tmp_path: Path) -> None:
+    assert ClaudeService().auth_seed_action(tmp_path) is None
+
+
+def test_opencode_service_auth_seed_action_returns_none(tmp_path: Path) -> None:
+    assert OpenCodeService().auth_seed_action(tmp_path) is None
+
+
 # --- Model-aware availability checks on AgentService implementations ---
 
 
