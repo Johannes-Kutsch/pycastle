@@ -490,8 +490,10 @@ class OpenCodeService:
     _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
 
     def __post_init__(self) -> None:
-        if self.accounts is not None:
-            self._helper = PoolAvailabilityHelper(self.accounts, provider="opencode")
+        creds = self.accounts if self.accounts is not None else self.api_key
+        if creds is not None:
+            self._helper = PoolAvailabilityHelper(creds, provider="opencode")
+            self._helper.pick_token()
 
     @property
     def name(self) -> str:
@@ -506,11 +508,8 @@ class OpenCodeService:
         if state_dir_container_path:
             env["OPENCODE_HOME"] = state_dir_container_path
 
-        if token is None:
-            if self._helper is not None:
-                token = self._helper.pick_token()
-            elif self.api_key is not None:
-                token = self.api_key
+        if token is None and self._helper is not None:
+            token = self._helper.pick_token()
 
         if token is not None:
             env["OPENCODE_GO_API_KEY"] = token
