@@ -543,7 +543,18 @@ class OpenCodeService:
             env["OPENCODE_HOME"] = state_dir_container_path
 
         if token is None and self._pool is not None:
-            _, self._current_token = self._pool.pick()
+            try:
+                _, self._current_token = self._pool.pick()
+            except RuntimeError as pick_exc:
+                try:
+                    wake_time = self._pool.earliest_wake_time()
+                except RuntimeError as wake_exc:
+                    raise UsageLimitError(
+                        is_permanent=True, provider="opencode"
+                    ) from wake_exc
+                raise UsageLimitError(
+                    reset_time=wake_time, provider="opencode"
+                ) from pick_exc
             token = self._current_token
         elif token is not None:
             self._current_token = token

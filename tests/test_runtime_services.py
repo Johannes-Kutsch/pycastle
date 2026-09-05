@@ -225,6 +225,40 @@ def test_claude_service_build_env_raises_permanent_usage_limit_error_when_pool_p
     assert exc_info.value.provider == "claude"
 
 
+def test_opencode_service_build_env_raises_usage_limit_error_when_pool_temporarily_exhausted():
+    future_reset = datetime(2099, 1, 1, tzinfo=UTC)
+    svc = OpenCodeService(accounts=[("account 1", "tok-1")])
+    svc.build_env()  # picks tok-1
+    svc.mark_exhausted(future_reset)  # tok-1 exhausted with a finite wake time
+
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.build_env()
+
+    assert exc_info.value.is_permanent is False
+    assert exc_info.value.reset_time is not None
+    assert exc_info.value.provider == "opencode"
+
+
+def test_opencode_service_build_env_raises_permanent_usage_limit_error_when_pool_permanently_exhausted():
+    svc = OpenCodeService(accounts=[("account 1", "tok-1")])
+    svc.build_env()  # picks tok-1
+    svc.mark_permanently_exhausted()  # tok-1 permanently exhausted
+
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.build_env()
+
+    assert exc_info.value.is_permanent is True
+    assert exc_info.value.provider == "opencode"
+
+
+def test_opencode_service_build_env_returns_env_normally_when_pool_has_available_credential():
+    svc = OpenCodeService(accounts=[("account 1", "tok-1")])
+
+    env = svc.build_env()
+
+    assert env.get("OPENCODE_GO_API_KEY") == "tok-1"
+
+
 # --- summary_line ---
 
 
