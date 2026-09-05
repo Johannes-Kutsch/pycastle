@@ -88,6 +88,17 @@ class AgentService(Protocol):
     def summary_line(self) -> str | None: ...
 
 
+def _service_state_dir_relpath(
+    name: str, role: AgentRole, namespace: str = ""
+) -> str | None:
+    return provider_state_relpath(
+        role,
+        name,
+        namespace,
+        session_root=".pycastle-session",
+    )
+
+
 def _provider_session_preferences_for_request(
     request: ProviderSessionPreferencesRequest,
 ) -> ProviderSessionPreferences:
@@ -177,12 +188,7 @@ class ClaudeService:
             self._helper.mark_model_restricted(model)
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return provider_state_relpath(
-            role,
-            self.name,
-            namespace,
-            session_root=".pycastle-session",
-        )
+        return _service_state_dir_relpath(self.name, role, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(
@@ -284,12 +290,7 @@ class CodexService:
         self._exhausted_until = wake
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return provider_state_relpath(
-            role,
-            self.name,
-            namespace,
-            session_root=".pycastle-session",
-        )
+        return _service_state_dir_relpath(self.name, role, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         sessions_dir = state_dir / "sessions"
@@ -606,12 +607,7 @@ class OpenCodeService:
         return self._helper.account_names()
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return provider_state_relpath(
-            role,
-            self.name,
-            namespace,
-            session_root=".pycastle-session",
-        )
+        return _service_state_dir_relpath(self.name, role, namespace)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "resume.jsonl").is_file() or (
