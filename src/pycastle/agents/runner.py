@@ -5,7 +5,7 @@ from collections.abc import Callable, Coroutine
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Protocol, Self, cast
+from typing import Any, NoReturn, Protocol, Self, cast
 
 import docker
 import docker.errors
@@ -44,7 +44,6 @@ from pycastle.errors import (
 from pycastle.execution_contracts import (
     RuntimeInvocationDependencies,
     RuntimeModelDisplayMetadata,
-    RuntimeRunSession,
     RuntimeStatusDisplay,
     RuntimeStatusRowConfig,
 )
@@ -349,7 +348,7 @@ class AgentRunner:
                 ),
             )
 
-        def _prepare_session(_: object) -> Any:
+        def _prepare_session(_: object) -> NoReturn:
             raise RuntimeError(
                 "prepare_session is always overridden in the one-shot path"
             )

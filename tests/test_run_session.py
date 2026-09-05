@@ -7,13 +7,11 @@ from agent_runtime.errors import AgentCredentialFailureError
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import (
-    ProviderSessionState,
     ProviderSessionStateRequest,
     RunKind,
 )
 from pycastle.services import ClaudeService
 from pycastle.services.runtime_services import (
-    AgentService,
     CodexService,
     OpenCodeService,
 )
@@ -312,30 +310,11 @@ def test_codex_provider_session_state_exposes_auth_seed_action_for_fresh_executi
 def test_local_auth_seed_action_applies_only_to_preserved_codex_provider_state_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    from typing import cast
-
-    from pycastle.services.runtime_services import AgentService
-
     home = tmp_path / "home"
     host_auth = home / ".codex" / "auth.json"
     host_auth.parent.mkdir(parents=True)
     host_auth.write_text('{"mode":"oauth","origin":"host"}', encoding="utf-8")
     monkeypatch.setattr(Path, "home", lambda: home)
-
-    service = cast(
-        "AgentService",
-        type(
-            "_FakeService",
-            (),
-            {
-                "name": "codex",
-                "state_dir_relpath": lambda self, role, namespace="": (
-                    "custom/codex-state"
-                ),
-                "is_resumable": lambda self, state_dir: True,
-            },
-        )(),
-    )
 
     plan_action = LocalAuthSeedAction(
         source=host_auth,
