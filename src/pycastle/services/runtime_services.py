@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from pycastle import _time as _time_module
-from pycastle.errors import UsageLimitError
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
     ProviderSessionPreferencesRequest,
@@ -23,7 +22,6 @@ from pycastle.runtime_session import (
 )
 from pycastle.services._pool_availability import PoolAvailabilityHelper
 from pycastle.services._wake_time import compute_wake_time
-from pycastle.services.credential_pool import CredentialPool
 
 if TYPE_CHECKING:
     from pycastle.agents.output_protocol import AgentRole
@@ -489,21 +487,11 @@ def _opencode_go_config_content() -> str:
 class OpenCodeService:
     api_key: str | None = None
     accounts: list[tuple[str, str]] | None = None
-    _pool: CredentialPool | None = dataclasses.field(init=False, default=None)
-    _current_token: str | None = dataclasses.field(init=False, default=None)
+    _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
 
     def __post_init__(self) -> None:
         if self.accounts is not None:
-            self._pool = CredentialPool(
-                self.accounts,
-                empty_error_message="OpenCodeService requires at least one account",
-                unavailable_error_message="No available OpenCode accounts",
-            )
-            self._current_token = self.accounts[0][1]
-            return
-        if self.api_key is not None:
-            self._pool = CredentialPool([("account 1", self.api_key)])
-            self._current_token = self.api_key
+            self._helper = PoolAvailabilityHelper(self.accounts, provider="opencode")
 
     @property
     def name(self) -> str:
@@ -518,22 +506,11 @@ class OpenCodeService:
         if state_dir_container_path:
             env["OPENCODE_HOME"] = state_dir_container_path
 
-        if token is None and self._pool is not None:
-            try:
-                _, self._current_token = self._pool.pick()
-            except RuntimeError as pick_exc:
-                try:
-                    wake_time = self._pool.earliest_wake_time()
-                except RuntimeError as wake_exc:
-                    raise UsageLimitError(
-                        is_permanent=True, provider="opencode"
-                    ) from wake_exc
-                raise UsageLimitError(
-                    reset_time=wake_time, provider="opencode"
-                ) from pick_exc
-            token = self._current_token
-        elif token is not None:
-            self._current_token = token
+        if token is None:
+            if self._helper is not None:
+                token = self._helper.pick_token()
+            elif self.api_key is not None:
+                token = self.api_key
 
         if token is not None:
             env["OPENCODE_GO_API_KEY"] = token
@@ -597,16 +574,14 @@ class OpenCodeService:
     def is_available(
         self, now: datetime | None = None, *, model: str | None = None
     ) -> bool:
-        if self._pool is None:
+        if self._helper is None:
             return True
-        if model is not None:
-            return self._pool.has_available_for_model(model, now=now)
-        return self._pool.has_available(now=now)
+        return self._helper.is_available(now=now, model=model)
 
     def next_wake_time(self) -> datetime:
-        if self._pool is None:
+        if self._helper is None:
             raise RuntimeError("OpenCodeService.next_wake_time called with no pool")
-        return self._pool.earliest_wake_time()
+        return self._helper.next_wake_time()
 
     def mark_exhausted(
         self,
@@ -614,26 +589,22 @@ class OpenCodeService:
         *,
         _now: datetime | None = None,
     ) -> None:
-        if self._pool is not None and self._current_token is not None:
-            self._pool.mark_exhausted(
-                self._current_token,
-                reset_time,
-                now=_now,
-            )
+        if self._helper is not None:
+            self._helper.mark_exhausted(reset_time, now=_now)
 
     def mark_permanently_exhausted(self) -> str | None:
-        if self._pool is None or self._current_token is None:
+        if self._helper is None:
             return None
-        return self._pool.mark_permanently_exhausted(self._current_token)
+        return self._helper.mark_permanently_exhausted()
 
     def mark_model_restricted(self, model: str) -> None:
-        if self._pool is not None and self._current_token is not None:
-            self._pool.mark_model_restricted(self._current_token, model)
+        if self._helper is not None:
+            self._helper.mark_model_restricted(model)
 
     def account_names(self) -> list[str]:
-        if self._pool is None:
+        if self._helper is None:
             return []
-        return self._pool.names()
+        return self._helper.account_names()
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return provider_state_relpath(

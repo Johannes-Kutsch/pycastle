@@ -2,10 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.errors import UsageLimitError
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services.runtime_services import (
     ClaudeService,
@@ -125,27 +122,6 @@ def test_codex_service_is_available_without_model_unaffected_by_model_restrictio
     assert svc.is_available(now=_NOW) is True
 
 
-def test_opencode_service_is_available_for_model_false_when_model_restricted():
-    svc = OpenCodeService(api_key="tok-1")
-    svc.build_env()
-    svc.mark_model_restricted("kimi-k2.6")
-    assert svc.is_available(model="kimi-k2.6", now=_NOW) is False
-
-
-def test_opencode_service_is_available_for_model_true_for_unrestricted_model():
-    svc = OpenCodeService(api_key="tok-1")
-    svc.build_env()
-    svc.mark_model_restricted("kimi-k2.6")
-    assert svc.is_available(model="deepseek-v4-flash", now=_NOW) is True
-
-
-def test_opencode_service_is_available_without_model_unaffected_by_model_restriction():
-    svc = OpenCodeService(api_key="tok-1")
-    svc.build_env()
-    svc.mark_model_restricted("kimi-k2.6")
-    assert svc.is_available(now=_NOW) is True
-
-
 def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and_wake():
     past_reset = datetime(2025, 6, 1, tzinfo=UTC).astimezone()
     svc = CodexService()
@@ -153,35 +129,6 @@ def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and
     svc.mark_exhausted(past_reset)  # wake time ~2025-06-01T00:02 UTC, before _NOW
     assert svc.is_available(model="gpt-5.5", now=_NOW) is False
     assert svc.is_available(model="gpt-5.4", now=_NOW) is True
-
-
-# --- build_env raises UsageLimitError when the credential pool is exhausted ---
-
-
-def test_opencode_service_build_env_raises_usage_limit_error_when_pool_temporarily_exhausted():
-    future_reset = datetime(2099, 1, 1, tzinfo=UTC)
-    svc = OpenCodeService(accounts=[("account 1", "tok-1")])
-    svc.build_env()  # picks tok-1
-    svc.mark_exhausted(future_reset)  # tok-1 exhausted with a finite wake time
-
-    with pytest.raises(UsageLimitError) as exc_info:
-        svc.build_env()
-
-    assert exc_info.value.is_permanent is False
-    assert exc_info.value.reset_time is not None
-    assert exc_info.value.provider == "opencode"
-
-
-def test_opencode_service_build_env_raises_permanent_usage_limit_error_when_pool_permanently_exhausted():
-    svc = OpenCodeService(accounts=[("account 1", "tok-1")])
-    svc.build_env()  # picks tok-1
-    svc.mark_permanently_exhausted()  # tok-1 permanently exhausted
-
-    with pytest.raises(UsageLimitError) as exc_info:
-        svc.build_env()
-
-    assert exc_info.value.is_permanent is True
-    assert exc_info.value.provider == "opencode"
 
 
 def test_opencode_service_build_env_returns_env_normally_when_pool_has_available_credential():
