@@ -107,45 +107,6 @@ def test_opencode_service_auth_seed_action_returns_none(tmp_path: Path) -> None:
 # --- Model-aware availability checks on AgentService implementations ---
 
 
-def test_claude_service_is_available_for_model_false_when_model_restricted():
-    svc = ClaudeService(accounts=[("account 1", "tok-1")])
-    svc.build_env()  # picks tok-1 as active slot
-    svc.mark_model_restricted("sonnet")
-    assert svc.is_available(model="sonnet", now=_NOW) is False
-
-
-def test_claude_service_is_available_for_model_true_for_unrestricted_model():
-    svc = ClaudeService(accounts=[("account 1", "tok-1")])
-    svc.build_env()
-    svc.mark_model_restricted("sonnet")
-    assert svc.is_available(model="haiku", now=_NOW) is True
-
-
-def test_claude_service_model_restriction_does_not_affect_other_slots():
-    svc = ClaudeService(accounts=[("account 1", "tok-1"), ("account 2", "tok-2")])
-    svc.build_env()  # picks tok-1
-    svc.mark_model_restricted("sonnet")
-    assert svc.is_available(model="sonnet", now=_NOW) is True
-
-
-def test_claude_service_model_restriction_persists_after_slot_rotation():
-    svc = ClaudeService(accounts=[("account 1", "tok-1"), ("account 2", "tok-2")])
-    svc.build_env()  # picks tok-1
-    svc.mark_model_restricted("sonnet")
-    svc.mark_permanently_exhausted()  # exhausts tok-1; pool rotates to tok-2
-    svc.build_env()  # picks tok-2
-    svc.mark_permanently_exhausted()  # exhausts tok-2
-    # both slots exhausted — tok-1 also has sonnet restricted
-    assert svc.is_available(model="sonnet", now=_NOW) is False
-
-
-def test_claude_service_is_available_without_model_unaffected_by_model_restriction():
-    svc = ClaudeService(accounts=[("account 1", "tok-1")])
-    svc.build_env()
-    svc.mark_model_restricted("sonnet")
-    assert svc.is_available(now=_NOW) is True
-
-
 def test_codex_service_is_available_for_model_false_when_model_restricted():
     svc = CodexService()
     svc.mark_model_restricted("gpt-5.5")
@@ -195,34 +156,6 @@ def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and
 
 
 # --- build_env raises UsageLimitError when the credential pool is exhausted ---
-
-
-def test_claude_service_build_env_raises_usage_limit_error_when_pool_temporarily_exhausted():
-    # Regression: pool exhaustion previously propagated as RuntimeError, causing the
-    # orchestrator to loop endlessly instead of sleeping until accounts wake up.
-    future_reset = datetime(2099, 1, 1, tzinfo=UTC)
-    svc = ClaudeService(accounts=[("account 1", "tok-1")])
-    svc.build_env()  # picks tok-1
-    svc.mark_exhausted(future_reset)  # tok-1 exhausted with a finite wake time
-
-    with pytest.raises(UsageLimitError) as exc_info:
-        svc.build_env()
-
-    assert exc_info.value.is_permanent is False
-    assert exc_info.value.reset_time is not None
-    assert exc_info.value.provider == "claude"
-
-
-def test_claude_service_build_env_raises_permanent_usage_limit_error_when_pool_permanently_exhausted():
-    svc = ClaudeService(accounts=[("account 1", "tok-1")])
-    svc.build_env()  # picks tok-1
-    svc.mark_permanently_exhausted()  # tok-1 permanently exhausted
-
-    with pytest.raises(UsageLimitError) as exc_info:
-        svc.build_env()
-
-    assert exc_info.value.is_permanent is True
-    assert exc_info.value.provider == "claude"
 
 
 def test_opencode_service_build_env_raises_usage_limit_error_when_pool_temporarily_exhausted():

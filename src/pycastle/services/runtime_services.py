@@ -21,6 +21,7 @@ from pycastle.runtime_session import (
     provider_state_relpath,
     select_resumable_provider_session_id,
 )
+from pycastle.services._pool_availability import PoolAvailabilityHelper
 from pycastle.services._wake_time import compute_wake_time
 from pycastle.services.credential_pool import CredentialPool
 
@@ -136,17 +137,12 @@ def _provider_session_state_for_request(
 @dataclasses.dataclass
 class ClaudeService:
     accounts: list[tuple[str, str]] | None = None
-    _pool: CredentialPool | None = dataclasses.field(init=False, default=None)
-    _current_token: str | None = dataclasses.field(init=False, default=None)
+    _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
 
     def __post_init__(self) -> None:
         if self.accounts is None:
             return
-        self._pool = CredentialPool(
-            self.accounts,
-            empty_error_message="ClaudeService requires at least one account",
-            unavailable_error_message="No available Claude accounts",
-        )
+        self._helper = PoolAvailabilityHelper(self.accounts, provider="claude")
 
     @property
     def name(self) -> str:
@@ -155,16 +151,14 @@ class ClaudeService:
     def is_available(
         self, now: datetime | None = None, *, model: str | None = None
     ) -> bool:
-        if self._pool is None:
+        if self._helper is None:
             return True
-        if model is not None:
-            return self._pool.has_available_for_model(model, now=now)
-        return self._pool.has_available(now=now)
+        return self._helper.is_available(now=now, model=model)
 
     def next_wake_time(self) -> datetime:
-        if self._pool is None:
+        if self._helper is None:
             raise RuntimeError("ClaudeService.next_wake_time called with no pool")
-        return self._pool.earliest_wake_time()
+        return self._helper.next_wake_time()
 
     def mark_exhausted(
         self,
@@ -172,21 +166,17 @@ class ClaudeService:
         *,
         _now: datetime | None = None,
     ) -> None:
-        if self._pool is not None and self._current_token is not None:
-            self._pool.mark_exhausted(
-                self._current_token,
-                reset_time,
-                now=_now,
-            )
+        if self._helper is not None:
+            self._helper.mark_exhausted(reset_time, now=_now)
 
     def mark_permanently_exhausted(self) -> str | None:
-        if self._pool is None or self._current_token is None:
+        if self._helper is None:
             return None
-        return self._pool.mark_permanently_exhausted(self._current_token)
+        return self._helper.mark_permanently_exhausted()
 
     def mark_model_restricted(self, model: str) -> None:
-        if self._pool is not None and self._current_token is not None:
-            self._pool.mark_model_restricted(self._current_token, model)
+        if self._helper is not None:
+            self._helper.mark_model_restricted(model)
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return provider_state_relpath(
@@ -221,9 +211,9 @@ class ClaudeService:
         return None
 
     def account_names(self) -> list[str]:
-        if self._pool is None:
+        if self._helper is None:
             return []
-        return self._pool.names()
+        return self._helper.account_names()
 
     def summary_line(self) -> str | None:
         names = self.account_names()
@@ -245,22 +235,8 @@ class ClaudeService:
         state_dir_container_path: str | None = None,
         token: str | None = None,
     ) -> dict[str, str]:
-        if token is None and self._pool is not None:
-            try:
-                _, self._current_token = self._pool.pick()
-            except RuntimeError as pick_exc:
-                try:
-                    wake_time = self._pool.earliest_wake_time()
-                except RuntimeError as wake_exc:
-                    raise UsageLimitError(
-                        is_permanent=True, provider="claude"
-                    ) from wake_exc
-                raise UsageLimitError(
-                    reset_time=wake_time, provider="claude"
-                ) from pick_exc
-            token = self._current_token
-        elif token is not None:
-            self._current_token = token
+        if token is None and self._helper is not None:
+            token = self._helper.pick_token()
         env: dict[str, str] = {}
         if token:
             env["CLAUDE_CODE_OAUTH_TOKEN"] = token
