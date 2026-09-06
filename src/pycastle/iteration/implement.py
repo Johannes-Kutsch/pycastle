@@ -152,6 +152,52 @@ def _check_setup_failure(step: IssueRoleStepPlan) -> None:
         )
 
 
+async def _execute_role_step(
+    *,
+    issue: dict,
+    step: IssueRoleStepPlan,
+    runner: "_BoundedAgentRunner",
+    deps: _ImplementDeps,
+    token: CancellationToken,
+    worktree_semaphore: asyncio.Semaphore | None,
+    planner_sha: str | None,
+) -> None:
+    intent = (
+        DurableIssueWorktreeIntent.IMPLEMENTER
+        if step.role is AgentRole.IMPLEMENTER
+        else DurableIssueWorktreeIntent.REVIEWER
+    )
+    async with (
+        worktree_semaphore or contextlib.nullcontext(),
+        durable_issue_worktree(
+            issue["number"],
+            intent=intent,
+            deps=deps,
+            planner_sha=planner_sha,
+            operating_branch=deps.cfg.operating_branch,
+        ) as mount_path,
+    ):
+        _check_setup_failure(step)
+        result = await runner.run(
+            _build_run_request(
+                issue=issue,
+                step=step,
+                mount_path=mount_path,
+                status_display=deps.status_display,
+                token=token,
+            )
+        )
+        if isinstance(result, CommitMessageOutput):
+            deps.git_svc.commit(
+                mount_path,
+                deps.repo_root,
+                _planned_commit_subject(step, issue, result.message),
+            )
+            RoleSession(
+                mount_path, step.role
+            ).clear_provider_state_and_signal_completion()
+
+
 @dataclasses.dataclass
 class _BoundedAgentRunner:
     semaphore: asyncio.Semaphore | None
@@ -220,71 +266,26 @@ async def run_issue(
         planned_steps = {step.role_name: step for step in issue_plan.steps}
 
         if "implementer" in runnable_roles:
-            async with (
-                worktree_semaphore or contextlib.nullcontext(),
-                durable_issue_worktree(
-                    issue["number"],
-                    intent=DurableIssueWorktreeIntent.IMPLEMENTER,
-                    deps=deps,
-                    planner_sha=issue_plan.planner_sha,
-                    operating_branch=deps.cfg.operating_branch,
-                ) as impl_mount_path,
-            ):
-                implementer_step = planned_steps["implementer"]
-                _check_setup_failure(implementer_step)
-                result = await _runner.run(
-                    _build_run_request(
-                        issue=issue,
-                        step=implementer_step,
-                        mount_path=impl_mount_path,
-                        status_display=deps.status_display,
-                        token=_token,
-                    )
-                )
-                if isinstance(result, CommitMessageOutput):
-                    deps.git_svc.commit(
-                        impl_mount_path,
-                        deps.repo_root,
-                        _planned_commit_subject(
-                            implementer_step, issue, result.message
-                        ),
-                    )
-                    RoleSession(
-                        impl_mount_path, AgentRole.IMPLEMENTER
-                    ).clear_provider_state_and_signal_completion()
+            await _execute_role_step(
+                issue=issue,
+                step=planned_steps["implementer"],
+                runner=_runner,
+                deps=deps,
+                token=_token,
+                worktree_semaphore=worktree_semaphore,
+                planner_sha=issue_plan.planner_sha,
+            )
 
         if "reviewer" in runnable_roles:
-            async with (
-                worktree_semaphore or contextlib.nullcontext(),
-                durable_issue_worktree(
-                    issue["number"],
-                    intent=DurableIssueWorktreeIntent.REVIEWER,
-                    deps=deps,
-                    operating_branch=deps.cfg.operating_branch,
-                ) as review_mount_path,
-            ):
-                reviewer_step = planned_steps["reviewer"]
-                _check_setup_failure(reviewer_step)
-                review_result = await _runner.run(
-                    _build_run_request(
-                        issue=issue,
-                        step=reviewer_step,
-                        mount_path=review_mount_path,
-                        status_display=deps.status_display,
-                        token=_token,
-                    )
-                )
-                if isinstance(review_result, CommitMessageOutput):
-                    deps.git_svc.commit(
-                        review_mount_path,
-                        deps.repo_root,
-                        _planned_commit_subject(
-                            reviewer_step, issue, review_result.message
-                        ),
-                    )
-                    RoleSession(
-                        review_mount_path, AgentRole.REVIEWER
-                    ).clear_provider_state_and_signal_completion()
+            await _execute_role_step(
+                issue=issue,
+                step=planned_steps["reviewer"],
+                runner=_runner,
+                deps=deps,
+                token=_token,
+                worktree_semaphore=worktree_semaphore,
+                planner_sha=None,
+            )
     finally:
         if lock is not None and lock.locked():
             lock.release()
