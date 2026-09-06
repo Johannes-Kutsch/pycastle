@@ -8,6 +8,7 @@ from pycastle.services.runtime_services import (
     ClaudeService,
     CodexService,
     OpenCodeService,
+    service_by_name,
 )
 
 _FAR = datetime(2099, 1, 1, tzinfo=UTC).astimezone()
@@ -174,4 +175,223 @@ def test_claude_service_summary_line_three_accounts():
     assert (
         svc.summary_line()
         == "Claude accounts: alice (active), bob (standby), carol (standby)"
+    )
+
+
+# --- recover_provider_session_id / is_exact_resumable_provider_session ---
+
+
+def test_claude_recover_provider_session_id_returns_none_for_none_dir() -> None:
+    assert ClaudeService().recover_provider_session_id(None) is None
+
+
+def test_claude_recover_provider_session_id_returns_none_for_any_dir(
+    tmp_path: Path,
+) -> None:
+    assert ClaudeService().recover_provider_session_id(tmp_path) is None
+
+
+def test_claude_is_exact_resumable_returns_false_when_both_none(
+    tmp_path: Path,
+) -> None:
+    assert (
+        ClaudeService().is_exact_resumable_provider_session(
+            provider_session_id=None, provider_state_dir=None
+        )
+        is False
+    )
+
+
+def test_claude_is_exact_resumable_returns_false_when_session_id_none(
+    tmp_path: Path,
+) -> None:
+    assert (
+        ClaudeService().is_exact_resumable_provider_session(
+            provider_session_id=None, provider_state_dir=tmp_path
+        )
+        is False
+    )
+
+
+def test_claude_is_exact_resumable_returns_false_when_state_dir_none() -> None:
+    assert (
+        ClaudeService().is_exact_resumable_provider_session(
+            provider_session_id="sess-1", provider_state_dir=None
+        )
+        is False
+    )
+
+
+def test_claude_is_exact_resumable_returns_true_when_both_non_none(
+    tmp_path: Path,
+) -> None:
+    assert (
+        ClaudeService().is_exact_resumable_provider_session(
+            provider_session_id="sess-1", provider_state_dir=tmp_path
+        )
+        is True
+    )
+
+
+def _write_codex_rollout(sessions_dir: Path, session_name: str, thread_id: str) -> None:
+    rollout_dir = sessions_dir / session_name
+    rollout_dir.mkdir(parents=True, exist_ok=True)
+    (rollout_dir / "rollout-1.jsonl").write_text(
+        f'{{"type": "thread.started", "thread_id": "{thread_id}"}}\n',
+        encoding="utf-8",
+    )
+
+
+def test_codex_recover_provider_session_id_returns_none_for_none_dir() -> None:
+    assert CodexService().recover_provider_session_id(None) is None
+
+
+def test_codex_recover_provider_session_id_returns_none_when_sessions_dir_absent(
+    tmp_path: Path,
+) -> None:
+    assert CodexService().recover_provider_session_id(tmp_path) is None
+
+
+def test_codex_recover_provider_session_id_returns_none_when_no_rollout_files(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "sessions").mkdir()
+    assert CodexService().recover_provider_session_id(tmp_path) is None
+
+
+def test_codex_recover_provider_session_id_returns_thread_id_when_unique(
+    tmp_path: Path,
+) -> None:
+    _write_codex_rollout(tmp_path / "sessions", "sess-abc", "thread-xyz")
+    assert CodexService().recover_provider_session_id(tmp_path) == "thread-xyz"
+
+
+def test_codex_recover_provider_session_id_returns_none_when_ambiguous(
+    tmp_path: Path,
+) -> None:
+    _write_codex_rollout(tmp_path / "sessions", "sess-1", "thread-aaa")
+    _write_codex_rollout(tmp_path / "sessions", "sess-2", "thread-bbb")
+    assert CodexService().recover_provider_session_id(tmp_path) is None
+
+
+def test_codex_is_exact_resumable_true_when_session_id_matches_recovered(
+    tmp_path: Path,
+) -> None:
+    _write_codex_rollout(tmp_path / "sessions", "sess-abc", "thread-xyz")
+    assert (
+        CodexService().is_exact_resumable_provider_session(
+            provider_session_id="thread-xyz", provider_state_dir=tmp_path
+        )
+        is True
+    )
+
+
+def test_codex_is_exact_resumable_false_when_session_id_differs(
+    tmp_path: Path,
+) -> None:
+    _write_codex_rollout(tmp_path / "sessions", "sess-abc", "thread-xyz")
+    assert (
+        CodexService().is_exact_resumable_provider_session(
+            provider_session_id="thread-other", provider_state_dir=tmp_path
+        )
+        is False
+    )
+
+
+def test_codex_is_exact_resumable_false_when_no_rollout(tmp_path: Path) -> None:
+    assert (
+        CodexService().is_exact_resumable_provider_session(
+            provider_session_id="thread-xyz", provider_state_dir=tmp_path
+        )
+        is False
+    )
+
+
+def test_opencode_recover_provider_session_id_returns_none_for_none_dir() -> None:
+    assert OpenCodeService().recover_provider_session_id(None) is None
+
+
+def test_opencode_recover_provider_session_id_returns_none_when_sidecar_absent(
+    tmp_path: Path,
+) -> None:
+    assert OpenCodeService().recover_provider_session_id(tmp_path) is None
+
+
+def test_opencode_recover_provider_session_id_returns_sidecar_contents(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "session_id").write_text("oc-sess-42", encoding="utf-8")
+    assert OpenCodeService().recover_provider_session_id(tmp_path) == "oc-sess-42"
+
+
+def test_opencode_is_exact_resumable_returns_false_when_both_none() -> None:
+    assert (
+        OpenCodeService().is_exact_resumable_provider_session(
+            provider_session_id=None, provider_state_dir=None
+        )
+        is False
+    )
+
+
+def test_opencode_is_exact_resumable_returns_false_when_state_dir_none() -> None:
+    assert (
+        OpenCodeService().is_exact_resumable_provider_session(
+            provider_session_id="oc-sess-42", provider_state_dir=None
+        )
+        is False
+    )
+
+
+def test_opencode_is_exact_resumable_returns_true_when_both_non_none(
+    tmp_path: Path,
+) -> None:
+    assert (
+        OpenCodeService().is_exact_resumable_provider_session(
+            provider_session_id="oc-sess-42", provider_state_dir=tmp_path
+        )
+        is True
+    )
+
+
+# --- service_by_name ---
+
+
+def test_service_by_name_returns_claude_service() -> None:
+    assert isinstance(service_by_name("claude"), ClaudeService)
+
+
+def test_service_by_name_returns_codex_service() -> None:
+    assert isinstance(service_by_name("codex"), CodexService)
+
+
+def test_service_by_name_returns_opencode_service() -> None:
+    assert isinstance(service_by_name("opencode"), OpenCodeService)
+
+
+def test_service_by_name_unknown_recover_returns_none(tmp_path: Path) -> None:
+    svc = service_by_name("unknown-service")
+    assert svc.recover_provider_session_id(tmp_path) is None
+
+
+def test_service_by_name_unknown_is_exact_resumable_false_when_session_id_none(
+    tmp_path: Path,
+) -> None:
+    svc = service_by_name("unknown-service")
+    assert (
+        svc.is_exact_resumable_provider_session(
+            provider_session_id=None, provider_state_dir=tmp_path
+        )
+        is False
+    )
+
+
+def test_service_by_name_unknown_is_exact_resumable_true_when_both_non_none(
+    tmp_path: Path,
+) -> None:
+    svc = service_by_name("unknown-service")
+    assert (
+        svc.is_exact_resumable_provider_session(
+            provider_session_id="any-id", provider_state_dir=tmp_path
+        )
+        is True
     )
