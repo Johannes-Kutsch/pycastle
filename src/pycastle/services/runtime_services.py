@@ -87,6 +87,15 @@ class AgentService(Protocol):
 
     def summary_line(self) -> str | None: ...
 
+    def recover_provider_session_id(self, state_dir: Path | None) -> str | None: ...
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool: ...
+
 
 def _service_state_dir_relpath(
     name: str, role: AgentRole, namespace: str = ""
@@ -233,6 +242,18 @@ class ClaudeService:
 
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"low", "medium", "high", "xhigh", "max"})
+
+    def recover_provider_session_id(self, state_dir: Path | None) -> str | None:
+        del state_dir
+        return None
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return provider_session_id is not None and provider_state_dir is not None
 
     def build_env(
         self,
@@ -429,6 +450,19 @@ class CodexService:
 
     def summary_line(self) -> str | None:
         return "Codex auth: local auth available"
+
+    def recover_provider_session_id(self, state_dir: Path | None) -> str | None:
+        return _recover_codex_rollout_thread_id(state_dir)
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return (
+            self.recover_provider_session_id(provider_state_dir) == provider_session_id
+        )
 
     def build_env(
         self,
@@ -630,6 +664,19 @@ class OpenCodeService:
     def summary_line(self) -> str | None:
         return "OpenCode auth: API key configured"
 
+    def recover_provider_session_id(self, state_dir: Path | None) -> str | None:
+        return load_state_dir_provider_session_id(
+            state_dir, self.name, session_id_filename="session_id"
+        )
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return provider_session_id is not None and provider_state_dir is not None
+
 
 def _resolved_provider_session_id(
     role_session: object,
@@ -728,6 +775,34 @@ def _codex_auth_seed_action(
 
 KNOWN_SERVICE_NAMES: frozenset[str] = frozenset({"claude", "codex", "opencode"})
 
+
+@dataclasses.dataclass
+class _FallbackAgentService:
+    service_name: str
+
+    def recover_provider_session_id(self, state_dir: Path | None) -> str | None:
+        del state_dir
+        return None
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return provider_session_id is not None and provider_state_dir is not None
+
+
+def service_by_name(name: str) -> AgentService:
+    if name == "claude":
+        return ClaudeService()
+    if name == "codex":
+        return CodexService()
+    if name == "opencode":
+        return OpenCodeService()
+    return _FallbackAgentService(name)  # type: ignore[return-value]
+
+
 __all__ = [
     "KNOWN_SERVICE_NAMES",
     "AgentService",
@@ -735,4 +810,5 @@ __all__ = [
     "CodexService",
     "OpenCodeService",
     "ToolPolicy",
+    "service_by_name",
 ]
