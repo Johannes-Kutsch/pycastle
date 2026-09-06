@@ -106,7 +106,6 @@ class _FakeService:
 
     def recover_provider_session_id(self, state_dir):
         del state_dir
-        return None
 
     def is_exact_resumable_provider_session(
         self, provider_state_dir, provider_session_id
