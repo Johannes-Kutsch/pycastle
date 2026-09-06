@@ -9,6 +9,7 @@ from pycastle.runtime_session import (
 from pycastle.runtime_session import (
     is_exact_resumable_service_session as runtime_is_exact_resumable_service_session,
 )
+from pycastle.services import runtime_services
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -82,11 +83,7 @@ class ServiceSessionStore(ServiceResumeIdentityStore):
     def recover_state_session_id(
         state_dir: Path | None, service_name: str
     ) -> str | None:
-        from pycastle.provider_session_adapter import (
-            provider_session_adapter_for_service_name,
-        )
-
-        return provider_session_adapter_for_service_name(
+        return runtime_services.service_by_name(
             service_name
         ).recover_provider_session_id(state_dir)
 
@@ -154,11 +151,7 @@ def _is_exact_resumable_provider_session(
     provider_session_id: str | None,
     provider_state_dir: Path | None,
 ) -> bool:
-    from pycastle.provider_session_adapter import (
-        provider_session_adapter_for_service_name,
-    )
-
-    return provider_session_adapter_for_service_name(
+    return runtime_services.service_by_name(
         service_name
     ).is_exact_resumable_provider_session(
         provider_session_id=provider_session_id,
