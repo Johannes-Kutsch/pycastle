@@ -104,6 +104,16 @@ class _FakeService:
     def summary_line(self) -> str | None:
         return None
 
+    def recover_provider_session_id(self, state_dir):
+        del state_dir
+        return None
+
+    def is_exact_resumable_provider_session(
+        self, provider_state_dir, provider_session_id
+    ) -> bool:
+        del provider_state_dir, provider_session_id
+        return False
+
 
 class _RecordingService(_FakeService):
     def __init__(self, name: str) -> None:
