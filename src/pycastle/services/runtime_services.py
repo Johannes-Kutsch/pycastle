@@ -208,6 +208,51 @@ class _AvailabilityTracker(Protocol):
     def account_names(self) -> list[str]: ...
 
 
+class _InlineStateAvailabilityTracker:
+    def __init__(self, service_name: str) -> None:
+        self._service_name = service_name
+        self._exhausted_until: datetime | None = None
+        self._restricted_models: set[str] = set()
+
+    def is_available(
+        self, now: datetime | None = None, *, model: str | None = None
+    ) -> bool:
+        if self._exhausted_until is not None:
+            now = now or _time_module.now_local()
+            if now < self._exhausted_until:
+                return False
+        if model is not None:
+            return model not in self._restricted_models
+        return True
+
+    def next_wake_time(self) -> datetime:
+        if self._exhausted_until is None:
+            raise RuntimeError(
+                f"{self._service_name}.next_wake_time called when not exhausted"
+            )
+        return self._exhausted_until
+
+    def mark_exhausted(
+        self,
+        reset_time: datetime | None,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        wake, _ = compute_wake_time(reset_time, now or _time_module.now_local())
+        if wake.tzinfo is None:
+            wake = wake.replace(tzinfo=UTC)
+        self._exhausted_until = wake
+
+    def mark_permanently_exhausted(self) -> str | None:
+        return None
+
+    def mark_model_restricted(self, model: str) -> None:
+        self._restricted_models.add(model)
+
+    def account_names(self) -> list[str]:
+        return []
+
+
 class _PoolAvailabilityTracker:
     def __init__(
         self,
@@ -345,8 +390,10 @@ class ClaudeService(_AgentServiceDefaults):
 @dataclasses.dataclass
 class CodexService(_AgentServiceDefaults):
     api_key: str | None = None
-    _exhausted_until: datetime | None = dataclasses.field(default=None, init=False)
-    _restricted_models: set[str] = dataclasses.field(default_factory=set, init=False)
+    _tracker: _AvailabilityTracker = dataclasses.field(init=False)
+
+    def __post_init__(self) -> None:
+        self._tracker = _InlineStateAvailabilityTracker("CodexService")
 
     @property
     def name(self) -> str:
@@ -355,21 +402,10 @@ class CodexService(_AgentServiceDefaults):
     def is_available(
         self, now: datetime | None = None, *, model: str | None = None
     ) -> bool:
-        if self._exhausted_until is not None:
-            now = now or _time_module.now_local()
-            if now < self._exhausted_until:
-                return False
-        if model is not None:
-            return model not in self._restricted_models
-        return True
-
-    def mark_model_restricted(self, model: str) -> None:
-        self._restricted_models.add(model)
+        return self._tracker.is_available(now, model=model)
 
     def next_wake_time(self) -> datetime:
-        if self._exhausted_until is None:
-            raise RuntimeError("CodexService.next_wake_time called when not exhausted")
-        return self._exhausted_until
+        return self._tracker.next_wake_time()
 
     def mark_exhausted(
         self,
@@ -377,10 +413,10 @@ class CodexService(_AgentServiceDefaults):
         *,
         _now: datetime | None = None,
     ) -> None:
-        wake, _ = compute_wake_time(reset_time, _now or _time_module.now_local())
-        if wake.tzinfo is None:
-            wake = wake.replace(tzinfo=UTC)
-        self._exhausted_until = wake
+        self._tracker.mark_exhausted(reset_time, now=_now)
+
+    def mark_model_restricted(self, model: str) -> None:
+        self._tracker.mark_model_restricted(model)
 
     def is_resumable(self, state_dir: Path) -> bool:
         sessions_dir = state_dir / "sessions"
