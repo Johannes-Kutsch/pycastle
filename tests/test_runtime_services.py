@@ -130,6 +130,27 @@ def test_codex_service_model_restriction_persists_after_temporary_exhaustion_and
     assert svc.is_available(model="gpt-5.4", now=_NOW) is True
 
 
+def test_codex_service_fresh_is_available_returns_true() -> None:
+    assert CodexService().is_available() is True
+
+
+def test_codex_service_fresh_next_wake_time_raises_runtime_error() -> None:
+    with pytest.raises(RuntimeError):
+        CodexService().next_wake_time()
+
+
+def test_codex_service_exhaustion_suppresses_availability_until_wake_time() -> None:
+    svc = CodexService()
+    svc.mark_exhausted(_FAR, _now=_NOW)
+    assert svc.is_available(now=_NOW) is False
+
+
+def test_codex_service_exhaustion_visible_through_next_wake_time() -> None:
+    svc = CodexService()
+    svc.mark_exhausted(_FAR, _now=_NOW)
+    assert svc.next_wake_time() > _NOW
+
+
 def test_opencode_service_build_env_returns_env_normally_when_pool_has_available_credential():
     svc = OpenCodeService(accounts=[("account 1", "tok-1")])
 
