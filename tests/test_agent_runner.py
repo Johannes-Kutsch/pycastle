@@ -30,7 +30,6 @@ from pycastle.agents.output_protocol import (
     CommitMessageOutput,
     PlannerOutput,
 )
-from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunner, RunRequest
 from pycastle.config import Config
 from pycastle.errors import (
@@ -39,6 +38,7 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from pycastle.execution_contracts import CancellationToken
 from pycastle.prompts.dispatch import PromptInvocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.runtime_session import ProviderSessionState

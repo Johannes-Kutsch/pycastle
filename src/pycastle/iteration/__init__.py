@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING
 from pycastle.agent_credential_failure_routing import (
     route_agent_credential_failure as route_agent_credential_failure,
 )
-from pycastle.agents.result import CancellationToken as CancellationToken
 from pycastle.bug_reporter import BUG_REPORT_LABEL_LIST as BUG_REPORT_LABEL_LIST
 from pycastle.bug_reporter import auto_file_issue as auto_file_issue
 from pycastle.display.rows import StatusRow as StatusRow
 from pycastle.display.rows import StatusRowConfig as StatusRowConfig
 from pycastle.display.rows import status_row as status_row
+from pycastle.execution_contracts import CancellationToken as CancellationToken
 from pycastle.iteration.improve import ImproveContinue as ImproveContinue
 from pycastle.iteration.improve import ImproveNoCandidate as ImproveNoCandidate
 from pycastle.iteration.in_flight import (

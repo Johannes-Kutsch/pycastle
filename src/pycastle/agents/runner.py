@@ -25,7 +25,6 @@ from pycastle.agents.output_protocol import (
     AgentSuccessOutput,
     FailedOutput,
 )
-from pycastle.agents.result import CancellationToken
 from pycastle.config import Config, image_name_for
 from pycastle.display.rows import StatusRowConfig, status_row
 from pycastle.display.status_display import (
@@ -42,6 +41,7 @@ from pycastle.errors import (
     UsageLimitError,
 )
 from pycastle.execution_contracts import (
+    CancellationToken,
     RuntimeInvocationDependencies,
     RuntimeModelDisplayMetadata,
     RuntimeStatusDisplay,

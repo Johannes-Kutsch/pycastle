@@ -13,7 +13,6 @@ from pycastle.agents.output_protocol import (
     AgentSuccessOutput,
     CommitMessageOutput,
 )
-from pycastle.agents.result import CancellationToken
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
 from pycastle.config import Config
 from pycastle.display.status_display import StatusDisplay
@@ -25,6 +24,7 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from pycastle.execution_contracts import CancellationToken
 from pycastle.infrastructure.worktree import (
     DurableIssueWorktreeIntent,
     durable_issue_worktree,

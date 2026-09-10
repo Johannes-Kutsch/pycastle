@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from agent_runtime.errors import HardAgentError
 
-from pycastle.agents.result import CancellationToken
 from pycastle.display.rows import StatusRowConfig, status_row
 from pycastle.errors import (
     AgentFailedError,
@@ -14,6 +13,7 @@ from pycastle.errors import (
     TransientAgentError,
     UsageLimitError,
 )
+from pycastle.execution_contracts import CancellationToken
 from pycastle.iteration import (
     AbortedAgentCredentialFailure,
     AbortedHITL,
