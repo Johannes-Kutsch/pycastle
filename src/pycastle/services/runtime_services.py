@@ -108,6 +108,41 @@ def _service_state_dir_relpath(
     )
 
 
+class _AgentServiceDefaults:
+    @property
+    def name(self) -> str:
+        raise NotImplementedError  # pragma: no cover
+
+    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
+        return _service_state_dir_relpath(self.name, role, namespace)
+
+    def auth_seed_action(
+        self,
+        provider_state_dir: Path | None,
+    ) -> LocalAuthSeedAction | None:
+        del provider_state_dir
+        return None
+
+    def is_exact_resumable_provider_session(
+        self,
+        *,
+        provider_session_id: str | None,
+        provider_state_dir: Path | None,
+    ) -> bool:
+        return provider_session_id is not None and provider_state_dir is not None
+
+    def recover_provider_session_id(self, state_dir: Path | None) -> str | None:
+        del state_dir
+        return None
+
+    def provider_session_preferences(
+        self,
+        request: ProviderSessionPreferencesRequest,
+    ) -> ProviderSessionPreferences:
+        del request
+        return ProviderSessionPreferences()
+
+
 def _provider_session_preferences_for_request(
     request: ProviderSessionPreferencesRequest,
 ) -> ProviderSessionPreferences:
@@ -153,7 +188,7 @@ def _provider_session_state_for_request(
 
 
 @dataclasses.dataclass
-class ClaudeService:
+class ClaudeService(_AgentServiceDefaults):
     accounts: list[tuple[str, str]] | None = None
     _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
 
@@ -196,9 +231,6 @@ class ClaudeService:
         if self._helper is not None:
             self._helper.mark_model_restricted(model)
 
-    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return _service_state_dir_relpath(self.name, role, namespace)
-
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(
             candidate.is_file() for candidate in state_dir.rglob("*")
@@ -215,13 +247,6 @@ class ClaudeService:
         request: ProviderSessionStateRequest,
     ) -> ProviderSessionState:
         return _provider_session_state_for_request(request)
-
-    def auth_seed_action(
-        self,
-        provider_state_dir: Path | None,
-    ) -> LocalAuthSeedAction | None:
-        del provider_state_dir
-        return None
 
     def account_names(self) -> list[str]:
         if self._helper is None:
@@ -243,18 +268,6 @@ class ClaudeService:
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"low", "medium", "high", "xhigh", "max"})
 
-    def recover_provider_session_id(self, state_dir: Path | None) -> str | None:
-        del state_dir
-        return None
-
-    def is_exact_resumable_provider_session(
-        self,
-        *,
-        provider_session_id: str | None,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        return provider_session_id is not None and provider_state_dir is not None
-
     def build_env(
         self,
         state_dir_container_path: str | None = None,
@@ -271,7 +284,7 @@ class ClaudeService:
 
 
 @dataclasses.dataclass
-class CodexService:
+class CodexService(_AgentServiceDefaults):
     api_key: str | None = None
     _exhausted_until: datetime | None = dataclasses.field(default=None, init=False)
     _restricted_models: set[str] = dataclasses.field(default_factory=set, init=False)
@@ -310,19 +323,9 @@ class CodexService:
             wake = wake.replace(tzinfo=UTC)
         self._exhausted_until = wake
 
-    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return _service_state_dir_relpath(self.name, role, namespace)
-
     def is_resumable(self, state_dir: Path) -> bool:
         sessions_dir = state_dir / "sessions"
         return sessions_dir.is_dir() and any(sessions_dir.rglob("rollout-*.jsonl"))
-
-    def provider_session_preferences(
-        self,
-        request: ProviderSessionPreferencesRequest,
-    ) -> ProviderSessionPreferences:
-        del request
-        return ProviderSessionPreferences()
 
     def provider_session_state(
         self,
@@ -519,7 +522,7 @@ def _opencode_go_config_content() -> str:
 
 
 @dataclasses.dataclass
-class OpenCodeService:
+class OpenCodeService(_AgentServiceDefaults):
     api_key: str | None = None
     accounts: list[tuple[str, str]] | None = None
     _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
@@ -550,13 +553,6 @@ class OpenCodeService:
             env["OPENCODE_GO_API_KEY"] = token
             env["OPENCODE_CONFIG_CONTENT"] = _opencode_go_config_content()
         return env
-
-    def provider_session_preferences(
-        self,
-        request: ProviderSessionPreferencesRequest,
-    ) -> ProviderSessionPreferences:
-        del request
-        return ProviderSessionPreferences()
 
     def provider_session_state(
         self,
@@ -640,9 +636,6 @@ class OpenCodeService:
             return []
         return self._helper.account_names()
 
-    def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
-        return _service_state_dir_relpath(self.name, role, namespace)
-
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "resume.jsonl").is_file() or (
             state_dir / "session_id"
@@ -654,13 +647,6 @@ class OpenCodeService:
     def valid_efforts(self) -> frozenset[str]:
         return frozenset({"medium"})
 
-    def auth_seed_action(
-        self,
-        provider_state_dir: Path | None,
-    ) -> LocalAuthSeedAction | None:
-        del provider_state_dir
-        return None
-
     def summary_line(self) -> str | None:
         return "OpenCode auth: API key configured"
 
@@ -668,14 +654,6 @@ class OpenCodeService:
         return load_state_dir_provider_session_id(
             state_dir, self.name, session_id_filename="session_id"
         )
-
-    def is_exact_resumable_provider_session(
-        self,
-        *,
-        provider_session_id: str | None,
-        provider_state_dir: Path | None,
-    ) -> bool:
-        return provider_session_id is not None and provider_state_dir is not None
 
 
 def _resolved_provider_session_id(
