@@ -1,0 +1,324 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from agent_runtime.errors import HardAgentError
+
+from pycastle.agents.result import CancellationToken
+from pycastle.display.rows import StatusRowConfig, status_row
+from pycastle.errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    ModelNotAvailableError,
+    SetupPhaseError,
+    TransientAgentError,
+    UsageLimitError,
+)
+from pycastle.iteration import (
+    AbortedAgentCredentialFailure,
+    AbortedHITL,
+    AbortedModelNotAvailable,
+    AbortedOperatorActionable,
+    AbortedSetup,
+    AbortedTimeout,
+    AbortedUsageLimit,
+    Continue,
+    Done,
+    IterationOutcome,
+    MergeCloseFailure,
+    NoCandidate,
+)
+from pycastle.iteration.implement import branch_for, implement_phase
+from pycastle.iteration.improve import (
+    ImproveContinue,
+    ImproveNoCandidate,
+    improve_phase,
+)
+from pycastle.iteration.merge import merge_phase
+from pycastle.iteration.planning import AllBlocked, planning_phase
+from pycastle.iteration.planning_issue_intake import (
+    PreparedPlanningIssueSet,
+    prepare_planning_issue_set,
+)
+from pycastle.iteration.preflight import PreflightAFK, PreflightHITL
+from pycastle.services import OperatorActionableGitError
+
+if TYPE_CHECKING:
+    from pycastle.config import Config
+    from pycastle.iteration._deps import Deps
+
+
+def _route_and_abort_agent_credential_failure(
+    err: HardAgentError,
+    deps: Deps,
+) -> AbortedAgentCredentialFailure | None:
+    from pycastle.iteration import route_agent_credential_failure
+
+    routed_failure = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=deps.github_svc,
+    )
+    if routed_failure is None:
+        return None
+    deps.status_display.print(
+        err.caller,
+        routed_failure.status_message
+        + (f" — {routed_failure.issue_url}" if routed_failure.issue_url else ""),
+    )
+    return AbortedAgentCredentialFailure(status_code=routed_failure.status_code)
+
+
+async def _run_implement_and_merge(
+    issues: list[dict],
+    deps: Deps,
+    sha: str | None,
+) -> IterationOutcome:
+    token = CancellationToken()
+    async with status_row(
+        deps.status_display,
+        "Implement",
+        kind="phase",
+        must_close=True,
+        config=StatusRowConfig(initial_phase="Running"),
+    ) as row:
+        impl_result = await implement_phase(issues, deps, sha, token=token)
+
+        if impl_result.usage_limit_hit:
+            row.close("finished")
+            return AbortedUsageLimit(
+                reset_time=impl_result.usage_limit_reset_time,
+                provider=impl_result.usage_limit_provider,
+                raw_message=impl_result.usage_limit_raw_message,
+                account_label=impl_result.usage_limit_account_label,
+                is_permanent=impl_result.usage_limit_is_permanent,
+                stage_key="implement",
+            )
+
+        for issue, error in impl_result.errors:
+            deps.status_display.print(
+                "Implement",
+                f"  ✗ #{issue['number']} ({branch_for(issue['number'])}) failed: {error}",
+            )
+
+        completed = impl_result.completed
+
+        if not completed:
+            row.close(
+                "No commits produced. Nothing to merge.", shutdown_style="warning"
+            )
+            return Continue()
+
+        branch_lines = [f"  {branch_for(i['number'])}" for i in completed]
+        row.close(
+            "\n".join(
+                [
+                    f"Execution complete, {len(completed)} branch(es) with commits:",
+                    *branch_lines,
+                ]
+            )
+        )
+
+    merge_result = await merge_phase(completed, deps)
+    if merge_result.preflight_blocker is not None:
+        return await _handle_preflight_outcome(merge_result.preflight_blocker, deps)
+    if merge_result.close_failure_issue_numbers:
+        return MergeCloseFailure(
+            filed_issue_numbers=merge_result.close_failure_issue_numbers
+        )
+    return Continue()
+
+
+async def _handle_preflight_outcome(
+    result: PreflightHITL | PreflightAFK, deps: Deps
+) -> IterationOutcome:
+    if isinstance(result, PreflightHITL):
+        deps.status_display.print(
+            "Preflight",
+            f"Preflight issue #{result.issue_number} requires human intervention. Exiting.",
+        )
+        return AbortedHITL(issue_number=result.issue_number)
+    afk_issue = deps.github_svc.get_issue(result.issue_number)
+    return await _run_implement_and_merge([afk_issue], deps, result.sha)
+
+
+async def _run_improve_phase(deps: Deps) -> IterationOutcome | None:
+    if deps.improve_mode is None:
+        return Done()
+    if (
+        deps.improve_mode == "until_sleep"
+        and deps.slept_once
+        and not deps.improve_cycle_interrupted
+    ):
+        return Done()
+    if (
+        deps.cfg.improve_max is not None
+        and deps.improve_dispatched_count >= deps.cfg.improve_max
+    ):
+        return Done(improve_cap_reached=True)
+    improve_result = await improve_phase(deps)
+    deps.improve_cycle_interrupted = False
+    if isinstance(improve_result, ImproveContinue):
+        deps.improve_dispatched_count += improve_result.completed_count
+    if isinstance(improve_result, ImproveNoCandidate):
+        return NoCandidate()
+    if isinstance(improve_result, (PreflightHITL, PreflightAFK)):
+        return await _handle_preflight_outcome(improve_result, deps)
+    return None
+
+
+async def _run_plan_and_implement(
+    deps: Deps,
+    open_issues: list[dict],
+    prepared_issue_set: PreparedPlanningIssueSet,
+    all_open_issues: list[dict],
+    in_flight: list[dict],
+) -> IterationOutcome:
+    plan_result = await planning_phase(
+        deps,
+        open_issues,
+        all_open_issues,
+        prepared_issue_set=prepared_issue_set,
+        in_flight=in_flight,
+    )
+    if isinstance(plan_result, AllBlocked):
+        return Done()
+    if isinstance(plan_result, (PreflightHITL, PreflightAFK)):
+        return await _handle_preflight_outcome(plan_result, deps)
+    return await _run_implement_and_merge(plan_result.issues, deps, plan_result.sha)
+
+
+async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
+    from pycastle.iteration import select_in_flight_issues
+
+    open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
+    prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
+    prepared_open_issues = list(prepared_issue_set.prepared_issues)
+    all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
+    in_flight = select_in_flight_issues(
+        prepared_open_issues,
+        repo_root=deps.repo_root,
+        git_svc=deps.git_svc,
+        operating_branch=deps.cfg.operating_branch,
+    )
+
+    # An interrupted improve cycle widens the idle gate: even when ready-for-agent
+    # tickets exist (filed by an earlier improve pass), improve owns this iteration.
+    # `had_pending_work` distinguishes this path from the normal idle path so that
+    # planning is deferred to the following iteration rather than chained in the
+    # same one (which would let improve-filed tickets preempt remaining candidates).
+    had_pending_work = bool(open_issues) or bool(in_flight)
+    if (not open_issues and not in_flight) or deps.improve_cycle_interrupted:
+        try:
+            outcome = await _run_improve_phase(deps)
+        except UsageLimitError as err:
+            # Mark the cycle as interrupted so the next iteration resumes it
+            # rather than treating the sleep as a completed-cycle stop signal.
+            # Also stamp stage_key for accurate sleep-duration routing.
+            deps.improve_cycle_interrupted = True
+            if err.stage_key is None:
+                err.stage_key = "improve"
+            raise
+        if outcome is not None:
+            return outcome
+        if had_pending_work:
+            # We entered via improve_cycle_interrupted with existing open issues.
+            # Return now so planning picks them up in the following iteration with
+            # the flag cleared, rather than preempting remaining candidates.
+            return Continue()
+        open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
+        prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
+        prepared_open_issues = list(prepared_issue_set.prepared_issues)
+        all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
+        if not open_issues:
+            return Continue()
+        in_flight = select_in_flight_issues(
+            prepared_open_issues,
+            repo_root=deps.repo_root,
+            git_svc=deps.git_svc,
+            operating_branch=deps.cfg.operating_branch,
+        )
+
+    return await _run_plan_and_implement(
+        deps, open_issues, prepared_issue_set, all_open_issues, in_flight
+    )
+
+
+def _handle_usage_limit_error(err: UsageLimitError, cfg: Config) -> AbortedUsageLimit:
+    from pycastle.iteration import (
+        _FILED_USAGE_LIMIT_RAW_MESSAGES,
+        BUG_REPORT_LABEL_LIST,
+        auto_file_issue,
+    )
+
+    if (
+        err.raw_message is not None
+        and not err.is_permanent
+        and err.raw_message not in _FILED_USAGE_LIMIT_RAW_MESSAGES
+    ):
+        _FILED_USAGE_LIMIT_RAW_MESSAGES.add(err.raw_message)
+        provider = err.provider or "claude"
+        title = f"[pycastle] failed to parse usage-limit reset time ({provider})"
+        body = (
+            f"## Failed message\n\n```\n{err.raw_message}\n```\n\n"
+            f"Provider: {provider}; failure: usage-limit reset time parse failure\n"
+        )
+        auto_file_issue(title, body, BUG_REPORT_LABEL_LIST, cfg=cfg)
+    return AbortedUsageLimit(
+        reset_time=err.reset_time,
+        provider=err.provider,
+        raw_message=err.raw_message,
+        account_label=err.account_label,
+        is_permanent=err.is_permanent,
+        stage_key=err.stage_key,
+    )
+
+
+async def run_iteration(deps: Deps) -> IterationOutcome:
+    try:
+        return await _run_iteration_inner(deps)
+    except AgentFailedError as err:
+        from pycastle.iteration.failure_report_dispatch import (
+            translate_agent_failed_error_to_abort,
+        )
+
+        return await translate_agent_failed_error_to_abort(err, deps)
+    except UsageLimitError as err:
+        return _handle_usage_limit_error(err, deps.cfg)
+    except ModelNotAvailableError as err:
+        return AbortedModelNotAvailable(
+            service=err.service,
+            model=err.model,
+            stage_key=err.stage_key,
+        )
+    except AgentTimeoutError as err:
+        return AbortedTimeout(
+            failed_role=err.role_value,
+            worktree_path=err.worktree_path or deps.repo_root,
+        )
+    except OperatorActionableGitError as err:
+        return AbortedOperatorActionable(
+            op=err.op,
+            stderr=err.stderr,
+            attempt_count=err.attempt_count,
+        )
+    except TransientAgentError:
+        return Continue()
+    except HardAgentError as err:
+        routed_result = _route_and_abort_agent_credential_failure(err, deps)
+        if routed_result is not None:
+            return routed_result
+        from pycastle.iteration import auto_file_issue
+        from pycastle.iteration.hard_agent_error_report import (
+            translate_hard_agent_error_to_abort,
+        )
+
+        return translate_hard_agent_error_to_abort(
+            err, deps.cfg, deps.status_display, auto_file_issue
+        )
+    except SetupPhaseError as err:
+        return AbortedSetup(
+            phase=err.phase,
+            message=str(err),
+            command=err.command,
+            output=err.output,
+        )
