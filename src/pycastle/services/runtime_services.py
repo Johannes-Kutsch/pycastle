@@ -187,19 +187,35 @@ def _provider_session_state_for_request(
     )
 
 
-@dataclasses.dataclass
-class ClaudeService(_AgentServiceDefaults):
-    accounts: list[tuple[str, str]] | None = None
-    _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
+class _AvailabilityTracker(Protocol):
+    def is_available(
+        self, now: datetime | None = None, *, model: str | None = None
+    ) -> bool: ...
 
-    def __post_init__(self) -> None:
-        if self.accounts is None:
-            return
-        self._helper = PoolAvailabilityHelper(self.accounts, provider="claude")
+    def next_wake_time(self) -> datetime: ...
 
-    @property
-    def name(self) -> str:
-        return "claude"
+    def mark_exhausted(
+        self,
+        reset_time: datetime | None,
+        *,
+        now: datetime | None = None,
+    ) -> None: ...
+
+    def mark_permanently_exhausted(self) -> str | None: ...
+
+    def mark_model_restricted(self, model: str) -> None: ...
+
+    def account_names(self) -> list[str]: ...
+
+
+class _PoolAvailabilityTracker:
+    def __init__(
+        self,
+        helper: PoolAvailabilityHelper | None,
+        service_name: str,
+    ) -> None:
+        self._helper = helper
+        self._service_name = service_name
 
     def is_available(
         self, now: datetime | None = None, *, model: str | None = None
@@ -210,17 +226,19 @@ class ClaudeService(_AgentServiceDefaults):
 
     def next_wake_time(self) -> datetime:
         if self._helper is None:
-            raise RuntimeError("ClaudeService.next_wake_time called with no pool")
+            raise RuntimeError(
+                f"{self._service_name}.next_wake_time called with no pool"
+            )
         return self._helper.next_wake_time()
 
     def mark_exhausted(
         self,
         reset_time: datetime | None,
         *,
-        _now: datetime | None = None,
+        now: datetime | None = None,
     ) -> None:
         if self._helper is not None:
-            self._helper.mark_exhausted(reset_time, now=_now)
+            self._helper.mark_exhausted(reset_time, now=now)
 
     def mark_permanently_exhausted(self) -> str | None:
         if self._helper is None:
@@ -230,6 +248,49 @@ class ClaudeService(_AgentServiceDefaults):
     def mark_model_restricted(self, model: str) -> None:
         if self._helper is not None:
             self._helper.mark_model_restricted(model)
+
+    def account_names(self) -> list[str]:
+        if self._helper is None:
+            return []
+        return self._helper.account_names()
+
+
+@dataclasses.dataclass
+class ClaudeService(_AgentServiceDefaults):
+    accounts: list[tuple[str, str]] | None = None
+    _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
+    _tracker: _AvailabilityTracker = dataclasses.field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.accounts is not None:
+            self._helper = PoolAvailabilityHelper(self.accounts, provider="claude")
+        self._tracker = _PoolAvailabilityTracker(self._helper, "ClaudeService")
+
+    @property
+    def name(self) -> str:
+        return "claude"
+
+    def is_available(
+        self, now: datetime | None = None, *, model: str | None = None
+    ) -> bool:
+        return self._tracker.is_available(now, model=model)
+
+    def next_wake_time(self) -> datetime:
+        return self._tracker.next_wake_time()
+
+    def mark_exhausted(
+        self,
+        reset_time: datetime | None,
+        *,
+        _now: datetime | None = None,
+    ) -> None:
+        self._tracker.mark_exhausted(reset_time, now=_now)
+
+    def mark_permanently_exhausted(self) -> str | None:
+        return self._tracker.mark_permanently_exhausted()
+
+    def mark_model_restricted(self, model: str) -> None:
+        self._tracker.mark_model_restricted(model)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(
@@ -249,9 +310,7 @@ class ClaudeService(_AgentServiceDefaults):
         return _provider_session_state_for_request(request)
 
     def account_names(self) -> list[str]:
-        if self._helper is None:
-            return []
-        return self._helper.account_names()
+        return self._tracker.account_names()
 
     def summary_line(self) -> str | None:
         names = self.account_names()
@@ -526,12 +585,14 @@ class OpenCodeService(_AgentServiceDefaults):
     api_key: str | None = None
     accounts: list[tuple[str, str]] | None = None
     _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
+    _tracker: _AvailabilityTracker = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         creds = self.accounts if self.accounts is not None else self.api_key
         if creds is not None:
             self._helper = PoolAvailabilityHelper(creds, provider="opencode")
             self._helper.pick_token()
+        self._tracker = _PoolAvailabilityTracker(self._helper, "OpenCodeService")
 
     @property
     def name(self) -> str:
@@ -604,14 +665,10 @@ class OpenCodeService(_AgentServiceDefaults):
     def is_available(
         self, now: datetime | None = None, *, model: str | None = None
     ) -> bool:
-        if self._helper is None:
-            return True
-        return self._helper.is_available(now=now, model=model)
+        return self._tracker.is_available(now, model=model)
 
     def next_wake_time(self) -> datetime:
-        if self._helper is None:
-            raise RuntimeError("OpenCodeService.next_wake_time called with no pool")
-        return self._helper.next_wake_time()
+        return self._tracker.next_wake_time()
 
     def mark_exhausted(
         self,
@@ -619,22 +676,16 @@ class OpenCodeService(_AgentServiceDefaults):
         *,
         _now: datetime | None = None,
     ) -> None:
-        if self._helper is not None:
-            self._helper.mark_exhausted(reset_time, now=_now)
+        self._tracker.mark_exhausted(reset_time, now=_now)
 
     def mark_permanently_exhausted(self) -> str | None:
-        if self._helper is None:
-            return None
-        return self._helper.mark_permanently_exhausted()
+        return self._tracker.mark_permanently_exhausted()
 
     def mark_model_restricted(self, model: str) -> None:
-        if self._helper is not None:
-            self._helper.mark_model_restricted(model)
+        self._tracker.mark_model_restricted(model)
 
     def account_names(self) -> list[str]:
-        if self._helper is None:
-            return []
-        return self._helper.account_names()
+        return self._tracker.account_names()
 
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "resume.jsonl").is_file() or (

@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services.runtime_services import (
@@ -362,3 +364,113 @@ def test_service_by_name_unknown_is_exact_resumable_true_when_both_non_none(
         )
         is True
     )
+
+
+# --- Pool-backed adapter: no-pool behavior (ClaudeService) ---
+
+
+def test_claude_service_no_pool_is_available_returns_true() -> None:
+    assert ClaudeService().is_available() is True
+
+
+def test_claude_service_no_pool_is_available_with_model_returns_true() -> None:
+    assert ClaudeService().is_available(model="sonnet") is True
+
+
+def test_claude_service_no_pool_next_wake_time_raises() -> None:
+    with pytest.raises(RuntimeError, match="no pool"):
+        ClaudeService().next_wake_time()
+
+
+def test_claude_service_no_pool_mark_exhausted_is_noop() -> None:
+    ClaudeService().mark_exhausted(None)  # must not raise
+
+
+def test_claude_service_no_pool_mark_permanently_exhausted_returns_none() -> None:
+    assert ClaudeService().mark_permanently_exhausted() is None
+
+
+def test_claude_service_no_pool_mark_model_restricted_is_noop() -> None:
+    ClaudeService().mark_model_restricted("sonnet")  # must not raise
+
+
+def test_claude_service_no_pool_account_names_returns_empty() -> None:
+    assert ClaudeService().account_names() == []
+
+
+# --- Pool-backed adapter: no-pool behavior (OpenCodeService) ---
+
+
+def test_opencode_service_no_pool_is_available_returns_true() -> None:
+    assert OpenCodeService().is_available() is True
+
+
+def test_opencode_service_no_pool_is_available_with_model_returns_true() -> None:
+    assert OpenCodeService().is_available(model="deepseek-v4-pro") is True
+
+
+def test_opencode_service_no_pool_next_wake_time_raises() -> None:
+    with pytest.raises(RuntimeError, match="no pool"):
+        OpenCodeService().next_wake_time()
+
+
+def test_opencode_service_no_pool_mark_exhausted_is_noop() -> None:
+    OpenCodeService().mark_exhausted(None)  # must not raise
+
+
+def test_opencode_service_no_pool_mark_permanently_exhausted_returns_none() -> None:
+    assert OpenCodeService().mark_permanently_exhausted() is None
+
+
+def test_opencode_service_no_pool_mark_model_restricted_is_noop() -> None:
+    OpenCodeService().mark_model_restricted("deepseek-v4-pro")  # must not raise
+
+
+def test_opencode_service_no_pool_account_names_returns_empty() -> None:
+    assert OpenCodeService().account_names() == []
+
+
+# --- Pool-backed adapter: with-pool behavior (ClaudeService) ---
+
+
+def test_claude_service_with_pool_exhaustion_visible_through_next_wake_time() -> None:
+    svc = ClaudeService(accounts=[("alice", "tok-1")])
+    svc.build_env()  # pick_token sets _current_token on the helper
+    svc.mark_exhausted(_FAR, _now=_NOW)
+    assert svc.next_wake_time() > _NOW
+
+
+def test_claude_service_with_pool_permanent_exhaustion_returns_label() -> None:
+    svc = ClaudeService(accounts=[("alice", "tok-1")])
+    svc.build_env()  # pick_token sets _current_token on the helper
+    assert svc.mark_permanently_exhausted() == "alice"
+
+
+def test_claude_service_with_pool_model_restriction_hides_model() -> None:
+    svc = ClaudeService(accounts=[("alice", "tok-1")])
+    svc.build_env()  # pick_token sets _current_token on the helper
+    svc.mark_model_restricted("sonnet")
+    assert svc.is_available(model="sonnet", now=_NOW) is False
+    assert svc.is_available(model="opus", now=_NOW) is True
+
+
+# --- Pool-backed adapter: with-pool behavior (OpenCodeService) ---
+
+
+def test_opencode_service_with_pool_exhaustion_visible_through_next_wake_time() -> None:
+    svc = OpenCodeService(accounts=[("alice", "tok-1")])
+    # pick_token is called in __post_init__ for OpenCodeService
+    svc.mark_exhausted(_FAR, _now=_NOW)
+    assert svc.next_wake_time() > _NOW
+
+
+def test_opencode_service_with_pool_permanent_exhaustion_returns_label() -> None:
+    svc = OpenCodeService(accounts=[("alice", "tok-1")])
+    assert svc.mark_permanently_exhausted() == "alice"
+
+
+def test_opencode_service_with_pool_model_restriction_hides_model() -> None:
+    svc = OpenCodeService(accounts=[("alice", "tok-1")])
+    svc.mark_model_restricted("deepseek-v4-pro")
+    assert svc.is_available(model="deepseek-v4-pro", now=_NOW) is False
+    assert svc.is_available(model="deepseek-v4-flash", now=_NOW) is True
