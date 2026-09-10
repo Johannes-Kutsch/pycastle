@@ -95,6 +95,30 @@ def _protocol_reprompt_message_with_expected_shape(
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class _RoleRepromptCustomization:
+    retry_instruction: str | None = None
+    shape_label: str | None = None
+
+
+_ROLE_REPROMPT_CUSTOMIZATION: MappingProxyType[
+    AgentRole, _RoleRepromptCustomization
+] = MappingProxyType(
+    {
+        AgentRole.PLANNER: _RoleRepromptCustomization(
+            retry_instruction=(
+                "On retry, return a raw JSON object in a `<plan>` tag "
+                "(do not quote or escape the JSON)."
+            ),
+            shape_label="Use this Planner output shape exactly:",
+        ),
+        AgentRole.IMPROVE: _RoleRepromptCustomization(
+            shape_label="Use this Improve output shape exactly:",
+        ),
+    }
+)
+
+
 def plan_protocol_reprompt(
     *,
     role: AgentRole,
@@ -109,50 +133,19 @@ def plan_protocol_reprompt(
     if invocation.template not in supported_templates:
         return GenericProtocolReprompt()
 
-    if role is AgentRole.PLANNER:
-        return TemplateSpecificProtocolReprompt(
-            message=_protocol_reprompt_message_with_expected_shape(
-                parser_error=parser_error,
-                expected_shape=render_expected_output_shape(),
-                retry_instruction=(
-                    "On retry, return a raw JSON object in a `<plan>` tag "
-                    "(do not quote or escape the JSON)."
-                ),
-                shape_label="Use this Planner output shape exactly:",
-            ),
-        )
-
-    if role in {AgentRole.MERGER, AgentRole.DIVERGENCE_RESOLVER}:
-        return TemplateSpecificProtocolReprompt(
-            message=_protocol_reprompt_message_with_expected_shape(
-                parser_error=parser_error,
-                expected_shape=render_expected_output_shape(),
-            ),
-        )
-
-    if role in {
-        AgentRole.IMPLEMENTER,
-        AgentRole.REVIEWER,
-        AgentRole.PREFLIGHT_ISSUE,
-        AgentRole.FAILURE_REPORT,
-    }:
-        return TemplateSpecificProtocolReprompt(
-            message=_protocol_reprompt_message_with_expected_shape(
-                parser_error=parser_error,
-                expected_shape=render_expected_output_shape(),
-            ),
-        )
-
-    if role is AgentRole.IMPROVE:
-        return TemplateSpecificProtocolReprompt(
-            message=_protocol_reprompt_message_with_expected_shape(
-                parser_error=parser_error,
-                expected_shape=render_expected_output_shape(),
-                shape_label="Use this Improve output shape exactly:",
-            ),
-        )
-
-    return GenericProtocolReprompt()
+    customization = _ROLE_REPROMPT_CUSTOMIZATION.get(role, _RoleRepromptCustomization())
+    kwargs: dict[str, str] = {}
+    if customization.retry_instruction is not None:
+        kwargs["retry_instruction"] = customization.retry_instruction
+    if customization.shape_label is not None:
+        kwargs["shape_label"] = customization.shape_label
+    return TemplateSpecificProtocolReprompt(
+        message=_protocol_reprompt_message_with_expected_shape(
+            parser_error=parser_error,
+            expected_shape=render_expected_output_shape(),
+            **kwargs,
+        ),
+    )
 
 
 __all__ = [
