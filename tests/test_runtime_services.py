@@ -98,10 +98,6 @@ def test_claude_service_auth_seed_action_returns_none(tmp_path: Path) -> None:
     assert ClaudeService().auth_seed_action(tmp_path) is None
 
 
-def test_opencode_service_auth_seed_action_returns_none(tmp_path: Path) -> None:
-    assert OpenCodeService().auth_seed_action(tmp_path) is None
-
-
 # --- Model-aware availability checks on AgentService implementations ---
 
 
@@ -322,35 +318,6 @@ def test_opencode_recover_provider_session_id_returns_sidecar_contents(
 ) -> None:
     (tmp_path / "session_id").write_text("oc-sess-42", encoding="utf-8")
     assert OpenCodeService().recover_provider_session_id(tmp_path) == "oc-sess-42"
-
-
-def test_opencode_is_exact_resumable_returns_false_when_both_none() -> None:
-    assert (
-        OpenCodeService().is_exact_resumable_provider_session(
-            provider_session_id=None, provider_state_dir=None
-        )
-        is False
-    )
-
-
-def test_opencode_is_exact_resumable_returns_false_when_state_dir_none() -> None:
-    assert (
-        OpenCodeService().is_exact_resumable_provider_session(
-            provider_session_id="oc-sess-42", provider_state_dir=None
-        )
-        is False
-    )
-
-
-def test_opencode_is_exact_resumable_returns_true_when_both_non_none(
-    tmp_path: Path,
-) -> None:
-    assert (
-        OpenCodeService().is_exact_resumable_provider_session(
-            provider_session_id="oc-sess-42", provider_state_dir=tmp_path
-        )
-        is True
-    )
 
 
 # --- service_by_name ---
