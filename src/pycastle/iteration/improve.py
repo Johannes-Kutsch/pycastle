@@ -85,6 +85,46 @@ def _fork_candidate_namespaces(
             main_session.fork_namespace(ns)
 
 
+# ── Outcome transitions ───────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class _NoOpTransition:
+    pass
+
+
+@dataclass(frozen=True)
+class _RecordScanTransition:
+    candidates: tuple[ScanCandidateItem, ...]
+    no_candidate: bool
+
+
+@dataclass(frozen=True)
+class _MarkSpecCompleteTransition:
+    pass
+
+
+@dataclass(frozen=True)
+class _AdvanceCursorTransition:
+    pass
+
+
+@dataclass(frozen=True)
+class _AdvanceReportCursorTransition:
+    pass
+
+
+type _OutcomeTransition = (
+    _NoOpTransition
+    | _RecordScanTransition
+    | _MarkSpecCompleteTransition
+    | _AdvanceCursorTransition
+    | _AdvanceReportCursorTransition
+)
+
+_NO_OP = _NoOpTransition()
+
+
 # ── Phase handler seam ────────────────────────────────────────────────────────
 
 
@@ -132,11 +172,10 @@ class _PhaseHandler:
 
     def record_outcome(
         self,
-        step: "Step",
-        output: AgentOutput,
-        driver: "ImprovePhaseDriver",
-    ) -> None:
-        pass
+        step: "Step",  # noqa: ARG002
+        output: AgentOutput,  # noqa: ARG002
+    ) -> "_OutcomeTransition":
+        return _NO_OP
 
 
 # ── Phase config and Step ─────────────────────────────────────────────────────
@@ -195,30 +234,15 @@ class _ScanPhaseHandler(_PhaseHandler):
         self,
         step: Step,  # noqa: ARG002
         output: AgentOutput,
-        driver: "ImprovePhaseDriver",
-    ) -> None:
+    ) -> "_OutcomeTransition":
         if isinstance(output, ScanCandidatesOutput):
-            candidates = list(output.candidates)
-            driver._candidates = candidates  # noqa: SLF001
-            driver._no_candidate = False  # noqa: SLF001
-            driver._cursor = 0  # noqa: SLF001
-            driver._store.write_candidate_list(  # noqa: SLF001
-                CandidateList(
-                    candidates=tuple(
-                        CandidateItem(rank=c.rank, title=c.title) for c in candidates
-                    ),
-                    no_candidate=False,
-                )
+            return _RecordScanTransition(
+                candidates=tuple(output.candidates),
+                no_candidate=False,
             )
-            driver._store.write_cursor(0)  # noqa: SLF001
-        elif isinstance(output, NoCandidateOutput):
-            driver._candidates = []  # noqa: SLF001
-            driver._no_candidate = True  # noqa: SLF001
-            driver._cursor = 0  # noqa: SLF001
-            driver._store.write_candidate_list(  # noqa: SLF001
-                CandidateList(candidates=(), no_candidate=True)
-            )
-            driver._store.write_cursor(0)  # noqa: SLF001
+        if isinstance(output, NoCandidateOutput):
+            return _RecordScanTransition(candidates=(), no_candidate=True)
+        return _NO_OP
 
 
 class _CandidatePhaseHandler(_PhaseHandler):
@@ -294,9 +318,8 @@ class _SpecPhaseHandler(_CandidatePhaseHandler):
         self,
         step: Step,  # noqa: ARG002
         output: AgentOutput,  # noqa: ARG002
-        driver: "ImprovePhaseDriver",
-    ) -> None:
-        driver._store.mark_spec_completion(driver._cursor)  # noqa: SLF001
+    ) -> "_OutcomeTransition":
+        return _MarkSpecCompleteTransition()
 
 
 class _TicketsPhaseHandler(_CandidatePhaseHandler):
@@ -330,10 +353,8 @@ class _TicketsPhaseHandler(_CandidatePhaseHandler):
         self,
         step: Step,  # noqa: ARG002
         output: AgentOutput,  # noqa: ARG002
-        driver: "ImprovePhaseDriver",
-    ) -> None:
-        driver._cursor += 1  # noqa: SLF001
-        driver._store.write_cursor(driver._cursor)  # noqa: SLF001
+    ) -> "_OutcomeTransition":
+        return _AdvanceCursorTransition()
 
 
 class _ReportPhaseHandler(_PhaseHandler):
@@ -361,10 +382,8 @@ class _ReportPhaseHandler(_PhaseHandler):
         self,
         step: Step,  # noqa: ARG002
         output: AgentOutput,  # noqa: ARG002
-        driver: "ImprovePhaseDriver",
-    ) -> None:
-        driver._cursor = 1  # noqa: SLF001
-        driver._store.write_cursor(1)  # noqa: SLF001
+    ) -> "_OutcomeTransition":
+        return _AdvanceReportCursorTransition()
 
 
 # ── Phase registry ────────────────────────────────────────────────────────────
@@ -543,7 +562,29 @@ class ImprovePhaseDriver:
         return next_step
 
     def record_outcome(self, step: "Step", output: AgentOutput) -> None:
-        step.cfg.handler.record_outcome(step, output, self)
+        transition = step.cfg.handler.record_outcome(step, output)
+        if isinstance(transition, _RecordScanTransition):
+            self._candidates = list(transition.candidates)
+            self._no_candidate = transition.no_candidate
+            self._cursor = 0
+            self._store.write_candidate_list(
+                CandidateList(
+                    candidates=tuple(
+                        CandidateItem(rank=c.rank, title=c.title)
+                        for c in transition.candidates
+                    ),
+                    no_candidate=transition.no_candidate,
+                )
+            )
+            self._store.write_cursor(0)
+        elif isinstance(transition, _MarkSpecCompleteTransition):
+            self._store.mark_spec_completion(self._cursor)
+        elif isinstance(transition, _AdvanceCursorTransition):
+            self._cursor += 1
+            self._store.write_cursor(self._cursor)
+        elif isinstance(transition, _AdvanceReportCursorTransition):
+            self._cursor = 1
+            self._store.write_cursor(1)
         self._store.clear_in_flight()
 
     @property
