@@ -17,7 +17,7 @@ def _make_worktrees_dir(tmp_path):
 
 
 def test_guard_hard_reject_raises_setup_phase_error(tmp_path):
-    worktrees_dir = _make_worktrees_dir(tmp_path)
+    _make_worktrees_dir(tmp_path)  # present so should_reject returns True
     invalid_mount = tmp_path / "outside-worktrees" / "sandbox"
     invalid_mount.mkdir(parents=True)
 
@@ -28,8 +28,6 @@ def test_guard_hard_reject_raises_setup_phase_error(tmp_path):
             caller="Test Caller",
             role="test_role",
         )
-
-    _ = worktrees_dir  # created so should_reject returns True
 
 
 def test_guard_hard_reject_message_equals_describe_rejection(tmp_path):
@@ -72,9 +70,9 @@ def test_guard_hard_reject_phase_equals_rejection_role(tmp_path):
     assert exc_info.value.phase == "my_role"
 
 
-def test_guard_hard_reject_phase_falls_back_to_caller_role_when_rejection_role_is_none(
-    tmp_path,
-):
+def test_guard_hard_reject_phase_is_empty_string_when_no_role_supplied(tmp_path):
+    # decide_managed_worktree_mount always copies role into the rejection, so the
+    # only way to reach the (role or "") fallback is when role=None is passed.
     _make_worktrees_dir(tmp_path)
     invalid_mount = tmp_path / "outside-worktrees" / "sandbox"
     invalid_mount.mkdir(parents=True)
@@ -84,10 +82,10 @@ def test_guard_hard_reject_phase_falls_back_to_caller_role_when_rejection_role_i
             repo_root=tmp_path,
             mount_path=invalid_mount,
             caller="Test Caller",
-            role="fallback_role",
+            role=None,
         )
 
-    assert exc_info.value.phase == "fallback_role"
+    assert exc_info.value.phase == ""
 
 
 def test_guard_returns_without_raising_on_accept(tmp_path):
