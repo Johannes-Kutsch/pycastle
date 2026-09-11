@@ -529,6 +529,57 @@ def test_route_agent_credential_failure_produces_generic_remediation_when_no_sig
     assert "Repair the local agent credentials/account access." in body
 
 
+def test_route_agent_credential_failure_interprets_claude_subscription_denial_without_classification():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = (42, 10042)
+    message = (
+        "Your organization has disabled Claude subscription access for Claude Code. "
+        "Please ask your admin to enable Claude subscription access for Claude Code."
+    )
+    err = AgentCredentialFailureError(
+        message=message,
+        service_name="claude",
+    )
+    err.caller = "Planner"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result is not None
+    assert result.issue_url == "https://github.com/owner/consuming-project/issues/42"
+    _, _, body, _ = github_svc.create_issue_in.call_args[0]
+    assert (
+        "Restore Claude Code subscription access or use a token/account with "
+        "access and rerun pycastle."
+    ) in body
+
+
+def test_route_agent_credential_failure_interprets_opencode_invalid_api_key_without_classification():
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = (42, 10042)
+    err = AgentCredentialFailureError(
+        message="OpenCode request failed: 401 invalid API key",
+        service_name="opencode",
+    )
+    err.caller = "Implementer"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result is not None
+    assert result.issue_url == "https://github.com/owner/consuming-project/issues/42"
+    _, _, body, _ = github_svc.create_issue_in.call_args[0]
+    assert "Update the configured OpenCode API key and rerun pycastle." in body
+
+
 def test_route_agent_credential_failure_returns_none_for_non_credential_hard_error_with_no_signature():
     # Structural invariant: a HardAgentError that is not AgentCredentialFailureError
     # and has no matched signature returns None.

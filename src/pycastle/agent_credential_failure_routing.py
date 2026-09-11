@@ -330,9 +330,15 @@ def route_agent_credential_failure(
             return None
         if not isinstance(provider_failure, AgentCredentialFailureError):
             return None
+        fallback_rendered = _render_observations(raw, raw_observations)
         interpretation = _CredentialFailureInterpretation(
-            remediation="Repair the local agent credentials/account access.",
-            rendered_observations=_render_observations(raw, raw_observations),
+            remediation=_select_remediation(
+                service_name=service_name,
+                classification=getattr(provider_failure, "classification", None),
+                raw=raw,
+                rendered_observations=fallback_rendered,
+            ),
+            rendered_observations=fallback_rendered,
         )
 
     _status_code = getattr(provider_failure, "status_code", None)
