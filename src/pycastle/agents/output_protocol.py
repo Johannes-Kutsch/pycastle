@@ -3,7 +3,7 @@ import dataclasses
 import enum
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Protocol
 
 
@@ -125,15 +125,7 @@ def _strip_markdown_fence(s: str) -> str:
 
 def _iter_tag_block_candidates(text: str, tag: str) -> Iterable[str]:
     # Yield candidate bodies for <tag>...</tag>, anchored on the LAST </tag>
-    # in the text and trying each preceding <tag> opening from the rightmost
-    # outward. This lets the parser recover when:
-    #   - agent commentary contains a stray <tag> mention before the real
-    #     block (a regex `<tag>(.*?)</tag>` would anchor on that first
-    #     mention and capture prose instead of the real payload), and
-    #   - the real payload itself contains a literal <tag> substring (e.g.
-    #     an issue title quoted inside JSON), so the rightmost opening is
-    #     not necessarily the real one — callers retry until parsing
-    #     succeeds.
+    # and walking each preceding <tag> outward. See _retry_parse for rationale.
     open_tag = f"<{tag}>"
     close_tag = f"</{tag}>"
     end = text.rfind(close_tag)
@@ -152,6 +144,38 @@ def _last_tag_block(text: str, tag: str) -> str | None:
     for body in _iter_tag_block_candidates(text, tag):
         return body
     return None
+
+
+def _retry_parse[T, E: AgentOutputProtocolError](
+    text: str,
+    tag: str,
+    body_parser: Callable[[str], T],
+    parse_error_cls: type[E],
+    no_tag_message: str,
+) -> T:
+    # Walk _iter_tag_block_candidates rather than greedy-matching because:
+    #   - agent commentary may contain a stray <tag> mention before the real
+    #     block, which a simple regex would capture as prose instead of the
+    #     real payload, and
+    #   - the real payload may contain a literal <tag> substring (e.g. an
+    #     issue title quoted inside JSON), making the rightmost opening not
+    #     necessarily the correct one — so we retry each preceding <tag>
+    #     outward until body_parser succeeds.
+    last_err: E | None = None
+    saw_block = False
+    for body in _iter_tag_block_candidates(text, tag):
+        saw_block = True
+        try:
+            return body_parser(body)
+        except parse_error_cls as exc:
+            last_err = exc
+    if not saw_block:
+        raise parse_error_cls(no_tag_message)
+    if last_err is None:
+        raise RuntimeError(
+            f"narrowing: saw_block=True implies at least one {parse_error_cls.__name__} was set"
+        )
+    raise last_err
 
 
 _BEHAVIOR_TAG_RE = re.compile(r"<behavior>(.*?)</behavior>", re.DOTALL)
@@ -187,21 +211,13 @@ def _extract_all_behaviors(text: str) -> tuple[BehaviorOutput, ...]:
 
 
 def _extract_planner_output(text: str) -> PlannerOutput:
-    last_err: PlanParseError | None = None
-    saw_block = False
-    for body in _iter_tag_block_candidates(text, "plan"):
-        saw_block = True
-        try:
-            return _parse_planner_body(body)
-        except PlanParseError as exc:
-            last_err = exc
-    if not saw_block:
-        raise PlanParseError("Planner produced no <plan> tag.")
-    if last_err is None:
-        raise RuntimeError(
-            "narrowing: saw_block=True implies at least one PlanParseError was set"
-        )
-    raise last_err
+    return _retry_parse(
+        text,
+        "plan",
+        _parse_planner_body,
+        PlanParseError,
+        "Planner produced no <plan> tag.",
+    )
 
 
 def _parse_planner_body(body: str) -> PlannerOutput:
@@ -249,21 +265,13 @@ def _normalize_blocked_entry(entry: dict) -> dict:
 
 
 def _extract_issue_output(text: str) -> IssueOutput:
-    last_err: IssueParseError | None = None
-    saw_block = False
-    for body in _iter_tag_block_candidates(text, "issue"):
-        saw_block = True
-        try:
-            return _parse_issue_body(body)
-        except IssueParseError as exc:
-            last_err = exc
-    if not saw_block:
-        raise IssueParseError("Agent produced no <issue>...</issue> tag.")
-    if last_err is None:
-        raise RuntimeError(
-            "narrowing: saw_block=True implies at least one IssueParseError was set"
-        )
-    raise last_err
+    return _retry_parse(
+        text,
+        "issue",
+        _parse_issue_body,
+        IssueParseError,
+        "Agent produced no <issue>...</issue> tag.",
+    )
 
 
 def _parse_issue_body(body: str) -> IssueOutput:
