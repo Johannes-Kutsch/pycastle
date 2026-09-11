@@ -210,16 +210,6 @@ def _extract_all_behaviors(text: str) -> tuple[BehaviorOutput, ...]:
     return tuple(results)
 
 
-def _extract_planner_output(text: str) -> PlannerOutput:
-    return _retry_parse(
-        text,
-        "plan",
-        _parse_planner_body,
-        PlanParseError,
-        "Planner produced no <plan> tag.",
-    )
-
-
 def _parse_planner_body(body: str) -> PlannerOutput:
     try:
         data = json.loads(_strip_markdown_fence(body))
@@ -365,32 +355,42 @@ class _CommitMessageHandler:
         return CommitMessageOutput(message=body.strip())
 
 
-class _PlannerHandler:
+class _TagBasedRoleHandler:
+    def __init__(
+        self,
+        tag: str,
+        body_parser: Callable[[str], AgentOutput],
+        parse_error_cls: type[AgentOutputProtocolError],
+        no_tag_message: str,
+    ) -> None:
+        self._tag = tag
+        self._body_parser = body_parser
+        self._parse_error_cls = parse_error_cls
+        self._no_tag_message = no_tag_message
+
     def extract_early_output(self, turn: str) -> AgentOutput | None:
         try:
-            return _extract_planner_output(turn)
-        except PlanParseError:
+            return _retry_parse(
+                turn,
+                self._tag,
+                self._body_parser,
+                self._parse_error_cls,
+                self._no_tag_message,
+            )
+        except self._parse_error_cls:
             return None
 
     def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         try:
-            return _extract_planner_output(text)
-        except PlanParseError as exc:
-            raise PlanParseError(f"{exc}{tail}") from exc.__cause__
-
-
-class _PreflightIssueHandler:
-    def extract_early_output(self, turn: str) -> AgentOutput | None:
-        try:
-            return _extract_issue_output(turn)
-        except IssueParseError:
-            return None
-
-    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
-        try:
-            return _extract_issue_output(text)
-        except IssueParseError as exc:
-            raise IssueParseError(f"{exc}{tail}") from exc.__cause__
+            return _retry_parse(
+                text,
+                self._tag,
+                self._body_parser,
+                self._parse_error_cls,
+                self._no_tag_message,
+            )
+        except self._parse_error_cls as exc:
+            raise self._parse_error_cls(f"{exc}{tail}") from exc.__cause__
 
 
 _FAILED: frozenset[str] = frozenset({"FAILED"})
@@ -443,14 +443,21 @@ class _ImproveHandler:
 
 
 _commit_message_handler = _CommitMessageHandler()
-_preflight_issue_handler = _PreflightIssueHandler()
+_preflight_issue_handler = _TagBasedRoleHandler(
+    "issue",
+    _parse_issue_body,
+    IssueParseError,
+    "Agent produced no <issue>...</issue> tag.",
+)
 
 _merger_handler = _MergerHandler()
 
 _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.IMPLEMENTER: _commit_message_handler,
     AgentRole.REVIEWER: _commit_message_handler,
-    AgentRole.PLANNER: _PlannerHandler(),
+    AgentRole.PLANNER: _TagBasedRoleHandler(
+        "plan", _parse_planner_body, PlanParseError, "Planner produced no <plan> tag."
+    ),
     AgentRole.PREFLIGHT_ISSUE: _preflight_issue_handler,
     AgentRole.FAILURE_REPORT: _preflight_issue_handler,
     AgentRole.IMPROVE: _ImproveHandler(),
