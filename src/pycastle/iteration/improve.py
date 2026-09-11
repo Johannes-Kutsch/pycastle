@@ -15,7 +15,6 @@ from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
 from pycastle.config import Config
 from pycastle.display.rows import StatusRowConfig, status_row
 from pycastle.display.status_display import StatusDisplay
-from pycastle.errors import SetupPhaseError
 from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
     reusable_sandbox_worktree,
@@ -41,12 +40,7 @@ from pycastle.iteration.preflight import (
     PreflightCache,
     PreflightHITL,
 )
-from pycastle.managed_worktree_mount_policy import (
-    ManagedWorktreeMountRejected,
-    decide_managed_worktree_mount,
-    describe_managed_worktree_mount_rejection,
-    should_reject_managed_worktree_mount,
-)
+from pycastle.managed_worktree_mount_policy import guard_managed_worktree_mount
 from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import compute_candidate_budget
@@ -720,19 +714,12 @@ async def improve_phase(
                     short_sid=short_sid,
                     candidate_budget=candidate_budget,
                 )
-                mount_decision = decide_managed_worktree_mount(
+                guard_managed_worktree_mount(
                     repo_root=deps.repo_root,
                     mount_path=sandbox_path,
                     caller=prepared_step.name,
                     role=AgentRole.IMPROVE.value,
                 )
-                if isinstance(
-                    mount_decision, ManagedWorktreeMountRejected
-                ) and should_reject_managed_worktree_mount(mount_decision):
-                    raise SetupPhaseError(
-                        AgentRole.IMPROVE.value,
-                        describe_managed_worktree_mount_rejection(mount_decision),
-                    )
                 # Save namespace before record_outcome advances the cursor.
                 step_namespace = prepared_step.session_namespace
                 output = await deps.agent_runner.run(

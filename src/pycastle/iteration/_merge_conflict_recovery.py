@@ -33,12 +33,7 @@ from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration._merge_reporting import MergeProgressReporter
 from pycastle.iteration._utils import _advance_branch_ref_through_gate
 from pycastle.iteration.implement import branch_for
-from pycastle.managed_worktree_mount_policy import (
-    ManagedWorktreeMountRejected,
-    decide_managed_worktree_mount,
-    describe_managed_worktree_mount_rejection,
-    should_reject_managed_worktree_mount,
-)
+from pycastle.managed_worktree_mount_policy import guard_managed_worktree_mount
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_merge_scope_args
@@ -190,19 +185,12 @@ async def _recover_active_conflict(
                 _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
                 RoleSession(sandbox_path, AgentRole.MERGER).discard()
                 return None
-            mount_decision = decide_managed_worktree_mount(
+            guard_managed_worktree_mount(  # raise inside try is intentional: exits async-with resource cleanup
                 repo_root=deps.repo_root,
                 mount_path=sandbox_path,
                 caller="Merge Agent",
                 role=AgentRole.MERGER.value,
             )
-            if isinstance(
-                mount_decision, ManagedWorktreeMountRejected
-            ) and should_reject_managed_worktree_mount(mount_decision):
-                raise SetupPhaseError(  # noqa: TRY301  # raise inside try is intentional: exits async-with resource cleanup
-                    AgentRole.MERGER.value,
-                    describe_managed_worktree_mount_rejection(mount_decision),
-                )
             result = await deps.agent_runner.run(
                 RunRequest(
                     name="Merge Agent",

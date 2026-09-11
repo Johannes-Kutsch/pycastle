@@ -17,7 +17,6 @@ from pycastle.agents.slice_classifier import (
 from pycastle.config import Config
 from pycastle.display.rows import StatusRow, StatusRowConfig, status_row
 from pycastle.display.status_display import StatusDisplay
-from pycastle.errors import SetupPhaseError
 from pycastle.execution_contracts import WorktreeMount
 from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
@@ -34,12 +33,7 @@ from pycastle.iteration.planning_issue_intake import (
 )
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
 from pycastle.iteration.startable import startable_issues
-from pycastle.managed_worktree_mount_policy import (
-    ManagedWorktreeMountRejected,
-    decide_managed_worktree_mount,
-    describe_managed_worktree_mount_rejection,
-    should_reject_managed_worktree_mount,
-)
+from pycastle.managed_worktree_mount_policy import guard_managed_worktree_mount
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_plan_scope_args
@@ -179,19 +173,12 @@ async def _run_planner_agent(
     well_formed: list[dict],
     all_open_issues: list[dict],
 ) -> PlannerOutput:
-    mount_decision = decide_managed_worktree_mount(
+    guard_managed_worktree_mount(
         repo_root=deps.repo_root,
         mount_path=wt,
         caller="Plan Agent",
         role=AgentRole.PLANNER.value,
     )
-    if isinstance(
-        mount_decision, ManagedWorktreeMountRejected
-    ) and should_reject_managed_worktree_mount(mount_decision):
-        raise SetupPhaseError(
-            AgentRole.PLANNER.value,
-            describe_managed_worktree_mount_rejection(mount_decision),
-        )
     try:
         output = await deps.agent_runner.run(
             RunRequest(

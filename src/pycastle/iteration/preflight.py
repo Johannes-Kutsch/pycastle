@@ -50,12 +50,7 @@ from pycastle.iteration._utils import (
     _advance_branch_ref_through_gate,
     _wait_for_operating_branch_release,
 )
-from pycastle.managed_worktree_mount_policy import (
-    ManagedWorktreeMountRejected,
-    decide_managed_worktree_mount,
-    describe_managed_worktree_mount_rejection,
-    should_reject_managed_worktree_mount,
-)
+from pycastle.managed_worktree_mount_policy import guard_managed_worktree_mount
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import (
@@ -143,19 +138,12 @@ class BranchRefreshBoundary:
                     deps=deps,
                     operating_branch=deps.cfg.operating_branch,
                 ) as sandbox_path:
-                    mount_decision = decide_managed_worktree_mount(
+                    guard_managed_worktree_mount(  # raise inside try is intentional: exits async-with resource cleanup
                         repo_root=deps.repo_root,
                         mount_path=sandbox_path,
                         caller="Divergence Resolver",
                         role=AgentRole.DIVERGENCE_RESOLVER.value,
                     )
-                    if isinstance(
-                        mount_decision, ManagedWorktreeMountRejected
-                    ) and should_reject_managed_worktree_mount(mount_decision):
-                        raise SetupPhaseError(  # noqa: TRY301  # raise inside try is intentional: exits async-with resource cleanup
-                            AgentRole.DIVERGENCE_RESOLVER.value,
-                            describe_managed_worktree_mount_rejection(mount_decision),
-                        )
                     role_session.write_fingerprint(fingerprint)
                     await deps.agent_runner.run(
                         RunRequest(
