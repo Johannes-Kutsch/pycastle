@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pycastle.errors import ManagedWorktreeMountPreconditionError
+from pycastle.errors import ManagedWorktreeMountPreconditionError, SetupPhaseError
 from pycastle.infrastructure.worktree import PROJECT_LOCAL_PYCASTLE_DIR
 
 if TYPE_CHECKING:
@@ -135,6 +135,28 @@ def infer_repo_root_for_mount_path(mount_path: Path) -> Path:
         if (candidate / PROJECT_LOCAL_PYCASTLE_DIR / ".worktrees").exists():
             return candidate
     return resolved if resolved.is_dir() else resolved.parent
+
+
+def guard_managed_worktree_mount(
+    *,
+    repo_root: Path,
+    mount_path: Path,
+    caller: str,
+    role: str | None = None,
+) -> None:
+    decision = decide_managed_worktree_mount(
+        repo_root=repo_root,
+        mount_path=mount_path,
+        caller=caller,
+        role=role,
+    )
+    if isinstance(
+        decision, ManagedWorktreeMountRejected
+    ) and should_reject_managed_worktree_mount(decision):
+        phase = decision.role if decision.role is not None else (role or "")
+        raise SetupPhaseError(
+            phase, describe_managed_worktree_mount_rejection(decision)
+        )
 
 
 def enforce_managed_worktree_mount(
