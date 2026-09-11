@@ -108,10 +108,38 @@ def _service_state_dir_relpath(
     )
 
 
+@dataclasses.dataclass
 class _AgentServiceDefaults:
+    _tracker: _AvailabilityTracker = dataclasses.field(init=False)
+
     @property
     def name(self) -> str:
         raise NotImplementedError  # pragma: no cover
+
+    def is_available(
+        self, now: datetime | None = None, *, model: str | None = None
+    ) -> bool:
+        return self._tracker.is_available(now, model=model)
+
+    def next_wake_time(self) -> datetime:
+        return self._tracker.next_wake_time()
+
+    def mark_exhausted(
+        self,
+        reset_time: datetime | None,
+        *,
+        _now: datetime | None = None,
+    ) -> None:
+        self._tracker.mark_exhausted(reset_time, now=_now)
+
+    def mark_permanently_exhausted(self) -> str | None:
+        return self._tracker.mark_permanently_exhausted()
+
+    def mark_model_restricted(self, model: str) -> None:
+        self._tracker.mark_model_restricted(model)
+
+    def account_names(self) -> list[str]:
+        return self._tracker.account_names()
 
     def state_dir_relpath(self, role: AgentRole, namespace: str = "") -> str | None:
         return _service_state_dir_relpath(self.name, role, namespace)
@@ -304,7 +332,6 @@ class _PoolAvailabilityTracker:
 class ClaudeService(_AgentServiceDefaults):
     accounts: list[tuple[str, str]] | None = None
     _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
-    _tracker: _AvailabilityTracker = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         if self.accounts is not None:
@@ -314,28 +341,6 @@ class ClaudeService(_AgentServiceDefaults):
     @property
     def name(self) -> str:
         return "claude"
-
-    def is_available(
-        self, now: datetime | None = None, *, model: str | None = None
-    ) -> bool:
-        return self._tracker.is_available(now, model=model)
-
-    def next_wake_time(self) -> datetime:
-        return self._tracker.next_wake_time()
-
-    def mark_exhausted(
-        self,
-        reset_time: datetime | None,
-        *,
-        _now: datetime | None = None,
-    ) -> None:
-        self._tracker.mark_exhausted(reset_time, now=_now)
-
-    def mark_permanently_exhausted(self) -> str | None:
-        return self._tracker.mark_permanently_exhausted()
-
-    def mark_model_restricted(self, model: str) -> None:
-        self._tracker.mark_model_restricted(model)
 
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(
@@ -353,9 +358,6 @@ class ClaudeService(_AgentServiceDefaults):
         request: ProviderSessionStateRequest,
     ) -> ProviderSessionState:
         return _provider_session_state_for_request(request)
-
-    def account_names(self) -> list[str]:
-        return self._tracker.account_names()
 
     def summary_line(self) -> str | None:
         names = self.account_names()
@@ -390,7 +392,6 @@ class ClaudeService(_AgentServiceDefaults):
 @dataclasses.dataclass
 class CodexService(_AgentServiceDefaults):
     api_key: str | None = None
-    _tracker: _AvailabilityTracker = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         self._tracker = _InlineStateAvailabilityTracker("CodexService")
@@ -398,25 +399,6 @@ class CodexService(_AgentServiceDefaults):
     @property
     def name(self) -> str:
         return "codex"
-
-    def is_available(
-        self, now: datetime | None = None, *, model: str | None = None
-    ) -> bool:
-        return self._tracker.is_available(now, model=model)
-
-    def next_wake_time(self) -> datetime:
-        return self._tracker.next_wake_time()
-
-    def mark_exhausted(
-        self,
-        reset_time: datetime | None,
-        *,
-        _now: datetime | None = None,
-    ) -> None:
-        self._tracker.mark_exhausted(reset_time, now=_now)
-
-    def mark_model_restricted(self, model: str) -> None:
-        self._tracker.mark_model_restricted(model)
 
     def is_resumable(self, state_dir: Path) -> bool:
         sessions_dir = state_dir / "sessions"
@@ -621,7 +603,6 @@ class OpenCodeService(_AgentServiceDefaults):
     api_key: str | None = None
     accounts: list[tuple[str, str]] | None = None
     _helper: PoolAvailabilityHelper | None = dataclasses.field(init=False, default=None)
-    _tracker: _AvailabilityTracker = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         creds = self.accounts if self.accounts is not None else self.api_key
@@ -697,31 +678,6 @@ class OpenCodeService(_AgentServiceDefaults):
             exact_transcript_match=exact_transcript_match,
             use_service_state_dir_for_container=True,
         )
-
-    def is_available(
-        self, now: datetime | None = None, *, model: str | None = None
-    ) -> bool:
-        return self._tracker.is_available(now, model=model)
-
-    def next_wake_time(self) -> datetime:
-        return self._tracker.next_wake_time()
-
-    def mark_exhausted(
-        self,
-        reset_time: datetime | None,
-        *,
-        _now: datetime | None = None,
-    ) -> None:
-        self._tracker.mark_exhausted(reset_time, now=_now)
-
-    def mark_permanently_exhausted(self) -> str | None:
-        return self._tracker.mark_permanently_exhausted()
-
-    def mark_model_restricted(self, model: str) -> None:
-        self._tracker.mark_model_restricted(model)
-
-    def account_names(self) -> list[str]:
-        return self._tracker.account_names()
 
     def is_resumable(self, state_dir: Path) -> bool:
         return (state_dir / "resume.jsonl").is_file() or (
