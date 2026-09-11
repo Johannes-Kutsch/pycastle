@@ -16,6 +16,8 @@ from pycastle.upstream_issue_report import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pycastle.services import GithubService
 
 _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION = (
@@ -57,6 +59,15 @@ class _CredentialFailureInterpretation:
     rendered_observations: tuple[tuple[str, str], ...]
 
 
+@dataclasses.dataclass(frozen=True)
+class _SignatureEntry:
+    predicate: Callable[[str], bool] | None
+    service_names: frozenset[str]
+    # None in set means "no classification / fallback walk"
+    classifications: frozenset[str | None]
+    remediation: str
+
+
 def _is_codex_refresh_token_reused_signature(text: str) -> bool:
     if "refresh_token_reused" in text:
         return True
@@ -83,6 +94,76 @@ def _is_claude_subscription_access_denial(text: str) -> bool:
 def _is_opencode_invalid_api_key_signature(text: str) -> bool:
     lowered = text.lower()
     return "invalid api key" in lowered or "invalid_api_key" in lowered
+
+
+# One registry consulted by both _interpret_agent_credential_failure and
+# _select_remediation. Each entry encodes the predicate, which services it
+# applies to, which classifications trigger it, and the remediation produced.
+# Entries are checked in order; the first match wins.
+#
+# The asymmetry under operator_actionable_agent_credential_failure is preserved
+# as data: claude and opencode entries carry predicate=None (unconditional), while
+# codex entries carry explicit predicates (signature-gated).
+_SIGNATURE_REGISTRY: tuple[_SignatureEntry, ...] = (
+    # codex_auth_lineage_exhausted triggers unconditionally for codex
+    _SignatureEntry(
+        predicate=None,
+        service_names=frozenset({"codex"}),
+        classifications=frozenset({_CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION}),
+        remediation="Run `codex login` on the host to reseed credentials.",
+    ),
+    # operator_actionable triggers unconditionally for claude and opencode
+    _SignatureEntry(
+        predicate=None,
+        service_names=frozenset({"claude"}),
+        classifications=frozenset({_SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION}),
+        remediation=(
+            "Restore Claude Code subscription access or use a token/account with "
+            "access and rerun pycastle."
+        ),
+    ),
+    _SignatureEntry(
+        predicate=None,
+        service_names=frozenset({"opencode"}),
+        classifications=frozenset({_SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION}),
+        remediation="Update the configured OpenCode API key and rerun pycastle.",
+    ),
+    # codex signature-gated entries: match under operator_actionable OR no classification
+    _SignatureEntry(
+        predicate=_is_codex_refresh_token_reused_signature,
+        service_names=frozenset({"codex"}),
+        classifications=frozenset(
+            {_SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION, None}
+        ),
+        remediation="Run `codex login` on the host to reseed credentials.",
+    ),
+    _SignatureEntry(
+        predicate=_is_codex_missing_host_auth_signature,
+        service_names=frozenset({"codex"}),
+        classifications=frozenset(
+            {_SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION, None}
+        ),
+        remediation=(
+            "Run `codex login` on the host to seed Codex credentials before dispatch."
+        ),
+    ),
+    # claude and opencode signature-gated entries for the no-classification path
+    _SignatureEntry(
+        predicate=_is_claude_subscription_access_denial,
+        service_names=frozenset({"claude"}),
+        classifications=frozenset({None}),
+        remediation=(
+            "Restore Claude Code subscription access or use a token/account with "
+            "access and rerun pycastle."
+        ),
+    ),
+    _SignatureEntry(
+        predicate=_is_opencode_invalid_api_key_signature,
+        service_names=frozenset({"opencode"}),
+        classifications=frozenset({None}),
+        remediation="Update the configured OpenCode API key and rerun pycastle.",
+    ),
+)
 
 
 def _render_observations(
@@ -180,34 +261,14 @@ def _select_remediation(
     raw: str,
     rendered_observations: tuple[tuple[str, str], ...],
 ) -> str:
-    if classification == _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION:
-        return "Run `codex login` on the host to reseed credentials."
-    if classification == _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION:
-        if service_name == "claude":
-            return (
-                "Restore Claude Code subscription access or use a token/account with "
-                "access and rerun pycastle."
-            )
-        if service_name == "opencode":
-            return "Update the configured OpenCode API key and rerun pycastle."
-
     haystacks = (*tuple(text for _, text in rendered_observations), raw)
-    if service_name == "codex":
-        if any(_is_codex_refresh_token_reused_signature(text) for text in haystacks):
-            return "Run `codex login` on the host to reseed credentials."
-        if any(_is_codex_missing_host_auth_signature(text) for text in haystacks):
-            return "Run `codex login` on the host to seed Codex credentials before dispatch."
-    if service_name == "claude" and any(
-        _is_claude_subscription_access_denial(text) for text in haystacks
-    ):
-        return (
-            "Restore Claude Code subscription access or use a token/account with "
-            "access and rerun pycastle."
-        )
-    if service_name == "opencode" and any(
-        _is_opencode_invalid_api_key_signature(text) for text in haystacks
-    ):
-        return "Update the configured OpenCode API key and rerun pycastle."
+    for entry in _SIGNATURE_REGISTRY:
+        if service_name not in entry.service_names:
+            continue
+        if classification not in entry.classifications:
+            continue
+        if entry.predicate is None or any(entry.predicate(h) for h in haystacks):
+            return entry.remediation
     return "Repair the local agent credentials/account access."
 
 
@@ -220,45 +281,16 @@ def _interpret_agent_credential_failure(
 ) -> _CredentialFailureInterpretation | None:
     rendered_observations = _render_observations(raw, observations)
     haystacks = (*tuple(text for _, text in rendered_observations), raw)
-    if classification == _CODEX_AUTH_LINEAGE_EXHAUSTED_CLASSIFICATION:
-        return _CredentialFailureInterpretation(
-            remediation=_select_remediation(
-                service_name=service_name,
-                classification=classification,
-                raw=raw,
+    for entry in _SIGNATURE_REGISTRY:
+        if service_name not in entry.service_names:
+            continue
+        if classification not in entry.classifications:
+            continue
+        if entry.predicate is None or any(entry.predicate(h) for h in haystacks):
+            return _CredentialFailureInterpretation(
+                remediation=entry.remediation,
                 rendered_observations=rendered_observations,
-            ),
-            rendered_observations=rendered_observations,
-        )
-    if classification == _SHARED_AGENT_CREDENTIAL_FAILURE_CLASSIFICATION:
-        if service_name == "codex" and not (
-            any(_is_codex_refresh_token_reused_signature(text) for text in haystacks)
-            or any(_is_codex_missing_host_auth_signature(text) for text in haystacks)
-        ):
-            return None
-        return _CredentialFailureInterpretation(
-            remediation=_select_remediation(
-                service_name=service_name,
-                classification=classification,
-                raw=raw,
-                rendered_observations=rendered_observations,
-            ),
-            rendered_observations=rendered_observations,
-        )
-
-    if any(_is_codex_refresh_token_reused_signature(text) for text in haystacks):
-        return _CredentialFailureInterpretation(
-            remediation="Run `codex login` on the host to reseed credentials.",
-            rendered_observations=rendered_observations,
-        )
-    if any(_is_codex_missing_host_auth_signature(text) for text in haystacks):
-        return _CredentialFailureInterpretation(
-            remediation=(
-                "Run `codex login` on the host to seed Codex credentials before "
-                "dispatch."
-            ),
-            rendered_observations=rendered_observations,
-        )
+            )
     return None
 
 

@@ -261,34 +261,6 @@ def test_route_agent_credential_failure_interprets_claude_subscription_access_de
     assert message in body
 
 
-def test_route_agent_credential_failure_uses_shared_claude_subscription_remediation_at_module_seam():
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.repo = "owner/consuming-project"
-    github_svc.search_open_issues_by_title.return_value = []
-    github_svc.create_issue_in.return_value = (42, 10042)
-    message = (
-        "Your organization has disabled Claude subscription access for Claude Code. "
-        "Please ask your admin to enable Claude subscription access for Claude Code."
-    )
-    err = AgentCredentialFailureError(
-        message=message,
-        service_name="claude",
-        classification="operator_actionable_agent_credential_failure",
-    )
-    err.caller = "Planner"
-
-    route_agent_credential_failure(
-        provider_failure=err,
-        github_svc=github_svc,
-    )
-
-    _, _, body, _ = github_svc.create_issue_in.call_args[0]
-    assert (
-        "Restore Claude Code subscription access or use a token/account with "
-        "access and rerun pycastle."
-    ) in body
-
-
 def test_route_agent_credential_failure_selects_claude_access_remediation_from_adapter_classification():
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
@@ -315,38 +287,6 @@ def test_route_agent_credential_failure_selects_claude_access_remediation_from_a
 
 
 def test_route_agent_credential_failure_reuses_existing_family_issue_in_routing_module():
-    github_svc = MagicMock(spec=GithubService)
-    github_svc.repo = "owner/consuming-project"
-    github_svc.search_open_issues_by_title.return_value = [77]
-
-    err = AgentCredentialFailureError(
-        message="OpenCode request failed: 401 invalid API key for provider opencode-go",
-        service_name="opencode",
-        classification="operator_actionable_agent_credential_failure",
-    )
-    err.caller = "Implementer"
-
-    result = route_agent_credential_failure(
-        provider_failure=err,
-        github_svc=github_svc,
-    )
-
-    assert result == AgentCredentialFailureRouteResult(
-        status_code=None,
-        status_message=(
-            "operator-actionable agent credential failure: "
-            "reusing existing issue #77 "
-            "(https://github.com/owner/consuming-project/issues/77)"
-        ),
-        issue_url="https://github.com/owner/consuming-project/issues/77",
-    )
-    github_svc.search_open_issues_by_title.assert_called_once_with(
-        "[pycastle] operator-actionable agent credential failure"
-    )
-    github_svc.create_issue_in.assert_not_called()
-
-
-def test_route_agent_credential_failure_reports_reused_issue_in_terminal_status_facts():
     github_svc = MagicMock(spec=GithubService)
     github_svc.repo = "owner/consuming-project"
     github_svc.search_open_issues_by_title.return_value = [77]
@@ -562,3 +502,49 @@ def test_route_agent_credential_failure_propagates_non_github_service_errors():
             provider_failure=err,
             github_svc=github_svc,
         )
+
+
+def test_route_agent_credential_failure_produces_generic_remediation_when_no_signature_and_no_classification():
+    # Structural invariant: AgentCredentialFailureError for non-codex with no matched
+    # signature and no classification-based match still produces the generic remediation.
+    github_svc = MagicMock(spec=GithubService)
+    github_svc.repo = "owner/consuming-project"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = (42, 10042)
+
+    err = AgentCredentialFailureError(
+        message="Some unrecognised credential error for claude.",
+        service_name="claude",
+    )
+    err.caller = "Planner"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result is not None
+    assert result.issue_url == "https://github.com/owner/consuming-project/issues/42"
+    _, _, body, _ = github_svc.create_issue_in.call_args[0]
+    assert "Repair the local agent credentials/account access." in body
+
+
+def test_route_agent_credential_failure_returns_none_for_non_credential_hard_error_with_no_signature():
+    # Structural invariant: a HardAgentError that is not AgentCredentialFailureError
+    # and has no matched signature returns None.
+    github_svc = MagicMock(spec=GithubService)
+
+    err = HardAgentError(
+        message="Some hard error that does not match any credential signature.",
+        service_name="claude",
+    )
+    err.caller = "Planner"
+
+    result = route_agent_credential_failure(
+        provider_failure=err,
+        github_svc=github_svc,
+    )
+
+    assert result is None
+    github_svc.search_open_issues_by_title.assert_not_called()
+    github_svc.create_issue_in.assert_not_called()
