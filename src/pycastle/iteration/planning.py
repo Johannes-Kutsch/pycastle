@@ -18,13 +18,8 @@ from pycastle.config import Config
 from pycastle.display.rows import StatusRow, StatusRowConfig, status_row
 from pycastle.display.status_display import StatusDisplay
 from pycastle.execution_contracts import WorktreeMount
-from pycastle.infrastructure.worktree import (
-    SandboxWorktreeIntent,
-    reusable_sandbox_worktree,
-    reusable_sandbox_worktree_identity,
-)
+from pycastle.infrastructure.worktree import SandboxWorktreeIntent
 from pycastle.iteration import planning_issue_intake
-from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.planning_issue_intake import (
     PlanReady,
@@ -32,15 +27,14 @@ from pycastle.iteration.planning_issue_intake import (
     apply_slice_classifier_verdicts,
 )
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
+from pycastle.iteration.sandbox_role_session import reusable_sandbox_entry
 from pycastle.iteration.startable import startable_issues
-from pycastle.managed_worktree_mount_policy import guard_managed_worktree_mount
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_plan_scope_args
 from pycastle.services import GitService
 from pycastle.services.github_service import GithubService
 from pycastle.services.service_registry import ServiceRegistry
-from pycastle.session import RoleSession
 
 if TYPE_CHECKING:
     from pycastle.execution_contracts import PromptRuntimeExecutionAdapter
@@ -173,12 +167,6 @@ async def _run_planner_agent(
     well_formed: list[dict],
     all_open_issues: list[dict],
 ) -> PlannerOutput:
-    guard_managed_worktree_mount(
-        repo_root=deps.repo_root,
-        mount_path=wt,
-        caller="Plan Agent",
-        role=AgentRole.PLANNER.value,
-    )
     try:
         output = await deps.agent_runner.run(
             RunRequest(
@@ -269,21 +257,15 @@ async def planning_phase(
 
         _sorted_ids = sorted(i["number"] for i in all_open_issues)
         fingerprint = hashlib.sha256(f"{sha}:{_sorted_ids}".encode()).hexdigest()
-        _plan_sandbox_identity = reusable_sandbox_worktree_identity(
-            SandboxWorktreeIntent.PLAN, deps.repo_root
-        )
-        _plan_sandbox_session = RoleSession(
-            _plan_sandbox_identity.path, AgentRole.PLANNER
-        )
-        prepare_fingerprint_gate(_plan_sandbox_session, fingerprint)
 
-        async with reusable_sandbox_worktree(
+        async with reusable_sandbox_entry(
             SandboxWorktreeIntent.PLAN,
-            sha=sha,
+            fingerprint=fingerprint,
+            role=AgentRole.PLANNER,
             deps=deps,
+            sha=sha,
             operating_branch=deps.cfg.operating_branch,
-        ) as wt:
-            _plan_sandbox_session.write_fingerprint(fingerprint)
+        ) as (wt, _):
             issue_set, relabeled = await _relabel_issue_set(
                 deps, wt, issue_set, _classify_fn
             )
