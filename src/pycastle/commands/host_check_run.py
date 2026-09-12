@@ -21,13 +21,14 @@ from pycastle._host_check import (
     prepare_host_check_loop,
     run_host_check_loop,
 )
-from pycastle.agents.output_protocol import AgentRole, IssueOutput
-from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
+from pycastle.agents.output_protocol import AgentRole
 from pycastle.config import Config, StageOverride, load_credential_env
-from pycastle.diagnostic_issue_report_validation import validate_diagnostic_issue_report
-from pycastle.diagnostic_mount_fallback import (
-    DiagnosticMountFallbackIssue,
-    decide_diagnostic_mount_dispatch,
+from pycastle.diagnostic_reporter_dispatch import (
+    DiagnosticReporterDispatchAFK,
+    DiagnosticReporterDispatchHITL,
+    DiagnosticReporterDispatchMountFallback,
+    DiagnosticReporterDispatchValidationSkipped,
+    run_diagnostic_reporter_dispatch,
 )
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.errors import SetupPhaseError
@@ -44,6 +45,8 @@ from pycastle.services import GithubService, GitService, ServiceRegistry
 if TYPE_CHECKING:
     from collections.abc import Callable
     from contextlib import AbstractAsyncContextManager
+
+    from pycastle.agents.runner import AgentRunnerProtocol
 
 
 @dataclass(frozen=True)
@@ -189,6 +192,15 @@ def prepare_host_check_run(
     return prepare_host_check_loop(git_svc=git_svc, repo_root=repo_root)
 
 
+@dataclass
+class _HostCheckDispatchDeps:
+    repo_root: Path
+    agent_runner: AgentRunnerProtocol
+    github_svc: GithubService
+    cfg: Config
+    status_display: StatusDisplay
+
+
 async def _file_host_check_issue(
     *,
     payload: HostCheckIssuePayload,
@@ -196,9 +208,8 @@ async def _file_host_check_issue(
     repo_root: Path,
     deps: HostCheckIssueDeps,
 ) -> int:
-    mount_decision = decide_diagnostic_mount_dispatch(
-        repo_root=repo_root,
-        mount_path=mount_path,
+    override = deps.reporter_override or deps.cfg.preflight_issue_override
+    outcome = await run_diagnostic_reporter_dispatch(
         caller="Host-Check Reporter",
         diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
         role_name=AgentRole.PREFLIGHT_ISSUE.value,
@@ -206,46 +217,35 @@ async def _file_host_check_issue(
             f"Host check {payload.check_name!r} failed while running "
             f"{payload.command!r}."
         ),
-        github_svc=deps.github_svc,
-    )
-    if isinstance(mount_decision, DiagnosticMountFallbackIssue):
-        return mount_decision.issue_number
-    override = deps.reporter_override or deps.cfg.preflight_issue_override
-    agent_result = await deps.agent_runner.run(
-        RunRequest(
-            name="Host-Check Reporter",
-            prompt=build_prompt_invocation(
-                PromptTemplate.HOST_CHECK_ISSUE,
-                prompt_scope_args.build_host_check_scope_args(
-                    checked_sha=payload.checked_sha,
-                    check_name=payload.check_name,
-                    command=payload.command,
-                    output=payload.output,
-                    host_os=payload.host_os,
-                    host_platform=payload.host_platform,
-                ),
+        prompt_invocation=build_prompt_invocation(
+            PromptTemplate.HOST_CHECK_ISSUE,
+            prompt_scope_args.build_host_check_scope_args(
+                checked_sha=payload.checked_sha,
+                check_name=payload.check_name,
+                command=payload.command,
+                output=payload.output,
+                host_os=payload.host_os,
+                host_platform=payload.host_platform,
             ),
-            mount_path=mount_path,
-            role=AgentRole.PREFLIGHT_ISSUE,
-            model=override.model,
-            effort=override.effort,
-            service=override.service,
+        ),
+        stage_override=override,
+        mount_path=mount_path,
+        deps=_HostCheckDispatchDeps(
+            repo_root=repo_root,
+            agent_runner=deps.agent_runner,
+            github_svc=deps.github_svc,
+            cfg=deps.cfg,
             status_display=deps.status_display,
-            work_body=f"reporting {payload.check_name} host-check issue",
-        )
+        ),
     )
-    if not isinstance(agent_result, IssueOutput):
-        raise RuntimeError(
-            "Host-Check Reporter returned non-issue output: "
-            f"{type(agent_result).__name__}"
-        )
-    validation = validate_diagnostic_issue_report(
-        caller="Host-Check Reporter",
-        issue_output=agent_result,
-        cfg=deps.cfg,
-        filed_issue_reader=deps.github_svc,
-    )
-    return validation.issue_number
+    match outcome:
+        case (
+            DiagnosticReporterDispatchMountFallback(issue_number=n)
+            | DiagnosticReporterDispatchHITL(issue_number=n)
+            | DiagnosticReporterDispatchAFK(issue_number=n)
+            | DiagnosticReporterDispatchValidationSkipped(issue_number=n)
+        ):
+            return n
 
 
 def create_host_check_issue_filer(
