@@ -12,10 +12,8 @@ crashes on the bug report is the worst outcome.
 from __future__ import annotations
 
 import os
-import platform
 import sys
 import traceback
-from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
@@ -34,23 +32,6 @@ BUG_REPORT_LABELS = ",".join(BUG_REPORT_LABEL_LIST)
 _MAX_URL_LENGTH = 8000  # comfortably under GitHub's ~8192 URL limit
 _MAX_TITLE_LENGTH = 200  # GitHub caps issue titles at 256 chars
 _TRUNCATION_FOOTER = "\n\n[traceback truncated — see terminal stderr for full output]"
-
-
-def _pycastle_version() -> str:
-    try:
-        return version("pycastle")
-    except PackageNotFoundError:
-        return "unknown"
-
-
-def _env_block() -> str:
-    py = sys.version_info
-    return (
-        "## Environment\n"
-        f"- pycastle: {_pycastle_version()}\n"
-        f"- Python: {py.major}.{py.minor}.{py.micro}\n"
-        f"- OS: {platform.platform()}\n"
-    )
 
 
 def _format_title(exc: BaseException) -> str:
@@ -84,7 +65,7 @@ def _build_bug_report_url(
     appending a truncation footer so the report still points the maintainer
     at the terminal stderr.
     """
-    env = _env_block()
+    env = upstream_issue_report.env_block()
     label_str = ",".join(labels)
     full_body = env + "\n" + body
     url = _build_url(title, full_body, label_str, repo)
