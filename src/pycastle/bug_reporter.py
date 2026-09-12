@@ -170,13 +170,6 @@ def auto_file_issue(
     return url
 
 
-_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX = "[pycastle] git remote unreachable"
-_GIT_REMOTE_UNREACHABLE_LABELS = ["bug", "needs-triage"]
-
-_MERGE_CLOSE_FAILURE_TITLE_PREFIX = "[pycastle] issue close failed"
-_MERGE_CLOSE_FAILURE_LABELS = ["bug", "needs-triage"]
-
-
 def file_merge_close_failure_issue(
     *,
     issue_number: int,
@@ -185,18 +178,11 @@ def file_merge_close_failure_issue(
 ) -> int | None:
     """File one deduped issue on the consuming project's tracker when a child
     issue fails to close after merge. Never files on bug_report_repo."""
-    title = f"{_MERGE_CLOSE_FAILURE_TITLE_PREFIX}: #{issue_number}"
-    body = upstream_issue_report.merge_close_failure_body(
-        issue_number=issue_number, exc=exc
-    )
-    return upstream_issue_report.file_upstream_issue(
-        upstream_issue_report.UpstreamIssueReport(
-            dedupe_key=_MERGE_CLOSE_FAILURE_TITLE_PREFIX,
-            title=title,
-            body=body,
-            labels=_MERGE_CLOSE_FAILURE_LABELS,
-            github_svc=github_svc,
-        )
+    return upstream_issue_report.file_typed_issue(
+        upstream_issue_report.MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        github_svc,
+        issue_number=issue_number,
+        exc=exc,
     )
 
 
@@ -209,23 +195,13 @@ def file_operator_actionable_git_issue(
 ) -> None:
     """File one deduped issue on the consuming project's origin tracker for an
     OperatorActionableGitError. Never files on bug_report_repo."""
-    title = f"{_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX}: {op} failed after {attempt_count} attempt(s)"
-    body = upstream_issue_report.operator_actionable_body(
-        op=op, stderr=stderr, attempt_count=attempt_count
+    upstream_issue_report.file_typed_issue(
+        upstream_issue_report.OPERATOR_ACTIONABLE_GIT_DESCRIPTOR,
+        github_svc,
+        op=op,
+        stderr=stderr,
+        attempt_count=attempt_count,
     )
-    upstream_issue_report.file_upstream_issue(
-        upstream_issue_report.UpstreamIssueReport(
-            dedupe_key=_GIT_REMOTE_UNREACHABLE_TITLE_PREFIX,
-            title=title,
-            body=body,
-            labels=_GIT_REMOTE_UNREACHABLE_LABELS,
-            github_svc=github_svc,
-        )
-    )
-
-
-_UNREPAIRABLE_DRAFT_TITLE_PREFIX = "[pycastle] improve draft set invalid"
-_UNREPAIRABLE_DRAFT_LABELS = ["bug", "needs-triage"]
 
 
 def file_unrepairable_draft_set_issue(
@@ -237,18 +213,11 @@ def file_unrepairable_draft_set_issue(
     """File one deduped issue on the consuming project's tracker when an improve
     draft set cannot be repaired after all correction attempts. Never files on
     bug_report_repo."""
-    title = _UNREPAIRABLE_DRAFT_TITLE_PREFIX
-    body = upstream_issue_report.unrepairable_draft_body(
-        problems=problems, draft_files=draft_files
-    )
-    return upstream_issue_report.file_upstream_issue(
-        upstream_issue_report.UpstreamIssueReport(
-            dedupe_key=_UNREPAIRABLE_DRAFT_TITLE_PREFIX,
-            title=title,
-            body=body,
-            labels=_UNREPAIRABLE_DRAFT_LABELS,
-            github_svc=github_svc,
-        )
+    return upstream_issue_report.file_typed_issue(
+        upstream_issue_report.UNREPAIRABLE_DRAFT_SET_DESCRIPTOR,
+        github_svc,
+        problems=problems,
+        draft_files=draft_files,
     )
 
 
