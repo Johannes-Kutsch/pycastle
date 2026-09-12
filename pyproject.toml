@@ -145,6 +145,7 @@ max-args = 7
 "src/pycastle/iteration/failure_report_dispatch.py" = ["PLC0415"]  # cycle: failure_report_dispatch → iteration
 "src/pycastle/iteration/preflight.py" = ["PLC0415"]              # lazy import required for test-mock patchability at pycastle.infrastructure.worktree
 "src/pycastle/prompts/pipeline.py" = ["PLC0415"]                  # cycle: scope_args → pipeline
+"src/pycastle/diagnostic_reporter_dispatch.py" = ["PLR0913"]      # dispatch seam composes ten caller-varying inputs by spec; grouping into a sub-struct would add a new public type
 "src/pycastle/agents/attempt_loop.py" = ["C901"]                  # run_attempt_loop is intentionally one deep read per ADR-0044/0048/0054/0055
 "src/pycastle/agents/runner.py" = ["C901"]                        # AgentRunner._run is intentionally wide; merges session setup with loop delegation
 "src/pycastle/prompts/scope_args.py" = ["PLC0415"]               # cycle: dispatch → scope_args → implement → ... → agents.runner → dispatch
