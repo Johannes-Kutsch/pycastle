@@ -24,16 +24,13 @@ from pycastle.errors import (
     WorktreeTimeoutError,
 )
 from pycastle.infrastructure.worktree import (
-    replaceable_merge_sandbox_worktree,
-    reusable_sandbox_worktree,
     teardown_worktree,
     worktree_identity,
 )
-from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration._merge_reporting import MergeProgressReporter
 from pycastle.iteration._utils import _advance_branch_ref_through_gate
 from pycastle.iteration.implement import branch_for
-from pycastle.managed_worktree_mount_policy import guard_managed_worktree_mount
+from pycastle.iteration.sandbox_role_session import merger_sandbox_entry
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_merge_scope_args
@@ -149,48 +146,28 @@ async def _recover_active_conflict(
     active_issue: dict,
     deps: _ConflictRecoveryDeps,
 ) -> Exception | None:
-    sandbox_identity = worktree_identity(
-        _merge_sandbox_branch(active_issue["number"]),
-        deps.repo_root,
-    )
+    merge_sandbox_branch = _merge_sandbox_branch(active_issue["number"])
     target_branch = deps.cfg.operating_branch
     safe_sha = deps.git_svc.get_branch_sha(deps.repo_root, target_branch)
     conflict_branch = branch_for(active_issue["number"])
     fingerprint = hashlib.sha256((safe_sha + conflict_branch).encode()).hexdigest()
-    role_session = RoleSession(sandbox_identity.path, AgentRole.MERGER)
-    prepare_fingerprint_gate(role_session, fingerprint)
-    if role_session.is_resumable():
-        worktree_cm = reusable_sandbox_worktree(
-            f"merge-sandbox-issue-{active_issue['number']}",
-            sha=safe_sha,
-            deps=deps,
-            operating_branch=deps.cfg.operating_branch,
-        )
-    else:
-        worktree_cm = replaceable_merge_sandbox_worktree(
-            issue_number=active_issue["number"],
-            sha=safe_sha,
-            deps=deps,
-            operating_branch=deps.cfg.operating_branch,
-        )
     try:
-        async with worktree_cm as sandbox_path:
-            RoleSession(sandbox_path, AgentRole.MERGER).write_fingerprint(fingerprint)
+        async with merger_sandbox_entry(
+            active_issue["number"],
+            fingerprint=fingerprint,
+            deps=deps,
+            sha=safe_sha,
+            operating_branch=deps.cfg.operating_branch,
+        ) as (sandbox_path, _):
             already_merged = deps.git_svc.start_merge(sandbox_path, conflict_branch)
             if already_merged:
                 _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
                 await _advance_branch_ref_through_gate(
-                    deps, "Merge", target_branch, sandbox_identity.branch
+                    deps, "Merge", target_branch, merge_sandbox_branch
                 )
                 _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
                 RoleSession(sandbox_path, AgentRole.MERGER).discard()
                 return None
-            guard_managed_worktree_mount(  # raise inside try is intentional: exits async-with resource cleanup
-                repo_root=deps.repo_root,
-                mount_path=sandbox_path,
-                caller="Merge Agent",
-                role=AgentRole.MERGER.value,
-            )
             result = await deps.agent_runner.run(
                 RunRequest(
                     name="Merge Agent",
@@ -218,7 +195,7 @@ async def _recover_active_conflict(
                 )
             _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
             await _advance_branch_ref_through_gate(
-                deps, "Merge", target_branch, sandbox_identity.branch
+                deps, "Merge", target_branch, merge_sandbox_branch
             )
             _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
             RoleSession(sandbox_path, AgentRole.MERGER).discard()
