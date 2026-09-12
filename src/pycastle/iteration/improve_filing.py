@@ -8,6 +8,12 @@ from pycastle.iteration.improve_role_session_store import (
     FiledTicket,
     ImproveRoleSessionStore,
 )
+from pycastle.iteration.sectioned_markdown_body import (
+    Anchor,
+    AnchorKind,
+    OnMissing,
+    SectionedMarkdownBody,
+)
 
 if TYPE_CHECKING:
     from pycastle.iteration.improve_drafts import IssueDraft
@@ -52,39 +58,6 @@ class GithubFilingPort:
         self._svc.close_issue(issue_number)
 
 
-def _parse_sections(body: str) -> list[tuple[str | None, str]]:
-    sections: list[tuple[str | None, str]] = []
-    current_heading: str | None = None
-    current_lines: list[str] = []
-
-    for line in body.split("\n"):
-        if line.startswith("## "):
-            sections.append((current_heading, "\n".join(current_lines)))
-            current_heading = line
-            current_lines = []
-        else:
-            current_lines.append(line)
-
-    sections.append((current_heading, "\n".join(current_lines)))
-
-    if sections and sections[0] == (None, ""):
-        sections = sections[1:]
-
-    return sections
-
-
-def _reconstruct_sections(sections: list[tuple[str | None, str]]) -> str:
-    parts: list[str] = []
-    for heading, content in sections:
-        stripped = content.strip()
-        if heading is None:
-            if stripped:
-                parts.append(stripped)
-        else:
-            parts.append(heading + ("\n\n" + stripped if stripped else ""))
-    return "\n\n".join(parts)
-
-
 def _render_ticket_body(
     base_body: str,
     spec_number: int,
@@ -96,45 +69,32 @@ def _render_ticket_body(
     extra = [f"#{n}" for n in (extra_blocker_numbers or [])]
     all_refs = intra + extra
 
-    sections = _parse_sections(base_body)
-
-    # Remove any existing ## Parent section.
-    sections = [(h, c) for h, c in sections if h != "## Parent"]
-
-    parent_section: tuple[str | None, str] = ("## Parent", f"#{spec_number}")
-    what_idx = next(
-        (i for i, (h, _) in enumerate(sections) if h == "## What to build"), -1
-    )
-    if what_idx >= 0:
-        sections.insert(what_idx, parent_section)
-    else:
-        sections.insert(0, parent_section)
-
     blocked_content = (
         ", ".join(all_refs) if all_refs else "None — can start immediately."
     )
-    blocked_section: tuple[str | None, str] = ("## Blocked by", blocked_content)
 
-    # Remove any existing ## Blocked by section.
-    sections = [(h, c) for h, c in sections if h != "## Blocked by"]
-
-    ac_idx = next(
-        (i for i, (h, _) in enumerate(sections) if h == "## Acceptance criteria"),
-        -1,
+    body = SectionedMarkdownBody(base_body)
+    body.upsert_before(
+        "## Parent",
+        f"#{spec_number}",
+        ["## What to build"],
+        on_missing=OnMissing.PREPEND,
     )
-    if ac_idx >= 0:
-        sections.insert(ac_idx + 1, blocked_section)
-    else:
-        files_idx = next(
-            (i for i, (h, _) in enumerate(sections) if h and "Files touched" in h),
-            -1,
+    try:
+        body.upsert_after(
+            "## Blocked by",
+            blocked_content,
+            ["## Acceptance criteria"],
+            on_missing=OnMissing.RAISE,
         )
-        if files_idx >= 0:
-            sections.insert(files_idx, blocked_section)
-        else:
-            sections.append(blocked_section)
-
-    return _reconstruct_sections(sections)
+    except ValueError:
+        body.upsert_before(
+            "## Blocked by",
+            blocked_content,
+            [Anchor("Files touched", AnchorKind.SUBSTRING)],
+            on_missing=OnMissing.APPEND,
+        )
+    return body.render()
 
 
 def _strip_state_label(labels: list[str], state_label: str) -> list[str]:
