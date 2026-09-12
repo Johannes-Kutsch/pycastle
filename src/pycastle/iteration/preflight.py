@@ -10,18 +10,15 @@ from pycastle import _time as _time_module
 from pycastle.agents.output_protocol import (
     AgentOutputProtocolError,
     AgentRole,
-    IssueOutput,
 )
 from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
 from pycastle.config import Config, StageOverride
-from pycastle.diagnostic_issue_report_validation import (
-    DiagnosticIssueReportValidationAFK,
-    DiagnosticIssueReportValidationHITL,
-    validate_diagnostic_issue_report,
-)
-from pycastle.diagnostic_mount_fallback import (
-    DiagnosticMountFallbackIssue,
-    decide_diagnostic_mount_dispatch,
+from pycastle.diagnostic_reporter_dispatch import (
+    DiagnosticReporterDispatchAFK,
+    DiagnosticReporterDispatchHITL,
+    DiagnosticReporterDispatchMountFallback,
+    DiagnosticReporterDispatchValidationSkipped,
+    run_diagnostic_reporter_dispatch,
 )
 from pycastle.display.status_display import StatusDisplay
 from pycastle.errors import (
@@ -210,9 +207,8 @@ class PreflightCache:
         mount_path: Path,
         sha: str,
     ) -> PreflightHITL | PreflightAFK:
-        mount_decision = decide_diagnostic_mount_dispatch(
-            repo_root=deps.repo_root,
-            mount_path=mount_path,
+        override = self._resolved_preflight_issue_override(deps)
+        outcome = await run_diagnostic_reporter_dispatch(
             caller="Pre-Flight Reporter",
             diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
             role_name=AgentRole.PREFLIGHT_ISSUE.value,
@@ -220,48 +216,29 @@ class PreflightCache:
                 f"Preflight check {failure.check_name!r} failed while running "
                 f"{failure.command!r}."
             ),
-            github_svc=deps.github_svc,
-        )
-        if isinstance(mount_decision, DiagnosticMountFallbackIssue):
-            return PreflightHITL(sha=sha, issue_number=mount_decision.issue_number)
-        override = self._resolved_preflight_issue_override(deps)
-        agent_result = await deps.agent_runner.run(
-            RunRequest(
-                name="Pre-Flight Reporter",
-                prompt=build_prompt_invocation(
-                    PromptTemplate.PREFLIGHT_ISSUE,
-                    build_preflight_scope_args(
-                        check_name=failure.check_name,
-                        command=failure.command,
-                        output=failure.output,
-                    ),
+            prompt_invocation=build_prompt_invocation(
+                PromptTemplate.PREFLIGHT_ISSUE,
+                build_preflight_scope_args(
+                    check_name=failure.check_name,
+                    command=failure.command,
+                    output=failure.output,
                 ),
-                mount_path=mount_path,
-                role=AgentRole.PREFLIGHT_ISSUE,
-                model=override.model,
-                effort=override.effort,
-                service=override.service,
-                status_display=deps.status_display,
-                work_body=f"reporting {failure.check_name} issue",
-            )
+            ),
+            stage_override=override,
+            mount_path=mount_path,
+            deps=deps,
         )
-        if not isinstance(agent_result, IssueOutput):
-            raise RuntimeError(
-                f"Preflight-issue agent returned unexpected output type: {type(agent_result).__name__}"
-            )
-        validation = validate_diagnostic_issue_report(
-            caller="Pre-Flight Reporter",
-            issue_output=agent_result,
-            cfg=deps.cfg,
-            filed_issue_reader=deps.github_svc,
-        )
-        if isinstance(validation, DiagnosticIssueReportValidationHITL):
-            return PreflightHITL(sha=sha, issue_number=validation.issue_number)
-        if not isinstance(validation, DiagnosticIssueReportValidationAFK):
-            raise TypeError(
-                "exhaustive: only HITL or AFK remain after isinstance check above"
-            )
-        return PreflightAFK(sha=sha, issue_number=validation.issue_number)
+        match outcome:
+            case DiagnosticReporterDispatchMountFallback(issue_number=n):
+                return PreflightHITL(sha=sha, issue_number=n)
+            case DiagnosticReporterDispatchHITL(issue_number=n):
+                return PreflightHITL(sha=sha, issue_number=n)
+            case DiagnosticReporterDispatchAFK(issue_number=n):
+                return PreflightAFK(sha=sha, issue_number=n)
+            case DiagnosticReporterDispatchValidationSkipped():
+                raise TypeError(
+                    "exhaustive: validation-skipped is not a reachable outcome here"
+                )
 
     @staticmethod
     def _setup_error_for_missing_declared_tool(

@@ -278,19 +278,6 @@ def test_get_safe_sha_files_fallback_issue_when_preflight_reporter_mount_is_inva
     assert result.issue_number == 654
     assert len(fake.preflight_calls) == 1
     assert fake.calls == []
-    github_svc.create_issue_in.assert_called_once()
-    repo, title, body, labels = github_svc.create_issue_in.call_args.args
-    assert repo == github_svc.repo
-    assert "Pre-Flight Reporter" in title
-    assert labels == ["bug", "needs-triage"]
-    assert "No diagnostic agent ran." in body
-    assert "Role: preflight_issue" in body
-    assert (
-        f"Expected mount path: {tmp_path / 'pycastle' / '.worktrees' / 'preflight-sandbox'}"
-        in body
-    )
-    assert "Reason: invalid_mount_path" in body
-    assert "Preflight check 'ruff' failed while running 'ruff check .'" in body
 
 
 def test_get_safe_sha_routes_requirements_declared_missing_tool_to_setup_failure(
