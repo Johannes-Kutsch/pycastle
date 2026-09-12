@@ -436,6 +436,228 @@ def test_agent_credential_failure_body_contains_expected_sections():
     assert "## Environment" not in body
 
 
+# ── TypedReportDescriptor and file_typed_issue ───────────────────────────────
+
+
+def test_descriptor_dedupe_key_equals_title_prefix():
+    from pycastle.upstream_issue_report import MERGE_CLOSE_FAILURE_DESCRIPTOR
+
+    assert (
+        MERGE_CLOSE_FAILURE_DESCRIPTOR.dedupe_key
+        == MERGE_CLOSE_FAILURE_DESCRIPTOR.title_prefix
+    )
+
+
+def test_descriptor_labels_are_bug_and_triage_labels():
+    from pycastle.upstream_issue_report import (
+        BUG_AND_TRIAGE_LABELS,
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        OPERATOR_ACTIONABLE_GIT_DESCRIPTOR,
+        UNREPAIRABLE_DRAFT_SET_DESCRIPTOR,
+    )
+
+    assert MERGE_CLOSE_FAILURE_DESCRIPTOR.labels is BUG_AND_TRIAGE_LABELS
+    assert OPERATOR_ACTIONABLE_GIT_DESCRIPTOR.labels is BUG_AND_TRIAGE_LABELS
+    assert UNREPAIRABLE_DRAFT_SET_DESCRIPTOR.labels is BUG_AND_TRIAGE_LABELS
+
+
+def test_file_typed_issue_merge_close_failure_searches_with_title_prefix():
+    from pycastle.upstream_issue_report import (
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+
+    file_typed_issue(
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        svc,
+        issue_number=7,
+        exc=RuntimeError("boom"),
+    )
+
+    svc.search_open_issues_by_title.assert_called_once_with(
+        "[pycastle] issue close failed"
+    )
+
+
+def test_file_typed_issue_merge_close_failure_creates_with_assembled_title():
+    from pycastle.upstream_issue_report import (
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+
+    result = file_typed_issue(
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        svc,
+        issue_number=7,
+        exc=RuntimeError("boom"),
+    )
+
+    assert result == 123
+    call_args = svc.create_issue_in.call_args
+    assert call_args.args[1] == "[pycastle] issue close failed: #7"
+    assert call_args.args[3] == ["bug", "needs-triage"]
+    body = call_args.args[2]
+    assert "## Environment" in body
+    assert "## Merge close failure" in body
+    assert "issue #7" in body
+
+
+def test_file_typed_issue_merge_close_failure_dedupe_hit_returns_existing():
+    from pycastle.upstream_issue_report import (
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+    svc.search_open_issues_by_title.return_value = [55]
+
+    result = file_typed_issue(
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        svc,
+        issue_number=7,
+        exc=RuntimeError("boom"),
+    )
+
+    assert result == 55
+    svc.create_issue_in.assert_not_called()
+
+
+def test_file_typed_issue_operator_actionable_git_searches_with_title_prefix():
+    from pycastle.upstream_issue_report import (
+        OPERATOR_ACTIONABLE_GIT_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+
+    file_typed_issue(
+        OPERATOR_ACTIONABLE_GIT_DESCRIPTOR,
+        svc,
+        op="git push",
+        stderr="fatal: ...",
+        attempt_count=3,
+    )
+
+    svc.search_open_issues_by_title.assert_called_once_with(
+        "[pycastle] git remote unreachable"
+    )
+
+
+def test_file_typed_issue_operator_actionable_git_creates_with_assembled_title():
+    from pycastle.upstream_issue_report import (
+        OPERATOR_ACTIONABLE_GIT_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+
+    result = file_typed_issue(
+        OPERATOR_ACTIONABLE_GIT_DESCRIPTOR,
+        svc,
+        op="git push",
+        stderr="fatal: ...",
+        attempt_count=3,
+    )
+
+    assert result == 123
+    call_args = svc.create_issue_in.call_args
+    assert (
+        call_args.args[1]
+        == "[pycastle] git remote unreachable: git push failed after 3 attempt(s)"
+    )
+    body = call_args.args[2]
+    assert "## Environment" in body
+    assert "git push" in body
+    assert "3 attempt(s)" in body
+
+
+def test_file_typed_issue_unrepairable_draft_set_searches_with_title_prefix():
+    from pycastle.upstream_issue_report import (
+        UNREPAIRABLE_DRAFT_SET_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+
+    file_typed_issue(
+        UNREPAIRABLE_DRAFT_SET_DESCRIPTOR,
+        svc,
+        problems=["bad"],
+        draft_files={"a.py": "x"},
+    )
+
+    svc.search_open_issues_by_title.assert_called_once_with(
+        "[pycastle] improve draft set invalid"
+    )
+
+
+def test_file_typed_issue_unrepairable_draft_set_creates_with_prefix_as_title():
+    from pycastle.upstream_issue_report import (
+        UNREPAIRABLE_DRAFT_SET_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+
+    result = file_typed_issue(
+        UNREPAIRABLE_DRAFT_SET_DESCRIPTOR,
+        svc,
+        problems=["bad"],
+        draft_files={"a.py": "x"},
+    )
+
+    assert result == 123
+    call_args = svc.create_issue_in.call_args
+    assert call_args.args[1] == "[pycastle] improve draft set invalid"
+    body = call_args.args[2]
+    assert "## Environment" in body
+    assert "## Improve draft set could not be repaired" in body
+
+
+def test_file_typed_issue_returns_none_on_github_service_error():
+    from pycastle.services import GithubNetworkError
+    from pycastle.upstream_issue_report import (
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+    svc.create_issue_in.side_effect = GithubNetworkError(
+        "refused", cause=OSError("refused")
+    )
+
+    result = file_typed_issue(
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        svc,
+        issue_number=1,
+        exc=RuntimeError("x"),
+    )
+
+    assert result is None
+
+
+def test_file_typed_issue_propagates_non_github_service_error():
+    from pycastle.upstream_issue_report import (
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+    svc.search_open_issues_by_title.side_effect = RuntimeError("unexpected")
+
+    with pytest.raises(RuntimeError, match="unexpected"):
+        file_typed_issue(
+            MERGE_CLOSE_FAILURE_DESCRIPTOR,
+            svc,
+            issue_number=1,
+            exc=RuntimeError("x"),
+        )
+
+
 def test_diagnostic_mount_fallback_body_contains_expected_sections(tmp_path):
     from pathlib import Path
 

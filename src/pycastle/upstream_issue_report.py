@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING
 import click
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pycastle.display.status_display import StatusDisplay
     from pycastle.managed_worktree_mount_policy import ManagedWorktreeMountRejected
     from pycastle.services import GithubService
@@ -75,6 +77,27 @@ class UpstreamIssueReport:
     caller: str = ""
 
 
+# ── Per-kind descriptor ───────────────────────────────────────────────────────
+
+
+@dataclasses.dataclass(frozen=True)
+class TypedReportDescriptor:
+    """Per-kind descriptor for a typed upstream issue report.
+
+    ``dedupe_key`` resolves structurally from ``title_prefix`` so the two
+    cannot be edited apart.
+    """
+
+    title_prefix: str
+    labels: list[str]
+    format_title_detail: Callable[..., str]
+    compose_body: Callable[..., str]
+
+    @property
+    def dedupe_key(self) -> str:
+        return self.title_prefix
+
+
 # ── Filer function ────────────────────────────────────────────────────────────
 
 
@@ -118,6 +141,32 @@ def file_upstream_issue(report: UpstreamIssueReport) -> int | None:
         return None
     else:
         return number
+
+
+def file_typed_issue(
+    descriptor: TypedReportDescriptor,
+    github_svc: GithubService,
+    **inputs: object,
+) -> int | None:
+    """File a typed issue described by *descriptor*, deduping by title-prefix.
+
+    Assembles the full title from ``descriptor.title_prefix`` concatenated with
+    the detail string returned by ``descriptor.format_title_detail(**inputs)``,
+    invokes ``descriptor.compose_body(**inputs)`` for the body, then delegates
+    to ``file_upstream_issue`` — preserving its dedupe, env-block prepend, echo,
+    and never-raise contract byte-for-byte.
+    """
+    title = descriptor.title_prefix + descriptor.format_title_detail(**inputs)
+    body = descriptor.compose_body(**inputs)
+    return file_upstream_issue(
+        UpstreamIssueReport(
+            dedupe_key=descriptor.dedupe_key,
+            title=title,
+            body=body,
+            labels=descriptor.labels,
+            github_svc=github_svc,
+        )
+    )
 
 
 # ── Per-report body composers ─────────────────────────────────────────────────
@@ -252,3 +301,42 @@ def diagnostic_mount_fallback_body(
         "## Original failure summary\n\n"
         f"{original_failure_summary}\n"
     )
+
+
+# ── Per-kind descriptor instances ─────────────────────────────────────────────
+
+
+def _merge_close_failure_title_detail(*, issue_number: int, **_: object) -> str:
+    return f": #{issue_number}"
+
+
+def _operator_actionable_git_title_detail(
+    *, op: str, attempt_count: int, **_: object
+) -> str:
+    return f": {op} failed after {attempt_count} attempt(s)"
+
+
+def _unrepairable_draft_set_title_detail(**_: object) -> str:
+    return ""
+
+
+MERGE_CLOSE_FAILURE_DESCRIPTOR = TypedReportDescriptor(
+    title_prefix="[pycastle] issue close failed",
+    labels=BUG_AND_TRIAGE_LABELS,
+    format_title_detail=_merge_close_failure_title_detail,
+    compose_body=merge_close_failure_body,
+)
+
+OPERATOR_ACTIONABLE_GIT_DESCRIPTOR = TypedReportDescriptor(
+    title_prefix="[pycastle] git remote unreachable",
+    labels=BUG_AND_TRIAGE_LABELS,
+    format_title_detail=_operator_actionable_git_title_detail,
+    compose_body=operator_actionable_body,
+)
+
+UNREPAIRABLE_DRAFT_SET_DESCRIPTOR = TypedReportDescriptor(
+    title_prefix="[pycastle] improve draft set invalid",
+    labels=BUG_AND_TRIAGE_LABELS,
+    format_title_detail=_unrepairable_draft_set_title_detail,
+    compose_body=unrepairable_draft_body,
+)
