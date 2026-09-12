@@ -133,7 +133,7 @@ def test_upsert_deduplicates_existing_section():
 def test_remove_absent_heading_returns_identical_body():
     original = "## What to build\n\nsome detail\n\n## Acceptance criteria\n\n- item"
     result = SectionedMarkdownBody(original).remove("## No such section").render()
-    assert result == SectionedMarkdownBody(original).render()
+    assert result == original
 
 
 # ---------------------------------------------------------------------------
@@ -204,3 +204,34 @@ def test_upsert_before_substring_anchor_matches_by_substring():
 
 def test_empty_body_round_trips_as_empty_string():
     assert SectionedMarkdownBody("").render() == ""
+
+
+# ---------------------------------------------------------------------------
+# Behavior 14: on_missing=RAISE raises when no anchor matches
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_before_raise_on_missing_raises():
+    import pytest
+
+    body = SectionedMarkdownBody("## Acceptance criteria\n\n- item")
+    with pytest.raises(ValueError, match="on_missing=RAISE"):
+        body.upsert_before(
+            "## Parent",
+            "#1",
+            ["## No such section"],
+            on_missing=OnMissing.RAISE,
+        )
+
+
+def test_upsert_after_raise_on_missing_raises():
+    import pytest
+
+    body = SectionedMarkdownBody("## Acceptance criteria\n\n- item")
+    with pytest.raises(ValueError, match="on_missing=RAISE"):
+        body.upsert_after(
+            "## Blocked by",
+            "None",
+            ["## No such section"],
+            on_missing=OnMissing.RAISE,
+        )
