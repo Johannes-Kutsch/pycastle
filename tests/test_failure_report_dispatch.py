@@ -202,6 +202,10 @@ def test_evidence_file_is_copied_to_adr_0035_relative_path(tmp_path, logger):
     has_evidence = req.prompt.scope_args["HAS_EVIDENCE_PATH"]
     assert evidence_path == ".pycastle-session/failure-report/agent-invocation.log"
     assert has_evidence == "yes"
+    assert (
+        err.agent_invocation_log_path
+        == ".pycastle-session/failure-report/agent-invocation.log"
+    )
 
     copied_log = expected_path / evidence_path
     assert copied_log.exists()
@@ -278,6 +282,7 @@ def test_missing_source_log_dispatches_with_empty_evidence_path(tmp_path, logger
     req = runner.calls[0]
     assert req.prompt.scope_args["HAS_EVIDENCE_PATH"] == "no"
     assert req.prompt.scope_args["EVIDENCE_PATH"] == ""
+    assert err.agent_invocation_log_path == ""
 
 
 def test_missing_worktree_mount_does_not_materialize_evidence_dir(tmp_path, logger):
