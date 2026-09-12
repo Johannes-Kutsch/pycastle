@@ -39,15 +39,12 @@ from pycastle.infrastructure.preflight_failure_interpreter import (
 )
 from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
-    reusable_sandbox_worktree,
-    reusable_sandbox_worktree_identity,
 )
-from pycastle.iteration._fingerprint import prepare_fingerprint_gate
 from pycastle.iteration._utils import (
     _advance_branch_ref_through_gate,
     _wait_for_operating_branch_release,
 )
-from pycastle.managed_worktree_mount_policy import guard_managed_worktree_mount
+from pycastle.iteration.sandbox_role_session import reusable_sandbox_entry
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import (
@@ -61,7 +58,6 @@ from pycastle.services import (
     ServiceRegistry,
 )
 from pycastle.services.git_service import OperatingBranchCheckedOutError
-from pycastle.session import RoleSession
 
 
 def _diverge_sandbox_fingerprint(safe_sha: str, branch: str) -> str:
@@ -119,29 +115,16 @@ class BranchRefreshBoundary:
                 f"operating branch {branch!r} has diverged from origin", returncode=1
             )
             current_sha = deps.git_svc.get_branch_sha(deps.repo_root, branch)
-            sandbox_identity = reusable_sandbox_worktree_identity(
-                self._DIVERGE_SANDBOX_INTENT,
-                deps.repo_root,
-            )
             fingerprint = _diverge_sandbox_fingerprint(current_sha, branch)
-            role_session = RoleSession(
-                sandbox_identity.path, AgentRole.DIVERGENCE_RESOLVER
-            )
-            prepare_fingerprint_gate(role_session, fingerprint)
             try:
-                async with reusable_sandbox_worktree(
+                async with reusable_sandbox_entry(
                     self._DIVERGE_SANDBOX_INTENT,
-                    sha=current_sha,
+                    fingerprint=fingerprint,
+                    role=AgentRole.DIVERGENCE_RESOLVER,
                     deps=deps,
+                    sha=current_sha,
                     operating_branch=deps.cfg.operating_branch,
-                ) as sandbox_path:
-                    guard_managed_worktree_mount(  # raise inside try is intentional: exits async-with resource cleanup
-                        repo_root=deps.repo_root,
-                        mount_path=sandbox_path,
-                        caller="Divergence Resolver",
-                        role=AgentRole.DIVERGENCE_RESOLVER.value,
-                    )
-                    role_session.write_fingerprint(fingerprint)
+                ) as (sandbox_path, role_session):
                     await deps.agent_runner.run(
                         RunRequest(
                             name="Divergence Resolver",
@@ -157,7 +140,10 @@ class BranchRefreshBoundary:
                         )
                     )
                     await _advance_branch_ref_through_gate(
-                        deps, "Preflight", branch, sandbox_identity.branch
+                        deps,
+                        "Preflight",
+                        branch,
+                        f"pycastle/{self._DIVERGE_SANDBOX_INTENT}",
                     )
                     role_session.discard()
             except AgentCredentialFailureError:
