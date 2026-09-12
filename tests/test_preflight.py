@@ -1041,7 +1041,7 @@ def test_divergence_resolver_discards_session_when_safe_sha_changes(
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
     with patch(
-        "pycastle.iteration.preflight.reusable_sandbox_worktree",
+        "pycastle.iteration.sandbox_role_session.reusable_sandbox_worktree",
         return_value=_FixedSandboxWorktree(sandbox_path),
     ):
         asyncio.run(PreflightCache().get_safe_sha(deps))
@@ -1082,7 +1082,7 @@ def test_divergence_resolver_discards_session_when_diverging_branch_changes(
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
     with patch(
-        "pycastle.iteration.preflight.reusable_sandbox_worktree",
+        "pycastle.iteration.sandbox_role_session.reusable_sandbox_worktree",
         return_value=_FixedSandboxWorktree(sandbox_path),
     ):
         asyncio.run(PreflightCache().get_safe_sha(deps))
@@ -1122,7 +1122,7 @@ def test_divergence_resolver_preserves_session_when_sha_and_branch_unchanged(
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
     with patch(
-        "pycastle.iteration.preflight.reusable_sandbox_worktree",
+        "pycastle.iteration.sandbox_role_session.reusable_sandbox_worktree",
         return_value=_FixedSandboxWorktree(sandbox_path),
     ):
         asyncio.run(PreflightCache().get_safe_sha(deps))
@@ -1158,7 +1158,7 @@ def test_divergence_resolver_writes_fingerprint_inside_context_before_agent_runs
     deps = _make_deps(tmp_path, fake, git_svc=git_svc, github_svc=github_svc)
 
     with patch(
-        "pycastle.iteration.preflight.reusable_sandbox_worktree",
+        "pycastle.iteration.sandbox_role_session.reusable_sandbox_worktree",
         return_value=_FixedSandboxWorktree(sandbox_path),
     ):
         asyncio.run(PreflightCache().get_safe_sha(deps))
@@ -1194,7 +1194,7 @@ def test_divergence_resolver_non_narrowed_exception_propagates_not_pull_exc(
 
     with (
         patch(
-            "pycastle.iteration.preflight.reusable_sandbox_worktree",
+            "pycastle.iteration.sandbox_role_session.reusable_sandbox_worktree",
             return_value=_FixedSandboxWorktree(sandbox_path),
         ),
         pytest.raises(AgentCredentialFailureError),
