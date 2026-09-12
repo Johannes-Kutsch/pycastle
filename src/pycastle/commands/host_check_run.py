@@ -239,13 +239,12 @@ async def _file_host_check_issue(
         ),
     )
     match outcome:
-        case DiagnosticReporterDispatchMountFallback(issue_number=n):
-            return n
-        case DiagnosticReporterDispatchHITL(issue_number=n):
-            return n
-        case DiagnosticReporterDispatchAFK(issue_number=n):
-            return n
-        case DiagnosticReporterDispatchValidationSkipped(issue_number=n):
+        case (
+            DiagnosticReporterDispatchMountFallback(issue_number=n)
+            | DiagnosticReporterDispatchHITL(issue_number=n)
+            | DiagnosticReporterDispatchAFK(issue_number=n)
+            | DiagnosticReporterDispatchValidationSkipped(issue_number=n)
+        ):
             return n
 
 
