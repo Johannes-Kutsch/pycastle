@@ -1,7 +1,7 @@
 """Upstream issue report — structured report filing beside existing filers.
 
 This module exposes a report-description dataclass, a shared filer function, an
-env-block helper used internally, per-report body composer functions, and the
+env-block helper (``env_block``), per-report body composer functions, and the
 shared ``bug + needs-triage`` label list constant.
 
 Body composers are pure functions: they return a body string and have no
@@ -42,7 +42,7 @@ def _pycastle_version() -> str:
         return "unknown"
 
 
-def _env_block() -> str:
+def env_block() -> str:
     """Compose the standard pycastle/Python/OS environment block."""
     py = sys.version_info
     return (
@@ -126,7 +126,7 @@ def file_upstream_issue(report: UpstreamIssueReport) -> int | None:
     if existing:
         return existing[0]
 
-    full_body = _env_block() + "\n" + report.body
+    full_body = env_block() + "\n" + report.body
 
     try:
         number, _ = github_svc.create_issue_in(
