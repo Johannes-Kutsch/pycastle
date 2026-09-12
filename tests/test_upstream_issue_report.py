@@ -618,6 +618,29 @@ def test_file_typed_issue_unrepairable_draft_set_creates_with_prefix_as_title():
     assert "## Improve draft set could not be repaired" in body
 
 
+def test_file_typed_issue_search_github_service_error_proceeds_to_create():
+    from pycastle.services import GithubNetworkError
+    from pycastle.upstream_issue_report import (
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        file_typed_issue,
+    )
+
+    svc = _make_github_svc()
+    svc.search_open_issues_by_title.side_effect = GithubNetworkError(
+        "dns fail", cause=OSError("dns")
+    )
+
+    result = file_typed_issue(
+        MERGE_CLOSE_FAILURE_DESCRIPTOR,
+        svc,
+        issue_number=1,
+        exc=RuntimeError("x"),
+    )
+
+    assert result == 123
+    svc.create_issue_in.assert_called_once()
+
+
 def test_file_typed_issue_returns_none_on_github_service_error():
     from pycastle.services import GithubNetworkError
     from pycastle.upstream_issue_report import (
