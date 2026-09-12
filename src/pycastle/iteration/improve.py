@@ -17,7 +17,6 @@ from pycastle.display.rows import StatusRowConfig, status_row
 from pycastle.display.status_display import StatusDisplay
 from pycastle.infrastructure.worktree import (
     SandboxWorktreeIntent,
-    reusable_sandbox_worktree,
     reusable_sandbox_worktree_identity,
 )
 from pycastle.iteration.improve_candidate_lifecycle import (
@@ -40,7 +39,7 @@ from pycastle.iteration.preflight import (
     PreflightCache,
     PreflightHITL,
 )
-from pycastle.managed_worktree_mount_policy import guard_managed_worktree_mount
+from pycastle.iteration.sandbox_role_session import reusable_sandbox_entry
 from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import compute_candidate_budget
@@ -652,13 +651,14 @@ async def improve_phase(
             cfg=deps.cfg,
         )
 
-        async with reusable_sandbox_worktree(
+        async with reusable_sandbox_entry(
             IMPROVE_SANDBOX_INTENT,
-            sha=verdict.sha,
+            fingerprint=fingerprint,
+            role=AgentRole.IMPROVE,
             deps=deps,
+            sha=verdict.sha,
             operating_branch=deps.cfg.operating_branch,
-        ) as sandbox_path:
-            role_session = RoleSession(sandbox_path, AgentRole.IMPROVE)
+        ) as (sandbox_path, role_session):
             short_sid = session_uuid(
                 sandbox_path, AgentRole.IMPROVE.value, "main"
             ).split("-")[0]
@@ -680,8 +680,6 @@ async def improve_phase(
                 role_session.discard()
                 row.close("restarting from phase 1")
                 return ImproveContinue(completed_count=0)
-
-            role_session.write_fingerprint(fingerprint)
 
             candidate_budget = compute_candidate_budget(
                 candidates_per_scan=deps.cfg.improve_candidates_per_scan,
@@ -713,12 +711,6 @@ async def improve_phase(
                     github_port=deps.github_svc,
                     short_sid=short_sid,
                     candidate_budget=candidate_budget,
-                )
-                guard_managed_worktree_mount(
-                    repo_root=deps.repo_root,
-                    mount_path=sandbox_path,
-                    caller=prepared_step.name,
-                    role=AgentRole.IMPROVE.value,
                 )
                 # Save namespace before record_outcome advances the cursor.
                 step_namespace = prepared_step.session_namespace
