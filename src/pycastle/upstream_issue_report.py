@@ -1,7 +1,7 @@
 """Upstream issue report — structured report filing beside existing filers.
 
 This module exposes a report-description dataclass, a shared filer function, an
-env-block helper used internally, per-report body composer functions, and the
+env-block helper (``env_block``), per-report body composer functions, and the
 shared ``bug + needs-triage`` label list constant.
 
 Body composers are pure functions: they return a body string and have no
