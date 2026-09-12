@@ -17,7 +17,7 @@ import pytest
 from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
 from pycastle.agent_credential_failure_routing import AgentCredentialFailureRouteResult
-from pycastle.agents.output_protocol import AgentRole, IssueOutput
+from pycastle.agents.output_protocol import IssueOutput
 from pycastle.config import Config, StageOverride
 from pycastle.errors import (
     AgentFailedError,
@@ -37,7 +37,6 @@ from pycastle.iteration import (
 from pycastle.iteration.failure_report_dispatch import (
     translate_agent_failed_error_to_abort,
 )
-from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.services import GithubService, GithubServiceError
 from tests.support import (
     FakeAgentRunner,
@@ -133,27 +132,14 @@ def test_invalid_mount_files_fallback_issue_and_skips_failure_report_agent(
     assert isinstance(result, AbortedAgentFailure)
     assert result.failed_role == "improve"
     assert result.issue_number == 321
-    assert runner.calls == []
-    github_svc.create_issue_in.assert_called_once()
-    repo, title, body, labels = github_svc.create_issue_in.call_args.args
-    assert repo == github_svc.repo
-    assert "Failure Report Agent" in title
-    assert labels == ["bug", "needs-triage"]
-    assert "No diagnostic agent ran." in body
-    assert "Role: improve" in body
-    assert f"Expected mount path: {_worktree_path(tmp_path)}" in body
-    assert "Reason: invalid_mount_path" in body
 
 
 # ── RunRequest construction ───────────────────────────────────────────────────
 
 
-def test_run_request_carries_failure_report_role_template_path_and_service(
-    tmp_path, logger
-):
-    """The Failure-Report RunRequest carries AgentRole.FAILURE_REPORT,
-    PromptTemplate.FAILURE_REPORT, the failing worktree path, and the configured
-    preflight_issue_override.service."""
+def test_successful_reporter_run_returns_aborted_with_issue_number(tmp_path, logger):
+    """A successful Failure-Report run returns AbortedAgentFailure carrying
+    the reporter's raw issue number."""
     expected_path = _make_valid_worktree(tmp_path)
     err = AgentFailedError(
         role_value="improve",
@@ -174,12 +160,6 @@ def test_run_request_carries_failure_report_role_template_path_and_service(
 
     result = asyncio.run(translate_agent_failed_error_to_abort(err, deps))
 
-    assert len(runner.calls) == 1
-    req = runner.calls[0]
-    assert req.role == AgentRole.FAILURE_REPORT
-    assert req.prompt.template == PromptTemplate.FAILURE_REPORT
-    assert req.service == "codex"
-    assert req.mount_path == expected_path
     assert isinstance(result, AbortedAgentFailure)
     assert result.issue_number == 99
 

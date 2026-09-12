@@ -14,11 +14,10 @@ from typing import TYPE_CHECKING
 
 from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 
-from pycastle.agents.output_protocol import AgentRole, IssueOutput
-from pycastle.agents.runner import RunRequest
-from pycastle.diagnostic_mount_fallback import (
-    DiagnosticMountFallbackIssue,
-    decide_diagnostic_mount_dispatch,
+from pycastle.agents.output_protocol import AgentRole
+from pycastle.diagnostic_reporter_dispatch import (
+    DiagnosticReporterDispatchMountFallback,
+    run_diagnostic_reporter_dispatch,
 )
 from pycastle.errors import (
     AgentTimeoutError,
@@ -38,6 +37,7 @@ if TYPE_CHECKING:
     from pycastle.errors import AgentFailedError
     from pycastle.iteration import AbortedAgentCredentialFailure, AbortedAgentFailure
     from pycastle.iteration._deps import Deps
+    from pycastle.prompts.dispatch import PromptInvocation
 
 _EVIDENCE_DIR = Path(".pycastle-session") / "failure-report"
 _EVIDENCE_FILENAME = "agent-invocation.log"
@@ -87,9 +87,27 @@ async def translate_agent_failed_error_to_abort(
     issue_number: int | None = None
     if deps.cfg.diagnose_on_failure:
         try:
-            mount_decision = decide_diagnostic_mount_dispatch(
-                repo_root=deps.repo_root,
-                mount_path=err.worktree_path,
+            prompt_invocation = build_prompt_invocation(
+                PromptTemplate.FAILURE_REPORT,
+                build_failure_report_scope_args(err),
+            )
+
+            def _pre_run_hook(mount_path: Path, invocation: PromptInvocation) -> None:
+                raw_evidence_path = getattr(err, "agent_invocation_log_path", None)
+                copied_evidence = _copy_invocation_log_to_evidence_area(
+                    worktree_path=mount_path,
+                    source=raw_evidence_path,
+                )
+                if copied_evidence is not None:
+                    err.agent_invocation_log_path = _evidence_relative_path()
+                    invocation.scope_args["EVIDENCE_PATH"] = _evidence_relative_path()
+                    invocation.scope_args["HAS_EVIDENCE_PATH"] = "yes"
+                else:
+                    err.agent_invocation_log_path = ""
+                    invocation.scope_args["EVIDENCE_PATH"] = ""
+                    invocation.scope_args["HAS_EVIDENCE_PATH"] = "no"
+
+            outcome = await run_diagnostic_reporter_dispatch(
                 caller="Failure Report Agent",
                 diagnostic_role=AgentRole.FAILURE_REPORT.value,
                 role_name=err.role_value,
@@ -97,37 +115,18 @@ async def translate_agent_failed_error_to_abort(
                     f"Agent role {err.role_value!r} failed in worktree "
                     f"{err.worktree_path}."
                 ),
-                github_svc=deps.github_svc,
+                prompt_invocation=prompt_invocation,
+                stage_override=deps.cfg.preflight_issue_override,
+                mount_path=err.worktree_path,
+                deps=deps,
+                pre_run_hook=_pre_run_hook,
+                skip_validation=True,
             )
-            if isinstance(mount_decision, DiagnosticMountFallbackIssue):
-                issue_number = mount_decision.issue_number
+            if isinstance(outcome, DiagnosticReporterDispatchMountFallback):
                 return AbortedAgentFailure(
-                    failed_role=err.role_value, issue_number=issue_number
+                    failed_role=err.role_value, issue_number=outcome.issue_number
                 )
-            raw_evidence_path = getattr(err, "agent_invocation_log_path", None)
-            copied_evidence = _copy_invocation_log_to_evidence_area(
-                worktree_path=err.worktree_path,
-                source=raw_evidence_path,
-            )
-            if copied_evidence is not None:
-                err.agent_invocation_log_path = _evidence_relative_path()
-            else:
-                err.agent_invocation_log_path = ""
-            result = await deps.agent_runner.run(
-                RunRequest(
-                    name="Failure Report Agent",
-                    prompt=build_prompt_invocation(
-                        PromptTemplate.FAILURE_REPORT,
-                        build_failure_report_scope_args(err),
-                    ),
-                    mount_path=err.worktree_path,
-                    role=AgentRole.FAILURE_REPORT,
-                    service=deps.cfg.preflight_issue_override.service,
-                    status_display=deps.status_display,
-                )
-            )
-            if isinstance(result, IssueOutput):
-                issue_number = result.number
+            issue_number = outcome.issue_number
         except AgentCredentialFailureError as report_err:
             routed_result = _route_and_abort_agent_credential_failure(report_err, deps)
             if routed_result is None:
