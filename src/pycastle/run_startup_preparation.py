@@ -4,6 +4,7 @@ import difflib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from pycastle import stage_registry
 from pycastle.config import Config, StageOverride, parse_credential_list
 from pycastle.config.loader import referenced_services
 from pycastle.services.runtime_services import (
@@ -202,14 +203,7 @@ def _validation_services() -> dict[str, AgentService]:
 
 
 def _stage_overrides(cfg: Config) -> list[tuple[str, StageOverride]]:
-    return [
-        ("plan", cfg.plan_override),
-        ("implement", cfg.implement_override),
-        ("review", cfg.review_override),
-        ("merge", cfg.merge_override),
-        ("preflight_issue", cfg.preflight_issue_override),
-        ("improve", cfg.improve_override),
-    ]
+    return list(stage_registry.iter_stage_overrides(cfg))
 
 
 def _validate_stage_overrides(
