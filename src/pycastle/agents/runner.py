@@ -12,10 +12,10 @@ import docker.errors
 from agent_runtime import ProviderAuth
 
 from pycastle import _time as _time_module
+from pycastle import stage_registry
 from pycastle.agents import protocol_reprompt
 from pycastle.agents.attempt_loop import (
     _AttemptLoopBundle,
-    _stage_key_for_role,
     format_transient_status_message,
     run_attempt_loop,
 )
@@ -370,7 +370,7 @@ class AgentRunner:
         return RuntimeInvocationDependencies(
             container_workspace=_CONTAINER_WORKSPACE,
             timeout_retries=self._cfg.timeout_retries,
-            stage_key_for_role=_stage_key_for_role,
+            stage_key_for_role=stage_registry.stage_key_for_role,
             prepare_session=_prepare_session,
             build_session=cast(
                 "Callable[[Path, AgentService, str | None], Any]",
@@ -479,7 +479,7 @@ class AgentRunner:
         if token.is_cancelled or not service.is_available():
             raise UsageLimitError(
                 reset_time=None,
-                stage_key=_stage_key_for_role(request.role),
+                stage_key=stage_registry.stage_key_for_role(request.role),
             )
         status_display = (
             request.status_display
