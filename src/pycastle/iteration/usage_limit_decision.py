@@ -16,20 +16,37 @@ if TYPE_CHECKING:
 
 
 @dataclasses.dataclass(frozen=True)
-class ContinueNow:
+class ContinueLoop:
+    message: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class SleepThenContinue:
+    wake_time: datetime
+    message: str
+    slept_once_after: bool = True
+
+
+@dataclasses.dataclass(frozen=True)
+class BreakLoop:
+    message: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class _ContinueNow:
     message: str | None = None
     exhausted_wake_time: datetime | None = None
 
 
 @dataclasses.dataclass(frozen=True)
-class SleepUntil:
+class _SleepUntil:
     wake_time: datetime
     message: str
     is_estimated: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
-class Stop:
+class _Stop:
     message: str | None = None
 
 
@@ -159,7 +176,7 @@ def _decide_limit_continuation(
     service_registry: ServiceRegistry | None,
     now: datetime,
     compute_wake_time_fn: _WakeTimeComputer,
-) -> ContinueNow | SleepUntil | Stop:
+) -> _ContinueNow | _SleepUntil | _Stop:
     if _registry_has_available(service_registry, stage_override, now):
         exhausted_wake_time = _compute_exhausted_wake_time(
             outcome, service_registry, stage_override, now
@@ -172,24 +189,37 @@ def _decide_limit_continuation(
                 f"Account exhausted until {_fmt_wake(exhausted_wake_time, now)}, "
                 "switching to next available."
             )
-        return ContinueNow(message=message, exhausted_wake_time=exhausted_wake_time)
+        return _ContinueNow(message=message, exhausted_wake_time=exhausted_wake_time)
 
     next_wake = _registry_next_wake_time(service_registry, stage_override, now)
     if next_wake is not None:
-        return SleepUntil(
+        return _SleepUntil(
             wake_time=next_wake,
             message=_sleep_message(next_wake, now, is_estimated=False),
         )
 
     if isinstance(outcome, _PermanentlyExhausted):
-        return Stop(message=_permanent_exhaustion_message(outcome))
+        return _Stop(message=_permanent_exhaustion_message(outcome))
 
     wake_time, is_estimated = compute_wake_time_fn(outcome.reset_time, now)
-    return SleepUntil(
+    return _SleepUntil(
         wake_time=wake_time,
         is_estimated=is_estimated,
         message=_sleep_message(wake_time, now, is_estimated=is_estimated),
     )
+
+
+def _to_loop_directive(
+    decision: _ContinueNow | _SleepUntil | _Stop,
+) -> ContinueLoop | SleepThenContinue | BreakLoop:
+    if isinstance(decision, _ContinueNow):
+        return ContinueLoop(message=decision.message)
+    if isinstance(decision, _SleepUntil):
+        return SleepThenContinue(
+            wake_time=decision.wake_time,
+            message=decision.message,
+        )
+    return BreakLoop(message=decision.message)
 
 
 def decide_usage_limit_continuation(
@@ -197,7 +227,7 @@ def decide_usage_limit_continuation(
     cfg: Config,
     service_registry: ServiceRegistry | None,
     now: datetime,
-) -> ContinueNow | SleepUntil | Stop:
+) -> ContinueLoop | SleepThenContinue | BreakLoop:
     minimum_unknown_reset_duration = _minimum_unknown_reset_duration_for_provider(
         cfg,
         outcome.provider,
@@ -229,14 +259,16 @@ def decide_usage_limit_continuation(
             account_label=outcome.account_label,
         )
 
-    return _decide_limit_continuation(
-        limit_outcome,
-        stage_override=stage_registry.override_for_stage_key(cfg, outcome.stage_key)
-        if outcome.stage_key is not None
-        else None,
-        service_registry=service_registry,
-        now=now,
-        compute_wake_time_fn=_compute_wake_time,
+    return _to_loop_directive(
+        _decide_limit_continuation(
+            limit_outcome,
+            stage_override=stage_registry.override_for_stage_key(cfg, outcome.stage_key)
+            if outcome.stage_key is not None
+            else None,
+            service_registry=service_registry,
+            now=now,
+            compute_wake_time_fn=_compute_wake_time,
+        )
     )
 
 
@@ -245,20 +277,20 @@ def decide_model_not_available_continuation(
     cfg: Config,
     service_registry: ServiceRegistry | None,
     now: datetime,
-) -> ContinueNow | SleepUntil | Stop:
+) -> ContinueLoop | SleepThenContinue | BreakLoop:
     stage_override = (
         stage_registry.override_for_stage_key(cfg, outcome.stage_key)
         if outcome.stage_key is not None
         else None
     )
     if _registry_has_available(service_registry, stage_override, now):
-        return ContinueNow()
+        return ContinueLoop()
 
     next_wake = _registry_next_wake_time(service_registry, stage_override, now)
     service_label = outcome.service or "unknown"
     model_label = outcome.model or "unknown"
     if next_wake is not None:
-        return SleepUntil(
+        return SleepThenContinue(
             wake_time=next_wake,
             message=(
                 f"Model {model_label!r} is not available on {service_label}."
@@ -267,7 +299,7 @@ def decide_model_not_available_continuation(
             ),
         )
 
-    return Stop(
+    return BreakLoop(
         message=(
             f"Model {model_label!r} is not available on {service_label} and no other "
             "candidates have a finite wake time. Stopping."

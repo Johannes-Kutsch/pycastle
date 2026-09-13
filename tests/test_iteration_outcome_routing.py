@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,11 +13,9 @@ from pycastle.iteration import (
     AbortedAgentFailure,
     AbortedHardApiError,
     AbortedHITL,
-    AbortedModelNotAvailable,
     AbortedOperatorActionable,
     AbortedSetup,
     AbortedTimeout,
-    AbortedUsageLimit,
     Continue,
     Done,
     MergeCloseFailure,
@@ -32,8 +30,6 @@ from pycastle.iteration.outcome_routing import (
     route_outcome,
 )
 from pycastle.services import GithubService
-from pycastle.services.runtime_services import AgentService
-from pycastle.services.service_registry import ServiceRegistry
 from tests.support import RecordingStatusDisplay
 
 
@@ -44,7 +40,7 @@ def _now() -> datetime:
 def _make_deps(
     *,
     cfg: Config | None = None,
-    service_registry: ServiceRegistry | None = None,
+    service_registry: None = None,
     now: datetime | None = None,
     status_display: RecordingStatusDisplay | None = None,
     github_svc: GithubService | None = None,
@@ -248,82 +244,3 @@ def test_route_outcome_aborted_setup_delegates_to_translate_aborted_setup_to_dir
     mock_fn.assert_called_once_with(
         outcome, deps.cfg, deps.status_display, auto_file_issue
     )
-
-
-# ── AbortedUsageLimit ─────────────────────────────────────────────────────────
-
-
-def test_route_outcome_aborted_usage_limit_permanent_no_registry_returns_break_loop():
-    result = route_outcome(
-        AbortedUsageLimit(is_permanent=True),
-        _make_deps(service_registry=None),
-    )
-    assert result == BreakLoop()
-
-
-def test_route_outcome_aborted_usage_limit_temporary_no_registry_returns_sleep_then_continue():
-    reset = _now() + timedelta(hours=2)
-    result = route_outcome(
-        AbortedUsageLimit(is_permanent=False, reset_time=reset, provider="claude"),
-        _make_deps(service_registry=None),
-    )
-    assert isinstance(result, SleepThenContinue)
-    assert result.wake_time > _now()
-    assert result.slept_once_after is True
-    assert "Sleeping until" in result.message
-
-
-def test_route_outcome_aborted_usage_limit_with_fallback_service_returns_continue_loop():
-    available_svc = MagicMock(spec=AgentService)
-    available_svc.is_available.return_value = True
-    registry = ServiceRegistry({"codex": available_svc})
-    cfg = Config()
-
-    result = route_outcome(
-        AbortedUsageLimit(is_permanent=False, provider="claude", stage_key="plan"),
-        _make_deps(cfg=cfg, service_registry=registry),
-    )
-    assert result == ContinueLoop()
-
-
-# ── AbortedModelNotAvailable ──────────────────────────────────────────────────
-
-
-def test_route_outcome_aborted_model_not_available_no_registry_returns_break_loop():
-    display = RecordingStatusDisplay()
-    result = route_outcome(
-        AbortedModelNotAvailable(service="codex", model="gpt-5.3"),
-        _make_deps(service_registry=None, status_display=display),
-    )
-    assert result == BreakLoop()
-    msgs = _printed_messages(display)
-    assert any("gpt-5.3" in m for m in msgs)
-
-
-def test_route_outcome_aborted_model_not_available_with_wake_time_returns_sleep_then_continue():
-    wake = _now() + timedelta(hours=1)
-    unavailable_svc = MagicMock(spec=AgentService)
-    unavailable_svc.is_available.return_value = False
-    unavailable_svc.next_wake_time.return_value = wake
-    registry = ServiceRegistry({"codex": unavailable_svc})
-
-    result = route_outcome(
-        AbortedModelNotAvailable(service="codex", model="gpt-5.3"),
-        _make_deps(service_registry=registry),
-    )
-    assert isinstance(result, SleepThenContinue)
-    assert result.wake_time == wake
-    assert result.slept_once_after is True
-
-
-def test_route_outcome_aborted_model_not_available_with_available_service_returns_continue_loop():
-    available_svc = MagicMock(spec=AgentService)
-    available_svc.is_available.return_value = True
-    registry = ServiceRegistry({"claude": available_svc})
-    cfg = Config()
-
-    result = route_outcome(
-        AbortedModelNotAvailable(service="codex", model="gpt-5.3", stage_key="plan"),
-        _make_deps(cfg=cfg, service_registry=registry),
-    )
-    assert result == ContinueLoop()

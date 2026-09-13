@@ -25,9 +25,9 @@ from pycastle.iteration.aborted_setup_report import (
     translate_aborted_setup_to_directive,
 )
 from pycastle.iteration.usage_limit_decision import (
-    ContinueNow,
-    SleepUntil,
-    Stop,
+    BreakLoop,
+    ContinueLoop,
+    SleepThenContinue,
     decide_model_not_available_continuation,
     decide_usage_limit_continuation,
 )
@@ -40,23 +40,6 @@ if TYPE_CHECKING:
     from pycastle.services import GithubService, ServiceRegistry
 
 
-@dataclasses.dataclass(frozen=True)
-class ContinueLoop:
-    message: str | None = None
-
-
-@dataclasses.dataclass(frozen=True)
-class SleepThenContinue:
-    wake_time: datetime
-    message: str
-    slept_once_after: bool = True
-
-
-@dataclasses.dataclass(frozen=True)
-class BreakLoop:
-    message: str | None = None
-
-
 type LoopDirective = ContinueLoop | SleepThenContinue | BreakLoop | ExitFailure
 
 
@@ -67,44 +50,6 @@ class RouterDeps:
     now: datetime
     status_display: StatusDisplay
     github_svc: GithubService
-
-
-def _continuation_to_directive(
-    decision: ContinueNow | SleepUntil | Stop, deps: RouterDeps
-) -> LoopDirective:
-    if isinstance(decision, ContinueNow):
-        if decision.message is not None:
-            deps.status_display.print("", decision.message)
-        return ContinueLoop()
-    if isinstance(decision, SleepUntil):
-        return SleepThenContinue(
-            wake_time=decision.wake_time,
-            message=decision.message,
-            slept_once_after=True,
-        )
-    if decision.message is not None:
-        deps.status_display.print("", decision.message)
-    return BreakLoop()
-
-
-def _route_usage_limit(outcome: AbortedUsageLimit, deps: RouterDeps) -> LoopDirective:
-    return _continuation_to_directive(
-        decide_usage_limit_continuation(
-            outcome, deps.cfg, deps.service_registry, deps.now
-        ),
-        deps,
-    )
-
-
-def _route_model_not_available(
-    outcome: AbortedModelNotAvailable, deps: RouterDeps
-) -> LoopDirective:
-    return _continuation_to_directive(
-        decide_model_not_available_continuation(
-            outcome, deps.cfg, deps.service_registry, deps.now
-        ),
-        deps,
-    )
 
 
 def _route_agent_failure(
@@ -194,9 +139,13 @@ def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
         case AbortedTimeout():
             return _route_timeout(outcome, deps)
         case AbortedUsageLimit():
-            return _route_usage_limit(outcome, deps)
+            return decide_usage_limit_continuation(
+                outcome, deps.cfg, deps.service_registry, deps.now
+            )
         case AbortedModelNotAvailable():
-            return _route_model_not_available(outcome, deps)
+            return decide_model_not_available_continuation(
+                outcome, deps.cfg, deps.service_registry, deps.now
+            )
         case AbortedAgentFailure():
             return _route_agent_failure(outcome, deps)
         case AbortedOperatorActionable():

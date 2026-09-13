@@ -6,11 +6,12 @@ from unittest.mock import MagicMock
 
 from pycastle.config import Config
 from pycastle.config.types import StageOverride
-from pycastle.iteration import AbortedUsageLimit
+from pycastle.iteration import AbortedModelNotAvailable, AbortedUsageLimit
 from pycastle.iteration.usage_limit_decision import (
-    ContinueNow,
-    SleepUntil,
-    Stop,
+    BreakLoop,
+    ContinueLoop,
+    SleepThenContinue,
+    decide_model_not_available_continuation,
     decide_usage_limit_continuation,
 )
 from pycastle.services.runtime_services import AgentService
@@ -53,7 +54,7 @@ def _decide(
     stage_override: StageOverride | None,
     service_registry: ServiceRegistry | None,
     now: datetime,
-) -> ContinueNow | SleepUntil | Stop:
+) -> ContinueLoop | SleepThenContinue | BreakLoop:
     if stage_override is not None:
         cfg = Config(plan_override=stage_override)
         outcome = dataclasses.replace(outcome, stage_key="plan")
@@ -79,8 +80,7 @@ def test_decide_usage_limit_continuation_returns_continue_now_for_stage_fallback
         now=_now(),
     )
 
-    assert isinstance(decision, ContinueNow)
-    assert decision.exhausted_wake_time == primary_wake
+    assert isinstance(decision, ContinueLoop)
 
 
 def test_decide_usage_limit_continuation_includes_same_day_switch_message():
@@ -99,9 +99,8 @@ def test_decide_usage_limit_continuation_includes_same_day_switch_message():
         now=_now(),
     )
 
-    assert decision == ContinueNow(
+    assert decision == ContinueLoop(
         message="Account exhausted until 16:00, switching to next available.",
-        exhausted_wake_time=primary_wake,
     )
 
 
@@ -123,9 +122,8 @@ def test_decide_usage_limit_continuation_formats_same_local_day_switch_message()
         now=now,
     )
 
-    assert decision == ContinueNow(
+    assert decision == ContinueLoop(
         message="Account exhausted until 20:00, switching to next available.",
-        exhausted_wake_time=primary_wake,
     )
 
 
@@ -147,7 +145,7 @@ def test_decide_usage_limit_continuation_sleeps_for_stage_chain_only():
         now=_now(),
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == fallback_wake
     assert (
         decision.message
@@ -179,9 +177,8 @@ def test_decide_usage_limit_continuation_keeps_failing_service_wake_on_continue_
         now=_now(),
     )
 
-    assert decision == ContinueNow(
+    assert decision == ContinueLoop(
         message="Account exhausted until 16:00, switching to next available.",
-        exhausted_wake_time=failing_wake,
     )
 
 
@@ -203,7 +200,7 @@ def test_decide_usage_limit_continuation_formats_cross_day_sleep_message():
         now=now,
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert (
         decision.message
         == "Usage limit reached. Sleeping until Jan 2, 01:00. Press Ctrl+C to abort."
@@ -228,7 +225,7 @@ def test_decide_usage_limit_continuation_formats_same_local_day_sleep_message():
         now=now,
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert (
         decision.message
         == "Usage limit reached. Sleeping until 20:00. Press Ctrl+C to abort."
@@ -253,7 +250,7 @@ def test_decide_usage_limit_continuation_ignores_exhausted_services_outside_stag
         now=_now(),
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == stage_wake
     assert (
         decision.message
@@ -277,9 +274,8 @@ def test_decide_usage_limit_continuation_ignores_available_services_outside_stag
         now=_now(),
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=UTC)
-    assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
         " Press Ctrl+C to abort."
@@ -302,9 +298,8 @@ def test_decide_usage_limit_continuation_uses_global_fallback_when_stage_priorit
         now=_now(),
     )
 
-    assert decision == ContinueNow(
+    assert decision == ContinueLoop(
         message="Account exhausted until 16:00, switching to next available.",
-        exhausted_wake_time=primary_wake,
     )
 
 
@@ -325,10 +320,9 @@ def test_decide_usage_limit_continuation_uses_global_next_wake_when_stage_priori
         now=_now(),
     )
 
-    assert decision == SleepUntil(
+    assert decision == SleepThenContinue(
         wake_time=fallback_wake,
         message="Usage limit reached. Sleeping until 15:00. Press Ctrl+C to abort.",
-        is_estimated=False,
     )
 
 
@@ -344,7 +338,7 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion():
         now=_now(),
     )
 
-    assert decision == Stop(
+    assert decision == BreakLoop(
         message=(
             "claude unknown account retired for this run and will be retried on the "
             "next run."
@@ -374,13 +368,12 @@ def test_decide_usage_limit_continuation_returns_continue_now_for_permanent_exha
         now=_now(),
     )
 
-    assert decision == ContinueNow(
+    assert decision == ContinueLoop(
         message=(
             "claude secondary account retired for this run and will be retried on "
             "the next run. Claude said: disabled Claude subscription access for "
             "Claude Code"
         ),
-        exhausted_wake_time=primary_wake,
     )
 
 
@@ -405,7 +398,7 @@ def test_decide_usage_limit_continuation_stops_on_permanent_exhaustion_without_c
         now=_now(),
     )
 
-    assert decision == Stop(
+    assert decision == BreakLoop(
         message=(
             "claude primary account retired for this run and will be retried on "
             "the next run. Claude said: disabled Claude subscription access for "
@@ -431,7 +424,7 @@ def test_decide_usage_limit_continuation_uses_observed_provider_label_for_non_cl
         now=_now(),
     )
 
-    assert decision == Stop(
+    assert decision == BreakLoop(
         message=(
             "OpenCode primary account retired for this run and will be retried on "
             "the next run. OpenCode said: usage limit reached for this account"
@@ -449,9 +442,8 @@ def test_decide_usage_limit_continuation_estimates_wake_time_without_registry():
         now=now,
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=UTC)
-    assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
         " Press Ctrl+C to abort."
@@ -469,9 +461,8 @@ def test_decide_usage_limit_continuation_uses_exact_reset_time_without_registry(
         now=now,
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == datetime(2026, 1, 1, 15, 32, 0, tzinfo=UTC)
-    assert decision.is_estimated is False
     assert (
         decision.message
         == "Usage limit reached. Sleeping until 15:32. Press Ctrl+C to abort."
@@ -489,7 +480,7 @@ def test_decide_usage_limit_continuation_formats_cross_day_exact_reset_without_r
         now=now,
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert (
         decision.message
         == "Usage limit reached. Sleeping until Jan 2, 00:32. Press Ctrl+C to abort."
@@ -506,9 +497,8 @@ def test_decide_usage_limit_continuation_keeps_stage_key_behavior_without_regist
         now=now,
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=UTC)
-    assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
         " Press Ctrl+C to abort."
@@ -529,9 +519,8 @@ def test_iteration_usage_limit_continuation_uses_provider_minimum_duration_for_u
         now=_now(),
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == datetime(2026, 1, 1, 16, 2, 0, tzinfo=UTC)
-    assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 16:02 (estimated)."
         " Press Ctrl+C to abort."
@@ -550,9 +539,8 @@ def test_iteration_usage_limit_continuation_defaults_opencode_unknown_reset_to_o
         now=_now(),
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == datetime(2026, 1, 1, 16, 2, 0, tzinfo=UTC)
-    assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 16:02 (estimated)."
         " Press Ctrl+C to abort."
@@ -571,9 +559,8 @@ def test_iteration_usage_limit_continuation_explicit_zero_opencode_unknown_reset
         now=_now(),
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == datetime(2026, 1, 1, 15, 2, 0, tzinfo=UTC)
-    assert decision.is_estimated is True
     assert (
         decision.message == "Usage limit reached. Sleeping until 15:02 (estimated)."
         " Press Ctrl+C to abort."
@@ -596,9 +583,8 @@ def test_iteration_usage_limit_continuation_keeps_parsed_reset_time_authoritativ
         now=_now(),
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == datetime(2026, 1, 1, 15, 32, 0, tzinfo=UTC)
-    assert decision.is_estimated is False
     assert (
         decision.message
         == "Usage limit reached. Sleeping until 15:32. Press Ctrl+C to abort."
@@ -621,7 +607,7 @@ def test_decide_usage_limit_continuation_sleeps_when_permanently_exhausted_but_o
         now=_now(),
     )
 
-    assert isinstance(decision, SleepUntil)
+    assert isinstance(decision, SleepThenContinue)
     assert decision.wake_time == fallback_wake
 
 
@@ -640,4 +626,92 @@ def test_decide_usage_limit_continuation_stops_when_all_chain_candidates_permane
         now=_now(),
     )
 
-    assert isinstance(decision, Stop)
+    assert isinstance(decision, BreakLoop)
+
+
+# ── AbortedUsageLimit via route_outcome (moved here as deepened seam) ─────────
+
+
+def test_decide_usage_limit_continuation_permanent_no_registry_returns_break_loop():
+    result = decide_usage_limit_continuation(
+        AbortedUsageLimit(is_permanent=True),
+        Config(),
+        service_registry=None,
+        now=_now(),
+    )
+    assert isinstance(result, BreakLoop)
+
+
+def test_decide_usage_limit_continuation_temporary_no_registry_returns_sleep_then_continue():
+    reset = _now() + timedelta(hours=2)
+    result = decide_usage_limit_continuation(
+        AbortedUsageLimit(is_permanent=False, reset_time=reset, provider="claude"),
+        Config(),
+        service_registry=None,
+        now=_now(),
+    )
+    assert isinstance(result, SleepThenContinue)
+    assert result.wake_time > _now()
+    assert result.slept_once_after is True
+    assert "Sleeping until" in result.message
+
+
+def test_decide_usage_limit_continuation_with_fallback_service_returns_continue_loop():
+    available_svc = MagicMock(spec=AgentService)
+    available_svc.is_available.return_value = True
+    registry = ServiceRegistry({"codex": available_svc})
+
+    result = decide_usage_limit_continuation(
+        AbortedUsageLimit(is_permanent=False, provider="claude", stage_key="plan"),
+        Config(),
+        service_registry=registry,
+        now=_now(),
+    )
+    assert result == ContinueLoop()
+
+
+# ── AbortedModelNotAvailable (moved here as deepened seam) ───────────────────
+
+
+def test_decide_model_not_available_continuation_no_registry_returns_break_loop():
+    result = decide_model_not_available_continuation(
+        AbortedModelNotAvailable(service="codex", model="gpt-5.3"),
+        Config(),
+        service_registry=None,
+        now=_now(),
+    )
+    assert isinstance(result, BreakLoop)
+    assert result.message is not None
+    assert "gpt-5.3" in result.message
+
+
+def test_decide_model_not_available_continuation_with_wake_time_returns_sleep_then_continue():
+    wake = _now() + timedelta(hours=1)
+    unavailable_svc = MagicMock(spec=AgentService)
+    unavailable_svc.is_available.return_value = False
+    unavailable_svc.next_wake_time.return_value = wake
+    registry = ServiceRegistry({"codex": unavailable_svc})
+
+    result = decide_model_not_available_continuation(
+        AbortedModelNotAvailable(service="codex", model="gpt-5.3"),
+        Config(),
+        service_registry=registry,
+        now=_now(),
+    )
+    assert isinstance(result, SleepThenContinue)
+    assert result.wake_time == wake
+    assert result.slept_once_after is True
+
+
+def test_decide_model_not_available_continuation_with_available_service_returns_continue_loop():
+    available_svc = MagicMock(spec=AgentService)
+    available_svc.is_available.return_value = True
+    registry = ServiceRegistry({"claude": available_svc})
+
+    result = decide_model_not_available_continuation(
+        AbortedModelNotAvailable(service="codex", model="gpt-5.3", stage_key="plan"),
+        Config(),
+        service_registry=registry,
+        now=_now(),
+    )
+    assert result == ContinueLoop()
