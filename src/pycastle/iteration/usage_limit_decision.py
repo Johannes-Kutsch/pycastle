@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from pycastle import stage_registry
 from pycastle.services._wake_time import compute_wake_time
 
 if TYPE_CHECKING:
@@ -87,22 +88,6 @@ def _provider_message_label(provider_label: str) -> str:
         "opencode": "OpenCode",
     }
     return known_labels.get(provider_label, provider_label)
-
-
-def _override_for_stage_key(cfg: Config, stage_key: str | None) -> StageOverride | None:
-    if stage_key == "plan":
-        return cfg.plan_override
-    if stage_key == "implement":
-        return cfg.implement_override
-    if stage_key == "review":
-        return cfg.review_override
-    if stage_key == "merge":
-        return cfg.merge_override
-    if stage_key == "preflight_issue":
-        return cfg.preflight_issue_override
-    if stage_key == "improve":
-        return cfg.improve_override
-    return None
 
 
 def _minimum_unknown_reset_duration_for_provider(
@@ -246,7 +231,9 @@ def decide_usage_limit_continuation(
 
     return _decide_limit_continuation(
         limit_outcome,
-        stage_override=_override_for_stage_key(cfg, outcome.stage_key),
+        stage_override=stage_registry.override_for_stage_key(cfg, outcome.stage_key)
+        if outcome.stage_key is not None
+        else None,
         service_registry=service_registry,
         now=now,
         compute_wake_time_fn=_compute_wake_time,
@@ -259,7 +246,11 @@ def decide_model_not_available_continuation(
     service_registry: ServiceRegistry | None,
     now: datetime,
 ) -> ContinueNow | SleepUntil | Stop:
-    stage_override = _override_for_stage_key(cfg, outcome.stage_key)
+    stage_override = (
+        stage_registry.override_for_stage_key(cfg, outcome.stage_key)
+        if outcome.stage_key is not None
+        else None
+    )
     if _registry_has_available(service_registry, stage_override, now):
         return ContinueNow()
 
