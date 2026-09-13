@@ -391,7 +391,9 @@ async def run(
             )
             directive = route_outcome(outcome, router_deps)
             match directive:
-                case ContinueLoop():
+                case ContinueLoop(message=cont_msg):
+                    if cont_msg is not None:
+                        status_display.print("", cont_msg)  # type: ignore[union-attr]
                     continue
                 case SleepThenContinue(
                     wake_time=wake_time,
@@ -404,7 +406,9 @@ async def run(
                     )
                     slept_once = slept_after
                     continue
-                case BreakLoop():
+                case BreakLoop(message=break_msg):
+                    if break_msg is not None:
+                        status_display.print("", break_msg)  # type: ignore[union-attr]
                     break
                 case ExitFailure(code=exit_code):
                     sys.exit(exit_code)

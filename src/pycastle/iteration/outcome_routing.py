@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
 @dataclasses.dataclass(frozen=True)
 class ContinueLoop:
-    pass
+    message: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -54,7 +54,7 @@ class SleepThenContinue:
 
 @dataclasses.dataclass(frozen=True)
 class BreakLoop:
-    pass
+    message: str | None = None
 
 
 type LoopDirective = ContinueLoop | SleepThenContinue | BreakLoop | ExitFailure
