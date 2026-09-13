@@ -35,14 +35,12 @@ class BreakLoop:
 @dataclasses.dataclass(frozen=True)
 class _ContinueNow:
     message: str | None = None
-    exhausted_wake_time: datetime | None = None
 
 
 @dataclasses.dataclass(frozen=True)
 class _SleepUntil:
     wake_time: datetime
     message: str
-    is_estimated: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -189,7 +187,7 @@ def _decide_limit_continuation(
                 f"Account exhausted until {_fmt_wake(exhausted_wake_time, now)}, "
                 "switching to next available."
             )
-        return _ContinueNow(message=message, exhausted_wake_time=exhausted_wake_time)
+        return _ContinueNow(message=message)
 
     next_wake = _registry_next_wake_time(service_registry, stage_override, now)
     if next_wake is not None:
@@ -204,7 +202,6 @@ def _decide_limit_continuation(
     wake_time, is_estimated = compute_wake_time_fn(outcome.reset_time, now)
     return _SleepUntil(
         wake_time=wake_time,
-        is_estimated=is_estimated,
         message=_sleep_message(wake_time, now, is_estimated=is_estimated),
     )
 
