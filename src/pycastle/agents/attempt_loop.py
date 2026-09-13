@@ -24,6 +24,7 @@ from agent_runtime.runtime import (
     UsageLimited,
 )
 
+from pycastle import stage_registry
 from pycastle.agents import protocol_reprompt
 from pycastle.agents.output_protocol import (
     AgentOutput,
@@ -58,19 +59,6 @@ _MAX_PROTOCOL_RETRIES = 2
 def format_transient_status_message(err: TransientAgentError) -> str:
     detail = str(err)
     return f"transient API error: {detail}" if detail else "transient API error"
-
-
-def _stage_key_for_role(role: AgentRole) -> str | None:
-    mapping = {
-        AgentRole.PLANNER: "plan",
-        AgentRole.IMPLEMENTER: "implement",
-        AgentRole.REVIEWER: "review",
-        AgentRole.MERGER: "merge",
-        AgentRole.PREFLIGHT_ISSUE: "preflight_issue",
-        AgentRole.IMPROVE: "improve",
-        AgentRole.FAILURE_REPORT: "preflight_issue",
-    }
-    return mapping.get(role)
 
 
 def _runtime_tool_policy_for_role(role: AgentRole) -> RuntimeToolPolicy:
@@ -235,7 +223,7 @@ async def run_attempt_loop(
             raise ModelNotAvailableError(
                 service=outcome.result.selected.service,
                 model=model,
-                stage_key=_stage_key_for_role(request.role),
+                stage_key=stage_registry.stage_key_for_role(request.role),
             )
 
         raise RuntimeError("Unexpected runtime outcome kind")
