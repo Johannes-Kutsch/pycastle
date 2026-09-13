@@ -9,6 +9,7 @@ from typing import cast
 import click
 
 from pycastle import _time as _time_module
+from pycastle import stage_registry
 from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol
 from pycastle.config import (
     Config,
@@ -255,17 +256,12 @@ def _resolve_iter_cfg(
 ) -> Config:
     if service_registry is None:
         return cfg
-    return replace_config_runtime_fields(
-        cfg,
-        dataclasses.replace(
-            cfg,
-            plan_override=service_registry.resolve(cfg.plan_override, now),
-            implement_override=service_registry.resolve(cfg.implement_override, now),
-            review_override=service_registry.resolve(cfg.review_override, now),
-            merge_override=service_registry.resolve(cfg.merge_override, now),
-            improve_override=service_registry.resolve(cfg.improve_override, now),
-        ),
-    )
+    resolved = {
+        f"{stage_key}_override": service_registry.resolve(override, now)
+        for stage_key, override in stage_registry.iter_stage_overrides(cfg)
+        if stage_key != "preflight_issue"
+    }
+    return replace_config_runtime_fields(cfg, dataclasses.replace(cfg, **resolved))  # type: ignore[arg-type]
 
 
 def _build_agent_runner(
