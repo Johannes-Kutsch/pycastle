@@ -8,6 +8,7 @@ import types
 from pathlib import Path
 from typing import Any, Literal
 
+from pycastle import stage_registry
 from pycastle._universal_image_build import resolve_universal_dockerfile
 from pycastle.config.types import StageOverride
 from pycastle.errors import ConfigValidationError
@@ -351,14 +352,7 @@ def _validate_improve_mode(cfg: Config) -> None:
 
 
 def _validate_stage_override_models(cfg: Config) -> None:
-    for stage_name, override in (
-        ("plan", cfg.plan_override),
-        ("implement", cfg.implement_override),
-        ("review", cfg.review_override),
-        ("merge", cfg.merge_override),
-        ("preflight_issue", cfg.preflight_issue_override),
-        ("improve", cfg.improve_override),
-    ):
+    for stage_name, override in stage_registry.iter_stage_overrides(cfg):
         for override_label, chain_entry in zip(
             _stage_override_model_labels(stage_name, override),
             iter_stage_chain(override),
