@@ -1094,20 +1094,6 @@ def test_active_worktree_removed_when_merged_branch_is_cleaned_up(deps, git_svc)
     assert "pycastle/issue-1" in deleted
 
 
-def test_merged_durable_issue_branch_routes_cleanup_through_post_success_helper(
-    deps, git_svc
-):
-    worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
-    git_svc.list_worktrees.return_value = [worktree_path]
-
-    with patch(
-        "pycastle.iteration.merge.cleanup_durable_issue_worktree_after_success"
-    ) as cleanup:
-        _run([{"number": 1, "title": "Fix A"}], deps)
-
-    cleanup.assert_called_once_with(git_svc, deps.repo_root, worktree_path)
-
-
 def test_worktree_unregistered_before_branch_deletion(deps, git_svc):
     worktree_path = worktree_identity("pycastle/issue-1", deps.repo_root).path
     git_svc.list_worktrees.return_value = [worktree_path]
@@ -2831,29 +2817,6 @@ def test_recover_conflicts_propagates_unexpected_exception_from_merge_block(
                 deps=deps,
             )
         )
-
-
-def test_merge_worktree_cleanup_propagates_non_git_os_error(
-    tmp_path, git_svc, github_svc, agent_runner
-):
-    """cleanup_durable_issue_worktree_after_success in _teardown_one is narrowed to
-    (GitCommandError, OSError); a non-OSError/GitCommandError propagates to the outer
-    asyncio.gather handler, which prints a 'teardown of … failed' warning rather than
-    the inner 'could not remove worktree for …' warning."""
-    issues = [{"number": 1, "title": "Issue"}]
-    worktree_path = worktree_identity("pycastle/issue-1", tmp_path).path
-    git_svc.list_worktrees.return_value = [worktree_path]
-
-    deps = _make_deps(tmp_path, agent_runner, git_svc=git_svc, github_svc=github_svc)
-
-    with patch(
-        "pycastle.iteration.merge.cleanup_durable_issue_worktree_after_success",
-        side_effect=RuntimeError("unexpected cleanup failure"),
-    ):
-        _run(issues, deps)
-
-    prints = [(c[1], str(c[2])) for c in deps.status_display.calls if c[0] == "print"]
-    assert any("teardown of" in msg and "pycastle/issue-1" in msg for _, msg in prints)
 
 
 # ── Operating-branch checkout gate: ref advance during merge ──────────────────

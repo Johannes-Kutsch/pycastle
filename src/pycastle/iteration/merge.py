@@ -11,7 +11,6 @@ from pycastle.display.rows import StatusRowConfig, status_row
 from pycastle.display.status_display import StatusDisplay
 from pycastle.infrastructure.worktree import (
     BranchWorktreeLifecycle,
-    cleanup_durable_issue_worktree_after_success,
     managed_worktree,
     worktree_identity,
 )
@@ -20,13 +19,14 @@ from pycastle.iteration._merge_reporting import (
     MergeProgressReporter,
     build_merge_close_message,
 )
+from pycastle.iteration._merged_branch_teardown import teardown_merged_branch
 from pycastle.iteration._utils import (
     _advance_branch_ref_through_gate,
     _wait_for_operating_branch_release,
 )
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
-from pycastle.services import GitCommandError, GithubService, GitService
+from pycastle.services import GithubService, GitService
 
 _MERGE_BATCH_SANDBOX_BRANCH = "pycastle/merge-batch-sandbox"
 
@@ -122,50 +122,21 @@ async def _delete_merged_branches(
 ) -> list[str]:
     total = len(branches)
     done = 0
-    slots: list[str | None] = [None] * total
-    registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
 
-    async def _teardown_one(branch: str, idx: int) -> None:
-        nonlocal done
-        try:
-            if not deps.git_svc.is_ancestor(
-                branch, deps.repo_root, deps.cfg.operating_branch
-            ):
-                return
-            worktree_path_ = worktree_identity(branch, deps.repo_root).path
-            if worktree_path_ in registered_worktrees or worktree_path_.exists():
-                try:
-                    await asyncio.to_thread(
-                        cleanup_durable_issue_worktree_after_success,
-                        deps.git_svc,
-                        deps.repo_root,
-                        worktree_path_,
-                    )
-                except (GitCommandError, OSError) as e:
-                    deps.status_display.print(
-                        "Merge",
-                        f"Warning: could not remove worktree for {branch!r}: {e}",
-                        "warning",
-                    )
-
-            try:
-                await asyncio.to_thread(
-                    deps.git_svc.delete_branch, branch, deps.repo_root
-                )
-                slots[idx] = branch
-            except GitCommandError as e:
-                deps.status_display.print(
-                    "Merge",
-                    f"Warning: could not delete branch {branch!r}: {e}",
-                    "warning",
-                )
-        finally:
+    def _make_progress_adapter() -> Callable[[], None]:
+        def _adapter() -> None:
+            nonlocal done
             done += 1
             if on_progress is not None:
                 on_progress(done, total)
 
+        return _adapter
+
     results = await asyncio.gather(
-        *[_teardown_one(b, i) for i, b in enumerate(branches)],
+        *[
+            teardown_merged_branch(b, deps, on_progress=_make_progress_adapter())  # type: ignore[arg-type]
+            for b in branches
+        ],
         return_exceptions=True,
     )
     for branch, r in zip(branches, results, strict=True):
@@ -175,7 +146,7 @@ async def _delete_merged_branches(
                 f"Warning: teardown of {branch!r} failed: {r}",
                 "warning",
             )
-    return [s for s in slots if s is not None]
+    return [r for r in results if isinstance(r, str)]
 
 
 async def _close_issues_parallel(
