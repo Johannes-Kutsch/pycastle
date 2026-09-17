@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Literal, Protocol
 
+from pycastle import stage_registry
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.infrastructure.worktree import issue_branch
 from pycastle.issue_readiness import require_ready_slice_outcome_for_issue
@@ -221,11 +222,14 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
         ),
     )
 
+    role_override = stage_registry.override_for_role(deps.cfg, role)
+
     if skip_reason is not None:
         run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
             mount_path=mount_path,
             role=role,
             deps=deps,
+            service_name=role_override.service,
         )
         prompt_scope_args = build_per_issue_scope_args(
             issue,
@@ -243,9 +247,9 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
             work_body=work_body,
             prompt_template=prompt_template,
             prompt_scope_args=prompt_scope_args,
-            model=_resolved_stage_model(deps.cfg, role),
-            effort=_resolved_stage_effort(deps.cfg, role),
-            service=_resolved_stage_service_name(deps.cfg, role),
+            model=role_override.model,
+            effort=role_override.effort,
+            service=role_override.service,
             mount_setup_failure=None,
             commit_fallback_subject=commit_fallback_subject,
             skip_reason=skip_reason,
@@ -275,9 +279,9 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
                 is_dirty=False,
                 operating_branch=deps.cfg.operating_branch,
             ),
-            model=_resolved_stage_model(deps.cfg, role),
-            effort=_resolved_stage_effort(deps.cfg, role),
-            service=_resolved_stage_service_name(deps.cfg, role),
+            model=role_override.model,
+            effort=role_override.effort,
+            service=role_override.service,
             mount_setup_failure=MountSetupFailure(
                 role_value=mount_decision.role or role.value,
                 rejection_code=mount_decision.rejection_code,
@@ -291,6 +295,7 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
         mount_path=mount_path,
         role=role,
         deps=deps,
+        service_name=role_override.service,
     )
     prompt_scope_args = build_per_issue_scope_args(
         issue,
@@ -308,9 +313,9 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
         work_body=work_body,
         prompt_template=prompt_template,
         prompt_scope_args=prompt_scope_args,
-        model=_resolved_stage_model(deps.cfg, role),
-        effort=_resolved_stage_effort(deps.cfg, role),
-        service=_resolved_stage_service_name(deps.cfg, role),
+        model=role_override.model,
+        effort=role_override.effort,
+        service=role_override.service,
         mount_setup_failure=None,
         commit_fallback_subject=commit_fallback_subject,
     )
@@ -324,38 +329,14 @@ def _role_name(role: AgentRole) -> RoleName:
     raise RuntimeError(f"Unsupported role {role!r} for implement issue planning")
 
 
-def _resolved_stage_service_name(cfg: Config, role: AgentRole) -> str:
-    if role is AgentRole.IMPLEMENTER:
-        return cfg.implement_override.service
-    if role is AgentRole.REVIEWER:
-        return cfg.review_override.service
-    raise RuntimeError(f"Unsupported role {role!r} for implement issue planning")
-
-
-def _resolved_stage_model(cfg: Config, role: AgentRole) -> str:
-    if role is AgentRole.IMPLEMENTER:
-        return cfg.implement_override.model
-    if role is AgentRole.REVIEWER:
-        return cfg.review_override.model
-    raise RuntimeError(f"Unsupported role {role!r} for implement issue planning")
-
-
-def _resolved_stage_effort(cfg: Config, role: AgentRole) -> str:
-    if role is AgentRole.IMPLEMENTER:
-        return cfg.implement_override.effort
-    if role is AgentRole.REVIEWER:
-        return cfg.review_override.effort
-    raise RuntimeError(f"Unsupported role {role!r} for implement issue planning")
-
-
 def _prompt_run_state_for_role(
     *,
     mount_path: Path,
     role: AgentRole,
     deps: ImplementIssuePlanDeps,
+    service_name: str,
 ) -> tuple[RunKind, bool]:
     role_session = RoleSession(mount_path, role)
-    service_name = _resolved_stage_service_name(deps.cfg, role)
     has_resumable_state = role_session.is_resumable()
     service = (
         deps.service_registry[service_name]
