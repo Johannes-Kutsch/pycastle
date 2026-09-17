@@ -123,18 +123,15 @@ async def _delete_merged_branches(
     total = len(branches)
     done = 0
 
-    def _make_progress_adapter() -> Callable[[], None]:
-        def _adapter() -> None:
-            nonlocal done
-            done += 1
-            if on_progress is not None:
-                on_progress(done, total)
-
-        return _adapter
+    def _on_branch_progress() -> None:
+        nonlocal done
+        done += 1
+        if on_progress is not None:
+            on_progress(done, total)
 
     results = await asyncio.gather(
         *[
-            teardown_merged_branch(b, deps, on_progress=_make_progress_adapter())  # type: ignore[arg-type]
+            teardown_merged_branch(b, deps, on_progress=_on_branch_progress)  # type: ignore[arg-type]
             for b in branches
         ],
         return_exceptions=True,
