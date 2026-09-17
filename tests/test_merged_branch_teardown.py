@@ -46,17 +46,33 @@ def test_not_ancestor_does_not_delete_branch(tmp_path):
 
 def test_unregistered_worktree_skips_teardown_and_deletes_branch(tmp_path):
     deps = _make_deps(tmp_path)
-    deps.git_svc.list_worktrees.side_effect = None
-    deps.git_svc.list_worktrees.return_value = []
+
+    result = _run("pycastle/issue-1", deps)
+
+    deps.git_svc.remove_worktree.assert_not_called()
+    deps.git_svc.delete_branch.assert_called_once()
+    assert result == "pycastle/issue-1"
+
+
+# ── Worktree exists on disk but not registered ────────────────────────────────
+
+
+def test_disk_only_worktree_triggers_cleanup(tmp_path):
+    from pycastle.infrastructure.worktree import worktree_identity
+
+    branch = "pycastle/issue-1"
+    worktree_path = worktree_identity(branch, tmp_path).path
+    worktree_path.mkdir(parents=True)
+
+    deps = _make_deps(tmp_path)
 
     with patch(
         "pycastle.iteration._merged_branch_teardown.cleanup_durable_issue_worktree_after_success"
     ) as mock_cleanup:
-        result = _run("pycastle/issue-1", deps)
+        result = _run(branch, deps)
 
-    mock_cleanup.assert_not_called()
-    deps.git_svc.delete_branch.assert_called_once()
-    assert result == "pycastle/issue-1"
+    mock_cleanup.assert_called_once()
+    assert result == branch
 
 
 # ── Worktree registered ───────────────────────────────────────────────────────
@@ -91,15 +107,10 @@ def test_worktree_git_error_emits_warning_and_continues_to_branch_delete(tmp_pat
     worktree_path = worktree_identity(branch, tmp_path).path
 
     deps = _make_deps(tmp_path)
-    deps.git_svc.list_worktrees.side_effect = None
     deps.git_svc.list_worktrees.return_value = [worktree_path]
+    deps.git_svc.remove_worktree.side_effect = GitCommandError("remove failed")
 
-    err = GitCommandError("remove failed")
-    with patch(
-        "pycastle.iteration._merged_branch_teardown.cleanup_durable_issue_worktree_after_success",
-        side_effect=err,
-    ):
-        result = _run(branch, deps)
+    result = _run(branch, deps)
 
     warning_calls = [
         c
@@ -122,14 +133,10 @@ def test_worktree_os_error_emits_warning_and_continues_to_branch_delete(tmp_path
     worktree_path = worktree_identity(branch, tmp_path).path
 
     deps = _make_deps(tmp_path)
-    deps.git_svc.list_worktrees.side_effect = None
     deps.git_svc.list_worktrees.return_value = [worktree_path]
+    deps.git_svc.remove_worktree.side_effect = OSError("perm denied")
 
-    with patch(
-        "pycastle.iteration._merged_branch_teardown.cleanup_durable_issue_worktree_after_success",
-        side_effect=OSError("perm denied"),
-    ):
-        result = _run(branch, deps)
+    result = _run(branch, deps)
 
     warning_calls = [
         c
