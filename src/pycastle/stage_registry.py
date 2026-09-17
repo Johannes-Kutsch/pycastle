@@ -48,6 +48,13 @@ def stage_key_for_role(role: AgentRole) -> str | None:
     return stage.stage_key if stage is not None else None
 
 
+def override_for_role(cfg: Config, role: AgentRole) -> StageOverride:
+    stage = _ROLE_TO_STAGE.get(role)
+    if stage is None:
+        raise KeyError(f"No stage registered for role {role!r}")
+    return getattr(cfg, stage.config_attr)
+
+
 def override_for_stage_key(cfg: Config, stage_key: str) -> StageOverride | None:
     stage = _KEY_TO_STAGE.get(stage_key)
     if stage is None:
@@ -64,6 +71,7 @@ __all__ = [
     "STAGES",
     "Stage",
     "iter_stage_overrides",
+    "override_for_role",
     "override_for_stage_key",
     "stage_for_role",
     "stage_key_for_role",

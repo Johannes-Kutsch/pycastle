@@ -10,6 +10,7 @@ from pycastle.stage_registry import (
     STAGES,
     Stage,
     iter_stage_overrides,
+    override_for_role,
     override_for_stage_key,
     stage_for_role,
     stage_key_for_role,
@@ -163,3 +164,31 @@ def test_iter_stage_overrides_yields_same_objects_as_config_attrs() -> None:
     pairs = list(iter_stage_overrides(cfg))
     for key, override in pairs:
         assert override is getattr(cfg, f"{key}_override")
+
+
+# --- override_for_role ---
+
+
+@pytest.mark.parametrize(
+    ("role", "expected_attr"),
+    [
+        (AgentRole.PLANNER, "plan_override"),
+        (AgentRole.IMPLEMENTER, "implement_override"),
+        (AgentRole.REVIEWER, "review_override"),
+        (AgentRole.MERGER, "merge_override"),
+        (AgentRole.IMPROVE, "improve_override"),
+        (AgentRole.PREFLIGHT_ISSUE, "preflight_issue_override"),
+        (AgentRole.FAILURE_REPORT, "preflight_issue_override"),
+    ],
+)
+def test_override_for_role_returns_config_attr(
+    role: AgentRole, expected_attr: str
+) -> None:
+    cfg = Config()
+    assert override_for_role(cfg, role) is getattr(cfg, expected_attr)
+
+
+def test_override_for_role_raises_for_unstaged_role() -> None:
+    cfg = Config()
+    with pytest.raises(KeyError):
+        override_for_role(cfg, AgentRole.DIVERGENCE_RESOLVER)
