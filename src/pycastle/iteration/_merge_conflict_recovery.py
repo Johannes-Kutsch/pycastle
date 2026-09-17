@@ -23,11 +23,8 @@ from pycastle.errors import (
     WorktreeError,
     WorktreeTimeoutError,
 )
-from pycastle.infrastructure.worktree import (
-    teardown_worktree,
-    worktree_identity,
-)
 from pycastle.iteration._merge_reporting import MergeProgressReporter
+from pycastle.iteration._merged_branch_teardown import teardown_merged_branch
 from pycastle.iteration._utils import _advance_branch_ref_through_gate
 from pycastle.iteration.implement import branch_for
 from pycastle.iteration.sandbox_role_session import merger_sandbox_entry
@@ -100,33 +97,12 @@ async def _delete_conflict_branch(
     progress: MergeProgressReporter,
     deps: _ConflictRecoveryDeps,
 ) -> str | None:
-    if not deps.git_svc.is_ancestor(branch, deps.repo_root, deps.cfg.operating_branch):
-        return None
-    registered_worktrees = deps.git_svc.list_worktrees(deps.repo_root)
-    worktree_path = worktree_identity(branch, deps.repo_root).path
     progress.update_remove_done(0)
-    try:
-        if worktree_path in registered_worktrees:
-            try:
-                teardown_worktree(deps.git_svc, deps.repo_root, worktree_path)
-            except (GitCommandError, OSError) as exc:
-                deps.status_display.print(
-                    "Merge",
-                    f"Warning: could not remove worktree for {branch!r}: {exc}",
-                    "warning",
-                )
-        deps.git_svc.delete_branch(branch, deps.repo_root)
-    except GitCommandError as exc:
-        deps.status_display.print(
-            "Merge",
-            f"Warning: could not delete branch {branch!r}: {exc}",
-            "warning",
-        )
-        return None
-    finally:
-        progress.update_remove_done(1)
-        progress.update_remove_done(None)
-    return branch
+    return await teardown_merged_branch(
+        branch,
+        deps,  # type: ignore[arg-type]
+        on_progress=lambda: progress.update_remove_done(None),
+    )
 
 
 def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> int | None:

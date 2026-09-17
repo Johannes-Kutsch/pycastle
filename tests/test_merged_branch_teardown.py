@@ -1,6 +1,8 @@
 import asyncio
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pycastle.iteration._merged_branch_teardown import teardown_merged_branch
 from pycastle.services import GitCommandError
 from tests.support import RecordingStatusDisplay, functional_git_svc
@@ -147,6 +149,23 @@ def test_worktree_os_error_emits_warning_and_continues_to_branch_delete(tmp_path
     assert warning_calls[0][3] == "warning"
     deps.git_svc.delete_branch.assert_called_once()
     assert result == branch
+
+
+# ── Worktree teardown failure — unexpected error ──────────────────────────────
+
+
+def test_unexpected_worktree_error_propagates(tmp_path):
+    from pycastle.infrastructure.worktree import worktree_identity
+
+    branch = "pycastle/issue-1"
+    worktree_path = worktree_identity(branch, tmp_path).path
+
+    deps = _make_deps(tmp_path)
+    deps.git_svc.list_worktrees.return_value = [worktree_path]
+    deps.git_svc.remove_worktree.side_effect = ValueError("unexpected failure")
+
+    with pytest.raises(ValueError, match="unexpected failure"):
+        _run(branch, deps)
 
 
 # ── Branch delete failure ─────────────────────────────────────────────────────

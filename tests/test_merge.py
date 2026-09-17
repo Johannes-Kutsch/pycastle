@@ -2720,46 +2720,6 @@ def _recover_progress(status_display):
     )
 
 
-def test_recover_conflicts_propagates_non_git_os_error_from_conflict_worktree_teardown(
-    tmp_path, github_svc
-):
-    """teardown_worktree in _delete_conflict_branch is narrowed to (GitCommandError, OSError);
-    a non-OSError, non-GitCommandError propagates from recover_conflicts."""
-    git_svc = functional_git_svc(is_ancestor=True)
-    git_svc.is_working_tree_clean.return_value = True
-    git_svc.get_branch_sha.return_value = "abc123"
-    git_svc.start_merge.return_value = (
-        True  # already-merged fast path — no agent needed
-    )
-
-    issue_worktree = worktree_identity("pycastle/issue-1", tmp_path).path
-
-    def _list_wts(repo):
-        return [issue_worktree]
-
-    git_svc.list_worktrees.side_effect = _list_wts
-
-    deps = _make_deps(
-        tmp_path, FakeAgentRunner([]), git_svc=git_svc, github_svc=github_svc
-    )
-    progress = _recover_progress(deps.status_display)
-
-    with (
-        patch(
-            "pycastle.iteration._merge_conflict_recovery.teardown_worktree",
-            side_effect=ValueError("unexpected teardown failure"),
-        ),
-        pytest.raises(ValueError, match="unexpected teardown failure"),
-    ):
-        asyncio.run(
-            recover_conflicts(
-                conflict_issues=[{"number": 1, "title": "Conflict"}],
-                progress=progress,
-                deps=deps,
-            )
-        )
-
-
 def test_recover_conflicts_propagates_non_github_service_error_from_close_issue(
     tmp_path, github_svc
 ):
