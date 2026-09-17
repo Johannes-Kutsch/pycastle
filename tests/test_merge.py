@@ -2734,7 +2734,6 @@ def _recover_progress(status_display):
     )
 
 
-
 def test_recover_conflicts_propagates_non_github_service_error_from_close_issue(
     tmp_path, github_svc
 ):
