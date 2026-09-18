@@ -56,21 +56,6 @@ class Stop:
 CandidateOutcome = Advance | Stop
 
 
-def _prev_spec(
-    store: ImproveRoleSessionStore, candidate_idx: int
-) -> tuple[int, int] | None:
-    if candidate_idx == 0:
-        return None
-    prev_record = store.read_candidate_record(candidate_idx - 1)
-    if (
-        prev_record is not None
-        and prev_record.spec_number is not None
-        and prev_record.spec_database_id is not None
-    ):
-        return (prev_record.spec_number, prev_record.spec_database_id)
-    return None
-
-
 def _cap_reached(deps: _LifecycleDeps, completed_count: int) -> bool:
     return (
         deps.cfg.improve_max is not None
@@ -88,7 +73,7 @@ async def _file_improve_drafts(
 ) -> bool:
     draft_dir = role_session_dir / _DRAFTS_SUBDIR
     store = ImproveRoleSessionStore(role_session_dir)
-    prev_spec = _prev_spec(store, candidate_idx)
+    prev_spec = store.prev_filed_spec(candidate_idx)
 
     candidate_list = store.read_candidate_list()
     scan_set_size = len(candidate_list.candidates) if candidate_list is not None else 0
@@ -178,15 +163,10 @@ def _wind_down_partial_candidates(
     cfg: Config,
 ) -> None:
     store = ImproveRoleSessionStore(role_session_dir)
-    candidate_list = store.read_candidate_list()
-    if candidate_list is None:
-        return
-    candidate_count = len(candidate_list.candidates)
-    cursor = store.read_cursor() or 0
 
-    for idx in range(cursor, candidate_count):
-        record = store.read_candidate_record(idx)
-        if record is None or record.spec_number is None or record.labels_applied:
+    for pending in store.pending_candidates(0):
+        record = pending.record
+        if record is None or record.spec_number is None:
             continue
         if not record.filed_tickets:
             port.close_issue(record.spec_number)
@@ -198,9 +178,9 @@ def _wind_down_partial_candidates(
                     drafts,
                     port=port,
                     store=store,
-                    candidate_idx=idx,
+                    candidate_idx=pending.index,
                     state_label=cfg.issue_label,
-                    prev_spec=_prev_spec(store, idx),
+                    prev_spec=store.prev_filed_spec(pending.index),
                 )
             except DraftSetValidationError:
                 pass
