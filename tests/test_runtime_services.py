@@ -3,8 +3,10 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from agent_runtime import ProviderAuth
 
 from pycastle.agents.output_protocol import AgentRole
+from pycastle.errors import UsageLimitError
 from pycastle.runtime_session import ProviderSessionStateRequest
 from pycastle.services.runtime_services import (
     ClaudeService,
@@ -495,3 +497,78 @@ def test_opencode_service_with_pool_model_restriction_hides_model() -> None:
     svc.mark_model_restricted("deepseek-v4-pro")
     assert svc.is_available(model="deepseek-v4-pro", now=_NOW) is False
     assert svc.is_available(model="deepseek-v4-flash", now=_NOW) is True
+
+
+# --- provider_auth ---
+
+
+def test_claude_service_provider_auth_returns_none_when_no_pool() -> None:
+    assert ClaudeService().provider_auth() is None
+
+
+def test_claude_service_provider_auth_returns_same_token_as_build_env() -> None:
+    svc = ClaudeService(accounts=[("alice", "tok-1")])
+    auth = svc.provider_auth()
+    env = svc.build_env()
+    assert isinstance(auth, ProviderAuth)
+    assert auth.claude_code_oauth_token == env["CLAUDE_CODE_OAUTH_TOKEN"]
+
+
+def test_claude_service_provider_auth_raises_usage_limit_error_when_pool_temporarily_exhausted() -> (
+    None
+):
+    svc = ClaudeService(accounts=[("alice", "tok-1")])
+    svc.build_env()
+    svc.mark_exhausted(_FAR, _now=_NOW)
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.provider_auth()
+    assert not exc_info.value.is_permanent
+    assert exc_info.value.reset_time is not None
+
+
+def test_claude_service_provider_auth_raises_usage_limit_error_when_pool_permanently_exhausted() -> (
+    None
+):
+    svc = ClaudeService(accounts=[("alice", "tok-1")])
+    svc.build_env()
+    svc.mark_permanently_exhausted()
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.provider_auth()
+    assert exc_info.value.is_permanent
+
+
+def test_codex_service_provider_auth_returns_none() -> None:
+    assert CodexService().provider_auth() is None
+
+
+def test_opencode_service_provider_auth_returns_none_when_no_pool() -> None:
+    assert OpenCodeService().provider_auth() is None
+
+
+def test_opencode_service_provider_auth_returns_same_key_as_build_env() -> None:
+    svc = OpenCodeService(accounts=[("alice", "tok-1")])
+    auth = svc.provider_auth()
+    env = svc.build_env()
+    assert isinstance(auth, ProviderAuth)
+    assert auth.opencode_api_key == env["OPENCODE_GO_API_KEY"]
+
+
+def test_opencode_service_provider_auth_raises_usage_limit_error_when_pool_temporarily_exhausted() -> (
+    None
+):
+    svc = OpenCodeService(accounts=[("alice", "tok-1")])
+    svc.mark_exhausted(_FAR, _now=_NOW)
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.provider_auth()
+    assert not exc_info.value.is_permanent
+    assert exc_info.value.reset_time is not None
+
+
+def test_opencode_service_provider_auth_raises_usage_limit_error_when_pool_permanently_exhausted() -> (
+    None
+):
+    svc = OpenCodeService(accounts=[("alice", "tok-1")])
+    svc.mark_permanently_exhausted()
+    with pytest.raises(UsageLimitError) as exc_info:
+        svc.provider_auth()
+    assert exc_info.value.is_permanent
