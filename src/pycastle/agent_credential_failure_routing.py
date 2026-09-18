@@ -38,6 +38,7 @@ _CREDENTIAL_AFTER_LABEL_RE = re.compile(
     r"(?i)\b(access token|refresh token|api key|token|secret|password)\s+([A-Za-z0-9._:-]{8,})"
 )
 _SK_STYLE_TOKEN_RE = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
+_DEFAULT_REMEDIATION = "Repair the local agent credentials/account access."
 
 
 @dataclasses.dataclass(frozen=True)
@@ -96,10 +97,10 @@ def _is_opencode_invalid_api_key_signature(text: str) -> bool:
     return "invalid api key" in lowered or "invalid_api_key" in lowered
 
 
-# One registry consulted by both _interpret_agent_credential_failure and
-# _select_remediation. Each entry encodes the predicate, which services it
-# applies to, which classifications trigger it, and the remediation produced.
-# Entries are checked in order; the first match wins.
+# One registry consulted by _interpret_agent_credential_failure. Each entry
+# encodes the predicate, which services it applies to, which classifications
+# trigger it, and the remediation produced. Entries are checked in order; the
+# first match wins.
 #
 # The asymmetry under operator_actionable_agent_credential_failure is preserved
 # as data: claude and opencode entries carry predicate=None (unconditional), while
@@ -254,24 +255,6 @@ def _build_local_fallback_status_message(
     )
 
 
-def _select_remediation(
-    *,
-    service_name: str,
-    classification: str | None = None,
-    raw: str,
-    rendered_observations: tuple[tuple[str, str], ...],
-) -> str:
-    haystacks = (*tuple(text for _, text in rendered_observations), raw)
-    for entry in _SIGNATURE_REGISTRY:
-        if service_name not in entry.service_names:
-            continue
-        if classification not in entry.classifications:
-            continue
-        if entry.predicate is None or any(entry.predicate(h) for h in haystacks):
-            return entry.remediation
-    return "Repair the local agent credentials/account access."
-
-
 def _interpret_agent_credential_failure(
     *,
     service_name: str,
@@ -332,12 +315,7 @@ def route_agent_credential_failure(
             return None
         fallback_rendered = _render_observations(raw, raw_observations)
         interpretation = _CredentialFailureInterpretation(
-            remediation=_select_remediation(
-                service_name=service_name,
-                classification=getattr(provider_failure, "classification", None),
-                raw=raw,
-                rendered_observations=fallback_rendered,
-            ),
+            remediation=_DEFAULT_REMEDIATION,
             rendered_observations=fallback_rendered,
         )
 
