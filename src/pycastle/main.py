@@ -21,21 +21,9 @@ from pycastle.run_startup_preparation import (
     RunStartupImproveModeFlagFacts,
     prepare_run_startup,
 )
-from pycastle.services.service_registry import ServiceRegistry
-from pycastle.stage_priority_chain import (
-    chain_entries,
-    render_chain_label,
-    validation_labels,
-)
 
 
 class _AgentRuntimeAdapter:
-    def __init__(self) -> None:
-        self.ServiceRegistry = ServiceRegistry
-        self.chain_entries = chain_entries
-        self.render_chain_label = render_chain_label
-        self.validation_labels = validation_labels
-
     def __getattr__(self, name: str) -> Any:  # noqa: ANN401  # dynamic attribute lookup on adapter; type depends on the attribute name
         if name == "run":
             return pycastle_orchestration.run
