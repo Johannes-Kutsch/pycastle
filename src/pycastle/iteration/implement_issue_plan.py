@@ -204,6 +204,10 @@ def plan_issue_execution_from_worktree(
 
 
 def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
+    return _step_plan_recipe(ctx)
+
+
+def _step_plan_recipe(ctx: _StepContext) -> IssueRoleStepPlan:
     issue = ctx.issue
     deps = ctx.deps
     role = ctx.role
@@ -213,90 +217,42 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
     mount_path = ctx.mount_path
     skip_reason = ctx.skip_reason
     branch = ctx.branch
-    role_name = _role_name(role)
-    commit_fallback_subject = CommitFallbackSubject(
-        commit_prefix=f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} #{issue['number']} - ",
-        fallback_subject=(
-            f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} "
-            f"#{issue['number']} - {issue['title']}"
-        ),
-    )
 
+    role_name = _role_name(role)
+    role_prefix = "Implement" if role is AgentRole.IMPLEMENTER else "Review"
+    commit_fallback_subject = CommitFallbackSubject(
+        commit_prefix=f"{role_prefix} #{issue['number']} - ",
+        fallback_subject=f"{role_prefix} #{issue['number']} - {issue['title']}",
+    )
     role_override = stage_registry.override_for_role(deps.cfg, role)
 
-    if skip_reason is not None:
+    mount_decision = decide_managed_worktree_mount(
+        repo_root=deps.repo_root,
+        mount_path=mount_path,
+        caller=f"{role_prefix} Agent #{issue['number']}",
+        role=role.value,
+    )
+
+    mount_setup_failure: MountSetupFailure | None = None
+    if isinstance(
+        mount_decision, ManagedWorktreeMountRejected
+    ) and should_reject_managed_worktree_mount(mount_decision):
+        mount_setup_failure = MountSetupFailure(
+            role_value=mount_decision.role or role.value,
+            rejection_code=mount_decision.rejection_code,
+            rejection=mount_decision,
+            error_message=describe_managed_worktree_mount_rejection(mount_decision),
+        )
+        run_kind = RunKind.FRESH
+        interrupted_work_from_dirty_tree = False
+    else:
         run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
             mount_path=mount_path,
             role=role,
             deps=deps,
             service_name=role_override.service,
         )
-        prompt_scope_args = build_per_issue_scope_args(
-            issue,
-            branch=branch,
-            run_kind=run_kind,
-            is_dirty=interrupted_work_from_dirty_tree,
-            operating_branch=deps.cfg.operating_branch,
-        )
-        return IssueRoleStepPlan(
-            outcome="skip",
-            role_name=role_name,
-            role=role,
-            stage=stage,
-            run_kind=run_kind,
-            work_body=work_body,
-            prompt_template=prompt_template,
-            prompt_scope_args=prompt_scope_args,
-            model=role_override.model,
-            effort=role_override.effort,
-            service=role_override.service,
-            mount_setup_failure=None,
-            commit_fallback_subject=commit_fallback_subject,
-            skip_reason=skip_reason,
-        )
 
-    mount_decision = decide_managed_worktree_mount(
-        repo_root=deps.repo_root,
-        mount_path=mount_path,
-        caller=f"{'Implement' if role is AgentRole.IMPLEMENTER else 'Review'} Agent #{issue['number']}",
-        role=role.value,
-    )
-    if isinstance(mount_decision, ManagedWorktreeMountRejected) and (
-        should_reject_managed_worktree_mount(mount_decision)
-    ):
-        return IssueRoleStepPlan(
-            outcome="setup_failure",
-            role_name=role_name,
-            role=role,
-            stage=stage,
-            run_kind=RunKind.FRESH,
-            work_body=work_body,
-            prompt_template=prompt_template,
-            prompt_scope_args=build_per_issue_scope_args(
-                issue,
-                branch=branch,
-                run_kind=RunKind.FRESH,
-                is_dirty=False,
-                operating_branch=deps.cfg.operating_branch,
-            ),
-            model=role_override.model,
-            effort=role_override.effort,
-            service=role_override.service,
-            mount_setup_failure=MountSetupFailure(
-                role_value=mount_decision.role or role.value,
-                rejection_code=mount_decision.rejection_code,
-                rejection=mount_decision,
-                error_message=describe_managed_worktree_mount_rejection(mount_decision),
-            ),
-            commit_fallback_subject=commit_fallback_subject,
-        )
-
-    run_kind, interrupted_work_from_dirty_tree = _prompt_run_state_for_role(
-        mount_path=mount_path,
-        role=role,
-        deps=deps,
-        service_name=role_override.service,
-    )
     prompt_scope_args = build_per_issue_scope_args(
         issue,
         branch=branch,
@@ -304,8 +260,16 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
         is_dirty=interrupted_work_from_dirty_tree,
         operating_branch=deps.cfg.operating_branch,
     )
+
+    if mount_setup_failure is not None:
+        outcome: StepOutcome = "setup_failure"
+    elif skip_reason is not None:
+        outcome = "skip"
+    else:
+        outcome = "run"
+
     return IssueRoleStepPlan(
-        outcome="run",
+        outcome=outcome,
         role_name=role_name,
         role=role,
         stage=stage,
@@ -316,8 +280,9 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
         model=role_override.model,
         effort=role_override.effort,
         service=role_override.service,
-        mount_setup_failure=None,
+        mount_setup_failure=mount_setup_failure,
         commit_fallback_subject=commit_fallback_subject,
+        skip_reason=skip_reason,
     )
 
 
