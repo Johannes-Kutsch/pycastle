@@ -680,7 +680,7 @@ def _codex_provider_session_verdict(
             provider_session_id=request.preferred_provider_session_id,
             persist_provider_session_id=False,
             exact_transcript_match=False,
-            allow_protocol_reprompt=False,
+            allow_protocol_reprompt=True,
         )
 
     saved_provider_session_id = _resolved_provider_session_id(
@@ -702,7 +702,7 @@ def _codex_provider_session_verdict(
             provider_session_id=saved_provider_session_id,
             persist_provider_session_id=False,
             exact_transcript_match=exact_transcript_match,
-            allow_protocol_reprompt=False,
+            allow_protocol_reprompt=True,
         )
 
     if not request.has_resumable_provider_state:
@@ -752,7 +752,7 @@ def _codex_provider_session_verdict(
         provider_session_id=provider_session_id,
         persist_provider_session_id=persist_provider_session_id,
         exact_transcript_match=exact_transcript_match,
-        allow_protocol_reprompt=False,
+        allow_protocol_reprompt=True,
     )
 
 

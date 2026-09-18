@@ -199,6 +199,29 @@ def test_codex_provider_session_state_returns_resume_decision_for_saved_sidecar(
     assert action.destination == state_dir / "auth.json"
 
 
+def test_codex_provider_session_state_resume_allows_protocol_reprompt(
+    tmp_path: Path,
+) -> None:
+    service = CodexService()
+    role_session = RoleSession(tmp_path, AgentRole.IMPLEMENTER)
+    state_dir = tmp_path / ".pycastle-session" / "implementer" / "codex"
+    ServiceSessionStore(role_session.path).save_service_session_id(
+        "codex", "thread-saved"
+    )
+
+    decision = service.provider_session_state(
+        ProviderSessionStateRequest(
+            role_session=store_for_role_session(role_session),
+            provider_state_dir=state_dir,
+            has_resumable_provider_state=True,
+            state_dir_relpath=".pycastle-session/implementer/codex/",
+        )
+    )
+
+    assert decision.run_kind is RunKind.RESUME
+    assert decision.allow_protocol_reprompt is True
+
+
 def test_codex_provider_session_state_recovers_unique_rollout_and_persists_sidecar(
     tmp_path: Path,
 ) -> None:
