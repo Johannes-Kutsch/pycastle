@@ -156,32 +156,8 @@ def iter_stage_chain(override: StageOverride) -> Iterator[StageOverride]:
         node = node.fallback
 
 
-def chain_entries(override: StageOverride) -> tuple[ChainEntry, ...]:
-    return StageOverrideChain(override=override).entries
-
-
-def validation_labels(stage_name: str, override: StageOverride) -> tuple[str, ...]:
-    return StageOverrideChain(
-        override=override,
-        stage_name=stage_name,
-    ).validation_labels
-
-
-def render_chain_label(override: StageOverride) -> str:
-    return StageOverrideChain(override=override).rendered_chain_label
-
-
 def referenced_service_names(override: StageOverride) -> tuple[str, ...]:
     return StageOverrideChain(override=override).referenced_service_names
-
-
-def configured_candidate_chain(
-    override: StageOverride, *, configured_service_names: tuple[str, ...]
-) -> ConfiguredCandidateChain:
-    return StageOverrideChain(
-        override=override,
-        configured_service_names=configured_service_names,
-    ).configured_candidates
 
 
 def _build_chain(nodes: tuple[StageOverride, ...]) -> StageOverride | None:
@@ -240,20 +216,6 @@ def _select_configured_candidate_chain(
     )
 
 
-def select_configured_candidate_chain(
-    override: StageOverride,
-    *,
-    configured_service_names: tuple[str, ...],
-    available_service_names: tuple[str, ...],
-) -> ConfiguredCandidateSelection:
-    chain = StageOverrideChain(
-        override=override,
-        configured_service_names=configured_service_names,
-        available_service_names=available_service_names,
-    )
-    return chain.configured_candidate_selection
-
-
 def _chain_nodes(override: StageOverride) -> tuple[StageOverride, ...]:
     return tuple(iter_stage_chain(override))
 
@@ -284,11 +246,6 @@ __all__ = [
     "ConfiguredCandidateSelection",
     "StageOverride",
     "StageOverrideChain",
-    "chain_entries",
-    "configured_candidate_chain",
     "iter_stage_chain",
     "referenced_service_names",
-    "render_chain_label",
-    "select_configured_candidate_chain",
-    "validation_labels",
 ]
