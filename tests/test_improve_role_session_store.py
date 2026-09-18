@@ -342,3 +342,185 @@ def test_mark_spec_completion_creates_parent_dirs(
 ) -> None:
     store.mark_spec_completion(9)
     assert (store_dir / "candidates" / "9").is_dir()
+
+
+# ── 9. pending_candidates iterator ───────────────────────────────────────────
+
+
+def test_pending_candidates_cursor_zero_no_records_yields_all(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_list(
+        CandidateList(
+            candidates=(
+                CandidateItem(rank=1, title="A"),
+                CandidateItem(rank=2, title="B"),
+                CandidateItem(rank=3, title="C"),
+            )
+        )
+    )
+    results = list(store.pending_candidates(0))
+    assert [r.index for r in results] == [0, 1, 2]
+    assert all(r.record is None for r in results)
+
+
+def test_pending_candidates_cursor_at_or_beyond_length_yields_nothing(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_list(
+        CandidateList(
+            candidates=(
+                CandidateItem(rank=1, title="A"),
+                CandidateItem(rank=2, title="B"),
+            )
+        )
+    )
+    assert list(store.pending_candidates(2)) == []
+    assert list(store.pending_candidates(5)) == []
+
+
+def test_pending_candidates_cursor_mid_list_yields_from_cursor(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_list(
+        CandidateList(
+            candidates=(
+                CandidateItem(rank=1, title="A"),
+                CandidateItem(rank=2, title="B"),
+                CandidateItem(rank=3, title="C"),
+            )
+        )
+    )
+    results = list(store.pending_candidates(1))
+    assert [r.index for r in results] == [1, 2]
+
+
+def test_pending_candidates_no_candidate_list_yields_nothing(
+    store: ImproveRoleSessionStore,
+) -> None:
+    assert list(store.pending_candidates(0)) == []
+
+
+def test_pending_candidates_empty_candidate_list_yields_nothing(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_list(CandidateList(candidates=()))
+    assert list(store.pending_candidates(0)) == []
+
+
+def test_pending_candidates_skips_labels_applied_true(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_list(
+        CandidateList(
+            candidates=(
+                CandidateItem(rank=1, title="A"),
+                CandidateItem(rank=2, title="B"),
+                CandidateItem(rank=3, title="C"),
+            )
+        )
+    )
+    store.write_candidate_record(
+        1,
+        CandidateRecord(
+            spec_number=None,
+            spec_database_id=None,
+            spec_title="",
+            filed_tickets=(),
+            labels_applied=True,
+        ),
+    )
+    store.write_candidate_record(
+        2,
+        CandidateRecord(
+            spec_number=None,
+            spec_database_id=None,
+            spec_title="",
+            filed_tickets=(),
+            labels_applied=False,
+        ),
+    )
+    results = list(store.pending_candidates(0))
+    assert [r.index for r in results] == [0, 2]
+
+
+def test_pending_candidates_yields_record_when_labels_applied_false(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_list(
+        CandidateList(candidates=(CandidateItem(rank=1, title="A"),))
+    )
+    record = CandidateRecord(
+        spec_number=10,
+        spec_database_id=100,
+        spec_title="Test",
+        filed_tickets=(),
+        labels_applied=False,
+    )
+    store.write_candidate_record(0, record)
+    results = list(store.pending_candidates(0))
+    assert len(results) == 1
+    assert results[0].record == record
+
+
+# ── 10. prev_filed_spec positional lookup ────────────────────────────────────
+
+
+def test_prev_filed_spec_returns_nothing_for_index_zero(
+    store: ImproveRoleSessionStore,
+) -> None:
+    assert store.prev_filed_spec(0) is None
+
+
+def test_prev_filed_spec_returns_nothing_when_no_record_at_prev(
+    store: ImproveRoleSessionStore,
+) -> None:
+    assert store.prev_filed_spec(1) is None
+
+
+def test_prev_filed_spec_returns_nothing_when_spec_number_unset(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_record(
+        0,
+        CandidateRecord(
+            spec_number=None,
+            spec_database_id=5,
+            spec_title="",
+            filed_tickets=(),
+            labels_applied=False,
+        ),
+    )
+    assert store.prev_filed_spec(1) is None
+
+
+def test_prev_filed_spec_returns_nothing_when_spec_database_id_unset(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_record(
+        0,
+        CandidateRecord(
+            spec_number=5,
+            spec_database_id=None,
+            spec_title="",
+            filed_tickets=(),
+            labels_applied=False,
+        ),
+    )
+    assert store.prev_filed_spec(1) is None
+
+
+def test_prev_filed_spec_returns_pair_when_both_fields_set(
+    store: ImproveRoleSessionStore,
+) -> None:
+    store.write_candidate_record(
+        2,
+        CandidateRecord(
+            spec_number=42,
+            spec_database_id=9999,
+            spec_title="Some spec",
+            filed_tickets=(),
+            labels_applied=False,
+        ),
+    )
+    assert store.prev_filed_spec(3) == (42, 9999)

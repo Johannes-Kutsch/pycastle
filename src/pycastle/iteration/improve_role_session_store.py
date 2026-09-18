@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 _CANDIDATE_LIST_FILE = "_candidate_list"
@@ -40,6 +41,13 @@ class CandidateRecord:
     spec_title: str
     filed_tickets: tuple[FiledTicket, ...]
     labels_applied: bool
+
+
+@dataclass(frozen=True)
+class PendingCandidate:
+    index: int
+    item: CandidateItem
+    record: CandidateRecord | None
 
 
 class ImproveRoleSessionStore:
@@ -150,6 +158,30 @@ class ImproveRoleSessionStore:
         (candidate_dir / _CANDIDATE_RECORD_FILE).write_text(
             json.dumps(data), encoding="utf-8"
         )
+
+    def pending_candidates(self, cursor: int) -> Iterator[PendingCandidate]:
+        candidate_list = self.read_candidate_list()
+        if candidate_list is None:
+            return
+        for idx in range(cursor, len(candidate_list.candidates)):
+            record = self.read_candidate_record(idx)
+            if record is not None and record.labels_applied:
+                continue
+            yield PendingCandidate(
+                index=idx,
+                item=candidate_list.candidates[idx],
+                record=record,
+            )
+
+    def prev_filed_spec(self, candidate_idx: int) -> tuple[int, int] | None:
+        if candidate_idx == 0:
+            return None
+        record = self.read_candidate_record(candidate_idx - 1)
+        if record is None:
+            return None
+        if record.spec_number is None or record.spec_database_id is None:
+            return None
+        return (record.spec_number, record.spec_database_id)
 
     def mark_spec_completion(self, idx: int) -> None:
         if self.read_candidate_record(idx) is None:
