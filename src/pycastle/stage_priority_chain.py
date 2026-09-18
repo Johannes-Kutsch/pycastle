@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from pycastle.config.types import StageOverride
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Callable, Iterator, Mapping
 
 
 @dataclass(frozen=True)
@@ -76,7 +76,7 @@ class StageOverrideChain:
         selection = _select_configured_candidate_chain(
             configured_candidates=configured_candidates,
             configured_services=configured_services,
-            available_services=available_services,
+            is_available=lambda node: node.service in available_services,
         )
         object.__setattr__(self, "entries", entries)
         object.__setattr__(
@@ -134,12 +134,13 @@ class StageOverrideChain:
             for node in configured_candidates
             if not availability_by_service_model.get((node.service, node.model), False)
         )
-        selection = _select_configured_candidate_chain_by_service_model(
+        available_service_models = {(n.service, n.model) for n in available_candidates}
+        selection = _select_configured_candidate_chain(
             configured_candidates=configured_candidates,
             configured_services=set(self.configured_service_names),
-            available_service_models={
-                (n.service, n.model) for n in available_candidates
-            },
+            is_available=lambda node: (
+                (node.service, node.model) in available_service_models
+            ),
         )
         return ConfiguredCandidateAvailability(
             available_candidates=available_candidates,
@@ -208,7 +209,7 @@ def _select_configured_candidate_chain(
     *,
     configured_candidates: tuple[StageOverride, ...],
     configured_services: set[str],
-    available_services: set[str],
+    is_available: Callable[[StageOverride], bool],
 ) -> ConfiguredCandidateSelection:
     if not configured_candidates:
         return ConfiguredCandidateSelection(
@@ -216,42 +217,7 @@ def _select_configured_candidate_chain(
             selected_chain=None,
         )
     for index, node in enumerate(configured_candidates):
-        if node.service not in available_services:
-            continue
-        if _remaining_chain_is_fully_configured(node, configured_services):
-            return ConfiguredCandidateSelection(
-                has_configured_candidate=True,
-                selected_chain=node,
-            )
-        return ConfiguredCandidateSelection(
-            has_configured_candidate=True,
-            selected_chain=_build_chain(configured_candidates[index:]),
-        )
-    first_configured = configured_candidates[0]
-    if _remaining_chain_is_fully_configured(first_configured, configured_services):
-        return ConfiguredCandidateSelection(
-            has_configured_candidate=True,
-            selected_chain=first_configured,
-        )
-    return ConfiguredCandidateSelection(
-        has_configured_candidate=True,
-        selected_chain=_build_chain(configured_candidates),
-    )
-
-
-def _select_configured_candidate_chain_by_service_model(
-    *,
-    configured_candidates: tuple[StageOverride, ...],
-    configured_services: set[str],
-    available_service_models: set[tuple[str, str]],
-) -> ConfiguredCandidateSelection:
-    if not configured_candidates:
-        return ConfiguredCandidateSelection(
-            has_configured_candidate=False,
-            selected_chain=None,
-        )
-    for index, node in enumerate(configured_candidates):
-        if (node.service, node.model) not in available_service_models:
+        if not is_available(node):
             continue
         if _remaining_chain_is_fully_configured(node, configured_services):
             return ConfiguredCandidateSelection(
