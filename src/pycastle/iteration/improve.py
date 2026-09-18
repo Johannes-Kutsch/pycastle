@@ -309,7 +309,7 @@ class _CandidatePhaseHandler(_PhaseHandler):
         improve_dispatched_count: int,
         improve_max: int | None,
     ) -> str | None:
-        candidate_idx = int(step.cfg.namespace.split("/")[1])
+        candidate_idx = _parse_candidate_namespace(step.cfg.namespace)
         k = candidate_idx + 1
         if improve_max is not None:
             return f"candidate {k}/{n_candidates} · improvement {improve_dispatched_count + k}/{improve_max}"
@@ -323,7 +323,7 @@ class _CandidatePhaseHandler(_PhaseHandler):
         candidate_count: int,
         last_announced_idx: int,
     ) -> int:
-        candidate_idx = int(step.cfg.namespace.split("/")[1])
+        candidate_idx = _parse_candidate_namespace(step.cfg.namespace)
         if candidate_idx == last_announced_idx:
             return last_announced_idx
         title = step.candidate.title if step.candidate else ""

@@ -217,7 +217,9 @@ async def file_and_decide(
     set was unrepairable; the outer loop continues to the next candidate
     without incrementing the completed count.
     """
-    candidate_idx = int(step_namespace.split("/")[1])
+    from pycastle.iteration.improve import _parse_candidate_namespace  # noqa: PLC0415
+
+    candidate_idx = _parse_candidate_namespace(step_namespace)
     filed = await _file_improve_drafts(
         deps=deps,
         role_session_dir=role_session_dir,
