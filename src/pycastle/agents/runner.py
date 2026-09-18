@@ -9,7 +9,6 @@ from typing import Any, NoReturn, Protocol, Self, cast
 
 import docker
 import docker.errors
-from agent_runtime import ProviderAuth
 
 from pycastle import _time as _time_module
 from pycastle import stage_registry
@@ -83,17 +82,6 @@ def _minimum_unknown_reset_or_default(
         minimum_unknown_reset_duration=minimum_unknown_reset_duration,
     )
     return wake - timedelta(minutes=2)
-
-
-def _provider_auth_from_env(env: dict[str, str]) -> ProviderAuth | None:
-    claude_token = env.get("CLAUDE_CODE_OAUTH_TOKEN")
-    opencode_api_key = env.get("OPENCODE_GO_API_KEY")
-    if claude_token is None and opencode_api_key is None:
-        return None
-    return ProviderAuth(
-        claude_code_oauth_token=claude_token,
-        opencode_api_key=opencode_api_key,
-    )
 
 
 def _default_effort() -> str:
@@ -498,9 +486,7 @@ class AgentRunner:
         _auth_seed_action = service.auth_seed_action(provider_state_dir)
         if _auth_seed_action is not None:
             _auth_seed_action.apply()
-        provider_auth = _provider_auth_from_env(
-            service.build_env(state_dir_container_path)
-        )
+        provider_auth = service.provider_auth()
         resolved_model = request.model or _default_model(service)
         resolved_effort = request.effort or _default_effort()
         git_name = self._git_service.get_user_name()
