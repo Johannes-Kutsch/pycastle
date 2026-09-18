@@ -37,6 +37,9 @@ class _FakeService:
         del request
         return ProviderSessionPreferences()
 
+    def provider_auth(self):
+        return None
+
 
 def _write_codex_rollout(state_dir: Path, *thread_ids: str) -> None:
     rollout_dir = state_dir / "sessions" / "2026" / "05" / "30"

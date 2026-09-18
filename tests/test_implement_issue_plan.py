@@ -43,6 +43,9 @@ class _CrossServiceTestService:
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(state_dir.iterdir())
 
+    def provider_auth(self):
+        return None
+
 
 def _issue() -> dict:
     return {

@@ -93,6 +93,9 @@ class _SimpleService:
     def valid_models(self) -> set:
         return set()
 
+    def provider_auth(self):
+        return None
+
 
 def _make_session_mock() -> MagicMock:
     prepared_session = MagicMock()

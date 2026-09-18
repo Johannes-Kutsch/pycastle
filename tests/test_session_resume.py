@@ -94,6 +94,9 @@ class _FakeService:
             return ProviderSessionState(RunKind.FRESH, None)
         return ProviderSessionState(RunKind.RESUME, saved_provider_session_id)
 
+    def provider_auth(self):
+        return None
+
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

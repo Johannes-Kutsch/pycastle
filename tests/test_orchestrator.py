@@ -239,6 +239,9 @@ class _FakeService:
     def summary_line(self) -> str | None:
         return None
 
+    def provider_auth(self):
+        return None
+
 
 class _SequencedAvailabilityService(_FakeService):
     def __init__(

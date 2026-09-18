@@ -57,6 +57,9 @@ class _CrossServiceTestService:
     def is_resumable(self, state_dir: Path) -> bool:
         return state_dir.is_dir() and any(state_dir.iterdir())
 
+    def provider_auth(self):
+        return None
+
 
 @dataclasses.dataclass
 class _FlakyResumableTestService:
@@ -71,6 +74,9 @@ class _FlakyResumableTestService:
         if self.resumable_by_call:
             return self.resumable_by_call.pop(0)
         return state_dir.is_dir() and any(state_dir.iterdir())
+
+    def provider_auth(self):
+        return None
 
 
 def _seed_prior_role_session_with_service(

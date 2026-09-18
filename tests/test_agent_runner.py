@@ -113,6 +113,9 @@ class _FakeService:
         del provider_state_dir, provider_session_id
         return False
 
+    def provider_auth(self):
+        return None
+
 
 class _RecordingService(_FakeService):
     def __init__(self, name: str) -> None:

@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from agent_runtime import ProviderAuth
+
 from pycastle import _time as _time_module
 from pycastle.runtime_session import (
     ProviderSessionPreferences,
@@ -96,6 +98,8 @@ class AgentService(Protocol):
         provider_state_dir: Path | None,
     ) -> bool: ...
 
+    def provider_auth(self) -> ProviderAuth | None: ...
+
 
 def _service_state_dir_relpath(
     name: str, role: AgentRole, namespace: str = ""
@@ -169,6 +173,9 @@ class _AgentServiceDefaults:
     ) -> ProviderSessionPreferences:
         del request
         return ProviderSessionPreferences()
+
+    def provider_auth(self) -> ProviderAuth | None:
+        return None
 
 
 def _provider_session_preferences_for_request(
@@ -387,6 +394,12 @@ class ClaudeService(_AgentServiceDefaults):
         if state_dir_container_path:
             env["CLAUDE_CONFIG_DIR"] = state_dir_container_path
         return env
+
+    def provider_auth(self) -> ProviderAuth | None:
+        if self._helper is None:
+            return None
+        token = self._helper.pick_token()
+        return ProviderAuth(claude_code_oauth_token=token)
 
 
 @dataclasses.dataclass
@@ -698,6 +711,12 @@ class OpenCodeService(_AgentServiceDefaults):
             state_dir, self.name, session_id_filename="session_id"
         )
 
+    def provider_auth(self) -> ProviderAuth | None:
+        if self._helper is None:
+            return None
+        token = self._helper.pick_token()
+        return ProviderAuth(opencode_api_key=token)
+
 
 def _resolved_provider_session_id(
     role_session: object,
@@ -812,6 +831,9 @@ class _FallbackAgentService:
         provider_state_dir: Path | None,
     ) -> bool:
         return provider_session_id is not None and provider_state_dir is not None
+
+    def provider_auth(self) -> ProviderAuth | None:
+        return None
 
 
 def service_by_name(name: str) -> AgentService:
