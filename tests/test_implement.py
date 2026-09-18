@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from agent_runtime.errors import HardAgentError
 
 from pycastle.agents.output_protocol import (
     AgentRole,
@@ -15,10 +16,18 @@ from pycastle.agents.output_protocol import (
 from pycastle.agents.runner import RunRequest
 from pycastle.config import Config, StageOverride
 from pycastle.display.status_display import PlainStatusDisplay
-from pycastle.errors import AgentTimeoutError, UsageLimitError
+from pycastle.errors import (
+    AgentFailedError,
+    AgentTimeoutError,
+    ModelNotAvailableError,
+    TransientAgentError,
+    UsageLimitError,
+)
 from pycastle.infrastructure.worktree import worktree_identity
 from pycastle.iteration.implement import (
+    _FATAL_ERROR_PRIORITY,
     ImplementResult,
+    _raise_first_fatal,
     _RunIssueContext,
     branch_for,
     implement_phase,
@@ -2258,3 +2267,80 @@ def test_implement_phase_never_opens_more_than_max_parallel_plus_one_worktrees(
     assert peak_wts[0] <= max_parallel + 1, (
         f"Peak open worktrees {peak_wts[0]} exceeded max_parallel+1={max_parallel + 1}"
     )
+
+
+# ── _raise_first_fatal / _FATAL_ERROR_PRIORITY ────────────────────────────────
+
+
+def test_raise_first_fatal_returns_when_results_empty():
+    _raise_first_fatal([], _FATAL_ERROR_PRIORITY)
+
+
+def test_raise_first_fatal_returns_when_all_results_are_successful_dicts():
+    _raise_first_fatal([{"number": 1}, {"number": 2}], _FATAL_ERROR_PRIORITY)
+
+
+def test_raise_first_fatal_raises_single_fatal_exception(tmp_path):
+    err = AgentFailedError(role_value="implementer", worktree_path=tmp_path)
+    with pytest.raises(AgentFailedError) as exc_info:
+        _raise_first_fatal([err], _FATAL_ERROR_PRIORITY)
+    assert exc_info.value is err
+
+
+def test_raise_first_fatal_priority_agent_failed_beats_hard_agent(tmp_path):
+    high = AgentFailedError(role_value="implementer", worktree_path=tmp_path)
+    low = HardAgentError("low")
+    with pytest.raises(AgentFailedError) as exc_info:
+        _raise_first_fatal([low, high], _FATAL_ERROR_PRIORITY)
+    assert exc_info.value is high
+
+
+def test_raise_first_fatal_priority_hard_agent_beats_transient():
+    high = HardAgentError("high")
+    low = TransientAgentError("low")
+    with pytest.raises(HardAgentError) as exc_info:
+        _raise_first_fatal([low, high], _FATAL_ERROR_PRIORITY)
+    assert exc_info.value is high
+
+
+def test_raise_first_fatal_priority_transient_beats_model_not_available():
+    high = TransientAgentError("high")
+    low = ModelNotAvailableError("low")
+    with pytest.raises(TransientAgentError) as exc_info:
+        _raise_first_fatal([low, high], _FATAL_ERROR_PRIORITY)
+    assert exc_info.value is high
+
+
+def test_raise_first_fatal_raises_first_instance_of_highest_priority_class(tmp_path):
+    first = AgentFailedError(role_value="implementer", worktree_path=tmp_path)
+    second = AgentFailedError(role_value="reviewer", worktree_path=tmp_path)
+    with pytest.raises(AgentFailedError) as exc_info:
+        _raise_first_fatal([first, second], _FATAL_ERROR_PRIORITY)
+    assert exc_info.value is first
+
+
+def test_raise_first_fatal_fatal_wins_over_non_fatal(tmp_path):
+    fatal = AgentFailedError(role_value="implementer", worktree_path=tmp_path)
+    non_fatal = UsageLimitError(reset_time=None)
+    with pytest.raises(AgentFailedError) as exc_info:
+        _raise_first_fatal([non_fatal, fatal], _FATAL_ERROR_PRIORITY)
+    assert exc_info.value is fatal
+
+
+def test_raise_first_fatal_skips_non_exception_entries():
+    fatal = TransientAgentError("oops")
+    with pytest.raises(TransientAgentError) as exc_info:
+        _raise_first_fatal(
+            [{"number": 1}, "string-result", fatal, {"number": 2}],
+            _FATAL_ERROR_PRIORITY,
+        )
+    assert exc_info.value is fatal
+
+
+def test_fatal_error_priority_order():
+    assert (
+        AgentFailedError,
+        HardAgentError,
+        TransientAgentError,
+        ModelNotAvailableError,
+    ) == _FATAL_ERROR_PRIORITY
