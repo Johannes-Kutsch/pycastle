@@ -425,99 +425,25 @@ class CodexService(_AgentServiceDefaults):
             request.provider_state_dir
         )
         auth_seed_action = _codex_auth_seed_action(request.provider_state_dir)
-        if request.preferred_provider_session_id is not None:
-            return ProviderSessionState(
-                RunKind.RESUME,
-                request.preferred_provider_session_id,
-                state_dir_relpath=request.state_dir_relpath,
-                state_dir_path=request.provider_state_dir,
-                auth_seeding_requirement=auth_seeding_requirement,
-                auth_seed_action=auth_seed_action,
-            )
-
-        saved_provider_session_id = _resolved_provider_session_id(
-            request.role_session,
-            self.name,
-        )
-        if saved_provider_session_id is not None:
-            exact_transcript_match = False
-            if request.require_exact_transcript_match:
-                exact_transcript_match = is_exact_resumable_service_session(
-                    request.role_session,
-                    self.name,
-                    provider_session_id=saved_provider_session_id,
-                    provider_state_dir=request.provider_state_dir,
-                    exact_provider_session_matcher=_is_exact_resumable_codex_session,
-                )
-            return ProviderSessionState(
-                RunKind.RESUME,
-                saved_provider_session_id,
-                state_dir_relpath=request.state_dir_relpath,
-                state_dir_path=request.provider_state_dir,
-                exact_transcript_match=exact_transcript_match,
-                auth_seeding_requirement=auth_seeding_requirement,
-                auth_seed_action=auth_seed_action,
-            )
-
-        if not request.has_resumable_provider_state:
-            return ProviderSessionState(
-                RunKind.FRESH,
-                None,
-                state_dir_relpath=request.state_dir_relpath,
-                state_dir_path=request.provider_state_dir,
-                auth_seeding_requirement=auth_seeding_requirement,
-                auth_seed_action=auth_seed_action,
-                allow_protocol_reprompt=not request.force_resume,
-            )
-
-        selection = select_resumable_provider_session_id(
-            request.role_session,
-            self.name,
-            provider_state_dir=request.provider_state_dir,
-            has_resumable_provider_state=request.has_resumable_provider_state,
-        )
-        provider_session_id = selection.provider_session_id
-        persist_provider_session_id = selection.persist_provider_session_id
-        if provider_session_id is None:
-            provider_session_id = _recover_codex_rollout_thread_id(
-                request.provider_state_dir
-            )
-            if provider_session_id is not None:
-                request.role_session.save_service_session_id(
-                    self.name,
-                    provider_session_id,
-                )
-                persist_provider_session_id = True
-
-        if provider_session_id is None:
-            return ProviderSessionState(
-                RunKind.FRESH,
-                None,
-                state_dir_relpath=request.state_dir_relpath,
-                state_dir_path=request.provider_state_dir,
-                auth_seeding_requirement=auth_seeding_requirement,
-                auth_seed_action=auth_seed_action,
-                allow_protocol_reprompt=not request.force_resume,
-            )
-
-        exact_transcript_match = False
-        if request.require_exact_transcript_match:
-            exact_transcript_match = is_exact_resumable_service_session(
-                request.role_session,
+        verdict = _codex_provider_session_verdict(request)
+        if (
+            verdict.persist_provider_session_id
+            and verdict.provider_session_id is not None
+        ):
+            request.role_session.save_service_session_id(
                 self.name,
-                provider_session_id=provider_session_id,
-                provider_state_dir=request.provider_state_dir,
-                exact_provider_session_matcher=_is_exact_resumable_codex_session,
+                verdict.provider_session_id,
             )
         return ProviderSessionState(
-            RunKind.RESUME,
-            provider_session_id,
+            verdict.run_kind,
+            verdict.provider_session_id,
             state_dir_relpath=request.state_dir_relpath,
             state_dir_path=request.provider_state_dir,
-            exact_transcript_match=exact_transcript_match,
-            persist_provider_session_id=persist_provider_session_id,
+            exact_transcript_match=verdict.exact_transcript_match,
+            persist_provider_session_id=verdict.persist_provider_session_id,
             auth_seeding_requirement=auth_seeding_requirement,
             auth_seed_action=auth_seed_action,
+            allow_protocol_reprompt=verdict.allow_protocol_reprompt,
         )
 
     def auth_seed_action(
@@ -733,6 +659,100 @@ def _resolved_provider_session_id(
         return None
     return load_provider_state_session_id(
         _service_session_id_path(role_session_path, service_name)
+    )
+
+
+@dataclasses.dataclass
+class _CodexProviderSessionVerdict:
+    run_kind: RunKind
+    provider_session_id: str | None
+    persist_provider_session_id: bool
+    exact_transcript_match: bool
+    allow_protocol_reprompt: bool
+
+
+def _codex_provider_session_verdict(
+    request: ProviderSessionStateRequest,
+) -> _CodexProviderSessionVerdict:
+    if request.preferred_provider_session_id is not None:
+        return _CodexProviderSessionVerdict(
+            run_kind=RunKind.RESUME,
+            provider_session_id=request.preferred_provider_session_id,
+            persist_provider_session_id=False,
+            exact_transcript_match=False,
+            allow_protocol_reprompt=False,
+        )
+
+    saved_provider_session_id = _resolved_provider_session_id(
+        request.role_session,
+        "codex",
+    )
+    if saved_provider_session_id is not None:
+        exact_transcript_match = False
+        if request.require_exact_transcript_match:
+            exact_transcript_match = is_exact_resumable_service_session(
+                request.role_session,
+                "codex",
+                provider_session_id=saved_provider_session_id,
+                provider_state_dir=request.provider_state_dir,
+                exact_provider_session_matcher=_is_exact_resumable_codex_session,
+            )
+        return _CodexProviderSessionVerdict(
+            run_kind=RunKind.RESUME,
+            provider_session_id=saved_provider_session_id,
+            persist_provider_session_id=False,
+            exact_transcript_match=exact_transcript_match,
+            allow_protocol_reprompt=False,
+        )
+
+    if not request.has_resumable_provider_state:
+        return _CodexProviderSessionVerdict(
+            run_kind=RunKind.FRESH,
+            provider_session_id=None,
+            persist_provider_session_id=False,
+            exact_transcript_match=False,
+            allow_protocol_reprompt=not request.force_resume,
+        )
+
+    selection = select_resumable_provider_session_id(
+        request.role_session,
+        "codex",
+        provider_state_dir=request.provider_state_dir,
+        has_resumable_provider_state=request.has_resumable_provider_state,
+    )
+    provider_session_id = selection.provider_session_id
+    persist_provider_session_id = selection.persist_provider_session_id
+    if provider_session_id is None:
+        provider_session_id = _recover_codex_rollout_thread_id(
+            request.provider_state_dir
+        )
+        if provider_session_id is not None:
+            persist_provider_session_id = True
+
+    if provider_session_id is None:
+        return _CodexProviderSessionVerdict(
+            run_kind=RunKind.FRESH,
+            provider_session_id=None,
+            persist_provider_session_id=False,
+            exact_transcript_match=False,
+            allow_protocol_reprompt=not request.force_resume,
+        )
+
+    exact_transcript_match = False
+    if request.require_exact_transcript_match:
+        exact_transcript_match = is_exact_resumable_service_session(
+            request.role_session,
+            "codex",
+            provider_session_id=provider_session_id,
+            provider_state_dir=request.provider_state_dir,
+            exact_provider_session_matcher=_is_exact_resumable_codex_session,
+        )
+    return _CodexProviderSessionVerdict(
+        run_kind=RunKind.RESUME,
+        provider_session_id=provider_session_id,
+        persist_provider_session_id=persist_provider_session_id,
+        exact_transcript_match=exact_transcript_match,
+        allow_protocol_reprompt=False,
     )
 
 
