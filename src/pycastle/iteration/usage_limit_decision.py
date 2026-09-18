@@ -3,11 +3,14 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pycastle import stage_registry
-from pycastle.services._wake_time import compute_wake_time
+from pycastle.services._wake_time import (
+    _minimum_unknown_reset_duration_for_provider,
+    compute_wake_time,
+)
 
 if TYPE_CHECKING:
     from pycastle.config import Config, StageOverride
@@ -103,19 +106,6 @@ def _provider_message_label(provider_label: str) -> str:
         "opencode": "OpenCode",
     }
     return known_labels.get(provider_label, provider_label)
-
-
-def _minimum_unknown_reset_duration_for_provider(
-    cfg: Config,
-    provider: str | None,
-) -> timedelta:
-    if provider == "claude":
-        return timedelta(hours=cfg.claude_minimum_unknown_reset_duration_hours)
-    if provider == "codex":
-        return timedelta(hours=cfg.codex_minimum_unknown_reset_duration_hours)
-    if provider == "opencode":
-        return timedelta(hours=cfg.opencode_minimum_unknown_reset_duration_hours)
-    return timedelta(0)
 
 
 def _registry_has_available(

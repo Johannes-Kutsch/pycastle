@@ -1,6 +1,25 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pycastle.config import Config
 
 _BUFFER = timedelta(minutes=2)
+
+
+def _minimum_unknown_reset_duration_for_provider(
+    cfg: Config,
+    provider: str | None,
+) -> timedelta:
+    if provider == "claude":
+        return timedelta(hours=cfg.claude_minimum_unknown_reset_duration_hours)
+    if provider == "codex":
+        return timedelta(hours=cfg.codex_minimum_unknown_reset_duration_hours)
+    if provider == "opencode":
+        return timedelta(hours=cfg.opencode_minimum_unknown_reset_duration_hours)
+    return timedelta(0)
 
 
 def compute_wake_time(

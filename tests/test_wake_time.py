@@ -1,6 +1,10 @@
 from datetime import datetime, timedelta
 
-from pycastle.services._wake_time import compute_wake_time
+from pycastle.config import Config
+from pycastle.services._wake_time import (
+    _minimum_unknown_reset_duration_for_provider,
+    compute_wake_time,
+)
 
 
 def test_reset_time_supplied_returns_reset_plus_two_minutes() -> None:
@@ -63,3 +67,34 @@ def test_reset_time_remains_authoritative_even_with_minimum_duration() -> None:
     )
     assert wake == datetime(2026, 5, 19, 15, 32, 0)
     assert is_estimated is False
+
+
+def test_minimum_duration_claude_reads_claude_field() -> None:
+    cfg = Config(claude_minimum_unknown_reset_duration_hours=4.0)
+    assert _minimum_unknown_reset_duration_for_provider(cfg, "claude") == timedelta(
+        hours=4.0
+    )
+
+
+def test_minimum_duration_codex_reads_codex_field() -> None:
+    cfg = Config(codex_minimum_unknown_reset_duration_hours=2.0)
+    assert _minimum_unknown_reset_duration_for_provider(cfg, "codex") == timedelta(
+        hours=2.0
+    )
+
+
+def test_minimum_duration_opencode_reads_opencode_field() -> None:
+    cfg = Config(opencode_minimum_unknown_reset_duration_hours=3.0)
+    assert _minimum_unknown_reset_duration_for_provider(cfg, "opencode") == timedelta(
+        hours=3.0
+    )
+
+
+def test_minimum_duration_unknown_provider_returns_zero() -> None:
+    cfg = Config(
+        claude_minimum_unknown_reset_duration_hours=5.0,
+        codex_minimum_unknown_reset_duration_hours=5.0,
+        opencode_minimum_unknown_reset_duration_hours=5.0,
+    )
+    assert _minimum_unknown_reset_duration_for_provider(cfg, "unknown") == timedelta(0)
+    assert _minimum_unknown_reset_duration_for_provider(cfg, None) == timedelta(0)

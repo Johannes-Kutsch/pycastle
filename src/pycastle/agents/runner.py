@@ -59,25 +59,15 @@ from pycastle.managed_worktree_mount_policy import enforce_managed_worktree_moun
 from pycastle.prompts.dispatch import PromptInvocation, render_prompt_invocation
 from pycastle.prompts.pipeline import PromptRenderer
 from pycastle.services import GitService
-from pycastle.services._wake_time import compute_wake_time
+from pycastle.services._wake_time import (
+    _minimum_unknown_reset_duration_for_provider,
+    compute_wake_time,
+)
 from pycastle.services.runtime_services import AgentService, ClaudeService
 from pycastle.services.service_registry import ServiceRegistry
 from pycastle.session import RoleSession, RunKind
 
 _CONTAINER_WORKSPACE = "/home/agent/workspace"
-
-
-def _minimum_unknown_reset_duration_for_provider(
-    cfg: Config,
-    provider: str,
-) -> timedelta:
-    if provider == "claude":
-        return timedelta(hours=cfg.claude_minimum_unknown_reset_duration_hours)
-    if provider == "codex":
-        return timedelta(hours=cfg.codex_minimum_unknown_reset_duration_hours)
-    if provider == "opencode":
-        return timedelta(hours=cfg.opencode_minimum_unknown_reset_duration_hours)
-    return timedelta(0)
 
 
 def _minimum_unknown_reset_or_default(
