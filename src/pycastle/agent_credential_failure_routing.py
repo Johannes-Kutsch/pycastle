@@ -260,9 +260,8 @@ def _interpret_agent_credential_failure(
     service_name: str,
     classification: str | None,
     raw: str,
-    observations: tuple,
+    rendered_observations: tuple[tuple[str, str], ...],
 ) -> _CredentialFailureInterpretation | None:
-    rendered_observations = _render_observations(raw, observations)
     haystacks = (*tuple(text for _, text in rendered_observations), raw)
     for entry in _SIGNATURE_REGISTRY:
         if service_name not in entry.service_names:
@@ -302,21 +301,21 @@ def route_agent_credential_failure(
             )
         else:
             raw_observations = (("stderr", raw),)
+    rendered_observations = _render_observations(raw, raw_observations)
     interpretation = _interpret_agent_credential_failure(
         service_name=service_name,
         classification=getattr(provider_failure, "classification", None),
         raw=raw,
-        observations=raw_observations,
+        rendered_observations=rendered_observations,
     )
     if interpretation is None:
         if service_name == "codex":
             return None
         if not isinstance(provider_failure, AgentCredentialFailureError):
             return None
-        fallback_rendered = _render_observations(raw, raw_observations)
         interpretation = _CredentialFailureInterpretation(
             remediation=_DEFAULT_REMEDIATION,
-            rendered_observations=fallback_rendered,
+            rendered_observations=rendered_observations,
         )
 
     _status_code = getattr(provider_failure, "status_code", None)
