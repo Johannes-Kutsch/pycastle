@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import platform
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from pycastle.display.rows import status_row
+from pycastle.display.rows import StatusRow, status_row
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 
 if TYPE_CHECKING:
@@ -247,6 +248,16 @@ def _is_failed_command_result(
     return command_result is not None and command_result.returncode != 0
 
 
+class _NullRow:
+    def close(self, shutdown_message: str, shutdown_style: str = "success") -> None:
+        pass
+
+
+@asynccontextmanager
+async def _null_status_row() -> AsyncGenerator[_NullRow, None]:
+    yield _NullRow()
+
+
 async def run_host_check_loop(
     *,
     host_checks: tuple[tuple[str, str], ...],
@@ -264,37 +275,13 @@ async def run_host_check_loop(
     host_platform = platform.platform()
     cb = callbacks or HostCheckLoopCallbacks()
 
-    if status_display is None:
-        checked_sha = prepare_host_check_loop(
-            git_svc=git_svc, repo_root=resolved_repo_root
-        )
-        deps = _CheckDeps(repo_root=resolved_repo_root, git_svc=git_svc)
-        async with transient_worktree_factory(
-            f"host-check-{checked_sha[:7]}", sha=checked_sha, deps=deps
-        ) as path:
-            failures = _run_configured_host_checks(
-                host_checks,
-                path,
-                status_display=status_display,
-                on_check_start=cb.on_check_start,
-                run_host_check=run_host_check,
-            )
-            return await _collect_failure_verdicts(
-                failures,
-                checked_sha=checked_sha,
-                path=path,
-                host_os=host_os,
-                host_platform=host_platform,
-                on_failures_detected=cb.on_failures_detected,
-                file_issue_for_failure=cb.file_issue_for_failure,
-            )
+    row_ctx: AbstractAsyncContextManager[StatusRow | _NullRow] = (
+        status_row(status_display, "Host Check", kind="phase", must_close=True)
+        if status_display is not None
+        else _null_status_row()
+    )
 
-    async with status_row(
-        status_display,
-        "Host Check",
-        kind="phase",
-        must_close=True,
-    ) as row:
+    async with row_ctx as row:
         checked_sha = prepare_host_check_loop(
             git_svc=git_svc, repo_root=resolved_repo_root
         )
