@@ -204,10 +204,6 @@ def plan_issue_execution_from_worktree(
 
 
 def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
-    return _step_plan_recipe(ctx)
-
-
-def _step_plan_recipe(ctx: _StepContext) -> IssueRoleStepPlan:
     issue = ctx.issue
     deps = ctx.deps
     role = ctx.role

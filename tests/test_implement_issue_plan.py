@@ -298,6 +298,69 @@ def test_plan_issue_execution_marks_issue_complete_when_review_stage_done_signal
     assert plan.issue_outcome == "complete"
 
 
+def test_plan_issue_execution_skip_step_carries_shared_prep_fields_and_no_mount_setup_failure(
+    tmp_path,
+):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    implement_mount_path = _managed_issue_mount(tmp_path, "issue-1909-implement")
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+
+    plan = plan_issue_execution(
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=True,
+            review_done=False,
+        )
+    )
+
+    step = plan.implementer_step
+    assert step.outcome == "skip"
+    assert step.skip_reason == "implement stage already complete"
+    assert step.mount_setup_failure is None
+    assert step.role is AgentRole.IMPLEMENTER
+    assert step.role_name == "implementer"
+    assert step.stage == "pre-implementation"
+    assert step.model == deps.cfg.implement_override.model
+    assert step.effort == deps.cfg.implement_override.effort
+    assert step.service == deps.cfg.implement_override.service
+    assert step.commit_fallback_subject.commit_prefix == "Implement #1909 - "
+    assert (
+        step.work_body
+        == 'implementing behavior "Scaffold implement issue execution planning module"'
+    )
+
+
+def test_plan_issue_execution_setup_failure_step_uses_fresh_run_kind_with_no_interrupted_work(
+    tmp_path,
+):
+    deps = _make_deps(tmp_path, FakeAgentRunner([]))
+    _managed_issue_mount(tmp_path, "issue-1909-review")
+    implement_mount_path = tmp_path / "outside-worktree"
+    implement_mount_path.mkdir()
+    review_mount_path = _managed_issue_mount(tmp_path, "issue-1909-review")
+
+    plan = plan_issue_execution(
+        IssueExecutionContext(
+            issue=_issue(),
+            deps=deps,
+            sha="sha-abc",
+            implement_mount_path=implement_mount_path,
+            review_mount_path=review_mount_path,
+            implement_done=False,
+            review_done=False,
+        )
+    )
+
+    step = plan.implementer_step
+    assert step.outcome == "setup_failure"
+    assert step.run_kind is RunKind.FRESH
+    assert step.prompt_scope_args["INTERRUPTED_WORK"] == ""
+
+
 def test_plan_issue_execution_from_worktree_skips_implementer_when_only_implement_stage_done(
     tmp_path,
 ):
