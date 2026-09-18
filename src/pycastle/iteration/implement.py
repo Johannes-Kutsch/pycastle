@@ -293,19 +293,27 @@ async def run_issue(
     return issue
 
 
-def _raise_fatal_errors(results: list) -> None:
+_FATAL_ERROR_PRIORITY: tuple[type[Exception], ...] = (
+    AgentFailedError,
+    HardAgentError,
+    TransientAgentError,
+    ModelNotAvailableError,
+)
+
+
+def _raise_first_fatal(results: list, priority: tuple[type[Exception], ...]) -> None:
+    best: Exception | None = None
+    best_rank = len(priority)
     for result in results:
-        if isinstance(result, AgentFailedError):
-            raise result
-    for result in results:
-        if isinstance(result, HardAgentError):
-            raise result
-    for result in results:
-        if isinstance(result, TransientAgentError):
-            raise result
-    for result in results:
-        if isinstance(result, ModelNotAvailableError):
-            raise result
+        if not isinstance(result, Exception):
+            continue
+        for rank, cls in enumerate(priority):
+            if isinstance(result, cls) and rank < best_rank:
+                best = result
+                best_rank = rank
+                break
+    if best is not None:
+        raise best
 
 
 def _build_implement_result(
@@ -402,6 +410,6 @@ async def implement_phase(
         ],
         return_exceptions=True,
     )
-    _raise_fatal_errors(results)
+    _raise_first_fatal(results, _FATAL_ERROR_PRIORITY)
     usage_limit_errors = [r for r in results if isinstance(r, UsageLimitError)]
     return _build_implement_result(issues, results, deps, usage_limit_errors)
