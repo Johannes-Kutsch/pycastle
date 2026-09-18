@@ -52,10 +52,70 @@ IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
 
 _CANDIDATE_NS_PREFIX = "candidate"
+_CANDIDATE_NS_SEGMENT_COUNT = 2
 
 
 def _candidate_namespace(idx: int) -> str:
     return f"{_CANDIDATE_NS_PREFIX}/{idx}"
+
+
+class _CandidateNamespaceParseError(Exception):
+    """Raised when a string cannot be parsed as a candidate namespace produced by _candidate_namespace."""
+
+
+def _parse_candidate_namespace(namespace: str) -> int:
+    """Inverse of _candidate_namespace: given a string it produced, return the integer index.
+
+    Enforces the canonical-form invariants from ADR 0008's path-valued namespace amendment:
+    exactly two segments joined by '/', first segment equals _CANDIDATE_NS_PREFIX, second
+    segment a non-negative integer, no leading/trailing separator, never absolute, no '..' segment.
+    """
+    if not namespace:
+        raise _CandidateNamespaceParseError(f"empty namespace: {namespace!r}")
+    if namespace.startswith("/"):
+        raise _CandidateNamespaceParseError(f"absolute namespace: {namespace!r}")
+    if namespace.endswith("/"):
+        raise _CandidateNamespaceParseError(
+            f"trailing separator in namespace: {namespace!r}"
+        )
+
+    segments = namespace.split("/")
+
+    if ".." in segments:
+        raise _CandidateNamespaceParseError(
+            f"namespace contains '..' segment: {namespace!r}"
+        )
+
+    if len(segments) != _CANDIDATE_NS_SEGMENT_COUNT:
+        raise _CandidateNamespaceParseError(
+            f"expected exactly two segments in namespace: {namespace!r}"
+        )
+
+    prefix, idx_str = segments
+
+    if prefix != _CANDIDATE_NS_PREFIX:
+        raise _CandidateNamespaceParseError(
+            f"wrong first segment in namespace: {namespace!r}"
+        )
+
+    if not idx_str:
+        raise _CandidateNamespaceParseError(
+            f"missing index segment in namespace: {namespace!r}"
+        )
+
+    try:
+        idx = int(idx_str)
+    except ValueError:
+        raise _CandidateNamespaceParseError(
+            f"non-integer index in namespace: {namespace!r}"
+        ) from None
+
+    if idx < 0:
+        raise _CandidateNamespaceParseError(
+            f"negative index in namespace: {namespace!r}"
+        )
+
+    return idx
 
 
 def _fork_candidate_namespaces(
