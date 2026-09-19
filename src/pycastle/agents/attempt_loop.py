@@ -50,10 +50,182 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from agent_runtime.types import ResolvedProvider
+
     from pycastle.agents.runner import RunRequest
     from pycastle.services.runtime_services import AgentService
 
 _MAX_PROTOCOL_RETRIES = 2
+
+
+# ---------------------------------------------------------------------------
+# Loop-directive closed union
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class _ReturnParsed:
+    parsed: AgentOutput
+    clear_completion: bool
+
+
+@dataclasses.dataclass
+class _ReturnCancelled:
+    pass
+
+
+@dataclasses.dataclass
+class _RaiseUsageLimit:
+    reset_time: Any
+    provider: str
+    is_permanent: bool
+
+
+@dataclasses.dataclass
+class _RaiseTransientError:
+    detail: str | None
+
+
+@dataclasses.dataclass
+class _RaiseProviderUsageLimit:
+    provider: str
+    raw_message: str | None
+
+
+@dataclasses.dataclass
+class _ResumeAfterTimeout:
+    restart_num: int
+
+
+@dataclasses.dataclass
+class _RaiseTimeout:
+    role_value: str
+
+
+@dataclasses.dataclass
+class _RaiseModelNotAvailable:
+    service: str
+    model: str
+    stage_key: str | None
+
+
+@dataclasses.dataclass
+class _Reprompt:
+    message: str
+
+
+@dataclasses.dataclass
+class _RaiseAgentFailed:
+    role_value: str
+    mount_path: Any  # Path
+    session_namespace: str
+    service_name: str
+    session_store: Any  # Path
+    log_path: Any  # Path | None
+
+
+type _LoopDirective = (
+    _ReturnParsed
+    | _ReturnCancelled
+    | _RaiseUsageLimit
+    | _RaiseTransientError
+    | _RaiseProviderUsageLimit
+    | _ResumeAfterTimeout
+    | _RaiseTimeout
+    | _RaiseModelNotAvailable
+    | _Reprompt
+    | _RaiseAgentFailed
+)
+
+type _RuntimeOutcomeKind = (
+    Cancelled
+    | Completed
+    | UsageLimited
+    | ProviderUnavailable
+    | TimedOut
+    | ModelNotAvailable
+)
+
+
+def _decide_transition(  # noqa: PLR0913
+    outcome_kind: _RuntimeOutcomeKind,
+    *,
+    attempt: int,
+    retries_left: int,
+    timeout_retries: int,
+    selected: ResolvedProvider,
+    output_text: str,
+    role: AgentRole,
+    protocol_reprompt_plan: Callable[
+        [str | None], protocol_reprompt.ProtocolRepromptPlan
+    ],
+    preserve_session_on_completion: bool,
+    role_value: str,
+    mount_path: Path,
+    session_namespace: str,
+    service_name: str,
+    session_store: Path,
+    log_path: Path | None,
+    stage_key: str | None,
+) -> _LoopDirective:
+    if isinstance(outcome_kind, Cancelled):
+        return _ReturnCancelled()
+
+    if isinstance(outcome_kind, Completed):
+        try:
+            parsed = extract_output(output_text, role)
+        except AgentOutputProtocolError as exc:
+            if attempt == _MAX_PROTOCOL_RETRIES:
+                return _RaiseAgentFailed(
+                    role_value=role_value,
+                    mount_path=mount_path,
+                    session_namespace=session_namespace,
+                    service_name=service_name,
+                    session_store=session_store,
+                    log_path=log_path,
+                )
+            reprompt = protocol_reprompt_plan(str(exc))
+            message = (
+                protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
+                if isinstance(reprompt, protocol_reprompt.UnsupportedProtocolReprompt)
+                else reprompt.message
+            )
+            return _Reprompt(message=message)
+        return _ReturnParsed(
+            parsed=parsed,
+            clear_completion=not preserve_session_on_completion,
+        )
+
+    if isinstance(outcome_kind, UsageLimited):
+        return _RaiseUsageLimit(
+            reset_time=outcome_kind.reset_time,
+            provider=selected.service,
+            is_permanent=outcome_kind.is_permanent,
+        )
+
+    if isinstance(outcome_kind, ProviderUnavailable):
+        if outcome_kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
+            return _RaiseTransientError(detail=outcome_kind.detail)
+        return _RaiseProviderUsageLimit(
+            provider=selected.service,
+            raw_message=outcome_kind.detail,
+        )
+
+    if isinstance(outcome_kind, TimedOut):
+        if retries_left <= 0:
+            return _RaiseTimeout(role_value=role_value)
+        return _ResumeAfterTimeout(restart_num=timeout_retries - retries_left + 1)
+
+    if isinstance(outcome_kind, ModelNotAvailable):
+        return _RaiseModelNotAvailable(
+            service=selected.service,
+            model=selected.model,
+            stage_key=stage_key,
+        )
+
+    raise AssertionError(
+        f"Unknown runtime outcome kind: {type(outcome_kind).__name__!r}"
+    )
 
 
 def format_transient_status_message(err: TransientAgentError) -> str:
@@ -143,92 +315,75 @@ async def run_attempt_loop(
         if continuation is not None and continuation.serialized is not None:
             bundle.role_session.write_continuation(continuation.serialized)
 
-        if isinstance(outcome.kind, Cancelled):
-            return CompletionOutput()
+        directive = _decide_transition(
+            outcome.kind,
+            attempt=attempt,
+            retries_left=retries_left,
+            timeout_retries=bundle.timeout_retries,
+            selected=outcome.result.selected,
+            output_text=outcome.result.output or "",
+            role=request.role,
+            protocol_reprompt_plan=bundle.protocol_reprompt_plan,
+            preserve_session_on_completion=request.preserve_session_on_completion,
+            role_value=request.role.value,
+            mount_path=request.mount_path,
+            session_namespace=request.session_namespace,
+            service_name=bundle.service.name,
+            session_store=bundle.role_session.path,
+            log_path=getattr(bundle.runner, "log_path", None),
+            stage_key=stage_registry.stage_key_for_role(request.role),
+        )
 
-        if isinstance(outcome.kind, Completed):
-            try:
-                parsed = extract_output(outcome.result.output, request.role)
-            except AgentOutputProtocolError as exc:
-                if attempt == _MAX_PROTOCOL_RETRIES:
-                    raise AgentFailedError(
-                        role_value=request.role.value,
-                        worktree_path=request.mount_path,
-                        namespace=request.session_namespace,
-                        failure_class="protocol_error",
-                        service_name=bundle.service.name,
-                        session_store=bundle.role_session.path,
-                        agent_invocation_log_path=getattr(
-                            bundle.runner, "log_path", None
-                        ),
-                    ) from exc
-                reprompt = bundle.protocol_reprompt_plan(str(exc))
-                current_prompt = (
-                    protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
-                    if isinstance(
-                        reprompt, protocol_reprompt.UnsupportedProtocolReprompt
-                    )
-                    else reprompt.message
+        match directive:
+            case _ReturnCancelled():
+                return CompletionOutput()
+            case _ReturnParsed(parsed=p, clear_completion=clear):
+                if clear:
+                    bundle.role_session.clear_provider_state_and_signal_completion()
+                return p
+            case _RaiseUsageLimit(reset_time=rt, provider=prov, is_permanent=perm):
+                error = UsageLimitError(reset_time=rt, provider=prov, is_permanent=perm)
+                bundle.handle_provider_account_exhaustion(bundle.service, error)
+                raise error
+            case _RaiseTransientError(detail=detail):
+                transient_err = TransientAgentError(message=detail or "")
+                bundle.status_display.print(
+                    request.name, format_transient_status_message(transient_err)
                 )
-                current_run_kind = RunKind.RESUME
-                continue
-            if not request.preserve_session_on_completion:
-                bundle.role_session.clear_provider_state_and_signal_completion()
-            return parsed
-
-        if isinstance(outcome.kind, UsageLimited):
-            error = UsageLimitError(
-                reset_time=outcome.kind.reset_time,
-                provider=outcome.result.selected.service,
-                is_permanent=outcome.kind.is_permanent,
-            )
-            bundle.handle_provider_account_exhaustion(bundle.service, error)
-            raise error
-
-        if isinstance(outcome.kind, ProviderUnavailable):
-            if outcome.kind.reason is ProviderUnavailableReason.TRANSIENT_API_ERROR:
+                raise transient_err
+            case _RaiseProviderUsageLimit(provider=prov, raw_message=msg):
+                error = UsageLimitError(provider=prov, raw_message=msg)
+                bundle.handle_provider_account_exhaustion(bundle.service, error)
+                raise error
+            case _ResumeAfterTimeout(restart_num=n):
                 bundle.status_display.print(
                     request.name,
-                    format_transient_status_message(
-                        TransientAgentError(message=outcome.kind.detail)
-                    ),
+                    f"Timeout — restarting (attempt {n}/{bundle.timeout_retries})",
                 )
-                raise TransientAgentError(message=outcome.kind.detail)
-            error = UsageLimitError(
-                provider=outcome.result.selected.service,
-                raw_message=outcome.kind.detail,
-            )
-            bundle.handle_provider_account_exhaustion(bundle.service, error)
-            raise error
-
-        if isinstance(outcome.kind, TimedOut):
-            if retries_left <= 0:
-                raise AgentTimeoutError(
-                    "Provider timed out",
-                    role_value=request.role.value,
+                current_run_kind = RunKind.RESUME
+                current_prompt = await bundle.render_prompt(request, current_run_kind)
+                retries_left -= 1
+                continue
+            case _RaiseTimeout(role_value=rv):
+                raise AgentTimeoutError("Provider timed out", role_value=rv)
+            case _RaiseModelNotAvailable(service=svc, model=mdl, stage_key=sk):
+                bundle.service.mark_model_restricted(mdl)
+                raise ModelNotAvailableError(service=svc, model=mdl, stage_key=sk)
+            case _Reprompt(message=msg):
+                current_prompt = msg
+                current_run_kind = RunKind.RESUME
+                continue
+            case _RaiseAgentFailed() as d:
+                raise AgentFailedError(
+                    role_value=d.role_value,
+                    worktree_path=d.mount_path,
+                    namespace=d.session_namespace,
+                    failure_class="protocol_error",
+                    service_name=d.service_name,
+                    session_store=d.session_store,
+                    agent_invocation_log_path=d.log_path,
                 )
-            restart_num = bundle.timeout_retries - retries_left + 1
-            bundle.status_display.print(
-                request.name,
-                f"Timeout — restarting (attempt {restart_num}/{bundle.timeout_retries})",
-            )
-            current_run_kind = RunKind.RESUME
-            current_prompt = await bundle.render_prompt(request, current_run_kind)
-            retries_left -= 1
-            continue
-
-        if isinstance(outcome.kind, ModelNotAvailable):
-            model = outcome.result.selected.model
-            bundle.service.mark_model_restricted(model)
-            raise ModelNotAvailableError(
-                service=outcome.result.selected.service,
-                model=model,
-                stage_key=stage_registry.stage_key_for_role(request.role),
-            )
-
-        raise RuntimeError("Unexpected runtime outcome kind")
-
-    raise RuntimeError("Runtime reprompt loop exhausted unexpectedly")
+    raise AssertionError("attempt loop exhausted without terminal directive")
 
 
 async def _recover_stale_continuation(
