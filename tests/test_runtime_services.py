@@ -345,6 +345,43 @@ def test_opencode_recover_provider_session_id_returns_sidecar_contents(
     assert OpenCodeService().recover_provider_session_id(tmp_path) == "oc-sess-42"
 
 
+# --- provider_session_id_sidecar_path ---
+
+
+def test_claude_provider_session_id_sidecar_path_returns_thread_id(
+    tmp_path: Path,
+) -> None:
+    assert (
+        ClaudeService().provider_session_id_sidecar_path(tmp_path)
+        == tmp_path / "thread_id"
+    )
+
+
+def test_codex_provider_session_id_sidecar_path_returns_thread_id(
+    tmp_path: Path,
+) -> None:
+    assert (
+        CodexService().provider_session_id_sidecar_path(tmp_path)
+        == tmp_path / "thread_id"
+    )
+
+
+def test_opencode_provider_session_id_sidecar_path_returns_session_id(
+    tmp_path: Path,
+) -> None:
+    assert (
+        OpenCodeService().provider_session_id_sidecar_path(tmp_path)
+        == tmp_path / "session_id"
+    )
+
+
+def test_fallback_provider_session_id_sidecar_path_returns_thread_id(
+    tmp_path: Path,
+) -> None:
+    svc = service_by_name("unknown-service")
+    assert svc.provider_session_id_sidecar_path(tmp_path) == tmp_path / "thread_id"
+
+
 # --- service_by_name ---
 
 

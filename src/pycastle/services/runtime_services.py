@@ -100,6 +100,8 @@ class AgentService(Protocol):
 
     def provider_auth(self) -> ProviderAuth | None: ...
 
+    def provider_session_id_sidecar_path(self, state_dir: Path) -> Path: ...
+
 
 def _service_state_dir_relpath(
     name: str, role: AgentRole, namespace: str = ""
@@ -176,6 +178,9 @@ class _AgentServiceDefaults:
 
     def provider_auth(self) -> ProviderAuth | None:
         return None
+
+    def provider_session_id_sidecar_path(self, state_dir: Path) -> Path:
+        return state_dir / "thread_id"
 
 
 def _provider_session_preferences_for_request(
@@ -637,6 +642,9 @@ class OpenCodeService(_AgentServiceDefaults):
             state_dir, self.name, session_id_filename="session_id"
         )
 
+    def provider_session_id_sidecar_path(self, state_dir: Path) -> Path:
+        return state_dir / "session_id"
+
     def provider_auth(self) -> ProviderAuth | None:
         if self._helper is None:
             return None
@@ -854,6 +862,9 @@ class _FallbackAgentService:
 
     def provider_auth(self) -> ProviderAuth | None:
         return None
+
+    def provider_session_id_sidecar_path(self, state_dir: Path) -> Path:
+        return state_dir / "thread_id"
 
 
 def service_by_name(name: str) -> AgentService:

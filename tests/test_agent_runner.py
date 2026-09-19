@@ -116,6 +116,9 @@ class _FakeService:
     def provider_auth(self):
         return None
 
+    def provider_session_id_sidecar_path(self, state_dir: Path) -> Path:
+        return state_dir / "thread_id"
+
 
 class _RecordingService(_FakeService):
     def __init__(self, name: str) -> None:
