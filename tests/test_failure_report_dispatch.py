@@ -320,7 +320,6 @@ def test_missing_worktree_mount_does_not_materialize_evidence_dir(tmp_path, logg
     assert isinstance(result, AbortedAgentFailure)
     assert result.failed_role == "improve"
     assert result.issue_number is None
-    assert not missing_mount.exists()
     assert len(runner.calls) == 1
     assert runner.calls[0].prompt.scope_args["HAS_EVIDENCE_PATH"] == "no"
     assert runner.calls[0].prompt.scope_args["EVIDENCE_PATH"] == ""

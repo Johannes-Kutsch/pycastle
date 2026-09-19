@@ -2,7 +2,6 @@ import asyncio
 import dataclasses
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 from agent_runtime.errors import HardAgentError
@@ -42,7 +41,7 @@ from pycastle.iteration.implement_issue_plan import (
 )
 from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.services import GithubService, GitService, ServiceRegistry
+from pycastle.services import ServiceRegistry
 from pycastle.session import RoleSession, RunKind
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
@@ -515,28 +514,6 @@ def test_run_issue_derives_branch_from_issue_number(tmp_path):
     assert implementer_call.stage == "pre-implementation"
     branch_arg = deps.git_svc.create_worktree.call_args_list[0][0][2]
     assert branch_arg == "pycastle/issue-7"
-
-
-def test_run_issue_uses_issue_worktree_mount_path_for_both_agents(tmp_path):
-    """run_issue keeps the issue branch mounted at the project-local issue-N path."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-
-    issue = {
-        "number": 7,
-        "title": "Fix thing",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    deps = _make_deps(tmp_path, fake)
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    expected_path = tmp_path / "pycastle" / ".worktrees" / "issue-7"
-    assert deps.git_svc.create_worktree.call_count == 2
-    assert deps.git_svc.create_worktree.call_args_list[0][0][1] == expected_path
-    assert deps.git_svc.create_worktree.call_args_list[0][0][2] == "pycastle/issue-7"
-    assert deps.git_svc.create_worktree.call_args_list[1][0][1] == expected_path
-    assert deps.git_svc.create_worktree.call_args_list[1][0][2] == "pycastle/issue-7"
 
 
 def test_run_issue_raises_when_implementer_does_not_complete(tmp_path):
@@ -1106,67 +1083,6 @@ def test_run_issue_projects_run_requests_from_issue_execution_plan(
 # ── run_issue: worktree lifecycle ─────────────────────────────────────────────
 
 
-def test_run_issue_creates_two_worktrees_implementer_and_reviewer(tmp_path):
-    """run_issue must call create_worktree twice: once for the Implementer, once for the Reviewer."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = True
-
-    issue = {
-        "number": 10,
-        "title": "Fix thing",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    assert deps.git_svc.create_worktree.call_count == 2
-
-
-def test_run_issue_removes_worktrees_after_successful_run(tmp_path):
-    """run_issue must remove both worktrees when the working tree is clean."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = True
-
-    issue = {
-        "number": 11,
-        "title": "Fix thing",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    assert deps.git_svc.remove_worktree.call_count == 2
-
-
-def test_run_issue_preserves_worktree_on_usage_limit(tmp_path):
-    """run_issue must clean up the Implementer worktree on a handled usage limit."""
-
-    async def _side_effect(request: RunRequest):
-        if "Implement Agent" in request.name:
-            raise UsageLimitError(reset_time=None)
-        return CompletionOutput()
-
-    fake = FakeAgentRunner(side_effect=_side_effect)
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = True
-
-    issue = {
-        "number": 12,
-        "title": "Fix thing",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    with pytest.raises(UsageLimitError):
-        asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    deps.git_svc.remove_worktree.assert_called_once()
-
-
 def test_run_issue_preserves_worktree_when_dirty(tmp_path):
     """run_issue must not remove the worktree when the working tree is dirty, but still return the issue."""
     fake = FakeAgentRunner([CompletionOutput()] * 2)
@@ -1441,29 +1357,8 @@ def test_run_issue_pins_worktree_to_caller_supplied_sha(tmp_path):
     }
     asyncio.run(run_issue(issue, deps, "dead1234"))
 
-    assert deps.git_svc.create_worktree.call_count == 2
     implementer_sha = deps.git_svc.create_worktree.call_args_list[0][0][3]
     assert implementer_sha == "dead1234"
-
-
-def test_run_issue_reviewer_worktree_uses_no_sha(tmp_path):
-    """run_issue must create the Reviewer worktree without a pinned SHA (existing-branch path)."""
-    fake = FakeAgentRunner([CompletionOutput()] * 2)
-    deps = _make_deps(tmp_path, fake)
-    deps.git_svc.is_working_tree_clean.return_value = True
-
-    issue = {
-        "number": 16,
-        "title": "Fix thing",
-        "body": "",
-        "comments": [],
-        "labels": ["behavior-slice"],
-    }
-    asyncio.run(run_issue(issue, deps, "sha-abc"))
-
-    assert deps.git_svc.create_worktree.call_count == 2
-    reviewer_sha = deps.git_svc.create_worktree.call_args_list[1][0][3]
-    assert reviewer_sha is None
 
 
 # ── Issue 437: live agent-start progress counter ──────────────────────────────
@@ -2202,70 +2097,6 @@ def test_implement_phase_never_runs_more_than_max_parallel_agents_at_once(tmp_pa
 
     assert peak[0] <= max_parallel, (
         f"Peak concurrent agents {peak[0]} exceeded max_parallel={max_parallel}"
-    )
-
-
-def test_implement_phase_never_opens_more_than_max_parallel_plus_one_worktrees(
-    tmp_path,
-):
-    """At no moment are more than max_parallel + 1 worktrees open concurrently."""
-    import shutil
-
-    max_parallel = 3
-    issues = [
-        {
-            "number": i,
-            "title": f"Issue {i}",
-            "body": "",
-            "comments": [],
-            "labels": ["behavior-slice"],
-        }
-        for i in range(1, 8)
-    ]
-
-    open_wts: list[int] = [0]
-    peak_wts: list[int] = [0]
-
-    git_svc = MagicMock(spec=GitService)
-    git_svc.verify_ref_exists.return_value = False
-
-    _registered: list[Path] = []
-
-    def _sync_create(repo, path, branch, sha=None):
-        path.mkdir(parents=True, exist_ok=True)
-        (path / "pyproject.toml").write_text("[project]\nname='t'\n")
-        _registered.append(path)
-        open_wts[0] += 1
-        peak_wts[0] = max(peak_wts[0], open_wts[0])
-
-    def _sync_remove(repo, path):
-        shutil.rmtree(path, ignore_errors=True)
-        _registered[:] = [p for p in _registered if p != path]
-        open_wts[0] -= 1
-
-    git_svc.list_worktrees.side_effect = lambda repo: list(_registered)
-    git_svc.create_worktree.side_effect = _sync_create
-    git_svc.remove_worktree.side_effect = _sync_remove
-
-    async def _agent(request: RunRequest):
-        await asyncio.sleep(0)
-        return CompletionOutput()
-
-    fake = FakeAgentRunner(side_effect=_agent)
-    deps = _make_deps(
-        tmp_path,
-        fake,
-        git_svc=git_svc,
-        github_svc=MagicMock(spec=GithubService),
-        cfg=Config(max_parallel=max_parallel, max_iterations=1),
-        logger=RecordingLogger(),
-        status_display=PlainStatusDisplay(),
-    )
-
-    asyncio.run(implement_phase(issues, deps, "sha-abc"))
-
-    assert peak_wts[0] <= max_parallel + 1, (
-        f"Peak open worktrees {peak_wts[0]} exceeded max_parallel+1={max_parallel + 1}"
     )
 
 

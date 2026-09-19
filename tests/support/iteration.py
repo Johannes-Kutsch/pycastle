@@ -139,6 +139,10 @@ class FakeAgentRunner:
 
     async def _run(self, request: RunRequest) -> AgentOutput:
         self.calls.append(request)
+        session_dir = request.mount_path / ".pycastle-session" / request.role.value
+        if request.session_namespace:
+            session_dir = session_dir / request.session_namespace
+        session_dir.mkdir(parents=True, exist_ok=True)
         try:
             if self._side_effect is not None:
                 result = self._side_effect(request)
