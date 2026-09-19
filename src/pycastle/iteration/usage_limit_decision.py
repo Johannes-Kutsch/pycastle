@@ -35,22 +35,6 @@ class BreakLoop:
     message: str | None = None
 
 
-@dataclasses.dataclass(frozen=True)
-class _TemporaryUsageLimit:
-    reset_time: datetime | None = None
-    provider: str | None = None
-    raw_message: str | None = None
-    account_label: str | None = None
-
-
-@dataclasses.dataclass(frozen=True)
-class _PermanentlyExhausted:
-    reason: str
-    provider: str | None = None
-    raw_message: str | None = None
-    account_label: str | None = None
-
-
 _WakeTimeComputer = Callable[[datetime | None, datetime], tuple[datetime, bool]]
 
 
@@ -69,7 +53,7 @@ def _sleep_message(wake: datetime, now: datetime, *, is_estimated: bool) -> str:
     )
 
 
-def _permanent_exhaustion_message(outcome: _PermanentlyExhausted) -> str:
+def _permanent_exhaustion_message(outcome: AbortedUsageLimit) -> str:
     provider_label = outcome.provider or "claude"
     account = outcome.account_label or "unknown"
     message = (
@@ -117,7 +101,7 @@ def _registry_next_wake_time(
 
 
 def _compute_exhausted_wake_time(
-    outcome: _TemporaryUsageLimit | _PermanentlyExhausted,
+    outcome: AbortedUsageLimit,
     service_registry: ServiceRegistry | None,
     stage_override: StageOverride | None,
     now: datetime,
@@ -142,7 +126,7 @@ def _compute_exhausted_wake_time(
 
 
 def _decide_limit_continuation(
-    outcome: _TemporaryUsageLimit | _PermanentlyExhausted,
+    outcome: AbortedUsageLimit,
     *,
     stage_override: StageOverride | None,
     service_registry: ServiceRegistry | None,
@@ -154,7 +138,7 @@ def _decide_limit_continuation(
             outcome, service_registry, stage_override, now
         )
         message: str | None = None
-        if isinstance(outcome, _PermanentlyExhausted):
+        if outcome.is_permanent:
             message = _permanent_exhaustion_message(outcome)
         elif exhausted_wake_time is not None:
             message = (
@@ -170,7 +154,7 @@ def _decide_limit_continuation(
             message=_sleep_message(next_wake, now, is_estimated=False),
         )
 
-    if isinstance(outcome, _PermanentlyExhausted):
+    if outcome.is_permanent:
         return BreakLoop(message=_permanent_exhaustion_message(outcome))
 
     wake_time, is_estimated = compute_wake_time_fn(outcome.reset_time, now)
@@ -201,24 +185,8 @@ def decide_usage_limit_continuation(
             minimum_unknown_reset_duration=minimum_unknown_reset_duration,
         )
 
-    limit_outcome: _TemporaryUsageLimit | _PermanentlyExhausted
-    if outcome.is_permanent:
-        limit_outcome = _PermanentlyExhausted(
-            reason="credential_failure",
-            provider=outcome.provider,
-            raw_message=outcome.raw_message,
-            account_label=outcome.account_label,
-        )
-    else:
-        limit_outcome = _TemporaryUsageLimit(
-            reset_time=outcome.reset_time,
-            provider=outcome.provider,
-            raw_message=outcome.raw_message,
-            account_label=outcome.account_label,
-        )
-
     return _decide_limit_continuation(
-        limit_outcome,
+        outcome,
         stage_override=stage_registry.override_for_stage_key(cfg, outcome.stage_key)
         if outcome.stage_key is not None
         else None,
