@@ -9,8 +9,8 @@ from pycastle.agents.output_protocol import (
     IssueOutput,
     IssueParseError,
     NoCandidateOutput,
-    PlanParseError,
     PlannerOutput,
+    PlanParseError,
     PromiseParseError,
     ScanCandidateItem,
     ScanCandidatesOutput,
@@ -117,7 +117,10 @@ def test_planner_issues_key_returns_planner_output_with_parsed_issues():
     text = '<plan>{"issues": [{"number": 1, "title": "First"}, {"number": 2, "title": "Second"}]}</plan>'
     result = extract_output(text, AgentRole.PLANNER)
     assert isinstance(result, PlannerOutput)
-    assert result.issues == [{"number": 1, "title": "First"}, {"number": 2, "title": "Second"}]
+    assert result.issues == [
+        {"number": 1, "title": "First"},
+        {"number": 2, "title": "Second"},
+    ]
 
 
 def test_planner_unblocked_issues_alias_returns_planner_output():
