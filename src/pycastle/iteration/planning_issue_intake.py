@@ -1,5 +1,6 @@
 import dataclasses
 import re
+from collections.abc import Callable, Iterable
 from typing import Literal
 
 from pycastle.agents.output_protocol import PlannerOutput
@@ -180,82 +181,46 @@ This issue has been labeled `{label}` by the slice classifier during the plan ph
 """
 
 
-def _needs_info_actions(
-    issues_with_readiness: list[tuple[dict, IssueReadiness]],
-    cfg: Config,
-) -> tuple[LabelSyncAction, ...]:
-    flag = cfg.needs_info_label
-    blocked_actions: list[LabelSyncAction] = []
-    well_formed_actions: list[LabelSyncAction] = []
+@dataclasses.dataclass(frozen=True)
+class _MarkerRule:
+    label_name: str
+    should_mark: Callable[[IssueReadiness], bool]
+    comment_builder: Callable[[IssueReadiness], str]
 
-    for issue, readiness in issues_with_readiness:
-        labels: list[str] = issue.get("labels") or []
-        if readiness.is_hitl_exempt:
-            continue
-        if isinstance(readiness.body_floor_status, MalformedBody):
-            if flag in labels:
+
+def _marker_label_sync_actions(
+    issues_with_readiness: list[tuple[dict, IssueReadiness]],
+    rules: Iterable[_MarkerRule],
+) -> tuple[LabelSyncAction, ...]:
+    actions: list[LabelSyncAction] = []
+    for rule in rules:
+        blocked_actions: list[LabelSyncAction] = []
+        well_formed_actions: list[LabelSyncAction] = []
+        for issue, readiness in issues_with_readiness:
+            labels: list[str] = issue.get("labels") or []
+            if readiness.is_hitl_exempt:
                 continue
-            blocked_actions.append(
-                LabelSyncAction(
-                    issue_number=issue["number"],
-                    label_name=flag,
-                    intent="add",
-                    comment_body=_NEEDS_INFO_COMMENT,
+            if rule.should_mark(readiness):
+                if rule.label_name in labels:
+                    continue
+                blocked_actions.append(
+                    LabelSyncAction(
+                        issue_number=issue["number"],
+                        label_name=rule.label_name,
+                        intent="add",
+                        comment_body=rule.comment_builder(readiness),
+                    )
                 )
-            )
-            continue
-        if flag in labels:
-            well_formed_actions.append(
-                LabelSyncAction(
-                    issue_number=issue["number"],
-                    label_name=flag,
-                    intent="remove",
-                )
-            )
-    return tuple(blocked_actions + well_formed_actions)
-
-
-def _needs_slice_type_actions(
-    issues_with_readiness: list[tuple[dict, IssueReadiness]],
-    cfg: Config,
-) -> tuple[LabelSyncAction, ...]:
-    flag = cfg.needs_slice_type_label
-    malformed_actions: list[LabelSyncAction] = []
-    well_formed_actions: list[LabelSyncAction] = []
-
-    for issue, readiness in issues_with_readiness:
-        labels: list[str] = issue.get("labels") or []
-        if readiness.is_hitl_exempt:
-            continue
-        if not isinstance(readiness.slice_status, Malformed):
-            if flag in labels:
+            elif rule.label_name in labels:
                 well_formed_actions.append(
                     LabelSyncAction(
                         issue_number=issue["number"],
-                        label_name=flag,
+                        label_name=rule.label_name,
                         intent="remove",
                     )
                 )
-            continue
-
-        if flag in labels:
-            continue
-
-        current_slice = (
-            ", ".join(f"`{label}`" for label in readiness.slice_status.found) or "none"
-        )
-        malformed_actions.append(
-            LabelSyncAction(
-                issue_number=issue["number"],
-                label_name=flag,
-                intent="add",
-                comment_body=_MALFORMED_SLICE_COMMENT.format(
-                    current_slice=current_slice
-                ),
-            )
-        )
-
-    return tuple(malformed_actions + well_formed_actions)
+        actions.extend(blocked_actions + well_formed_actions)
+    return tuple(actions)
 
 
 def _classify_planning_issue_set(
@@ -303,9 +268,30 @@ def _classify_planning_issue_set(
         ready_readiness_by_number=ready_readiness_by_number,
         malformed_body_issues=tuple(body_malformed),
         malformed_slice_mode_issues=tuple(slice_malformed),
-        label_sync_actions=(
-            _needs_info_actions(issues_with_readiness, cfg)
-            + _needs_slice_type_actions(issues_with_readiness, cfg)
+        label_sync_actions=_marker_label_sync_actions(
+            issues_with_readiness,
+            [
+                _MarkerRule(
+                    label_name=cfg.needs_info_label,
+                    should_mark=lambda r: isinstance(
+                        r.body_floor_status, MalformedBody
+                    ),
+                    comment_builder=lambda _: _NEEDS_INFO_COMMENT,
+                ),
+                _MarkerRule(
+                    label_name=cfg.needs_slice_type_label,
+                    should_mark=lambda r: isinstance(r.slice_status, Malformed),
+                    comment_builder=lambda r: _MALFORMED_SLICE_COMMENT.format(
+                        current_slice=(
+                            ", ".join(
+                                f"`{lbl}`"
+                                for lbl in r.slice_status.found  # type: ignore[union-attr]
+                            )
+                            or "none"
+                        )
+                    ),
+                ),
+            ],
         ),
         blocker_summary_inputs=BlockerSummaryInputs(
             malformed_slice_mode_issues=tuple(slice_malformed),
