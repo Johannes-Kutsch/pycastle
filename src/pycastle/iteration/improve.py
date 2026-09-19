@@ -223,6 +223,11 @@ class _PhaseHandler:
     def should_file_and_decide(self) -> bool:
         return False
 
+    def resume_kind(self, in_flight: str | None) -> PromptKind:
+        if self.in_flight_token and in_flight == self.in_flight_token:
+            return PromptKind.ROLE_PROMPT
+        return PromptKind.FOLLOW_UP
+
     def record_outcome(
         self,
         step: "Step",  # noqa: ARG002
@@ -520,9 +525,8 @@ class ImprovePhaseDriver:
         if record is None:
             # No record → spec phase. Check in-flight for mid-spec resume.
             in_flight = self._store.read_in_flight() if from_start else None
-            is_mid_spec = in_flight == "02-spec"
             return _spec_handler.make_step(
-                kind=PromptKind.ROLE_PROMPT if is_mid_spec else PromptKind.FOLLOW_UP,
+                kind=_spec_handler.resume_kind(in_flight),
                 idx=idx,
                 candidate=candidate,
                 candidates=candidates,
@@ -530,9 +534,8 @@ class ImprovePhaseDriver:
 
         # Record exists → tickets phase.
         in_flight = self._store.read_in_flight() if from_start else None
-        is_mid_tickets = in_flight == "03-tickets"
         return _tickets_handler.make_step(
-            kind=PromptKind.ROLE_PROMPT if is_mid_tickets else PromptKind.FOLLOW_UP,
+            kind=_tickets_handler.resume_kind(in_flight),
             idx=idx,
             candidate=candidate,
             candidates=candidates,
@@ -561,8 +564,10 @@ class ImprovePhaseDriver:
         if candidate_list is None:
             # Scan not done → return scan step.
             in_flight = self._store.read_in_flight()
-            is_mid_scan = in_flight == "01-scan"
-            step = _scan_handler.make_step(fetch_recent_spec_titles=not is_mid_scan)
+            step = _scan_handler.make_step(
+                fetch_recent_spec_titles=_scan_handler.resume_kind(in_flight)
+                is PromptKind.FOLLOW_UP
+            )
             self._store.write_in_flight(step.cfg.handler.in_flight_token)
             return step
 
@@ -580,11 +585,8 @@ class ImprovePhaseDriver:
         if no_candidate:
             if self._no_candidate_report and cursor == 0:
                 in_flight = self._store.read_in_flight()
-                is_mid_report = in_flight == "04-no-candidate-report"
                 step = _report_handler.make_step(
-                    kind=PromptKind.ROLE_PROMPT
-                    if is_mid_report
-                    else PromptKind.FOLLOW_UP
+                    kind=_report_handler.resume_kind(in_flight)
                 )
                 self._store.write_in_flight(step.cfg.handler.in_flight_token)
                 return step
