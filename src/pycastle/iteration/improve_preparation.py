@@ -8,7 +8,7 @@ from pycastle.prompts.dispatch import (
     PromptKind,
     build_prompt_invocation,
 )
-from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate, Scope
+from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate
 from pycastle.prompts.scope_args import (
     build_improve_scan_scope_args,
     validated_scope_args_for_template,
@@ -123,7 +123,7 @@ def prepare_improve_step(
         short_sid=short_sid,
         candidate_budget=candidate_budget,
     )
-    scope_args = _build_scope_args(request, github_port=github_port)
+    scope_args = _render_scope_args(request, github_port=github_port)
     return PreparedImproveStep(
         prompt=build_prompt_invocation(
             request.prompt_template,
@@ -186,82 +186,63 @@ def _coerce_request(
     )
 
 
-def _build_scope_args(
+def _render_scope_args(
     request: ImproveStepPreparationRequest,
     *,
     github_port: ImprovePreparationGithubPort,
 ) -> dict[str, str]:
-    if request.fetch_recent_spec_titles:
-        return _build_improve_scope_args(request, github_port=github_port)
-    if request.prompt_template.scope is Scope.IMPROVE_SCAN:
-        return _build_scan_scope_args(request, recent_specs=[])
-    if request.prompt_template.scope in (Scope.IMPROVE_TICKETS, Scope.IMPROVE_SESSION):
-        return _build_improve_scope_args(request, github_port=github_port)
-    return {}
-
-
-def _build_scan_scope_args(
-    request: ImproveStepPreparationRequest,
-    *,
-    recent_specs: list[dict[str, Any]],
-) -> dict[str, str]:
-    if request.candidate_budget is None:
-        raise PromptRenderError(
-            "candidate_budget is required to render the improve scan prompt"
-        )
-    return build_improve_scan_scope_args(
-        recent_specs=recent_specs,
-        candidate_budget=request.candidate_budget,
-    )
-
-
-def _build_improve_scope_args(
-    request: ImproveStepPreparationRequest,
-    *,
-    github_port: ImprovePreparationGithubPort,
-) -> dict[str, str]:
-    template = request.prompt_template
-    if template is PromptTemplate.IMPROVE_SCAN:
-        return _build_scan_scope_args(
-            request,
-            recent_specs=github_port.get_recent_improve_specs(),
-        )
-
-    if template is PromptTemplate.IMPROVE_SPEC:
-        if request.candidate is None:
-            raise PromptRenderError("candidate is required to render the spec prompt")
-        return validated_scope_args_for_template(
-            template,
-            {
-                "IMPROVE_SHORT_SID": request.short_sid,
-                "RECENT_IMPROVE_SPECS": _format_recent_improve_specs(
-                    github_port.get_recent_improve_specs()
-                ),
-                "CANDIDATE_RANK": str(request.candidate.rank),
-                "CANDIDATE_TITLE": request.candidate.title,
-            },
-        )
-
-    if template is PromptTemplate.IMPROVE_NO_CANDIDATE:
-        return validated_scope_args_for_template(
-            template,
-            {
-                "IMPROVE_SHORT_SID": request.short_sid,
-                "RECENT_IMPROVE_SPECS": _format_recent_improve_specs(
-                    github_port.get_recent_improve_specs()
-                ),
-                "CANDIDATE_RANK": "",
-                "CANDIDATE_TITLE": "",
-            },
-        )
-
-    if template is PromptTemplate.IMPROVE_TICKETS:
-        return validated_scope_args_for_template(
-            template,
-            {"IMPROVE_SHORT_SID": request.short_sid},
-        )
-
-    raise TypeError(f"unsupported Improve template: {template.name}")
+    match request.prompt_template:
+        case PromptTemplate.IMPROVE_SCAN:
+            recent_specs = (
+                github_port.get_recent_improve_specs()
+                if request.fetch_recent_spec_titles
+                else []
+            )
+            if request.candidate_budget is None:
+                raise PromptRenderError(
+                    "candidate_budget is required to render the improve scan prompt"
+                )
+            return build_improve_scan_scope_args(
+                recent_specs=recent_specs,
+                candidate_budget=request.candidate_budget,
+            )
+        case PromptTemplate.IMPROVE_SPEC:
+            if request.candidate is None:
+                raise PromptRenderError(
+                    "candidate is required to render the spec prompt"
+                )
+            return validated_scope_args_for_template(
+                request.prompt_template,
+                {
+                    "IMPROVE_SHORT_SID": request.short_sid,
+                    "RECENT_IMPROVE_SPECS": _format_recent_improve_specs(
+                        github_port.get_recent_improve_specs()
+                    ),
+                    "CANDIDATE_RANK": str(request.candidate.rank),
+                    "CANDIDATE_TITLE": request.candidate.title,
+                },
+            )
+        case PromptTemplate.IMPROVE_NO_CANDIDATE:
+            return validated_scope_args_for_template(
+                request.prompt_template,
+                {
+                    "IMPROVE_SHORT_SID": request.short_sid,
+                    "RECENT_IMPROVE_SPECS": _format_recent_improve_specs(
+                        github_port.get_recent_improve_specs()
+                    ),
+                    "CANDIDATE_RANK": "",
+                    "CANDIDATE_TITLE": "",
+                },
+            )
+        case PromptTemplate.IMPROVE_TICKETS:
+            return validated_scope_args_for_template(
+                request.prompt_template,
+                {"IMPROVE_SHORT_SID": request.short_sid},
+            )
+        case _:
+            raise TypeError(
+                f"unsupported Improve template: {request.prompt_template.name}"
+            )
 
 
 def _format_recent_improve_specs(recent_specs: list[dict[str, Any]]) -> str:
