@@ -118,26 +118,6 @@ def _parse_candidate_namespace(namespace: str) -> int:
     return idx
 
 
-def _fork_candidate_namespaces(
-    sandbox_path: Path,
-    candidates: list[ScanCandidateItem],
-) -> None:
-    """Fork the scan (main) namespace to per-candidate namespaces.
-
-    Idempotent: skips any fork whose target already exists. Skips entirely
-    when the main namespace directory does not exist (e.g. in unit tests where
-    FakeAgentRunner does not write real session state).
-    """
-    main_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
-    if not main_session.path.is_dir():
-        return
-    for idx in range(len(candidates)):
-        ns = _candidate_namespace(idx)
-        target = RoleSession(sandbox_path, AgentRole.IMPROVE, ns)
-        if not target.path.is_dir():
-            main_session.fork_namespace(ns)
-
-
 # ── Outcome transitions ───────────────────────────────────────────────────────
 
 
@@ -214,11 +194,13 @@ class _PhaseHandler:
     def verify_output(self, step: "Step", output: AgentOutput) -> None:
         pass
 
-    def get_fork_candidates(
+    def post_record(
         self,
-        output: AgentOutput,  # noqa: ARG002
-    ) -> "list[ScanCandidateItem] | None":
-        return None
+        step: "Step",
+        output: AgentOutput,
+        sandbox_path: Path,
+    ) -> None:
+        pass
 
     def should_file_and_decide(self) -> bool:
         return False
@@ -281,12 +263,20 @@ class _ScanPhaseHandler(_PhaseHandler):
                 f"got {type(output).__name__}."
             )
 
-    def get_fork_candidates(
-        self, output: AgentOutput
-    ) -> list[ScanCandidateItem] | None:
-        if isinstance(output, ScanCandidatesOutput):
-            return list(output.candidates)
-        return None
+    def post_record(
+        self,
+        step: Step,  # noqa: ARG002
+        output: AgentOutput,
+        sandbox_path: Path,
+    ) -> None:
+        if not isinstance(output, ScanCandidatesOutput):
+            return
+        main_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
+        for idx in range(len(output.candidates)):
+            ns = _candidate_namespace(idx)
+            target = RoleSession(sandbox_path, AgentRole.IMPROVE, ns)
+            if not target.path.is_dir():
+                main_session.fork_namespace(ns)
 
     def record_outcome(
         self,
@@ -794,11 +784,7 @@ async def improve_phase(
                 )
                 handler.verify_output(step, output)
                 driver.record_outcome(step, output)
-
-                # After scan, eagerly fork one namespace per candidate.
-                fork_candidates = handler.get_fork_candidates(output)
-                if fork_candidates is not None:
-                    _fork_candidate_namespaces(sandbox_path, fork_candidates)
+                handler.post_record(step, output, sandbox_path)
 
                 if handler.should_file_and_decide():
                     outcome = await file_and_decide(
