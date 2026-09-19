@@ -18,16 +18,14 @@ if TYPE_CHECKING:
     from pycastle.services.runtime_services import AgentService
     from pycastle.session.role import RoleSession
 
-_SERVICE_SESSION_ID_FILENAMES = {"codex": "thread_id", "opencode": "session_id"}
-
 
 class ServiceSessionStore(ServiceResumeIdentityStore):
     """
     Owns all per-service session state anchored at a role-session directory.
 
     On-disk artifacts:
-    - Per-service session-id file under ``<role_session_path>/<service_name>/``:
-      ``thread_id`` for codex and all other services, ``session_id`` for opencode.
+    - Per-service session-id file under ``<role_session_path>/<service_name>/``
+      at the path the service reports via the AgentService seam.
     """
 
     def __init__(self, path: Path, _role_session: object = None) -> None:
@@ -69,7 +67,9 @@ class ServiceSessionStore(ServiceResumeIdentityStore):
 
     @staticmethod
     def provider_session_id_path(state_dir: Path, service_name: str) -> Path:
-        return state_dir / _SERVICE_SESSION_ID_FILENAMES.get(service_name, "thread_id")
+        return runtime_services.service_by_name(
+            service_name
+        ).provider_session_id_sidecar_path(state_dir)
 
     @staticmethod
     def load_state_session_id(state_dir: Path | None, service_name: str) -> str | None:

@@ -27,7 +27,6 @@ class ServiceResumeIdentityStore(Protocol):
     ) -> str | None: ...
 
 
-_DEFAULT_PROVIDER_SESSION_ID_FILENAME = "thread_id"
 _NAMESPACE = uuid.NAMESPACE_DNS
 _SESSION_UUID_SEED_FILENAME = "_session_uuid_seed"
 
@@ -183,11 +182,10 @@ def _session_root_for_relpath(state_dir_relpath: str) -> str:
 def provider_state_session_id_path(
     state_dir: Path,
     service_name: str,
-    *,
-    session_id_filename: str = _DEFAULT_PROVIDER_SESSION_ID_FILENAME,
 ) -> Path:
-    del service_name
-    return state_dir / session_id_filename
+    from pycastle.services.runtime_services import service_by_name
+
+    return service_by_name(service_name).provider_session_id_sidecar_path(state_dir)
 
 
 def load_provider_state_session_id(path: Path) -> str | None:
@@ -203,17 +201,11 @@ def load_provider_state_session_id(path: Path) -> str | None:
 def load_state_dir_provider_session_id(
     state_dir: Path | None,
     service_name: str,
-    *,
-    session_id_filename: str = _DEFAULT_PROVIDER_SESSION_ID_FILENAME,
 ) -> str | None:
     if state_dir is None:
         return None
     return load_provider_state_session_id(
-        provider_state_session_id_path(
-            state_dir,
-            service_name,
-            session_id_filename=session_id_filename,
-        )
+        provider_state_session_id_path(state_dir, service_name)
     )
 
 

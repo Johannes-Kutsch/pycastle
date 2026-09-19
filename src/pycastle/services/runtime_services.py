@@ -583,7 +583,6 @@ class OpenCodeService(_AgentServiceDefaults):
         state_dir_session_id = load_state_dir_provider_session_id(
             request.provider_state_dir,
             self.name,
-            session_id_filename="session_id",
         )
         if not request.has_resumable_provider_state or state_dir_session_id is None:
             return ProviderSessionState(
@@ -638,9 +637,7 @@ class OpenCodeService(_AgentServiceDefaults):
         return "OpenCode auth: API key configured"
 
     def recover_provider_session_id(self, state_dir: Path | None) -> str | None:
-        return load_state_dir_provider_session_id(
-            state_dir, self.name, session_id_filename="session_id"
-        )
+        return load_state_dir_provider_session_id(state_dir, self.name)
 
     def provider_session_id_sidecar_path(self, state_dir: Path) -> Path:
         return state_dir / "session_id"
@@ -666,7 +663,9 @@ def _resolved_provider_session_id(
     if not isinstance(role_session_path, Path):
         return None
     return load_provider_state_session_id(
-        _service_session_id_path(role_session_path, service_name)
+        service_by_name(service_name).provider_session_id_sidecar_path(
+            role_session_path / service_name
+        )
     )
 
 
@@ -762,11 +761,6 @@ def _codex_provider_session_verdict(
         exact_transcript_match=exact_transcript_match,
         allow_protocol_reprompt=True,
     )
-
-
-def _service_session_id_path(role_session_path: Path, service_name: str) -> Path:
-    filename = "session_id" if service_name == "opencode" else "thread_id"
-    return role_session_path / service_name / filename
 
 
 def _recover_codex_rollout_thread_id(state_dir: Path | None) -> str | None:
