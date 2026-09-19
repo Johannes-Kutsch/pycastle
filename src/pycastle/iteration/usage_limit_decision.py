@@ -27,7 +27,6 @@ class ContinueLoop:
 class SleepThenContinue:
     wake_time: datetime
     message: str
-    slept_once_after: bool = True
 
 
 @dataclasses.dataclass(frozen=True)

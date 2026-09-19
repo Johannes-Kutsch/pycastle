@@ -652,7 +652,6 @@ def test_decide_usage_limit_continuation_temporary_no_registry_returns_sleep_the
     )
     assert isinstance(result, SleepThenContinue)
     assert result.wake_time > _now()
-    assert result.slept_once_after is True
     assert "Sleeping until" in result.message
 
 
@@ -700,7 +699,6 @@ def test_decide_model_not_available_continuation_with_wake_time_returns_sleep_th
     )
     assert isinstance(result, SleepThenContinue)
     assert result.wake_time == wake
-    assert result.slept_once_after is True
 
 
 def test_decide_model_not_available_continuation_with_available_service_returns_continue_loop():

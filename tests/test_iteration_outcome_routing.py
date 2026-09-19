@@ -71,17 +71,9 @@ def _printed_messages(display: RecordingStatusDisplay) -> list[str]:
 
 def test_loop_directive_types_exist():
     assert ContinueLoop() is not None
-    assert (
-        SleepThenContinue(wake_time=_now(), message="sleeping", slept_once_after=True)
-        is not None
-    )
+    assert SleepThenContinue(wake_time=_now(), message="sleeping") is not None
     assert BreakLoop() is not None
     assert ExitFailure(code=1) is not None
-
-
-def test_sleep_then_continue_slept_once_after_defaults_to_true():
-    d = SleepThenContinue(wake_time=_now(), message="msg")
-    assert d.slept_once_after is True
 
 
 # ── Continue ──────────────────────────────────────────────────────────────────

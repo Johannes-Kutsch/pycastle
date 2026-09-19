@@ -398,13 +398,12 @@ async def run(
                 case SleepThenContinue(
                     wake_time=wake_time,
                     message=sleep_msg,
-                    slept_once_after=slept_after,
                 ):
                     status_display.print("", sleep_msg)  # type: ignore[union-attr]
                     time.sleep(  # noqa: ASYNC251  # intentional blocking sleep: caller runs this in asyncio.to_thread
                         max(0.0, (wake_time - _time_module.now_local()).total_seconds())
                     )
-                    slept_once = slept_after
+                    slept_once = True
                     continue
                 case BreakLoop(message=break_msg):
                     if break_msg is not None:
