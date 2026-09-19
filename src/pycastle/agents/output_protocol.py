@@ -337,17 +337,10 @@ def _extract_improve_output(text: str) -> IssueOutput | CompletionOutput:
 
 
 class _RoleHandler(Protocol):
-    def extract_early_output(self, turn: str) -> AgentOutput | None: ...
     def extract_final_output(self, text: str, tail: str) -> AgentOutput: ...
 
 
 class _CommitMessageHandler:
-    def extract_early_output(self, turn: str) -> AgentOutput | None:
-        body = _last_tag_block(turn, "commit_message")
-        if body is not None:
-            return CommitMessageOutput(message=body.strip())
-        return None
-
     def extract_final_output(self, text: str, _tail: str) -> AgentOutput:
         body = _last_tag_block(text, "commit_message")
         if body is None:
@@ -367,18 +360,6 @@ class _TagBasedRoleHandler:
         self._body_parser = body_parser
         self._parse_error_cls = parse_error_cls
         self._no_tag_message = no_tag_message
-
-    def extract_early_output(self, turn: str) -> AgentOutput | None:
-        try:
-            return _retry_parse(
-                turn,
-                self._tag,
-                self._body_parser,
-                self._parse_error_cls,
-                self._no_tag_message,
-            )
-        except self._parse_error_cls:
-            return None
 
     def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         try:
@@ -400,13 +381,6 @@ _COMPLETE_OR_NO_CANDIDATE: frozenset[str] = _COMPLETE | _NO_CANDIDATE
 
 
 class _MergerHandler:
-    def extract_early_output(self, turn: str) -> AgentOutput | None:
-        if extract_promise(turn, _FAILED) is not None:
-            return FailedOutput()
-        if extract_promise(turn, _COMPLETE) is not None:
-            return CompletionOutput()
-        return None
-
     def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         if extract_promise(text, _FAILED) is not None:
             return FailedOutput()
@@ -415,21 +389,6 @@ class _MergerHandler:
 
 
 class _ImproveHandler:
-    def extract_early_output(self, turn: str) -> AgentOutput | None:
-        if extract_promise(turn, _FAILED) is not None:
-            return FailedOutput()
-        if extract_promise(turn, _NO_CANDIDATE) is not None:
-            return NoCandidateOutput()
-        if extract_promise(turn, _COMPLETE) is not None:
-            candidates_body = _last_tag_block(turn, "candidates")
-            if candidates_body is not None:
-                try:
-                    return _parse_candidates_body(candidates_body)
-                except CandidatesParseError:
-                    return None
-            return _extract_improve_output(turn)
-        return None
-
     def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         if extract_promise(text, _FAILED) is not None:
             return FailedOutput()
