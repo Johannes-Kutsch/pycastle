@@ -649,3 +649,42 @@ def test_tickets_agent_name_and_body_from_driver_issues_step(tmp_path: Path) -> 
 
     assert prepared.name == "Tickets Agent"
     assert prepared.work_body == 'filing tickets for candidate 1/3 "Alpha"'
+
+
+def test_prepare_improve_step_unsupported_template_raises_type_error():
+    github_port = _GithubPortStandIn()
+
+    with pytest.raises(TypeError):
+        prepare_improve_step(
+            ImproveStepPreparationRequest(
+                prompt_template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                session_namespace="main",
+                display_name="Behavior Agent",
+                work_body="body",
+                kind=PromptKind.FOLLOW_UP,
+                short_sid="abcd1234",
+            ),
+            github_port=github_port,
+        )
+
+
+def test_prepare_improve_step_tickets_with_fetch_flag_makes_no_github_call():
+    github_port = _GithubPortStandIn(
+        recent_spec_error=AssertionError("IMPROVE_TICKETS must never call github_port")
+    )
+
+    prepared = prepare_improve_step(
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_TICKETS,
+            session_namespace="main",
+            display_name="Tickets Agent",
+            work_body="filing sub-issues",
+            kind=PromptKind.FOLLOW_UP,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=True,
+        ),
+        github_port=github_port,
+    )
+
+    assert prepared.prompt.scope_args == {"IMPROVE_SHORT_SID": "abcd1234"}
+    assert github_port.recent_spec_calls == 0
