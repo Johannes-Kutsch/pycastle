@@ -36,22 +36,6 @@ class BreakLoop:
 
 
 @dataclasses.dataclass(frozen=True)
-class _ContinueNow:
-    message: str | None = None
-
-
-@dataclasses.dataclass(frozen=True)
-class _SleepUntil:
-    wake_time: datetime
-    message: str
-
-
-@dataclasses.dataclass(frozen=True)
-class _Stop:
-    message: str | None = None
-
-
-@dataclasses.dataclass(frozen=True)
 class _TemporaryUsageLimit:
     reset_time: datetime | None = None
     provider: str | None = None
@@ -164,7 +148,7 @@ def _decide_limit_continuation(
     service_registry: ServiceRegistry | None,
     now: datetime,
     compute_wake_time_fn: _WakeTimeComputer,
-) -> _ContinueNow | _SleepUntil | _Stop:
+) -> ContinueLoop | SleepThenContinue | BreakLoop:
     if _registry_has_available(service_registry, stage_override, now):
         exhausted_wake_time = _compute_exhausted_wake_time(
             outcome, service_registry, stage_override, now
@@ -177,36 +161,23 @@ def _decide_limit_continuation(
                 f"Account exhausted until {_fmt_wake(exhausted_wake_time, now)}, "
                 "switching to next available."
             )
-        return _ContinueNow(message=message)
+        return ContinueLoop(message=message)
 
     next_wake = _registry_next_wake_time(service_registry, stage_override, now)
     if next_wake is not None:
-        return _SleepUntil(
+        return SleepThenContinue(
             wake_time=next_wake,
             message=_sleep_message(next_wake, now, is_estimated=False),
         )
 
     if isinstance(outcome, _PermanentlyExhausted):
-        return _Stop(message=_permanent_exhaustion_message(outcome))
+        return BreakLoop(message=_permanent_exhaustion_message(outcome))
 
     wake_time, is_estimated = compute_wake_time_fn(outcome.reset_time, now)
-    return _SleepUntil(
+    return SleepThenContinue(
         wake_time=wake_time,
         message=_sleep_message(wake_time, now, is_estimated=is_estimated),
     )
-
-
-def _to_loop_directive(
-    decision: _ContinueNow | _SleepUntil | _Stop,
-) -> ContinueLoop | SleepThenContinue | BreakLoop:
-    if isinstance(decision, _ContinueNow):
-        return ContinueLoop(message=decision.message)
-    if isinstance(decision, _SleepUntil):
-        return SleepThenContinue(
-            wake_time=decision.wake_time,
-            message=decision.message,
-        )
-    return BreakLoop(message=decision.message)
 
 
 def decide_usage_limit_continuation(
@@ -246,16 +217,14 @@ def decide_usage_limit_continuation(
             account_label=outcome.account_label,
         )
 
-    return _to_loop_directive(
-        _decide_limit_continuation(
-            limit_outcome,
-            stage_override=stage_registry.override_for_stage_key(cfg, outcome.stage_key)
-            if outcome.stage_key is not None
-            else None,
-            service_registry=service_registry,
-            now=now,
-            compute_wake_time_fn=_compute_wake_time,
-        )
+    return _decide_limit_continuation(
+        limit_outcome,
+        stage_override=stage_registry.override_for_stage_key(cfg, outcome.stage_key)
+        if outcome.stage_key is not None
+        else None,
+        service_registry=service_registry,
+        now=now,
+        compute_wake_time_fn=_compute_wake_time,
     )
 
 
