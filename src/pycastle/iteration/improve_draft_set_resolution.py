@@ -34,7 +34,7 @@ async def resolve_draft_set(
     *,
     draft_dir: Path,
     cfg: Config,
-    correction_callback: Callable[[DraftSetValidationError, int], Awaitable[None]],
+    correction_callback: Callable[[DraftSetValidationError, int, int], Awaitable[None]],
 ) -> DraftSetResolutionOutcome:
     last_exc: DraftSetValidationError | None = None
     drafts: list[IssueDraft] | None = None
@@ -46,7 +46,7 @@ async def resolve_draft_set(
         except DraftSetValidationError as exc:
             last_exc = exc
             if attempt < _MAX_CORRECTION_ATTEMPTS:
-                await correction_callback(exc, attempt)
+                await correction_callback(exc, attempt, _MAX_CORRECTION_ATTEMPTS)
 
     if last_exc is not None:
         draft_file_contents: dict[str, str] = {}

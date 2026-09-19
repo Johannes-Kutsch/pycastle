@@ -8,7 +8,6 @@ from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.runner import RunRequest
 from pycastle.bug_reporter import file_unrepairable_draft_set_issue
 from pycastle.iteration.improve_draft_set_resolution import (
-    _MAX_CORRECTION_ATTEMPTS,
     Unrepairable,
     resolve_draft_set,
 )
@@ -87,7 +86,9 @@ async def _file_improve_drafts(
     )
     candidate_ordinal = candidate_idx + 1
 
-    async def _correction_callback(exc: DraftSetValidationError, attempt: int) -> None:
+    async def _correction_callback(
+        exc: DraftSetValidationError, attempt: int, total_attempts: int
+    ) -> None:
         validation_errors = "\n".join(exc.problems)
         correction_prompt = build_prompt_invocation(
             PromptTemplate.IMPROVE_DRAFT_CORRECTION,
@@ -101,7 +102,7 @@ async def _file_improve_drafts(
             f"fixing draft validation errors for candidate"
             f" {candidate_ordinal}/{scan_set_size}"
             f' "{candidate_title}"'
-            f" (attempt {attempt + 1}/{_MAX_CORRECTION_ATTEMPTS})"
+            f" (attempt {attempt + 1}/{total_attempts})"
         )
         await deps.agent_runner.run(
             RunRequest(

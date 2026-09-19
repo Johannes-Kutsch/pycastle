@@ -48,7 +48,9 @@ class _RecordingCallback:
     def __init__(self) -> None:
         self.calls: list[tuple[DraftSetValidationError, int]] = []
 
-    async def __call__(self, exc: DraftSetValidationError, attempt: int) -> None:
+    async def __call__(
+        self, exc: DraftSetValidationError, attempt: int, total_attempts: int
+    ) -> None:
         self.calls.append((exc, attempt))
 
 
@@ -85,8 +87,10 @@ def test_one_correction_returns_ready_callback_invoked_once(tmp_path: Path) -> N
 
     cb = _RecordingCallback()
 
-    async def _fixing_callback(exc: DraftSetValidationError, attempt: int) -> None:
-        await cb(exc, attempt)
+    async def _fixing_callback(
+        exc: DraftSetValidationError, attempt: int, total_attempts: int
+    ) -> None:
+        await cb(exc, attempt, total_attempts)
         # Fix the invalid slice on the first callback
         _write_slice_draft(draft_dir, "01-slice")
 
