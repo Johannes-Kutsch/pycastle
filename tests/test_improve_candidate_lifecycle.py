@@ -1,8 +1,9 @@
 """Tests for improve_candidate_lifecycle module interface.
 
 Covers: reconcile_and_wind_down (fingerprint gate, AC2/AC3 wind-down) and
-file_and_decide (fresh filing, correction cap, cap-reached, safe-sha-changed,
-advance, prev_spec chaining, resume idempotency).
+file_and_decide (fresh filing, dispatch on Ready/Unrepairable, drafts-directory
+teardown, cap-reached, safe-sha-changed, advance, prev_spec chaining, resume
+idempotency).
 """
 
 from __future__ import annotations
@@ -10,14 +11,14 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-from pycastle.agents.output_protocol import AgentRole, CompletionOutput
+from pycastle.agents.output_protocol import AgentRole
 from pycastle.config import Config
 from pycastle.iteration.improve_candidate_lifecycle import (
     Advance,
@@ -25,6 +26,7 @@ from pycastle.iteration.improve_candidate_lifecycle import (
     file_and_decide,
     reconcile_and_wind_down,
 )
+from pycastle.iteration.improve_draft_set_resolution import Ready, Unrepairable
 from pycastle.iteration.improve_role_session_store import (
     CandidateItem,
     CandidateList,
@@ -33,7 +35,6 @@ from pycastle.iteration.improve_role_session_store import (
     ImproveRoleSessionStore,
 )
 from pycastle.iteration.preflight import PreflightAFK, PreflightReady
-from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.session import RoleSession
 from tests.support import (
     FakeAgentRunner,
@@ -138,6 +139,15 @@ def _make_test_deps(
         preflight_cache=resolved_cache,
     )
     return dataclasses.replace(deps, improve_dispatched_count=improve_dispatched_count)
+
+
+def _ready_outcome(role_session_dir: Path) -> Ready:
+    """Build a minimal Ready outcome backed by real draft files for dispatch tests."""
+    from pycastle.iteration.improve_drafts import read_draft_set
+
+    draft_dir = _draft_dir(role_session_dir)
+    _write_spec_draft(draft_dir)
+    return Ready(drafts=read_draft_set(draft_dir, Config(issue_label=_STATE_LABEL)))
 
 
 def _run_file_and_decide(
@@ -470,116 +480,126 @@ def test_file_and_decide_stop_safe_sha_non_preflight_ready(
 
 
 # ---------------------------------------------------------------------------
-# file_and_decide: draft correction cap
+# file_and_decide: dispatch on Ready / Unrepairable outcomes
 # ---------------------------------------------------------------------------
 
 
-def test_file_and_decide_stop_drafts_abandoned_after_correction_cap(
+def test_file_and_decide_ready_outcome_calls_file_draft_set(
     tmp_path: Path, role_session_dir: Path
 ) -> None:
-    """After 3 failed correction attempts, Stop(drafts-abandoned, completed_count=0) returned."""
+    """Given a synthetic Ready outcome, file_draft_set is called and Advance is returned."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = _draft_dir(role_session_dir)
-    _write_spec_draft(draft_dir)
-    _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+    github_svc = _make_github_svc(create_side_effect=[(100, 1000)])
+    deps = _make_test_deps(tmp_path, github_svc=github_svc)
 
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=None,
+    ready = _ready_outcome(role_session_dir)
+
+    with patch(
+        "pycastle.iteration.improve_candidate_lifecycle.resolve_draft_set",
+        new=AsyncMock(return_value=ready),
+    ):
+        result = _run_file_and_decide(
+            role_session_dir=role_session_dir,
+            sandbox_path=tmp_path,
+            deps=deps,
+        )
+
+    assert isinstance(result, Advance)
+    assert github_svc.create_issue_in.call_count >= 1
+
+
+def test_file_and_decide_unrepairable_outcome_calls_file_unrepairable(
+    tmp_path: Path, role_session_dir: Path
+) -> None:
+    """Given a synthetic Unrepairable outcome, file_unrepairable_draft_set_issue is called."""
+    _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
+    github_svc = _make_github_svc()
+    deps = _make_test_deps(tmp_path, github_svc=github_svc)
+
+    _draft_dir(role_session_dir).mkdir(parents=True, exist_ok=True)
+    unrepairable = Unrepairable(
+        problems=["body too short"],
+        draft_files={"spec.md": "content"},
     )
 
-    result = _run_file_and_decide(
-        role_session_dir=role_session_dir,
-        sandbox_path=tmp_path,
-        deps=_make_test_deps(tmp_path, agent_runner=runner),
-    )
+    with (
+        patch(
+            "pycastle.iteration.improve_candidate_lifecycle.resolve_draft_set",
+            new=AsyncMock(return_value=unrepairable),
+        ),
+        patch(
+            "pycastle.iteration.improve_candidate_lifecycle.file_unrepairable_draft_set_issue"
+        ) as mock_file_unrepairable,
+    ):
+        result = _run_file_and_decide(
+            role_session_dir=role_session_dir,
+            sandbox_path=tmp_path,
+            deps=deps,
+        )
 
     assert isinstance(result, Stop)
     assert result.reason == "drafts-abandoned"
-    assert result.completed_count == 0
+    mock_file_unrepairable.assert_called_once_with(
+        problems=["body too short"],
+        draft_files={"spec.md": "content"},
+        github_svc=github_svc,
+    )
 
 
-def test_file_and_decide_drafts_abandoned_clears_draft_dir(
+def test_file_and_decide_drafts_dir_removed_on_ready_path(
     tmp_path: Path, role_session_dir: Path
 ) -> None:
-    """After abandonment, the _drafts directory is removed."""
+    """The _drafts directory is removed after a successful (Ready) outcome."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
     draft_dir = _draft_dir(role_session_dir)
+    draft_dir.mkdir(parents=True, exist_ok=True)
     _write_spec_draft(draft_dir)
-    _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=None,
+    deps = _make_test_deps(
+        tmp_path, github_svc=_make_github_svc(create_side_effect=[(100, 1000)])
     )
 
-    _run_file_and_decide(
-        role_session_dir=role_session_dir,
-        sandbox_path=tmp_path,
-        deps=_make_test_deps(tmp_path, agent_runner=runner),
-    )
+    ready = _ready_outcome(role_session_dir)
 
-    assert not draft_dir.is_dir() or not any(draft_dir.iterdir())
+    with patch(
+        "pycastle.iteration.improve_candidate_lifecycle.resolve_draft_set",
+        new=AsyncMock(return_value=ready),
+    ):
+        _run_file_and_decide(
+            role_session_dir=role_session_dir,
+            sandbox_path=tmp_path,
+            deps=deps,
+        )
+
+    assert not draft_dir.is_dir()
 
 
-def test_file_and_decide_correction_reprompts_agent_three_times(
+def test_file_and_decide_drafts_dir_removed_on_unrepairable_path(
     tmp_path: Path, role_session_dir: Path
 ) -> None:
-    """Invalid drafts trigger exactly 3 correction reprompts before abandonment."""
+    """The _drafts directory is removed after an Unrepairable outcome."""
     _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
     draft_dir = _draft_dir(role_session_dir)
-    _write_spec_draft(draft_dir)
-    _write_slice_draft(draft_dir, "01-slice", body="Too short.")
+    draft_dir.mkdir(parents=True, exist_ok=True)
+    deps = _make_test_deps(tmp_path)
 
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=None,
-    )
+    unrepairable = Unrepairable(problems=["bad"], draft_files={})
 
-    _run_file_and_decide(
-        role_session_dir=role_session_dir,
-        sandbox_path=tmp_path,
-        deps=_make_test_deps(tmp_path, agent_runner=runner),
-    )
+    with (
+        patch(
+            "pycastle.iteration.improve_candidate_lifecycle.resolve_draft_set",
+            new=AsyncMock(return_value=unrepairable),
+        ),
+        patch(
+            "pycastle.iteration.improve_candidate_lifecycle.file_unrepairable_draft_set_issue"
+        ),
+    ):
+        _run_file_and_decide(
+            role_session_dir=role_session_dir,
+            sandbox_path=tmp_path,
+            deps=deps,
+        )
 
-    correction_calls = [
-        c
-        for c in runner.calls
-        if c.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION
-    ]
-    assert len(correction_calls) == 3
-
-
-def test_file_and_decide_correction_valid_on_third_attempt_is_filed(
-    tmp_path: Path, role_session_dir: Path
-) -> None:
-    """Drafts that become valid on the 3rd correction attempt are filed; Advance returned."""
-    _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = _draft_dir(role_session_dir)
-    _write_spec_draft(draft_dir)
-    _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-
-    correction_count = [0]
-
-    def _side_effect(request):
-        if request.prompt.template == PromptTemplate.IMPROVE_DRAFT_CORRECTION:
-            correction_count[0] += 1
-            if correction_count[0] == 3:
-                _write_spec_draft(draft_dir)
-                _write_slice_draft(draft_dir, "01-slice")
-        return CompletionOutput()
-
-    github_svc = _make_github_svc(create_side_effect=[(100, 1000), (101, 1001)])
-    runner = FakeAgentRunner(side_effect=_side_effect, preflight_responses=None)
-
-    result = _run_file_and_decide(
-        role_session_dir=role_session_dir,
-        sandbox_path=tmp_path,
-        deps=_make_test_deps(tmp_path, agent_runner=runner, github_svc=github_svc),
-    )
-
-    assert isinstance(result, Advance)
-    assert github_svc.create_issue_in.call_count == 2  # spec + 1 slice
+    assert not draft_dir.is_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -779,32 +799,3 @@ def test_file_and_decide_fresh_filing_labels_slice_not_spec(
     labeled_numbers = {call.args[0] for call in label_calls}
     assert 101 in labeled_numbers  # slice receives state label
     assert 100 not in labeled_numbers  # spec must not receive state label
-
-
-# ---------------------------------------------------------------------------
-# file_and_decide: correction cap — failure report filing
-# ---------------------------------------------------------------------------
-
-
-def test_file_and_decide_drafts_abandoned_files_failure_report(
-    tmp_path: Path, role_session_dir: Path
-) -> None:
-    """After abandonment, an unrepairable-draft-set issue is filed on the tracker."""
-    _seed_candidate_list(role_session_dir, [CandidateItem(rank=1, title="Test")])
-    draft_dir = _draft_dir(role_session_dir)
-    _write_spec_draft(draft_dir)
-    _write_slice_draft(draft_dir, "01-slice", body="Too short.")
-
-    github_svc = _make_github_svc()
-    runner = FakeAgentRunner(
-        [CompletionOutput(), CompletionOutput(), CompletionOutput()],
-        preflight_responses=None,
-    )
-
-    _run_file_and_decide(
-        role_session_dir=role_session_dir,
-        sandbox_path=tmp_path,
-        deps=_make_test_deps(tmp_path, agent_runner=runner, github_svc=github_svc),
-    )
-
-    assert github_svc.create_issue_in.call_count == 1  # failure report issue filed

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
@@ -8,6 +7,11 @@ from typing import TYPE_CHECKING, Literal, Protocol
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.runner import RunRequest
 from pycastle.bug_reporter import file_unrepairable_draft_set_issue
+from pycastle.iteration.improve_draft_set_resolution import (
+    _MAX_CORRECTION_ATTEMPTS,
+    Unrepairable,
+    resolve_draft_set,
+)
 from pycastle.iteration.improve_drafts import DraftSetValidationError, read_draft_set
 from pycastle.iteration.improve_filing import GithubFilingPort, file_draft_set
 from pycastle.iteration.improve_role_session_store import ImproveRoleSessionStore
@@ -28,7 +32,6 @@ if TYPE_CHECKING:
     from pycastle.services.github_service import GithubService
 
 _DRAFTS_SUBDIR = "_drafts"
-_MAX_CORRECTION_ATTEMPTS = 3
 
 
 class _LifecycleDeps(Protocol):
@@ -84,76 +87,64 @@ async def _file_improve_drafts(
     )
     candidate_ordinal = candidate_idx + 1
 
-    last_exc: DraftSetValidationError | None = None
-    drafts = None
-    for attempt in range(_MAX_CORRECTION_ATTEMPTS + 1):
-        try:
-            drafts = read_draft_set(draft_dir, deps.cfg)
-            last_exc = None
-            break
-        except DraftSetValidationError as exc:
-            last_exc = exc
-            if attempt < _MAX_CORRECTION_ATTEMPTS:
-                validation_errors = "\n".join(exc.problems)
-                correction_prompt = build_prompt_invocation(
-                    PromptTemplate.IMPROVE_DRAFT_CORRECTION,
-                    validated_scope_args_for_template(
-                        PromptTemplate.IMPROVE_DRAFT_CORRECTION,
-                        {"VALIDATION_ERRORS": validation_errors},
-                    ),
-                    kind=PromptKind.FOLLOW_UP,
-                )
-                correction_body = (
-                    f"fixing draft validation errors for candidate"
-                    f" {candidate_ordinal}/{scan_set_size}"
-                    f' "{candidate_title}"'
-                    f" (attempt {attempt + 1}/{_MAX_CORRECTION_ATTEMPTS})"
-                )
-                await deps.agent_runner.run(
-                    RunRequest(
-                        name="Draft Correction",
-                        prompt=correction_prompt,
-                        mount_path=sandbox_path,
-                        role=AgentRole.IMPROVE,
-                        model=deps.cfg.improve_override.model,
-                        effort=deps.cfg.improve_override.effort,
-                        service=deps.cfg.improve_override.service,
-                        stage="improve-sandbox",
-                        status_display=deps.status_display,
-                        work_body=correction_body,
-                        session_namespace=candidate_namespace,
-                        preserve_session_on_completion=True,
-                    )
-                )
-
-    if last_exc is not None:
-        draft_file_contents: dict[str, str] = {}
-        if draft_dir.is_dir():
-            for f in sorted(draft_dir.glob("*.md")):
-                with contextlib.suppress(OSError):
-                    draft_file_contents[f.name] = f.read_text(encoding="utf-8")
-        file_unrepairable_draft_set_issue(
-            problems=last_exc.problems,
-            draft_files=draft_file_contents,
-            github_svc=deps.github_svc,
+    async def _correction_callback(exc: DraftSetValidationError, attempt: int) -> None:
+        validation_errors = "\n".join(exc.problems)
+        correction_prompt = build_prompt_invocation(
+            PromptTemplate.IMPROVE_DRAFT_CORRECTION,
+            validated_scope_args_for_template(
+                PromptTemplate.IMPROVE_DRAFT_CORRECTION,
+                {"VALIDATION_ERRORS": validation_errors},
+            ),
+            kind=PromptKind.FOLLOW_UP,
         )
+        correction_body = (
+            f"fixing draft validation errors for candidate"
+            f" {candidate_ordinal}/{scan_set_size}"
+            f' "{candidate_title}"'
+            f" (attempt {attempt + 1}/{_MAX_CORRECTION_ATTEMPTS})"
+        )
+        await deps.agent_runner.run(
+            RunRequest(
+                name="Draft Correction",
+                prompt=correction_prompt,
+                mount_path=sandbox_path,
+                role=AgentRole.IMPROVE,
+                model=deps.cfg.improve_override.model,
+                effort=deps.cfg.improve_override.effort,
+                service=deps.cfg.improve_override.service,
+                stage="improve-sandbox",
+                status_display=deps.status_display,
+                work_body=correction_body,
+                session_namespace=candidate_namespace,
+                preserve_session_on_completion=True,
+            )
+        )
+
+    try:
+        outcome = await resolve_draft_set(
+            draft_dir=draft_dir,
+            cfg=deps.cfg,
+            correction_callback=_correction_callback,
+        )
+        if isinstance(outcome, Unrepairable):
+            file_unrepairable_draft_set_issue(
+                problems=outcome.problems,
+                draft_files=outcome.draft_files,
+                github_svc=deps.github_svc,
+            )
+            return False
+        file_draft_set(
+            outcome.drafts,
+            port=GithubFilingPort(deps.github_svc),
+            store=store,
+            candidate_idx=candidate_idx,
+            state_label=deps.cfg.issue_label,
+            prev_spec=prev_spec,
+        )
+        return True
+    finally:
         if draft_dir.is_dir():
             shutil.rmtree(draft_dir)
-        return False
-
-    if drafts is None:
-        return False  # unreachable; loop always sets drafts on break
-    file_draft_set(
-        drafts,
-        port=GithubFilingPort(deps.github_svc),
-        store=store,
-        candidate_idx=candidate_idx,
-        state_label=deps.cfg.issue_label,
-        prev_spec=prev_spec,
-    )
-    if draft_dir.is_dir():
-        shutil.rmtree(draft_dir)
-    return True
 
 
 def _wind_down_partial_candidates(
