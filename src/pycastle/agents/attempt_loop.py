@@ -48,6 +48,7 @@ from pycastle.session.service_session_store import ServiceSessionStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from datetime import datetime
     from pathlib import Path
 
     from agent_runtime.types import ResolvedProvider
@@ -76,7 +77,7 @@ class _ReturnCancelled:
 
 @dataclasses.dataclass
 class _RaiseUsageLimit:
-    reset_time: Any
+    reset_time: datetime | None
     provider: str
     is_permanent: bool
 
@@ -117,11 +118,11 @@ class _Reprompt:
 @dataclasses.dataclass
 class _RaiseAgentFailed:
     role_value: str
-    mount_path: Any  # Path
+    mount_path: Path
     session_namespace: str
     service_name: str
-    session_store: Any  # Path
-    log_path: Any  # Path | None
+    session_store: Path
+    log_path: Path | None
 
 
 type _LoopDirective = (
