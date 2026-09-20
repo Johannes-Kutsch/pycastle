@@ -366,3 +366,15 @@ def test_improve_no_promise_raises_agent_output_protocol_error():
     text = "no promise here"
     with pytest.raises(AgentOutputProtocolError):
         extract_output(text, AgentRole.IMPROVE)
+
+
+def test_improve_failed_promise_returns_failed_output():
+    text = "<promise>FAILED</promise>"
+    result = extract_output(text, AgentRole.IMPROVE)
+    assert isinstance(result, FailedOutput)
+
+
+def test_improve_no_candidate_promise_returns_no_candidate_output():
+    text = "<promise>NO-CANDIDATE</promise>"
+    result = extract_output(text, AgentRole.IMPROVE)
+    assert isinstance(result, NoCandidateOutput)
