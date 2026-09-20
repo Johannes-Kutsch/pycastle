@@ -380,25 +380,29 @@ _NO_CANDIDATE: frozenset[str] = frozenset({"NO-CANDIDATE"})
 _COMPLETE_OR_NO_CANDIDATE: frozenset[str] = _COMPLETE | _NO_CANDIDATE
 
 
-class _MergerHandler:
+class _PromiseGatedHandler:
+    def __init__(
+        self,
+        accepted_completions: frozenset[str],
+        on_complete: Callable[[str, str], AgentOutput],
+    ) -> None:
+        self._accepted_completions = accepted_completions
+        self._on_complete = on_complete
+
     def extract_final_output(self, text: str, tail: str) -> AgentOutput:
         if extract_promise(text, _FAILED) is not None:
             return FailedOutput()
-        extract_promise_or_raise(text, _COMPLETE, tail)
-        return CompletionOutput()
+        sentinel = extract_promise_or_raise(text, self._accepted_completions, tail)
+        return self._on_complete(text, sentinel)
 
 
-class _ImproveHandler:
-    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
-        if extract_promise(text, _FAILED) is not None:
-            return FailedOutput()
-        sentinel = extract_promise_or_raise(text, _COMPLETE_OR_NO_CANDIDATE, tail)
-        if sentinel == "NO-CANDIDATE":
-            return NoCandidateOutput()
-        candidates_body = _last_tag_block(text, "candidates")
-        if candidates_body is not None:
-            return _parse_candidates_body(candidates_body)
-        return _extract_improve_output(text)
+def _improve_on_complete(text: str, sentinel: str) -> AgentOutput:
+    if sentinel == "NO-CANDIDATE":
+        return NoCandidateOutput()
+    candidates_body = _last_tag_block(text, "candidates")
+    if candidates_body is not None:
+        return _parse_candidates_body(candidates_body)
+    return _extract_improve_output(text)
 
 
 _commit_message_handler = _CommitMessageHandler()
@@ -409,8 +413,6 @@ _preflight_issue_handler = _TagBasedRoleHandler(
     "Agent produced no <issue>...</issue> tag.",
 )
 
-_merger_handler = _MergerHandler()
-
 _HANDLERS: dict[AgentRole, _RoleHandler] = {
     AgentRole.IMPLEMENTER: _commit_message_handler,
     AgentRole.REVIEWER: _commit_message_handler,
@@ -419,9 +421,13 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
     ),
     AgentRole.PREFLIGHT_ISSUE: _preflight_issue_handler,
     AgentRole.FAILURE_REPORT: _preflight_issue_handler,
-    AgentRole.IMPROVE: _ImproveHandler(),
+    AgentRole.IMPROVE: _PromiseGatedHandler(
+        _COMPLETE_OR_NO_CANDIDATE, _improve_on_complete
+    ),
     AgentRole.MERGER: _commit_message_handler,
-    AgentRole.DIVERGENCE_RESOLVER: _merger_handler,
+    AgentRole.DIVERGENCE_RESOLVER: _PromiseGatedHandler(
+        _COMPLETE, lambda _text, _sentinel: CompletionOutput()
+    ),
 }
 
 
