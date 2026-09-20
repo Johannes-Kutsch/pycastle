@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from agent_runtime.errors import HardAgentError
@@ -46,6 +47,37 @@ from pycastle.services import OperatorActionableGitError
 if TYPE_CHECKING:
     from pycastle.config import Config
     from pycastle.iteration._deps import Deps
+
+
+@dataclass(frozen=True)
+class _PlanningInputs:
+    open_issues: list[dict]
+    prepared_issue_set: PreparedPlanningIssueSet
+    prepared_open_issues: list[dict]
+    all_open_issues: list[dict]
+    in_flight: list[dict]
+
+
+def _collect_planning_inputs(deps: Deps) -> _PlanningInputs:
+    from pycastle.iteration import select_in_flight_issues
+
+    open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
+    prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
+    prepared_open_issues = list(prepared_issue_set.prepared_issues)
+    all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
+    in_flight = select_in_flight_issues(
+        prepared_open_issues,
+        repo_root=deps.repo_root,
+        git_svc=deps.git_svc,
+        operating_branch=deps.cfg.operating_branch,
+    )
+    return _PlanningInputs(
+        open_issues=open_issues,
+        prepared_issue_set=prepared_issue_set,
+        prepared_open_issues=prepared_open_issues,
+        all_open_issues=all_open_issues,
+        in_flight=in_flight,
+    )
 
 
 def _route_and_abort_agent_credential_failure(
@@ -188,26 +220,17 @@ async def _run_plan_and_implement(
 
 
 async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
-    from pycastle.iteration import select_in_flight_issues
-
-    open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
-    prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
-    prepared_open_issues = list(prepared_issue_set.prepared_issues)
-    all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
-    in_flight = select_in_flight_issues(
-        prepared_open_issues,
-        repo_root=deps.repo_root,
-        git_svc=deps.git_svc,
-        operating_branch=deps.cfg.operating_branch,
-    )
+    inputs = _collect_planning_inputs(deps)
 
     # An interrupted improve cycle widens the idle gate: even when ready-for-agent
     # tickets exist (filed by an earlier improve pass), improve owns this iteration.
     # `had_pending_work` distinguishes this path from the normal idle path so that
     # planning is deferred to the following iteration rather than chained in the
     # same one (which would let improve-filed tickets preempt remaining candidates).
-    had_pending_work = bool(open_issues) or bool(in_flight)
-    if (not open_issues and not in_flight) or deps.improve_cycle_interrupted:
+    had_pending_work = bool(inputs.open_issues) or bool(inputs.in_flight)
+    if (
+        not inputs.open_issues and not inputs.in_flight
+    ) or deps.improve_cycle_interrupted:
         try:
             outcome = await _run_improve_phase(deps)
         except UsageLimitError as err:
@@ -225,21 +248,16 @@ async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
             # Return now so planning picks them up in the following iteration with
             # the flag cleared, rather than preempting remaining candidates.
             return Continue()
-        open_issues = deps.github_svc.get_open_issues(deps.cfg.issue_label)
-        prepared_issue_set = prepare_planning_issue_set(open_issues, deps.cfg)
-        prepared_open_issues = list(prepared_issue_set.prepared_issues)
-        all_open_issues = deps.github_svc.get_all_open_issues_lightweight()
-        if not open_issues:
+        inputs = _collect_planning_inputs(deps)
+        if not inputs.open_issues:
             return Continue()
-        in_flight = select_in_flight_issues(
-            prepared_open_issues,
-            repo_root=deps.repo_root,
-            git_svc=deps.git_svc,
-            operating_branch=deps.cfg.operating_branch,
-        )
 
     return await _run_plan_and_implement(
-        deps, open_issues, prepared_issue_set, all_open_issues, in_flight
+        deps,
+        inputs.open_issues,
+        inputs.prepared_issue_set,
+        inputs.all_open_issues,
+        inputs.in_flight,
     )
 
 
