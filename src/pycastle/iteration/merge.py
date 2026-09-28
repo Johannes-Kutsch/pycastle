@@ -115,6 +115,26 @@ def _should_auto_push(
     )
 
 
+async def _auto_push_if_appropriate(
+    deps: _MergeDeps,
+    *,
+    clean_issues: list[dict],
+    conflict_issues: list[dict],
+    pending_conflicts: list[dict],
+) -> None:
+    if _should_auto_push(
+        auto_push=deps.cfg.auto_push,
+        clean_issues=clean_issues,
+        conflict_issues=conflict_issues,
+        pending_conflicts=pending_conflicts,
+    ):
+        await deps.git_svc.push(
+            deps.repo_root,
+            deps.cfg.operating_branch,
+            resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
+        )
+
+
 async def _delete_merged_branches(
     branches: list[str],
     deps: _MergeDeps,
@@ -220,12 +240,16 @@ async def _handle_preflight_blocked_conflicts(
         "Conflict issues remain open for recovery in the next iteration.",
     )
     ctx.close_merge_row(build_merge_close_message(ctx.clean_deleted))
-    if deps.cfg.auto_push and ctx.clean_issues:
-        await deps.git_svc.push(
-            deps.repo_root,
-            deps.cfg.operating_branch,
-            resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
-        )
+    # Preflight-blocked path: all conflicts become pending; push gate is
+    # equivalent to _should_auto_push(auto_push, clean, [], []) — NOT
+    # _should_auto_push(auto_push, clean, conflict, conflict), which would
+    # always suppress the push when conflicts exist.
+    await _auto_push_if_appropriate(
+        deps,
+        clean_issues=ctx.clean_issues,
+        conflict_issues=[],
+        pending_conflicts=[],
+    )
     return _build_merge_result(
         clean_issues=ctx.clean_issues,
         conflict_issues=ctx.conflict_issues,
@@ -284,17 +308,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
 
         if not conflict_issues:
             _close_merge_row(build_merge_close_message(clean_deleted))
-            if _should_auto_push(
-                auto_push=deps.cfg.auto_push,
+            await _auto_push_if_appropriate(
+                deps,
                 clean_issues=clean_issues,
                 conflict_issues=[],
                 pending_conflicts=[],
-            ):
-                await deps.git_svc.push(
-                    deps.repo_root,
-                    deps.cfg.operating_branch,
-                    resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
-                )
+            )
             return _build_merge_result(
                 clean_issues=clean_issues,
                 conflict_issues=[],
@@ -333,17 +352,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         all_close_failure_issue_numbers = (
             close_tracker.filed_numbers + recovery.close_failure_issue_numbers
         )
-        if _should_auto_push(
-            auto_push=deps.cfg.auto_push,
+        await _auto_push_if_appropriate(
+            deps,
             clean_issues=clean_issues,
             conflict_issues=conflict_issues,
             pending_conflicts=pending_conflicts,
-        ):
-            await deps.git_svc.push(
-                deps.repo_root,
-                deps.cfg.operating_branch,
-                resolver=lambda: deps.preflight_cache.pull_with_resolution(deps),
-            )
+        )
         return _build_merge_result(
             clean_issues=clean_issues,
             conflict_issues=conflict_issues,
