@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 from pycastle.prompts.dispatch import (
     PromptInvocation,
@@ -40,40 +40,6 @@ class ImprovePreparationGithubPort(Protocol):
     def get_issue_comments(self, issue_number: int) -> list[dict[str, str]]: ...
 
 
-class ImprovePreparationStepConfig(Protocol):
-    @property
-    def template(self) -> PromptTemplate: ...
-
-    @property
-    def namespace(self) -> str: ...
-
-    @property
-    def display_name(self) -> str: ...
-
-    @property
-    def display_body(self) -> str: ...
-
-
-class ImprovePreparationStep(Protocol):
-    @property
-    def cfg(self) -> ImprovePreparationStepConfig: ...
-
-    @property
-    def kind(self) -> PromptKind: ...
-
-    @property
-    def fetch_recent_spec_titles(self) -> bool: ...
-
-    @property
-    def candidate(self) -> ImproveCandidate | None: ...
-
-    @property
-    def scan_set_size(self) -> int | None: ...
-
-    @property
-    def candidate_ordinal(self) -> int | None: ...
-
-
 @dataclass(frozen=True)
 class ImproveStepPreparationRequest:
     """Inputs required to prepare a single Improve step.
@@ -104,25 +70,16 @@ class PreparedImproveStep:
 
 
 def prepare_improve_step(
-    request_or_step: ImproveStepPreparationRequest | ImprovePreparationStep,
+    request: ImproveStepPreparationRequest,
     *,
     github_port: ImprovePreparationGithubPort,
-    short_sid: str | None = None,
-    candidate_budget: int | None = None,
 ) -> PreparedImproveStep:
     """Prepare the exact `RunRequest` payload for one Improve step.
 
-    Callers can either pass an explicit `ImproveStepPreparationRequest` or a
-    driver-produced step plus `short_sid`. GitHub reads needed for scope args
-    are performed through `github_port`, and any read error is allowed to
-    propagate to the caller unchanged.
+    GitHub reads needed for scope args are performed through `github_port`, and
+    any read error is allowed to propagate to the caller unchanged.
     """
 
-    request = _coerce_request(
-        request_or_step,
-        short_sid=short_sid,
-        candidate_budget=candidate_budget,
-    )
     scope_args = _render_scope_args(request, github_port=github_port)
     return PreparedImproveStep(
         prompt=build_prompt_invocation(
@@ -133,56 +90,6 @@ def prepare_improve_step(
         session_namespace=request.session_namespace,
         name=request.display_name,
         work_body=request.work_body,
-    )
-
-
-def _compute_work_body(
-    step: ImprovePreparationStep,
-    *,
-    candidate_budget: int | None,
-) -> str:
-    template = step.cfg.template
-    if template is PromptTemplate.IMPROVE_SCAN:
-        budget = candidate_budget or 0
-        if budget == 1:
-            return "picking 1 improvement"
-        return f"picking up to {budget} improvements"
-    candidate = step.candidate
-    if candidate is not None:
-        ordinal = step.candidate_ordinal
-        total = step.scan_set_size
-        if ordinal is not None and total is not None:
-            if template is PromptTemplate.IMPROVE_SPEC:
-                return (
-                    f'writing spec for candidate {ordinal}/{total} "{candidate.title}"'
-                )
-            if template is PromptTemplate.IMPROVE_TICKETS:
-                return f'filing tickets for candidate {ordinal}/{total} "{candidate.title}"'
-    return step.cfg.display_body
-
-
-def _coerce_request(
-    request_or_step: ImproveStepPreparationRequest | ImprovePreparationStep,
-    *,
-    short_sid: str | None,
-    candidate_budget: int | None,
-) -> ImproveStepPreparationRequest:
-    if isinstance(request_or_step, ImproveStepPreparationRequest):
-        return request_or_step
-    if short_sid is None:
-        raise TypeError("short_sid is required when preparing from a driver step")
-
-    step = cast("ImprovePreparationStep", request_or_step)
-    return ImproveStepPreparationRequest(
-        prompt_template=step.cfg.template,
-        session_namespace=step.cfg.namespace,
-        display_name=step.cfg.display_name,
-        work_body=_compute_work_body(step, candidate_budget=candidate_budget),
-        kind=step.kind,
-        short_sid=short_sid,
-        fetch_recent_spec_titles=step.fetch_recent_spec_titles,
-        candidate_budget=candidate_budget,
-        candidate=step.candidate,
     )
 
 

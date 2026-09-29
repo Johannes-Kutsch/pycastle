@@ -4,8 +4,6 @@ from pathlib import Path
 import pytest
 
 from pycastle.agents.output_protocol import (
-    CompletionOutput,
-    NoCandidateOutput,
     ScanCandidateItem,
     ScanCandidatesOutput,
 )
@@ -14,12 +12,6 @@ from pycastle.iteration.improve_preparation import (
     ImproveCandidate,
     ImproveStepPreparationRequest,
     prepare_improve_step,
-)
-from pycastle.iteration.improve_role_session_store import (
-    CandidateItem,
-    CandidateList,
-    CandidateRecord,
-    ImproveRoleSessionStore,
 )
 from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptRenderError, PromptTemplate
@@ -56,19 +48,23 @@ class _GithubPortStandIn:
         return self.comments
 
 
-def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
-    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
-    step = driver.start()
-    assert step is not None
+def test_prepare_improve_step_builds_exact_scan_payload():
     github_port = _GithubPortStandIn(
         recent_specs=[{"number": 12, "state": "OPEN", "title": "First candidate"}]
     )
 
     prepared = prepare_improve_step(
-        step,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_SCAN,
+            session_namespace="main",
+            display_name="Scan Agent",
+            work_body="picking up to 3 improvements",
+            kind=PromptKind.ROLE_PROMPT,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=True,
+            candidate_budget=3,
+        ),
         github_port=github_port,
-        candidate_budget=3,
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
@@ -83,18 +79,7 @@ def test_prepare_improve_step_builds_exact_scan_payload(tmp_path: Path):
     assert github_port.recent_spec_calls == 1
 
 
-def test_prepare_improve_step_builds_exact_spec_payload_from_driver_step(
-    tmp_path: Path,
-):
-    driver = ImprovePhaseDriver(tmp_path / "improve-spec", no_candidate_report=True)
-    step1 = driver.start()
-    assert step1 is not None
-    driver.record_outcome(
-        step1,
-        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
-    )
-    step2 = driver.next()
-    assert step2 is not None
+def test_prepare_improve_step_builds_exact_spec_payload_from_driver_step():
     github_port = _GithubPortStandIn(
         recent_specs=[
             {"number": 12, "state": "OPEN", "title": "First candidate"},
@@ -103,8 +88,16 @@ def test_prepare_improve_step_builds_exact_spec_payload_from_driver_step(
     )
 
     prepared = prepare_improve_step(
-        step2,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_SPEC,
+            session_namespace="candidate/0",
+            display_name="Spec Agent",
+            work_body='writing spec for candidate 1/1 "Refactor"',
+            kind=PromptKind.FOLLOW_UP,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=True,
+            candidate=ImproveCandidate(rank=1, title="Refactor"),
+        ),
         github_port=github_port,
     )
 
@@ -126,17 +119,7 @@ def test_prepare_improve_step_builds_exact_spec_payload_from_driver_step(
     assert github_port.issue_comment_calls == []
 
 
-def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driver_step(
-    tmp_path: Path,
-):
-    driver = ImprovePhaseDriver(
-        tmp_path / "improve-no-candidate", no_candidate_report=True
-    )
-    step1 = driver.start()
-    assert step1 is not None
-    driver.record_outcome(step1, NoCandidateOutput())
-    step2 = driver.next()
-    assert step2 is not None
+def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driver_step():
     github_port = _GithubPortStandIn(
         recent_specs=[
             {"number": 12, "state": "OPEN", "title": "First candidate"},
@@ -145,8 +128,15 @@ def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driv
     )
 
     prepared = prepare_improve_step(
-        step2,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_NO_CANDIDATE,
+            session_namespace="main",
+            display_name="Rejection Report Agent",
+            work_body="filing no-candidate report",
+            kind=PromptKind.FOLLOW_UP,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=True,
+        ),
         github_port=github_port,
     )
 
@@ -278,16 +268,7 @@ def test_prepare_improve_step_uses_short_sid_only_for_issues():
     assert github_port.issue_comment_calls == []
 
 
-def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
-    tmp_path: Path,
-):
-    driver_dir = tmp_path / "improve"
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    ImproveRoleSessionStore(driver_dir).write_in_flight("01-scan")
-    driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
-    step = driver.start()
-
-    assert step is not None
+def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message():
     github_port = _GithubPortStandIn(
         recent_spec_error=AssertionError(
             "mid-phase scan retries must not refetch specs"
@@ -295,10 +276,17 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message(
     )
 
     prepared = prepare_improve_step(
-        step,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_SCAN,
+            session_namespace="main",
+            display_name="Scan Agent",
+            work_body="picking up to 2 improvements",
+            kind=PromptKind.ROLE_PROMPT,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=False,
+            candidate_budget=2,
+        ),
         github_port=github_port,
-        candidate_budget=2,
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
@@ -337,30 +325,20 @@ def test_prepare_improve_step_issues_scope_contains_only_short_sid():
     assert github_port.issue_comment_calls == []
 
 
-def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff(
-    tmp_path: Path,
-):
-    driver = ImprovePhaseDriver(tmp_path / "improve-issues", no_candidate_report=True)
-    step1 = driver.start()
-    assert step1 is not None
-    driver.record_outcome(
-        step1,
-        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
-    )
-
-    step2 = driver.next()
-    assert step2 is not None
-    assert step2.prompt_key == "02-spec.md"
-    driver.record_outcome(step2, CompletionOutput())
-
-    step3 = driver.next()
-    assert step3 is not None
-    assert step3.prompt_key == "03-tickets.md"
+def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff():
     github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
-        step3,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_TICKETS,
+            session_namespace="candidate/0",
+            display_name="Tickets Agent",
+            work_body='filing tickets for candidate 1/1 "Refactor"',
+            kind=PromptKind.FOLLOW_UP,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=False,
+            candidate=ImproveCandidate(rank=1, title="Refactor"),
+        ),
         github_port=github_port,
     )
 
@@ -377,107 +355,22 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     assert github_port.issue_comment_calls == []
 
 
-def test_prepare_improve_step_keeps_phase_03_resume_empty_without_parent_prd_handoff(
-    tmp_path: Path,
-):
-    driver_dir = tmp_path / "improve-issues-resume"
-    driver_dir.mkdir(parents=True, exist_ok=True)
-    # Seed candidate list + a candidate record (PRD done) + in-flight=03-issues
-    store = ImproveRoleSessionStore(driver_dir)
-    store.write_candidate_list(
-        CandidateList(
-            candidates=(CandidateItem(rank=1, title="Seeded"),),
-            no_candidate=False,
-        )
-    )
-    store.write_cursor(0)
-    store.write_candidate_record(
-        0,
-        CandidateRecord(
-            spec_number=None,
-            spec_database_id=None,
-            spec_title="",
-            filed_tickets=(),
-            labels_applied=False,
-        ),
-    )
-    store.write_in_flight("03-issues")
-    driver = ImprovePhaseDriver(driver_dir, no_candidate_report=True)
-    step = driver.start()
-
-    assert step is not None
-    assert step.prompt_key == "03-tickets.md"
-    github_port = _GithubPortStandIn(
-        issue_error=AssertionError("phase 03 resume without parent PRD must not read")
-    )
-
-    prepared = prepare_improve_step(
-        step,
-        short_sid="abcd1234",
-        github_port=github_port,
-    )
-
-    assert prepared.prompt.template == PromptTemplate.IMPROVE_TICKETS
-    assert prepared.session_namespace == "candidate/0"
-    assert prepared.prompt.scope_args == {
-        "IMPROVE_SHORT_SID": "abcd1234",
-    }
-    assert github_port.recent_spec_calls == 0
-    assert github_port.issue_calls == []
-    assert github_port.issue_comment_calls == []
-
-
-def test_prepare_improve_step_builds_phase_03_payload_during_live_prd_handoff(
-    tmp_path: Path,
-):
-    driver = ImprovePhaseDriver(
-        tmp_path / "improve-live-issues", no_candidate_report=True
-    )
-    step1 = driver.start()
-    assert step1 is not None
-    driver.record_outcome(
-        step1,
-        ScanCandidatesOutput(candidates=(ScanCandidateItem(rank=1, title="Refactor"),)),
-    )
-
-    step2 = driver.next()
-    assert step2 is not None
-    assert step2.prompt_key == "02-spec.md"
-    driver.record_outcome(step2, CompletionOutput())
-
-    step3 = driver.next()
-    assert step3 is not None
-    assert step3.prompt_key == "03-tickets.md"
-    github_port = _GithubPortStandIn()
-
-    prepared = prepare_improve_step(
-        step3,
-        short_sid="abcd1234",
-        github_port=github_port,
-    )
-
-    assert prepared.prompt.template == PromptTemplate.IMPROVE_TICKETS
-    assert prepared.session_namespace == "candidate/0"
-    assert prepared.prompt.scope_args == {
-        "IMPROVE_SHORT_SID": "abcd1234",
-    }
-    assert github_port.issue_calls == []
-    assert github_port.issue_comment_calls == []
-
-
-def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures(
-    tmp_path: Path,
-):
+def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures():
     error = GithubNetworkError("transport error", cause=RuntimeError("boom"))
-    driver = ImprovePhaseDriver(tmp_path / "improve-error", no_candidate_report=True)
-    step = driver.start()
-    assert step is not None
     github_port = _GithubPortStandIn(recent_spec_error=error)
 
     with pytest.raises(GithubNetworkError) as exc_info:
         prepare_improve_step(
-            step,
-            short_sid="abcd1234",
+            ImproveStepPreparationRequest(
+                prompt_template=PromptTemplate.IMPROVE_SCAN,
+                session_namespace="main",
+                display_name="Scan Agent",
+                work_body="picking up to 1 improvement",
+                kind=PromptKind.ROLE_PROMPT,
+                short_sid="abcd1234",
+                fetch_recent_spec_titles=True,
+                candidate_budget=1,
+            ),
             github_port=github_port,
         )
 
@@ -544,75 +437,73 @@ def test_prepare_improve_step_prd_without_candidate_fails_loudly():
         )
 
 
-def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render(
-    tmp_path: Path,
-):
-    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
-    step = driver.start()
-    assert step is not None
+def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render():
     github_port = _GithubPortStandIn()
 
     with pytest.raises(PromptRenderError):
         prepare_improve_step(
-            step,
-            short_sid="abcd1234",
+            ImproveStepPreparationRequest(
+                prompt_template=PromptTemplate.IMPROVE_SCAN,
+                session_namespace="main",
+                display_name="Scan Agent",
+                work_body="",
+                kind=PromptKind.ROLE_PROMPT,
+                short_sid="abcd1234",
+                fetch_recent_spec_titles=True,
+                # candidate_budget omitted — None by default
+            ),
             github_port=github_port,
         )
 
 
-def test_scan_agent_row_body_says_picking_up_to_n_improvements(tmp_path: Path) -> None:
-    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
-    step = driver.start()
-    assert step is not None
-
+def test_scan_agent_row_body_says_picking_up_to_n_improvements() -> None:
     prepared = prepare_improve_step(
-        step,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_SCAN,
+            session_namespace="main",
+            display_name="Scan Agent",
+            work_body="picking up to 3 improvements",
+            kind=PromptKind.ROLE_PROMPT,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=True,
+            candidate_budget=3,
+        ),
         github_port=_GithubPortStandIn(),
-        candidate_budget=3,
     )
 
     assert prepared.work_body == "picking up to 3 improvements"
 
 
-def test_scan_agent_row_body_with_budget_one_says_picking_1_improvement(
-    tmp_path: Path,
-) -> None:
-    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
-    step = driver.start()
-    assert step is not None
-
+def test_scan_agent_row_body_with_budget_one_says_picking_1_improvement() -> None:
     prepared = prepare_improve_step(
-        step,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_SCAN,
+            session_namespace="main",
+            display_name="Scan Agent",
+            work_body="picking 1 improvement",
+            kind=PromptKind.ROLE_PROMPT,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=True,
+            candidate_budget=1,
+        ),
         github_port=_GithubPortStandIn(),
-        candidate_budget=1,
     )
 
     assert prepared.work_body == "picking 1 improvement"
 
 
-def test_spec_agent_name_and_body_from_driver_prd_step(tmp_path: Path) -> None:
-    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
-    step1 = driver.start()
-    assert step1 is not None
-    driver.record_outcome(
-        step1,
-        ScanCandidatesOutput(
-            candidates=(
-                ScanCandidateItem(rank=1, title="Alpha"),
-                ScanCandidateItem(rank=2, title="Beta"),
-                ScanCandidateItem(rank=3, title="Gamma"),
-            )
-        ),
-    )
-    step2 = driver.next()
-    assert step2 is not None
-    assert step2.prompt_key == "02-spec.md"
-
+def test_spec_agent_name_and_body_from_driver_prd_step() -> None:
     prepared = prepare_improve_step(
-        step2,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_SPEC,
+            session_namespace="candidate/0",
+            display_name="Spec Agent",
+            work_body='writing spec for candidate 1/3 "Alpha"',
+            kind=PromptKind.FOLLOW_UP,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=True,
+            candidate=ImproveCandidate(rank=1, title="Alpha"),
+        ),
         github_port=_GithubPortStandIn(),
     )
 
@@ -620,30 +511,18 @@ def test_spec_agent_name_and_body_from_driver_prd_step(tmp_path: Path) -> None:
     assert prepared.work_body == 'writing spec for candidate 1/3 "Alpha"'
 
 
-def test_tickets_agent_name_and_body_from_driver_issues_step(tmp_path: Path) -> None:
-    driver = ImprovePhaseDriver(tmp_path / "improve", no_candidate_report=True)
-    step1 = driver.start()
-    assert step1 is not None
-    driver.record_outcome(
-        step1,
-        ScanCandidatesOutput(
-            candidates=(
-                ScanCandidateItem(rank=1, title="Alpha"),
-                ScanCandidateItem(rank=2, title="Beta"),
-                ScanCandidateItem(rank=3, title="Gamma"),
-            )
-        ),
-    )
-    step2 = driver.next()
-    assert step2 is not None
-    driver.record_outcome(step2, CompletionOutput())
-    step3 = driver.next()
-    assert step3 is not None
-    assert step3.prompt_key == "03-tickets.md"
-
+def test_tickets_agent_name_and_body_from_driver_issues_step() -> None:
     prepared = prepare_improve_step(
-        step3,
-        short_sid="abcd1234",
+        ImproveStepPreparationRequest(
+            prompt_template=PromptTemplate.IMPROVE_TICKETS,
+            session_namespace="candidate/0",
+            display_name="Tickets Agent",
+            work_body='filing tickets for candidate 1/3 "Alpha"',
+            kind=PromptKind.FOLLOW_UP,
+            short_sid="abcd1234",
+            fetch_recent_spec_titles=False,
+            candidate=ImproveCandidate(rank=1, title="Alpha"),
+        ),
         github_port=_GithubPortStandIn(),
     )
 
