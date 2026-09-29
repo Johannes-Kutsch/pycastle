@@ -238,7 +238,7 @@ def _parse_planner_body(body: str) -> PlannerOutput:
     raw_blocked = data.get("blocked", [])
     try:
         blocked = [
-            _normalize_blocked_entry(blocked_issue) for blocked_issue in raw_blocked
+            normalize_blocked_entry(blocked_issue) for blocked_issue in raw_blocked
         ]
     except (KeyError, TypeError) as exc:
         raise PlanParseError(
@@ -247,7 +247,7 @@ def _parse_planner_body(body: str) -> PlannerOutput:
     return PlannerOutput(issues=issues, blocked=blocked)
 
 
-def _normalize_blocked_entry(entry: dict) -> dict:
+def normalize_blocked_entry(entry: dict) -> dict:
     blocked = {"number": entry["number"]}
     if "title" in entry:
         blocked["title"] = entry["title"]
