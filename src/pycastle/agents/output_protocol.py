@@ -405,7 +405,16 @@ def _improve_on_complete(text: str, sentinel: str) -> AgentOutput:
     return _extract_improve_output(text)
 
 
+class _DivergenceResolverHandler:
+    def extract_final_output(self, text: str, tail: str) -> AgentOutput:
+        if extract_promise(text, _FAILED) is not None:
+            return FailedOutput()
+        extract_promise_or_raise(text, _COMPLETE, tail)
+        return CompletionOutput()
+
+
 _commit_message_handler = _CommitMessageHandler()
+_divergence_resolver_handler = _DivergenceResolverHandler()
 _preflight_issue_handler = _TagBasedRoleHandler(
     "issue",
     _parse_issue_body,
@@ -425,9 +434,7 @@ _HANDLERS: dict[AgentRole, _RoleHandler] = {
         _COMPLETE_OR_NO_CANDIDATE, _improve_on_complete
     ),
     AgentRole.MERGER: _commit_message_handler,
-    AgentRole.DIVERGENCE_RESOLVER: _PromiseGatedHandler(
-        _COMPLETE, lambda _text, _sentinel: CompletionOutput()
-    ),
+    AgentRole.DIVERGENCE_RESOLVER: _divergence_resolver_handler,
 }
 
 
