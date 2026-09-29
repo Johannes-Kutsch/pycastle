@@ -194,9 +194,7 @@ class _ScanPhaseHandler(_PhaseHandler):
         main_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
         for idx in range(len(output.candidates)):
             ns = _candidate_namespace(idx)
-            target = RoleSession(sandbox_path, AgentRole.IMPROVE, ns)
-            if not target.path.is_dir():
-                main_session.fork_namespace(ns)
+            main_session.fork_namespace_if_missing(ns)
 
     def record_outcome(
         self,
