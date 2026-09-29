@@ -1,8 +1,14 @@
 """Hard-agent-error abort translation for the pycastle iteration pipeline.
 
-This module owns only the HardAgentError abort pipeline: envelope extraction,
-status-code extraction, service-label mapping, title/body composition, bug filing,
-status printing, and returning AbortedHardApiError.
+This module owns only the HardAgentError abort pipeline: envelope parsing,
+service-label mapping, title/body composition, bug filing, status printing,
+and returning AbortedHardApiError.
+
+The private ``_ParsedEnvelope`` dataclass carries an envelope's extracted text
+and effective status code. The private ``_parse_envelope`` function walks the
+raw JSON envelope exactly once and returns a ``_ParsedEnvelope``; all
+envelope-shape knowledge (key precedence, type guards, invalid-JSON fallback,
+boolean rejection, caller-provided status-fallback rule) lives there.
 
 It does not own usage-limit-parse-failure filing, AbortedSetup filing,
 merge-close-failure filing, operator-actionable git filing, or credential-failure
@@ -12,6 +18,7 @@ routing.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pycastle.iteration import AbortedHardApiError
@@ -32,38 +39,45 @@ _SERVICE_LABEL_MAP = {
 }
 
 
-def _extract_envelope_text(raw: str) -> str:
-    error_text = raw
+@dataclass(frozen=True)
+class _ParsedEnvelope:
+    text: str
+    status_code: int | None
+
+
+def _parse_envelope(raw: str, status_fallback: int | None) -> _ParsedEnvelope:
     try:
         parsed = json.loads(raw)
-        if isinstance(parsed, dict) and parsed.get("result"):
-            error_text = str(parsed["result"])
-        elif isinstance(parsed, dict):
+    except (json.JSONDecodeError, TypeError):
+        return _ParsedEnvelope(text=raw, status_code=status_fallback)
+
+    text = raw
+    if isinstance(parsed, dict):
+        if parsed.get("result"):
+            text = str(parsed["result"])
+        else:
             error = parsed.get("error")
             if isinstance(error, dict):
                 data = error.get("data")
                 if isinstance(data, dict) and data.get("message"):
-                    error_text = str(data["message"])
+                    text = str(data["message"])
                 elif not isinstance(data, dict) and error.get("message"):
-                    error_text = str(error["message"])
-    except (json.JSONDecodeError, TypeError):
-        pass
-    return error_text
+                    text = str(error["message"])
 
+    status_code: int | None
+    if status_fallback is not None:
+        status_code = status_fallback
+    elif isinstance(parsed, dict):
+        status = parsed.get("status")
+        status_code = (
+            status
+            if isinstance(status, int) and not isinstance(status, bool)
+            else status_fallback
+        )
+    else:
+        status_code = status_fallback
 
-def _extract_envelope_status_code(raw: str, fallback: int | None) -> int | None:
-    if fallback is not None:
-        return fallback
-    try:
-        parsed = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return fallback
-    if not isinstance(parsed, dict):
-        return fallback
-    status = parsed.get("status")
-    return (
-        status if isinstance(status, int) and not isinstance(status, bool) else fallback
-    )
+    return _ParsedEnvelope(text=text, status_code=status_code)
 
 
 def translate_hard_agent_error_to_abort(
@@ -74,18 +88,17 @@ def translate_hard_agent_error_to_abort(
 ) -> AbortedHardApiError:
     """Translate a HardAgentError into AbortedHardApiError.
 
-    Extracts envelope text and status code, synthesizes a bug-report title and body,
-    files the report via the injected bug_filer callable, prints a status message via
-    the injected StatusDisplay, and returns AbortedHardApiError. Does not handle
-    credential failures.
+    Parses the raw envelope once via _parse_envelope, synthesizes a bug-report
+    title and body, files the report via the injected bug_filer callable, prints
+    a status message via the injected StatusDisplay, and returns
+    AbortedHardApiError. Does not handle credential failures.
     """
     raw: str = err.args[0] if err.args else ""
     service_name: str = getattr(err, "service_name", "claude") or "claude"
 
-    effective_status_code = _extract_envelope_status_code(
-        raw, getattr(err, "status_code", None)
-    )
-    error_text = _extract_envelope_text(raw)
+    envelope = _parse_envelope(raw, getattr(err, "status_code", None))
+    effective_status_code = envelope.status_code
+    error_text = envelope.text
     first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
     service_label = _SERVICE_LABEL_MAP.get(service_name, service_name)
 
