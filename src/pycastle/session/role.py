@@ -142,6 +142,16 @@ class RoleSession:
         shutil.copytree(self.path, target.path)
         return target
 
+    def fork_namespace_if_missing(self, target_namespace: str) -> "RoleSession":
+        if not self.path.is_dir():
+            raise ValueError(
+                f"Cannot fork: source namespace does not exist at {self.path}"
+            )
+        target = RoleSession(self._worktree, self._role, target_namespace)
+        if not target.path.is_dir():
+            shutil.copytree(self.path, target.path)
+        return target
+
     def discard(self) -> None:
         if self.path.is_dir():
             shutil.rmtree(self.path, onerror=_force_remove_readonly)

@@ -79,3 +79,44 @@ def test_fork_namespace_raises_when_source_does_not_exist(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="does not exist"):
         source.fork_namespace("fork-e")
+
+
+def test_fork_namespace_if_missing_copies_when_target_absent(tmp_path: Path) -> None:
+    source = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    _make_resumable(source)
+    extra = source.path / "extra.txt"
+    extra.write_text("extra-content", encoding="utf-8")
+
+    result = source.fork_namespace_if_missing("fork-new")
+
+    assert result.path.is_dir()
+    assert (result.path / "_continuation").read_text(
+        encoding="utf-8"
+    ) == "continuation-data"
+    assert (result.path / "extra.txt").read_text(encoding="utf-8") == "extra-content"
+
+
+def test_fork_namespace_if_missing_returns_existing_without_overwrite(
+    tmp_path: Path,
+) -> None:
+    source = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
+    _make_resumable(source)
+    target = RoleSession(tmp_path, AgentRole.IMPROVE, "existing-target")
+    target.path.mkdir(parents=True, exist_ok=True)
+    target.write_continuation("target-original")
+
+    result = source.fork_namespace_if_missing("existing-target")
+
+    assert result.path == target.path
+    assert result.read_continuation() == "target-original"
+    assert source.path.is_dir()
+    assert source.is_resumable()
+
+
+def test_fork_namespace_if_missing_raises_when_source_does_not_exist(
+    tmp_path: Path,
+) -> None:
+    source = RoleSession(tmp_path, AgentRole.IMPROVE, "nonexistent")
+
+    with pytest.raises(ValueError, match="does not exist"):
+        source.fork_namespace_if_missing("fork-f")
