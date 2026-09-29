@@ -137,6 +137,19 @@ def test_planner_blocked_entries_are_carried_in_blocked_field():
     assert result.blocked == [{"number": 5, "title": "Blocked"}]
 
 
+def test_planner_blocked_entry_without_title_omits_title():
+    text = '<plan>{"issues": [], "blocked": [{"number": 7}]}</plan>'
+    result = extract_output(text, AgentRole.PLANNER)
+    assert isinstance(result, PlannerOutput)
+    assert result.blocked == [{"number": 7}]
+
+
+def test_planner_blocked_entry_missing_number_raises_plan_parse_error():
+    text = '<plan>{"issues": [], "blocked": [{"title": "No number"}]}</plan>'
+    with pytest.raises(PlanParseError):
+        extract_output(text, AgentRole.PLANNER)
+
+
 # ── PLANNER: error paths ───────────────────────────────────────────────────────
 
 
