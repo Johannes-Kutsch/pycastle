@@ -3,7 +3,7 @@ import re
 from collections.abc import Callable, Iterable
 from typing import Literal
 
-from pycastle.agents.output_protocol import PlannerOutput
+from pycastle.agents.output_protocol import PlannerOutput, normalize_blocked_entry
 from pycastle.agents.slice_classifier import (
     ConcreteSliceVerdict,
     SliceClassifierVerdict,
@@ -81,7 +81,7 @@ def resolve_planner_blocked_intake(
                 }
             )
             continue
-        resolved_blocked.append(_normalize_blocked_entry(blocked_entry))
+        resolved_blocked.append(normalize_blocked_entry(blocked_entry))
     return resolved_blocked
 
 
@@ -89,13 +89,6 @@ def resolve_planner_all_blocked_intake(
     planner_output: PlannerOutput, prepared_issue_set: "PreparedPlanningIssueSet"
 ) -> list[dict]:
     return resolve_planner_blocked_intake(planner_output.blocked, prepared_issue_set)
-
-
-def _normalize_blocked_entry(blocked_entry: dict) -> dict:
-    normalized = {"number": blocked_entry["number"]}
-    if "title" in blocked_entry:
-        normalized["title"] = blocked_entry["title"]
-    return normalized
 
 
 type LabelActionIntent = Literal["add", "remove"]
