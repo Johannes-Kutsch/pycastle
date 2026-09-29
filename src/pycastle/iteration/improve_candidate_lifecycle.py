@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.runner import RunRequest
@@ -23,25 +23,10 @@ from pycastle.session import RoleSession
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from pycastle.agents.runner import AgentRunnerProtocol
     from pycastle.config import Config
-    from pycastle.display.status_display import StatusDisplay
-    from pycastle.iteration.preflight import PreflightCache
-    from pycastle.services import GitService
-    from pycastle.services.github_service import GithubService
+    from pycastle.iteration.improve import _ImproveDeps
 
 _DRAFTS_SUBDIR = "_drafts"
-
-
-class _LifecycleDeps(Protocol):
-    cfg: Config
-    status_display: StatusDisplay
-    agent_runner: AgentRunnerProtocol
-    github_svc: GithubService
-    git_svc: GitService
-    repo_root: Path
-    preflight_cache: PreflightCache
-    improve_dispatched_count: int
 
 
 @dataclass(frozen=True)
@@ -58,7 +43,7 @@ class Stop:
 CandidateOutcome = Advance | Stop
 
 
-def _cap_reached(deps: _LifecycleDeps, completed_count: int) -> bool:
+def _cap_reached(deps: _ImproveDeps, completed_count: int) -> bool:
     return (
         deps.cfg.improve_max is not None
         and deps.improve_dispatched_count + completed_count >= deps.cfg.improve_max
@@ -67,7 +52,7 @@ def _cap_reached(deps: _LifecycleDeps, completed_count: int) -> bool:
 
 async def _file_improve_drafts(
     *,
-    deps: _LifecycleDeps,
+    deps: _ImproveDeps,
     role_session_dir: Path,
     sandbox_path: Path,
     candidate_idx: int,
@@ -195,7 +180,7 @@ def reconcile_and_wind_down(
 async def file_and_decide(
     *,
     step_namespace: str,
-    deps: _LifecycleDeps,
+    deps: _ImproveDeps,
     role_session_dir: Path,
     sandbox_path: Path,
     fingerprint: str,
