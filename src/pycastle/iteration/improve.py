@@ -157,8 +157,7 @@ class Step:
     kind: PromptKind
     fetch_recent_spec_titles: bool
     candidate: ImproveCandidate | None = None
-    scan_set_size: int | None = None
-    candidate_ordinal: int | None = None
+    candidate_idx: int | None = None
 
 
 # ── Concrete phase handlers ───────────────────────────────────────────────────
@@ -222,7 +221,7 @@ class _CandidatePhaseHandler(_PhaseHandler):
         improve_dispatched_count: int,
         improve_max: int | None,
     ) -> str | None:
-        k = step.candidate_ordinal or 1
+        k = (step.candidate_idx + 1) if step.candidate_idx is not None else 1
         if improve_max is not None:
             return f"candidate {k}/{n_candidates} · improvement {improve_dispatched_count + k}/{improve_max}"
         return f"candidate {k}/{n_candidates}"
@@ -235,8 +234,10 @@ class _CandidatePhaseHandler(_PhaseHandler):
         candidate_count: int,
         last_announced_idx: int,
     ) -> int:
-        candidate_ordinal = step.candidate_ordinal or 1
-        candidate_idx = candidate_ordinal - 1
+        candidate_ordinal = (
+            (step.candidate_idx + 1) if step.candidate_idx is not None else 1
+        )
+        candidate_idx = step.candidate_idx if step.candidate_idx is not None else 0
         if candidate_idx == last_announced_idx:
             return last_announced_idx
         title = step.candidate.title if step.candidate else ""
@@ -262,7 +263,6 @@ class _SpecPhaseHandler(_CandidatePhaseHandler):
         kind: PromptKind,
         idx: int,
         candidate: ImproveCandidate,
-        candidates: "list[ScanCandidateItem] | None",
     ) -> Step:
         cfg = dataclasses.replace(
             _PHASES["02-spec.md"], namespace=_candidate_namespace(idx)
@@ -273,8 +273,7 @@ class _SpecPhaseHandler(_CandidatePhaseHandler):
             kind=kind,
             fetch_recent_spec_titles=True,
             candidate=candidate,
-            scan_set_size=len(candidates) if candidates is not None else None,
-            candidate_ordinal=idx + 1,
+            candidate_idx=idx,
         )
 
     def needs_candidate_gate(self, step: Step) -> bool:
@@ -298,7 +297,6 @@ class _TicketsPhaseHandler(_CandidatePhaseHandler):
         kind: PromptKind,
         idx: int,
         candidate: ImproveCandidate,
-        candidates: "list[ScanCandidateItem] | None",
     ) -> Step:
         cfg = dataclasses.replace(
             _PHASES["03-tickets.md"], namespace=_candidate_namespace(idx)
@@ -309,8 +307,7 @@ class _TicketsPhaseHandler(_CandidatePhaseHandler):
             kind=kind,
             fetch_recent_spec_titles=False,
             candidate=candidate,
-            scan_set_size=len(candidates) if candidates is not None else None,
-            candidate_ordinal=idx + 1,
+            candidate_idx=idx,
         )
 
     def should_file_and_decide(self) -> bool:
@@ -399,6 +396,8 @@ def _build_preparation_request(
     *,
     short_sid: str,
     candidate_budget: int | None,
+    scan_set_size: int | None,
+    candidate_ordinal: int | None,
 ) -> ImproveStepPreparationRequest:
     template = step.cfg.template
     if template is PromptTemplate.IMPROVE_SCAN:
@@ -410,17 +409,13 @@ def _build_preparation_request(
         )
     elif (
         step.candidate is not None
-        and step.candidate_ordinal is not None
-        and step.scan_set_size is not None
+        and candidate_ordinal is not None
+        and scan_set_size is not None
     ):
-        ordinal = step.candidate_ordinal
-        total = step.scan_set_size
         if template is PromptTemplate.IMPROVE_SPEC:
-            work_body = (
-                f'writing spec for candidate {ordinal}/{total} "{step.candidate.title}"'
-            )
+            work_body = f'writing spec for candidate {candidate_ordinal}/{scan_set_size} "{step.candidate.title}"'
         elif template is PromptTemplate.IMPROVE_TICKETS:
-            work_body = f'filing tickets for candidate {ordinal}/{total} "{step.candidate.title}"'
+            work_body = f'filing tickets for candidate {candidate_ordinal}/{scan_set_size} "{step.candidate.title}"'
         else:
             work_body = step.cfg.display_body
     else:
@@ -484,7 +479,6 @@ class ImprovePhaseDriver:
                 kind=_spec_handler.resume_kind(in_flight),
                 idx=idx,
                 candidate=candidate,
-                candidates=candidates,
             )
 
         # Record exists → tickets phase.
@@ -493,7 +487,6 @@ class ImprovePhaseDriver:
             kind=_tickets_handler.resume_kind(in_flight),
             idx=idx,
             candidate=candidate,
-            candidates=candidates,
         )
 
     def _next_step_from_cursor(self, cursor: int, *, from_start: bool) -> Step | None:
@@ -738,6 +731,10 @@ async def improve_phase(
                         step,
                         short_sid=short_sid,
                         candidate_budget=candidate_budget,
+                        scan_set_size=driver.candidate_count,
+                        candidate_ordinal=(step.candidate_idx + 1)
+                        if step.candidate_idx is not None
+                        else None,
                     ),
                     github_port=deps.github_svc,
                 )
@@ -764,9 +761,9 @@ async def improve_phase(
                 handler.post_record(step, output, sandbox_path)
 
                 if handler.should_file_and_decide():
-                    assert step.candidate_ordinal is not None  # noqa: S101
+                    assert step.candidate_idx is not None  # noqa: S101
                     outcome = await file_and_decide(
-                        candidate_idx=step.candidate_ordinal - 1,
+                        candidate_idx=step.candidate_idx,
                         deps=deps,
                         role_session_dir=role_session_dir,
                         sandbox_path=sandbox_path,
