@@ -129,6 +129,9 @@ def test_plan_issue_execution_returns_run_steps_for_ready_issue(tmp_path):
     assert plan.planner_sha == "sha-abc"
     assert plan.slice_mode_display_name == "behavior"
 
+    assert plan.implementer_step.planner_sha == "sha-abc"
+    assert plan.reviewer_step.planner_sha is None
+
     assert plan.implementer_step.outcome == "run"
     assert plan.implementer_step.run_kind is RunKind.FRESH
     assert plan.implementer_step.role_name == "implementer"
