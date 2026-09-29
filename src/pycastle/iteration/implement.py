@@ -160,7 +160,6 @@ async def _execute_role_step(
     deps: _ImplementDeps,
     token: CancellationToken,
     worktree_semaphore: asyncio.Semaphore | None,
-    planner_sha: str | None,
 ) -> None:
     intent = (
         DurableIssueWorktreeIntent.IMPLEMENTER
@@ -173,7 +172,7 @@ async def _execute_role_step(
             issue["number"],
             intent=intent,
             deps=deps,
-            planner_sha=planner_sha,
+            planner_sha=step.planner_sha,
             operating_branch=deps.cfg.operating_branch,
         ) as mount_path,
     ):
@@ -262,29 +261,14 @@ async def run_issue(
         if issue_plan.issue_outcome == "complete":
             return issue
 
-        runnable_roles = {step.role_name for step in issue_plan.run_steps}
-        planned_steps = {step.role_name: step for step in issue_plan.steps}
-
-        if "implementer" in runnable_roles:
+        for step in issue_plan.run_steps:
             await _execute_role_step(
                 issue=issue,
-                step=planned_steps["implementer"],
+                step=step,
                 runner=_runner,
                 deps=deps,
                 token=_token,
                 worktree_semaphore=worktree_semaphore,
-                planner_sha=issue_plan.planner_sha,
-            )
-
-        if "reviewer" in runnable_roles:
-            await _execute_role_step(
-                issue=issue,
-                step=planned_steps["reviewer"],
-                runner=_runner,
-                deps=deps,
-                token=_token,
-                worktree_semaphore=worktree_semaphore,
-                planner_sha=None,
             )
     finally:
         if lock is not None and lock.locked():

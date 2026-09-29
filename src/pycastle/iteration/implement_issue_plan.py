@@ -67,6 +67,7 @@ class IssueRoleStepPlan:
     service: str
     mount_setup_failure: MountSetupFailure | None
     commit_fallback_subject: CommitFallbackSubject | None
+    planner_sha: str | None = None
     skip_reason: str | None = None
 
 
@@ -120,6 +121,7 @@ class _StepContext:
     work_body: str
     mount_path: Path
     skip_reason: str | None
+    planner_sha: str | None
 
 
 def plan_ready_issue_slice(issue: dict, cfg: Config) -> ReadyIssueSlicePlan:
@@ -165,6 +167,7 @@ def plan_issue_execution(ctx: IssueExecutionContext) -> IssueExecutionPlan:
                     if implement_done
                     else None
                 ),
+                planner_sha=sha,
             )
         ),
         reviewer_step=_plan_step(
@@ -178,6 +181,7 @@ def plan_issue_execution(ctx: IssueExecutionContext) -> IssueExecutionPlan:
                 work_body=ready_slice.review_work_body,
                 mount_path=ctx.review_mount_path,
                 skip_reason="review stage already complete" if review_done else None,
+                planner_sha=None,
             )
         ),
     )
@@ -278,6 +282,7 @@ def _plan_step(ctx: _StepContext) -> IssueRoleStepPlan:
         service=role_override.service,
         mount_setup_failure=mount_setup_failure,
         commit_fallback_subject=commit_fallback_subject,
+        planner_sha=ctx.planner_sha,
         skip_reason=skip_reason,
     )
 
