@@ -56,8 +56,8 @@ async def _file_improve_drafts(
     role_session_dir: Path,
     sandbox_path: Path,
     candidate_idx: int,
-    candidate_namespace: str,
 ) -> bool:
+    candidate_namespace = f"candidate/{candidate_idx}"
     draft_dir = role_session_dir / _DRAFTS_SUBDIR
     store = ImproveRoleSessionStore(role_session_dir)
     prev_spec = store.prev_filed_spec(candidate_idx)
@@ -179,7 +179,7 @@ def reconcile_and_wind_down(
 
 async def file_and_decide(
     *,
-    step_namespace: str,
+    candidate_idx: int,
     deps: _ImproveDeps,
     role_session_dir: Path,
     sandbox_path: Path,
@@ -194,15 +194,11 @@ async def file_and_decide(
     set was unrepairable; the outer loop continues to the next candidate
     without incrementing the completed count.
     """
-    from pycastle.iteration.improve import _parse_candidate_namespace  # noqa: PLC0415
-
-    candidate_idx = _parse_candidate_namespace(step_namespace)
     filed = await _file_improve_drafts(
         deps=deps,
         role_session_dir=role_session_dir,
         sandbox_path=sandbox_path,
         candidate_idx=candidate_idx,
-        candidate_namespace=step_namespace,
     )
     if not filed:
         return Stop(reason="drafts-abandoned", completed_count=completed_count)

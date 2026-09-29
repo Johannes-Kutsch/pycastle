@@ -53,70 +53,10 @@ IMPROVE_SANDBOX_INTENT = SandboxWorktreeIntent.IMPROVE
 IMPROVE_SANDBOX = f"pycastle/{IMPROVE_SANDBOX_INTENT.value}"
 
 _CANDIDATE_NS_PREFIX = "candidate"
-_CANDIDATE_NS_SEGMENT_COUNT = 2
 
 
 def _candidate_namespace(idx: int) -> str:
     return f"{_CANDIDATE_NS_PREFIX}/{idx}"
-
-
-class _CandidateNamespaceParseError(Exception):
-    """Raised when a string cannot be parsed as a candidate namespace produced by _candidate_namespace."""
-
-
-def _parse_candidate_namespace(namespace: str) -> int:
-    """Inverse of _candidate_namespace: given a string it produced, return the integer index.
-
-    Enforces the canonical-form invariants from ADR 0008's path-valued namespace amendment:
-    exactly two segments joined by '/', first segment equals _CANDIDATE_NS_PREFIX, second
-    segment a non-negative integer, no leading/trailing separator, never absolute, no '..' segment.
-    """
-    if not namespace:
-        raise _CandidateNamespaceParseError(f"empty namespace: {namespace!r}")
-    if namespace.startswith("/"):
-        raise _CandidateNamespaceParseError(f"absolute namespace: {namespace!r}")
-    if namespace.endswith("/"):
-        raise _CandidateNamespaceParseError(
-            f"trailing separator in namespace: {namespace!r}"
-        )
-
-    segments = namespace.split("/")
-
-    if ".." in segments:
-        raise _CandidateNamespaceParseError(
-            f"namespace contains '..' segment: {namespace!r}"
-        )
-
-    if len(segments) != _CANDIDATE_NS_SEGMENT_COUNT:
-        raise _CandidateNamespaceParseError(
-            f"expected exactly two segments in namespace: {namespace!r}"
-        )
-
-    prefix, idx_str = segments
-
-    if prefix != _CANDIDATE_NS_PREFIX:
-        raise _CandidateNamespaceParseError(
-            f"wrong first segment in namespace: {namespace!r}"
-        )
-
-    if not idx_str:
-        raise _CandidateNamespaceParseError(
-            f"missing index segment in namespace: {namespace!r}"
-        )
-
-    try:
-        idx = int(idx_str)
-    except ValueError:
-        raise _CandidateNamespaceParseError(
-            f"non-integer index in namespace: {namespace!r}"
-        ) from None
-
-    if idx < 0:
-        raise _CandidateNamespaceParseError(
-            f"negative index in namespace: {namespace!r}"
-        )
-
-    return idx
 
 
 # ── Outcome transitions ───────────────────────────────────────────────────────
@@ -305,8 +245,7 @@ class _CandidatePhaseHandler(_PhaseHandler):
         improve_dispatched_count: int,
         improve_max: int | None,
     ) -> str | None:
-        candidate_idx = _parse_candidate_namespace(step.cfg.namespace)
-        k = candidate_idx + 1
+        k = step.candidate_ordinal or 1
         if improve_max is not None:
             return f"candidate {k}/{n_candidates} · improvement {improve_dispatched_count + k}/{improve_max}"
         return f"candidate {k}/{n_candidates}"
@@ -319,19 +258,20 @@ class _CandidatePhaseHandler(_PhaseHandler):
         candidate_count: int,
         last_announced_idx: int,
     ) -> int:
-        candidate_idx = _parse_candidate_namespace(step.cfg.namespace)
+        candidate_ordinal = step.candidate_ordinal or 1
+        candidate_idx = candidate_ordinal - 1
         if candidate_idx == last_announced_idx:
             return last_announced_idx
         title = step.candidate.title if step.candidate else ""
         if step.kind is PromptKind.ROLE_PROMPT:
             status_display.print(
                 "Improve",
-                f'→ resuming candidate {candidate_idx + 1}/{candidate_count} "{title}" at {step.cfg.display_name}',
+                f'→ resuming candidate {candidate_ordinal}/{candidate_count} "{title}" at {step.cfg.display_name}',
             )
         else:
             status_display.print(
                 "Improve",
-                f'→ candidate {candidate_idx + 1}/{candidate_count} "{title}"',
+                f'→ candidate {candidate_ordinal}/{candidate_count} "{title}"',
             )
         return candidate_idx
 
@@ -834,8 +774,9 @@ async def improve_phase(
                 handler.post_record(step, output, sandbox_path)
 
                 if handler.should_file_and_decide():
+                    assert step.candidate_ordinal is not None  # noqa: S101
                     outcome = await file_and_decide(
-                        step_namespace=step_namespace,
+                        candidate_idx=step.candidate_ordinal - 1,
                         deps=deps,
                         role_session_dir=role_session_dir,
                         sandbox_path=sandbox_path,

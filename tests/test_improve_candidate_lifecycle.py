@@ -155,13 +155,13 @@ def _run_file_and_decide(
     role_session_dir: Path,
     sandbox_path: Path,
     deps,
-    step_namespace: str = "candidate/0",
+    candidate_idx: int = 0,
     fingerprint: str = "abc123",
     completed_count: int = 0,
 ) -> Advance | Stop:
     return asyncio.run(
         file_and_decide(
-            step_namespace=step_namespace,
+            candidate_idx=candidate_idx,
             deps=deps,
             role_session_dir=role_session_dir,
             sandbox_path=sandbox_path,
@@ -621,7 +621,7 @@ def test_file_and_decide_prev_spec_none_for_candidate_0(
     _run_file_and_decide(
         role_session_dir=role_session_dir,
         sandbox_path=tmp_path,
-        step_namespace="candidate/0",
+        candidate_idx=0,
         deps=_make_test_deps(tmp_path, github_svc=github_svc),
     )
 
@@ -664,7 +664,7 @@ def test_file_and_decide_prev_spec_forwarded_for_candidate_n(
     _run_file_and_decide(
         role_session_dir=role_session_dir,
         sandbox_path=tmp_path,
-        step_namespace="candidate/1",
+        candidate_idx=1,
         deps=_make_test_deps(tmp_path, github_svc=github_svc),
     )
 
