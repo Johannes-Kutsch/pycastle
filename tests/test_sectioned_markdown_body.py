@@ -217,8 +217,6 @@ def test_empty_body_round_trips_as_empty_string():
 
 
 def test_upsert_before_raise_on_missing_raises():
-    import pytest
-
     body = SectionedMarkdownBody("## Acceptance criteria\n\n- item")
     with pytest.raises(ValueError, match="on_missing=RAISE"):
         body.upsert_before(
