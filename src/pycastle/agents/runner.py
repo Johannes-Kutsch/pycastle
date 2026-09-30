@@ -197,6 +197,23 @@ async def _render_runtime_prompt(
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class _RuntimeResourceBundle:
+    service: AgentService
+    role_session: RoleSession
+    provider_state_dir: Path
+    state_dir_container_path: str
+    provider_auth: Any
+    resolved_model: str
+    resolved_effort: str
+    git_name: str
+    git_email: str
+    session: Any  # DockerSession
+    runner: Any  # ContainerRunner
+    runtime_client: Any
+    model_display: ModelDisplayMetadata
+
+
 class AgentRunner:
     def __init__(
         self,
@@ -420,6 +437,81 @@ class AgentRunner:
             role=role.value,
         )
 
+    def _assemble_runtime_resources(
+        self, request: RunRequest
+    ) -> _RuntimeResourceBundle:
+        service = self._resolve_service(request.service)
+        role_session = RoleSession(
+            request.mount_path,
+            request.role,
+            request.session_namespace,
+        )
+        state_dir_relpath = service.state_dir_relpath(
+            request.role, request.session_namespace
+        )
+        if state_dir_relpath is not None:
+            provider_state_dir: Path = request.mount_path / state_dir_relpath
+            state_dir_container_path = str(
+                Path(_CONTAINER_WORKSPACE) / state_dir_relpath
+            )
+        else:
+            provider_state_dir = role_session.path
+            state_dir_container_path = str(
+                Path(_CONTAINER_WORKSPACE)
+                / role_session.path.relative_to(request.mount_path)
+            )
+        _auth_seed_action = service.auth_seed_action(provider_state_dir)
+        if _auth_seed_action is not None:
+            _auth_seed_action.apply()
+        provider_auth = service.provider_auth()
+        resolved_model = request.model or _default_model(service)
+        resolved_effort = request.effort or _default_effort()
+        git_name = self._git_service.get_user_name()
+        git_email = self._git_service.get_user_email()
+        status_display = (
+            request.status_display
+            if request.status_display is not None
+            else PlainStatusDisplay()
+        )
+        session = self._build_session(
+            request.mount_path,
+            service,
+            state_dir_container_path,
+        )
+        runner = ContainerRunner(
+            request.name,
+            session,
+            _ContainerRunnerConfig(
+                cfg=self._cfg,
+                model=resolved_model,
+                effort=resolved_effort,
+                status_display=status_display,
+                service=service,
+                mount_path=request.mount_path,
+            ),
+        )
+        runtime_client = runner.get_runtime_client()
+        model_display = ModelDisplayMetadata(
+            service=service.name,
+            model=resolved_model,
+            effort=resolved_effort,
+        )
+        return _RuntimeResourceBundle(
+            service=service,
+            role_session=role_session,
+            provider_state_dir=provider_state_dir,
+            state_dir_container_path=state_dir_container_path,
+            provider_auth=provider_auth,
+            resolved_model=resolved_model,
+            resolved_effort=resolved_effort,
+            git_name=git_name,
+            git_email=git_email,
+            session=session,
+            runner=runner,
+            runtime_client=runtime_client,
+            model_display=model_display,
+        )
+
     async def run(self, request: RunRequest) -> AgentSuccessOutput:
         self._enforce_role_mount_precondition(
             name=request.name,
@@ -459,67 +551,19 @@ class AgentRunner:
                 reset_time=None,
                 stage_key=stage_registry.stage_key_for_role(request.role),
             )
+
         status_display = (
             request.status_display
             if request.status_display is not None
             else PlainStatusDisplay()
         )
-        role_session = RoleSession(
-            request.mount_path,
-            request.role,
-            request.session_namespace,
-        )
-        state_dir_relpath = service.state_dir_relpath(
-            request.role, request.session_namespace
-        )
-        if state_dir_relpath is not None:
-            provider_state_dir: Path = request.mount_path / state_dir_relpath
-            state_dir_container_path = str(
-                Path(_CONTAINER_WORKSPACE) / state_dir_relpath
-            )
-        else:
-            provider_state_dir = role_session.path
-            state_dir_container_path = str(
-                Path(_CONTAINER_WORKSPACE)
-                / role_session.path.relative_to(request.mount_path)
-            )
-        _auth_seed_action = service.auth_seed_action(provider_state_dir)
-        if _auth_seed_action is not None:
-            _auth_seed_action.apply()
-        provider_auth = service.provider_auth()
-        resolved_model = request.model or _default_model(service)
-        resolved_effort = request.effort or _default_effort()
-        git_name = self._git_service.get_user_name()
-        git_email = self._git_service.get_user_email()
-        session = self._build_session(
-            request.mount_path,
-            service,
-            state_dir_container_path,
-        )
-        runner = ContainerRunner(
-            request.name,
-            session,
-            _ContainerRunnerConfig(
-                cfg=self._cfg,
-                model=resolved_model,
-                effort=resolved_effort,
-                status_display=status_display,
-                service=service,
-                mount_path=request.mount_path,
-            ),
-        )
-        runtime_client = runner.get_runtime_client()
-        model_display = ModelDisplayMetadata(
-            service=service.name,
-            model=resolved_model,
-            effort=resolved_effort,
-        )
+        resources = self._assemble_runtime_resources(request)
 
         async def _do_render_prompt(req: RunRequest, run_kind: RunKind) -> str:
             return await _render_runtime_prompt(
                 prompt_invocation=req.prompt,
                 renderer=self._renderer,
-                runner=runner,
+                runner=resources.runner,
                 run_kind=run_kind,
             )
 
@@ -531,24 +575,26 @@ class AgentRunner:
             config=StatusRowConfig(
                 color_key=color_key,
                 work_body=request.work_body,
-                model_display=model_display,
+                model_display=resources.model_display,
             ),
         ) as row:
             try:
                 try:
-                    await runner.setup(git_name, git_email)
+                    await resources.runner.setup(
+                        resources.git_name, resources.git_email
+                    )
                 except DockerError as exc:
                     raise SetupPhaseError(request.role.value, str(exc)) from exc
                 status_display.update_phase(request.name, WORK_PHASE)
                 bundle = _AttemptLoopBundle(
-                    service=service,
-                    runner=runner,
-                    runtime_client=runtime_client,
-                    role_session=role_session,
-                    provider_state_dir=provider_state_dir,
-                    provider_auth=provider_auth,
-                    resolved_model=resolved_model,
-                    resolved_effort=resolved_effort,
+                    service=resources.service,
+                    runner=resources.runner,
+                    runtime_client=resources.runtime_client,
+                    role_session=resources.role_session,
+                    provider_state_dir=resources.provider_state_dir,
+                    provider_auth=resources.provider_auth,
+                    resolved_model=resources.resolved_model,
+                    resolved_effort=resources.resolved_effort,
                     status_display=status_display,
                     protocol_reprompt_plan=_planned_protocol_reprompt,
                     render_prompt=_do_render_prompt,
@@ -565,7 +611,7 @@ class AgentRunner:
                 return output
             finally:
                 with contextlib.suppress(OSError):
-                    session.__exit__(None, None, None)
+                    resources.session.__exit__(None, None, None)
 
     async def run_preflight(
         self,
