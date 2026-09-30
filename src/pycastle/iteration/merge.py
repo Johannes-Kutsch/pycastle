@@ -88,16 +88,18 @@ def _build_merge_result(
     *,
     clean_issues: list[dict],
     conflict_issues: list[dict],
-    recovery_result: dict[str, list[dict]] | None = None,
+    completed_conflicts: list[dict] | None = None,
+    pending_conflicts: list[dict] | None = None,
     preflight_blocker: PreflightHITL | PreflightAFK | None = None,
     close_failure_issue_numbers: list[int] | None = None,
 ) -> MergeResult:
     return MergeResult(
         clean=clean_issues,
         conflicts=conflict_issues,
+        completed_conflicts=completed_conflicts or [],
+        pending_conflicts=pending_conflicts or [],
         preflight_blocker=preflight_blocker,
         close_failure_issue_numbers=close_failure_issue_numbers or [],
-        **(recovery_result or {}),
     )
 
 
@@ -253,7 +255,7 @@ async def _handle_preflight_blocked_conflicts(
     return _build_merge_result(
         clean_issues=ctx.clean_issues,
         conflict_issues=ctx.conflict_issues,
-        recovery_result={"pending_conflicts": ctx.conflict_issues},
+        pending_conflicts=ctx.conflict_issues,
         preflight_blocker=verdict,
         close_failure_issue_numbers=ctx.close_failure_issue_numbers,
     )
@@ -317,7 +319,6 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
             return _build_merge_result(
                 clean_issues=clean_issues,
                 conflict_issues=[],
-                recovery_result={"pending_conflicts": []},
                 close_failure_issue_numbers=close_tracker.filed_numbers,
             )
 
@@ -343,12 +344,12 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         _close_merge_row(
             build_merge_close_message(
                 clean_deleted + recovery.deleted_conflict_branches,
-                **recovery.close_message_kwargs(),
+                completed_conflicts=recovery.completed_conflicts,
+                pending_conflicts=recovery.pending_conflicts,
             )
         )
 
-        recovery_result = recovery.merge_result_kwargs()
-        pending_conflicts = recovery_result["pending_conflicts"]
+        pending_conflicts = recovery.pending_conflicts
         all_close_failure_issue_numbers = (
             close_tracker.filed_numbers + recovery.close_failure_issue_numbers
         )
@@ -361,6 +362,7 @@ async def merge_phase(completed: list[dict], deps: _MergeDeps) -> MergeResult:
         return _build_merge_result(
             clean_issues=clean_issues,
             conflict_issues=conflict_issues,
-            recovery_result=recovery_result,
+            completed_conflicts=recovery.completed_conflicts,
+            pending_conflicts=recovery.pending_conflicts,
             close_failure_issue_numbers=all_close_failure_issue_numbers,
         )
