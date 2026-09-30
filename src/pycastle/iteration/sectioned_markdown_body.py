@@ -17,10 +17,25 @@ class AnchorKind(enum.Enum):
     SUBSTRING = "substring"
 
 
+class UpsertSide(enum.Enum):
+    BEFORE = "before"
+    AFTER = "after"
+
+
+class NoStrategyMatchedError(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class Anchor:
     text: str
     kind: AnchorKind = field(default=AnchorKind.EXACT)
+
+
+@dataclass(frozen=True)
+class PositioningStrategy:
+    side: UpsertSide
+    anchors: list[Anchor | str]
 
 
 def _parse_sections(body: str) -> list[Section]:
@@ -127,6 +142,35 @@ class SectionedMarkdownBody:
         on_missing: OnMissing = OnMissing.APPEND,
     ) -> SectionedMarkdownBody:
         self._upsert_at_offset(heading, content, anchors, on_missing, offset=1)
+        return self
+
+    def upsert_first_matching(
+        self,
+        heading: str,
+        content: str,
+        strategies: list[PositioningStrategy],
+        fallback: OnMissing = OnMissing.APPEND,
+    ) -> SectionedMarkdownBody:
+        self._remove_heading(heading)
+        section: Section = (heading, content)
+
+        for strategy in strategies:
+            normalized = _normalize_anchors(strategy.anchors)
+            anchor_idx = self._find_anchor_index(normalized)
+            if anchor_idx >= 0:
+                offset = 0 if strategy.side == UpsertSide.BEFORE else 1
+                self._sections.insert(anchor_idx + offset, section)
+                return self
+
+        if fallback == OnMissing.PREPEND:
+            first = self._first_heading_index()
+            self._sections.insert(max(first, 0), section)
+        elif fallback == OnMissing.APPEND:
+            self._sections.append(section)
+        else:
+            raise NoStrategyMatchedError(
+                f"No strategy matched for {heading!r} and fallback=RAISE"
+            )
         return self
 
     def remove(self, heading: str) -> SectionedMarkdownBody:

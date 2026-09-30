@@ -1,10 +1,15 @@
 """Tests for sectioned_markdown_body — parse/edit/render of ## -sectioned bodies."""
 
+import pytest
+
 from pycastle.iteration.sectioned_markdown_body import (
     Anchor,
     AnchorKind,
+    NoStrategyMatchedError,
     OnMissing,
+    PositioningStrategy,
     SectionedMarkdownBody,
+    UpsertSide,
 )
 
 # ---------------------------------------------------------------------------
@@ -225,8 +230,6 @@ def test_upsert_before_raise_on_missing_raises():
 
 
 def test_upsert_after_raise_on_missing_raises():
-    import pytest
-
     body = SectionedMarkdownBody("## Acceptance criteria\n\n- item")
     with pytest.raises(ValueError, match="on_missing=RAISE"):
         body.upsert_after(
@@ -235,3 +238,177 @@ def test_upsert_after_raise_on_missing_raises():
             ["## No such section"],
             on_missing=OnMissing.RAISE,
         )
+
+
+# ---------------------------------------------------------------------------
+# Behavior 15: upsert_first_matching — single strategy, anchor present
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_first_matching_single_strategy_before():
+    body = SectionedMarkdownBody(
+        "## Acceptance criteria\n\n- item\n\n## Files touched\n\nfile.py"
+    )
+    result = body.upsert_first_matching(
+        "## Blocked by",
+        "None",
+        [PositioningStrategy(side=UpsertSide.BEFORE, anchors=["## Files touched"])],
+        fallback=OnMissing.APPEND,
+    ).render()
+    sections = [line for line in result.split("\n") if line.startswith("## ")]
+    assert sections == ["## Acceptance criteria", "## Blocked by", "## Files touched"]
+
+
+def test_upsert_first_matching_single_strategy_after():
+    body = SectionedMarkdownBody(
+        "## Acceptance criteria\n\n- item\n\n## Files touched\n\nfile.py"
+    )
+    result = body.upsert_first_matching(
+        "## Blocked by",
+        "None",
+        [
+            PositioningStrategy(
+                side=UpsertSide.AFTER, anchors=["## Acceptance criteria"]
+            )
+        ],
+        fallback=OnMissing.APPEND,
+    ).render()
+    sections = [line for line in result.split("\n") if line.startswith("## ")]
+    assert sections == ["## Acceptance criteria", "## Blocked by", "## Files touched"]
+
+
+# ---------------------------------------------------------------------------
+# Behavior 16: upsert_first_matching — two strategies, first absent second present
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_first_matching_uses_second_strategy_when_first_absent():
+    body = SectionedMarkdownBody(
+        "## What to build\n\ndetail\n\n## Files touched\n\nfile.py"
+    )
+    result = body.upsert_first_matching(
+        "## Blocked by",
+        "None",
+        [
+            PositioningStrategy(side=UpsertSide.BEFORE, anchors=["## No such section"]),
+            PositioningStrategy(side=UpsertSide.BEFORE, anchors=["## Files touched"]),
+        ],
+        fallback=OnMissing.APPEND,
+    ).render()
+    sections = [line for line in result.split("\n") if line.startswith("## ")]
+    assert sections == ["## What to build", "## Blocked by", "## Files touched"]
+
+
+# ---------------------------------------------------------------------------
+# Behavior 17: upsert_first_matching — no match, fallback=APPEND
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_first_matching_no_match_fallback_append():
+    body = SectionedMarkdownBody(
+        "## What to build\n\ndetail\n\n## Acceptance criteria\n\n- x"
+    )
+    result = body.upsert_first_matching(
+        "## Blocked by",
+        "None",
+        [PositioningStrategy(side=UpsertSide.BEFORE, anchors=["## No such section"])],
+        fallback=OnMissing.APPEND,
+    ).render()
+    sections = [line for line in result.split("\n") if line.startswith("## ")]
+    assert sections[-1] == "## Blocked by"
+
+
+# ---------------------------------------------------------------------------
+# Behavior 18: upsert_first_matching — no match, fallback=PREPEND
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_first_matching_no_match_fallback_prepend():
+    body = SectionedMarkdownBody(
+        "## What to build\n\ndetail\n\n## Acceptance criteria\n\n- x"
+    )
+    result = body.upsert_first_matching(
+        "## Blocked by",
+        "None",
+        [PositioningStrategy(side=UpsertSide.BEFORE, anchors=["## No such section"])],
+        fallback=OnMissing.PREPEND,
+    ).render()
+    sections = [line for line in result.split("\n") if line.startswith("## ")]
+    assert sections[0] == "## Blocked by"
+
+
+# ---------------------------------------------------------------------------
+# Behavior 19: upsert_first_matching — no match, fallback=RAISE
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_first_matching_no_match_fallback_raise():
+    body = SectionedMarkdownBody("## Acceptance criteria\n\n- item")
+    with pytest.raises(NoStrategyMatchedError):
+        body.upsert_first_matching(
+            "## Blocked by",
+            "None",
+            [
+                PositioningStrategy(
+                    side=UpsertSide.BEFORE, anchors=["## No such section"]
+                )
+            ],
+            fallback=OnMissing.RAISE,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Behavior 20: upsert_first_matching — mixed AnchorKind strategies
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_first_matching_respects_anchor_kind_per_strategy():
+    body = SectionedMarkdownBody(
+        "## Acceptance criteria\n\n- x\n\n## Files touched (tentative)\n\nfile.py"
+    )
+    result = body.upsert_first_matching(
+        "## Blocked by",
+        "None",
+        [
+            PositioningStrategy(
+                side=UpsertSide.BEFORE,
+                anchors=[Anchor("## Files touched", AnchorKind.EXACT)],
+            ),
+            PositioningStrategy(
+                side=UpsertSide.BEFORE,
+                anchors=[Anchor("Files touched", AnchorKind.SUBSTRING)],
+            ),
+        ],
+        fallback=OnMissing.APPEND,
+    ).render()
+    sections = [line for line in result.split("\n") if line.startswith("## ")]
+    blocked_idx = sections.index("## Blocked by")
+    files_idx = sections.index("## Files touched (tentative)")
+    assert blocked_idx == files_idx - 1
+
+
+# ---------------------------------------------------------------------------
+# Behavior 21: upsert_first_matching — heading already in body is deduplicated
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_first_matching_deduplicates_existing_heading():
+    body = SectionedMarkdownBody(
+        "## Blocked by\n\n#5\n\n## What to build\n\ndetail\n\n## Acceptance criteria\n\n- x"
+    )
+    result = body.upsert_first_matching(
+        "## Blocked by",
+        "None — updated",
+        [
+            PositioningStrategy(
+                side=UpsertSide.AFTER, anchors=["## Acceptance criteria"]
+            )
+        ],
+        fallback=OnMissing.APPEND,
+    ).render()
+    heading_occurrences = [
+        line for line in result.split("\n") if line == "## Blocked by"
+    ]
+    assert len(heading_occurrences) == 1
+    sections = [line for line in result.split("\n") if line.startswith("## ")]
+    assert sections[-1] == "## Blocked by"
