@@ -53,7 +53,6 @@ if TYPE_CHECKING:
 class _PlanningInputs:
     open_issues: list[dict]
     prepared_issue_set: PreparedPlanningIssueSet
-    prepared_open_issues: list[dict]
     all_open_issues: list[dict]
     in_flight: list[dict]
 
@@ -74,7 +73,6 @@ def _collect_planning_inputs(deps: Deps) -> _PlanningInputs:
     return _PlanningInputs(
         open_issues=open_issues,
         prepared_issue_set=prepared_issue_set,
-        prepared_open_issues=prepared_open_issues,
         all_open_issues=all_open_issues,
         in_flight=in_flight,
     )
