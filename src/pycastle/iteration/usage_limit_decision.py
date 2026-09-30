@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pycastle import stage_registry
+from pycastle.iteration.outcome_routing import (
+    BreakLoop,
+    ContinueLoop,
+    SleepThenContinue,
+)
 from pycastle.services._wake_time import (
     _minimum_unknown_reset_duration_for_provider,
     compute_wake_time,
@@ -16,22 +20,6 @@ if TYPE_CHECKING:
     from pycastle.config import Config, StageOverride
     from pycastle.iteration import AbortedModelNotAvailable, AbortedUsageLimit
     from pycastle.services.service_registry import ServiceRegistry
-
-
-@dataclasses.dataclass(frozen=True)
-class ContinueLoop:
-    message: str | None = None
-
-
-@dataclasses.dataclass(frozen=True)
-class SleepThenContinue:
-    wake_time: datetime
-    message: str
-
-
-@dataclasses.dataclass(frozen=True)
-class BreakLoop:
-    message: str | None = None
 
 
 _WakeTimeComputer = Callable[[datetime | None, datetime], tuple[datetime, bool]]

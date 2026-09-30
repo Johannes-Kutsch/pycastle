@@ -409,7 +409,9 @@ async def run(
                     if break_msg is not None:
                         status_display.print("", break_msg)  # type: ignore[union-attr]
                     break
-                case ExitFailure(code=exit_code):
+                case ExitFailure(code=exit_code, message=exit_msg):
+                    if exit_msg is not None:
+                        status_display.print("", exit_msg)  # type: ignore[union-attr]
                     sys.exit(exit_code)
 
         status_display.print("", "All done.")  # type: ignore[union-attr]

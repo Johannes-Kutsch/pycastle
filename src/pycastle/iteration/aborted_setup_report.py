@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 @dataclasses.dataclass(frozen=True)
 class ExitFailure:
     code: int
+    message: str | None = None
 
 
 def translate_aborted_setup_to_directive(

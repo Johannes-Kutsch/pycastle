@@ -95,18 +95,21 @@ def test_route_outcome_done_cap_reached_returns_break_loop_with_message():
     result = route_outcome(
         Done(improve_cap_reached=True), _make_deps(cfg=cfg, status_display=display)
     )
-    assert result == BreakLoop()
-    msgs = _printed_messages(display)
-    assert any("improve_max" in m and "5" in m for m in msgs)
+    assert isinstance(result, BreakLoop)
+    assert result.message is not None
+    assert "improve_max" in result.message
+    assert "5" in result.message
+    assert _printed_messages(display) == []
 
 
 def test_route_outcome_done_no_cap_returns_break_loop_with_issue_label_message():
     display = RecordingStatusDisplay()
     cfg = Config(issue_label="my-label")
     result = route_outcome(Done(), _make_deps(cfg=cfg, status_display=display))
-    assert result == BreakLoop()
-    msgs = _printed_messages(display)
-    assert any("my-label" in m for m in msgs)
+    assert isinstance(result, BreakLoop)
+    assert result.message is not None
+    assert "my-label" in result.message
+    assert _printed_messages(display) == []
 
 
 # ── NoCandidate ───────────────────────────────────────────────────────────────
@@ -115,9 +118,10 @@ def test_route_outcome_done_no_cap_returns_break_loop_with_issue_label_message()
 def test_route_outcome_no_candidate_returns_break_loop_with_message():
     display = RecordingStatusDisplay()
     result = route_outcome(NoCandidate(), _make_deps(status_display=display))
-    assert result == BreakLoop()
-    msgs = _printed_messages(display)
-    assert any("no improvement candidate" in m.lower() for m in msgs)
+    assert isinstance(result, BreakLoop)
+    assert result.message is not None
+    assert "no improvement candidate" in result.message.lower()
+    assert _printed_messages(display) == []
 
 
 # ── AbortedHITL ───────────────────────────────────────────────────────────────
@@ -153,9 +157,11 @@ def test_route_outcome_aborted_agent_failure_returns_exit_failure_with_message()
         AbortedAgentFailure(failed_role="Implementer"),
         _make_deps(status_display=display),
     )
-    assert result == ExitFailure(code=1)
-    msgs = _printed_messages(display)
-    assert any("Implementer" in m for m in msgs)
+    assert isinstance(result, ExitFailure)
+    assert result.code == 1
+    assert result.message is not None
+    assert "Implementer" in result.message
+    assert _printed_messages(display) == []
 
 
 def test_route_outcome_aborted_agent_failure_with_issue_number_includes_issue_in_message():
@@ -164,9 +170,11 @@ def test_route_outcome_aborted_agent_failure_with_issue_number_includes_issue_in
         AbortedAgentFailure(failed_role="Planner", issue_number=42),
         _make_deps(status_display=display),
     )
-    assert result == ExitFailure(code=1)
-    msgs = _printed_messages(display)
-    assert any("#42" in m for m in msgs)
+    assert isinstance(result, ExitFailure)
+    assert result.code == 1
+    assert result.message is not None
+    assert "#42" in result.message
+    assert _printed_messages(display) == []
 
 
 # ── AbortedTimeout ────────────────────────────────────────────────────────────
@@ -178,9 +186,11 @@ def test_route_outcome_aborted_timeout_returns_continue_loop_with_message():
         AbortedTimeout(failed_role="Merger", worktree_path=Path("/tmp/wt")),
         _make_deps(status_display=display),
     )
-    assert result == ContinueLoop()
-    msgs = _printed_messages(display)
-    assert any("Merger" in m and "timed out" in m for m in msgs)
+    assert isinstance(result, ContinueLoop)
+    assert result.message is not None
+    assert "Merger" in result.message
+    assert "timed out" in result.message
+    assert _printed_messages(display) == []
 
 
 # ── AbortedOperatorActionable ─────────────────────────────────────────────────
@@ -199,9 +209,12 @@ def test_route_outcome_aborted_operator_actionable_returns_exit_failure_and_file
         ),
         _make_deps(status_display=display, github_svc=github_svc),
     )
-    assert result == ExitFailure(code=1)
-    msgs = _printed_messages(display)
-    assert any("push" in m and "3" in m for m in msgs)
+    assert isinstance(result, ExitFailure)
+    assert result.code == 1
+    assert result.message is not None
+    assert "push" in result.message
+    assert "3" in result.message
+    assert _printed_messages(display) == []
     github_svc.search_open_issues_by_title.assert_called_once()
 
 
@@ -214,9 +227,11 @@ def test_route_outcome_merge_close_failure_returns_break_loop_with_filed_numbers
         MergeCloseFailure(filed_issue_numbers=[10, 20]),
         _make_deps(status_display=display),
     )
-    assert result == BreakLoop()
-    msgs = _printed_messages(display)
-    assert any("#10" in m and "#20" in m for m in msgs)
+    assert isinstance(result, BreakLoop)
+    assert result.message is not None
+    assert "#10" in result.message
+    assert "#20" in result.message
+    assert _printed_messages(display) == []
 
 
 # ── AbortedSetup ──────────────────────────────────────────────────────────────

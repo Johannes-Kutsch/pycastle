@@ -24,13 +24,6 @@ from pycastle.iteration.aborted_setup_report import (
     ExitFailure,
     translate_aborted_setup_to_directive,
 )
-from pycastle.iteration.usage_limit_decision import (
-    BreakLoop,
-    ContinueLoop,
-    SleepThenContinue,
-    decide_model_not_available_continuation,
-    decide_usage_limit_continuation,
-)
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -38,6 +31,22 @@ if TYPE_CHECKING:
     from pycastle.config import Config
     from pycastle.display.status_display import StatusDisplay
     from pycastle.services import GithubService, ServiceRegistry
+
+
+@dataclasses.dataclass(frozen=True)
+class ContinueLoop:
+    message: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class SleepThenContinue:
+    wake_time: datetime
+    message: str
+
+
+@dataclasses.dataclass(frozen=True)
+class BreakLoop:
+    message: str | None = None
 
 
 type LoopDirective = ContinueLoop | SleepThenContinue | BreakLoop | ExitFailure
@@ -53,22 +62,20 @@ class RouterDeps:
 
 
 def _route_agent_failure(
-    outcome: AbortedAgentFailure, deps: RouterDeps
+    outcome: AbortedAgentFailure, _deps: RouterDeps
 ) -> LoopDirective:
     msg = f"Agent '{outcome.failed_role}' failed irrecoverably."
     if outcome.issue_number is not None:
         msg += f" Filed issue #{outcome.issue_number} for triage."
-    deps.status_display.print("", msg)
-    return ExitFailure(code=1)
+    return ExitFailure(code=1, message=msg)
 
 
 def _route_operator_actionable(
     outcome: AbortedOperatorActionable, deps: RouterDeps
 ) -> LoopDirective:
-    deps.status_display.print(
-        "",
+    msg = (
         f"git {outcome.op} failed after {outcome.attempt_count} attempt(s) — remote unreachable. "
-        "Check SSH/network and retry.",
+        "Check SSH/network and retry."
     )
     file_operator_actionable_git_issue(
         op=outcome.op,
@@ -76,26 +83,20 @@ def _route_operator_actionable(
         attempt_count=outcome.attempt_count,
         github_svc=deps.github_svc,
     )
-    return ExitFailure(code=1)
+    return ExitFailure(code=1, message=msg)
 
 
 def _route_merge_close_failure(
-    outcome: MergeCloseFailure, deps: RouterDeps
+    outcome: MergeCloseFailure, _deps: RouterDeps
 ) -> LoopDirective:
     numbers_str = ", ".join(f"#{n}" for n in outcome.filed_issue_numbers)
-    deps.status_display.print(
-        "",
-        f"Merge close failure: issue close failed. Filed {numbers_str} for triage.",
-    )
-    return BreakLoop()
+    msg = f"Merge close failure: issue close failed. Filed {numbers_str} for triage."
+    return BreakLoop(message=msg)
 
 
-def _route_timeout(outcome: AbortedTimeout, deps: RouterDeps) -> LoopDirective:
-    deps.status_display.print(
-        "",
-        f"Agent '{outcome.failed_role}' timed out. Resuming next iteration.",
-    )
-    return ContinueLoop()
+def _route_timeout(outcome: AbortedTimeout, _deps: RouterDeps) -> LoopDirective:
+    msg = f"Agent '{outcome.failed_role}' timed out. Resuming next iteration."
+    return ContinueLoop(message=msg)
 
 
 def _route_terminal(
@@ -103,26 +104,18 @@ def _route_terminal(
 ) -> LoopDirective | None:
     match outcome:
         case Done(improve_cap_reached=True):
-            deps.status_display.print(
-                "",
-                f"improve_max ({deps.cfg.improve_max}) dispatches reached. Stopping.",
+            return BreakLoop(
+                message=f"improve_max ({deps.cfg.improve_max}) dispatches reached. Stopping."
             )
-            return BreakLoop()
         case Done():
-            deps.status_display.print(
-                "",
-                (
+            return BreakLoop(
+                message=(
                     f"No unblocked issues with label '{deps.cfg.issue_label}' "
                     "found. Skipping."
-                ),
+                )
             )
-            return BreakLoop()
         case NoCandidate():
-            deps.status_display.print(
-                "",
-                "Improve agent reported no improvement candidate.",
-            )
-            return BreakLoop()
+            return BreakLoop(message="Improve agent reported no improvement candidate.")
         case Continue():
             return ContinueLoop()
         case _:
@@ -139,10 +132,18 @@ def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
         case AbortedTimeout():
             return _route_timeout(outcome, deps)
         case AbortedUsageLimit():
+            from pycastle.iteration.usage_limit_decision import (  # noqa: PLC0415
+                decide_usage_limit_continuation,
+            )
+
             return decide_usage_limit_continuation(
                 outcome, deps.cfg, deps.service_registry, deps.now
             )
         case AbortedModelNotAvailable():
+            from pycastle.iteration.usage_limit_decision import (  # noqa: PLC0415
+                decide_model_not_available_continuation,
+            )
+
             return decide_model_not_available_continuation(
                 outcome, deps.cfg, deps.service_registry, deps.now
             )
