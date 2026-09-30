@@ -294,14 +294,12 @@ def _route_usage_limit(
     stage_override: StageOverride | None,
     service_registry: ServiceRegistry | None,
     now: datetime,
-    cfg_kwargs: dict | None = None,
 ) -> ContinueLoop | SleepThenContinue | BreakLoop:
-    """Helper that mirrors the old _decide interface but calls route_outcome."""
     if stage_override is not None:
-        cfg = Config(plan_override=stage_override, **(cfg_kwargs or {}))
+        cfg = Config(plan_override=stage_override)
         outcome = dataclasses.replace(outcome, stage_key="plan")
     else:
-        cfg = Config(**(cfg_kwargs or {}))
+        cfg = Config()
     deps = _make_deps(cfg=cfg, service_registry=service_registry, now=now)
     result = route_outcome(outcome, deps)
     assert isinstance(result, (ContinueLoop, SleepThenContinue, BreakLoop))
