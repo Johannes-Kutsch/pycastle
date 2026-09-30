@@ -2925,3 +2925,256 @@ def test_no_transcript_owner_does_not_trigger_fresh_start(tmp_path, monkeypatch)
 
     assert isinstance(result, CommitMessageOutput)
     assert call_log == ["resumed"], "no transcript owner must not trigger fresh start"
+
+
+# ---------------------------------------------------------------------------
+# Guard tests: _assemble_runtime_resources ADR-adjacent assembly rules (#2429)
+# ---------------------------------------------------------------------------
+
+
+def _make_runner_with_service(
+    tmp_path: Path,
+    service,
+    *,
+    git_name: str = "Test User",
+    git_email: str = "test@example.com",
+) -> AgentRunner:
+    git_service = MagicMock(spec=GitService)
+    git_service.get_user_name.return_value = git_name
+    git_service.get_user_email.return_value = git_email
+    service_name = service.name
+    return AgentRunner(
+        env={},
+        cfg=Config(logs_dir=tmp_path / "logs"),
+        git_service=git_service,
+        service_registry={service_name: service},
+    )
+
+
+def _minimal_run_request(
+    mount_path: Path,
+    *,
+    service: str = "codex",
+    model: str = "gpt-5.5",
+    effort: str = "medium",
+    status_display=None,
+    issue_number: str = "2429",
+) -> RunRequest:
+    return RunRequest(
+        name=f"Implement Agent #{issue_number}",
+        prompt=PromptInvocation(
+            template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+            scope_args={
+                "ISSUE_NUMBER": issue_number,
+                "ISSUE_TITLE": "Test",
+                "ISSUE_BODY": "",
+                "ISSUE_COMMENTS": "",
+                "BRANCH": f"issue-{issue_number}",
+                "INTERRUPTED_WORK": "",
+                "OPERATING_BRANCH": "main",
+            },
+        ),
+        mount_path=mount_path,
+        role=AgentRole.IMPLEMENTER,
+        model=model,
+        effort=effort,
+        service=service,
+        status_display=status_display,
+    )
+
+
+def _run_with_capturing_client(
+    tmp_path: Path, monkeypatch, runner: AgentRunner, request: RunRequest
+) -> _SessionStoreCapturingRuntimeClient:
+    runtime_client = _SessionStoreCapturingRuntimeClient()
+    monkeypatch.setattr(
+        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
+    )
+    monkeypatch.setattr(
+        "pycastle.agents.runner.render_prompt_invocation",
+        AsyncMock(return_value="prompt"),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
+        lambda _self: runtime_client,
+    )
+    asyncio.run(runner.run(request))
+    return runtime_client
+
+
+def test_assemble_resources_state_dir_relpath_none_uses_role_session_path(
+    tmp_path, monkeypatch
+):
+    """ADR 0068 null branch: provider_state_dir equals RoleSession.path."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429a"
+    mount_path.mkdir(parents=True)
+
+    service = _FakeService()  # state_dir_relpath returns None
+    runner = _make_runner_with_service(tmp_path, service)
+    request = _minimal_run_request(mount_path, service=service.name)
+
+    runtime_client = _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
+
+    expected = mount_path / ".pycastle-session" / "implementer"
+    assert runtime_client.session_store == expected
+
+
+def test_assemble_resources_state_dir_relpath_present_uses_relpath(
+    tmp_path, monkeypatch
+):
+    """ADR 0068 non-null branch: provider_state_dir equals mount_path / relpath."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429b"
+    mount_path.mkdir(parents=True)
+
+    service = (
+        _ProviderStateDirService()
+    )  # returns ".pycastle-session/implementer/codex/"
+    runner = _make_runner_with_service(tmp_path, service)
+    request = _minimal_run_request(mount_path, service=service.name)
+
+    runtime_client = _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
+
+    expected = mount_path / ".pycastle-session" / "implementer" / "codex"
+    assert runtime_client.session_store == expected
+
+
+def test_assemble_resources_auth_seed_action_apply_called_before_provider_auth(
+    tmp_path, monkeypatch
+):
+    """auth_seed_action.apply() must run before provider_auth() is read."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429c"
+    mount_path.mkdir(parents=True)
+
+    call_order: list[str] = []
+
+    class _AuthSeedAction:
+        def apply(self) -> None:
+            call_order.append("apply")
+
+    class _AuthSeedService(_FakeService):
+        def auth_seed_action(self, provider_state_dir: Path):
+            return _AuthSeedAction()
+
+        def provider_auth(self):
+            call_order.append("provider_auth")
+
+    service = _AuthSeedService()
+    runner = _make_runner_with_service(tmp_path, service)
+    request = _minimal_run_request(mount_path, service=service.name)
+
+    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
+
+    assert call_order == ["apply", "provider_auth"]
+
+
+def test_assemble_resources_empty_model_resolves_to_service_default(
+    tmp_path, monkeypatch
+):
+    """When request.model is empty the bundle carries _default_model(service)."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429d"
+    mount_path.mkdir(parents=True)
+
+    class _KnownModelService(_FakeService):
+        def valid_models(self) -> frozenset[str]:
+            return frozenset({"haiku"})
+
+    service = _KnownModelService()
+    runner = _make_runner_with_service(tmp_path, service)
+    status_display = RecordingStatusDisplay()
+    request = _minimal_run_request(
+        mount_path, service=service.name, model="", status_display=status_display
+    )
+
+    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
+
+    model_display = status_display.register_calls[0]["model_display"]
+    assert model_display is not None
+    assert model_display.model == "haiku"
+
+
+def test_assemble_resources_non_empty_model_carried_verbatim(tmp_path, monkeypatch):
+    """When request.model is non-empty the bundle carries it unchanged."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429e"
+    mount_path.mkdir(parents=True)
+
+    service = _FakeService()
+    runner = _make_runner_with_service(tmp_path, service)
+    status_display = RecordingStatusDisplay()
+    request = _minimal_run_request(
+        mount_path, service=service.name, model="gpt-5.5", status_display=status_display
+    )
+
+    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
+
+    model_display = status_display.register_calls[0]["model_display"]
+    assert model_display is not None
+    assert model_display.model == "gpt-5.5"
+
+
+def test_assemble_resources_empty_effort_defaults_to_medium(tmp_path, monkeypatch):
+    """When request.effort is empty the bundle carries the module default 'medium'."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429f"
+    mount_path.mkdir(parents=True)
+
+    service = _FakeService()
+    runner = _make_runner_with_service(tmp_path, service)
+    status_display = RecordingStatusDisplay()
+    request = _minimal_run_request(
+        mount_path, service=service.name, effort="", status_display=status_display
+    )
+
+    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
+
+    model_display = status_display.register_calls[0]["model_display"]
+    assert model_display is not None
+    assert model_display.effort == "medium"
+
+
+def test_assemble_resources_non_empty_effort_carried_verbatim(tmp_path, monkeypatch):
+    """When request.effort is non-empty the bundle carries it unchanged."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429g"
+    mount_path.mkdir(parents=True)
+
+    service = _FakeService()
+    runner = _make_runner_with_service(tmp_path, service)
+    status_display = RecordingStatusDisplay()
+    request = _minimal_run_request(
+        mount_path, service=service.name, effort="high", status_display=status_display
+    )
+
+    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
+
+    model_display = status_display.register_calls[0]["model_display"]
+    assert model_display is not None
+    assert model_display.effort == "high"
+
+
+def test_assemble_resources_model_display_carries_service_model_effort(
+    tmp_path, monkeypatch
+):
+    """ModelDisplayMetadata carries the resolved service name, model, and effort."""
+    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429h"
+    mount_path.mkdir(parents=True)
+
+    service = _FakeService()
+    runner = _make_runner_with_service(tmp_path, service)
+    status_display = RecordingStatusDisplay()
+    request = _minimal_run_request(
+        mount_path,
+        service=service.name,
+        model="gpt-5.5",
+        effort="medium",
+        status_display=status_display,
+    )
+
+    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
+
+    model_display = status_display.register_calls[0]["model_display"]
+    assert model_display is not None
+    assert model_display.service == "codex"
+    assert model_display.model == "gpt-5.5"
+    assert model_display.effort == "medium"

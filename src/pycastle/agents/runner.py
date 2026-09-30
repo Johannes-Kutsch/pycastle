@@ -438,7 +438,7 @@ class AgentRunner:
         )
 
     def _assemble_runtime_resources(
-        self, request: RunRequest
+        self, request: RunRequest, status_display: StatusDisplay
     ) -> _RuntimeResourceBundle:
         service = self._resolve_service(request.service)
         role_session = RoleSession(
@@ -468,11 +468,6 @@ class AgentRunner:
         resolved_effort = request.effort or _default_effort()
         git_name = self._git_service.get_user_name()
         git_email = self._git_service.get_user_email()
-        status_display = (
-            request.status_display
-            if request.status_display is not None
-            else PlainStatusDisplay()
-        )
         session = self._build_session(
             request.mount_path,
             service,
@@ -557,7 +552,7 @@ class AgentRunner:
             if request.status_display is not None
             else PlainStatusDisplay()
         )
-        resources = self._assemble_runtime_resources(request)
+        resources = self._assemble_runtime_resources(request, status_display)
 
         async def _do_render_prompt(req: RunRequest, run_kind: RunKind) -> str:
             return await _render_runtime_prompt(
