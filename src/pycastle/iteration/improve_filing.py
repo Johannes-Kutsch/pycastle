@@ -12,7 +12,9 @@ from pycastle.iteration.sectioned_markdown_body import (
     Anchor,
     AnchorKind,
     OnMissing,
+    PositioningStrategy,
     SectionedMarkdownBody,
+    UpsertSide,
 )
 
 if TYPE_CHECKING:
@@ -80,20 +82,20 @@ def _render_ticket_body(
         ["## What to build"],
         on_missing=OnMissing.PREPEND,
     )
-    try:
-        body.upsert_after(
-            "## Blocked by",
-            blocked_content,
-            ["## Acceptance criteria"],
-            on_missing=OnMissing.RAISE,
-        )
-    except ValueError:
-        body.upsert_before(
-            "## Blocked by",
-            blocked_content,
-            [Anchor("Files touched", AnchorKind.SUBSTRING)],
-            on_missing=OnMissing.APPEND,
-        )
+    body.upsert_first_matching(
+        "## Blocked by",
+        blocked_content,
+        [
+            PositioningStrategy(
+                side=UpsertSide.AFTER, anchors=["## Acceptance criteria"]
+            ),
+            PositioningStrategy(
+                side=UpsertSide.BEFORE,
+                anchors=[Anchor("Files touched", AnchorKind.SUBSTRING)],
+            ),
+        ],
+        fallback=OnMissing.APPEND,
+    )
     return body.render()
 
 
