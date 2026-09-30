@@ -117,6 +117,21 @@ def _close_conflict_issue(issue: dict, deps: _ConflictRecoveryDeps) -> int | Non
     return None
 
 
+async def _finalise_merge(
+    sandbox_path: Path,
+    active_issue: dict,
+    merge_sandbox_branch: str,
+    target_branch: str,
+    deps: _ConflictRecoveryDeps,
+) -> None:
+    _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
+    await _advance_branch_ref_through_gate(
+        deps, "Merge", target_branch, merge_sandbox_branch
+    )
+    _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
+    RoleSession(sandbox_path, AgentRole.MERGER).discard()
+
+
 async def _recover_active_conflict(
     *,
     active_issue: dict,
@@ -137,12 +152,13 @@ async def _recover_active_conflict(
         ) as (sandbox_path, _):
             already_merged = deps.git_svc.start_merge(sandbox_path, conflict_branch)
             if already_merged:
-                _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
-                await _advance_branch_ref_through_gate(
-                    deps, "Merge", target_branch, merge_sandbox_branch
+                await _finalise_merge(
+                    sandbox_path,
+                    active_issue,
+                    merge_sandbox_branch,
+                    target_branch,
+                    deps,
                 )
-                _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
-                RoleSession(sandbox_path, AgentRole.MERGER).discard()
                 return None
             result = await deps.agent_runner.run(
                 RunRequest(
@@ -169,12 +185,9 @@ async def _recover_active_conflict(
                     deps.repo_root,
                     result.message or active_issue["title"],
                 )
-            _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
-            await _advance_branch_ref_through_gate(
-                deps, "Merge", target_branch, merge_sandbox_branch
+            await _finalise_merge(
+                sandbox_path, active_issue, merge_sandbox_branch, target_branch, deps
             )
-            _ensure_conflict_branch_is_merged(active_issue, sandbox_path, deps)
-            RoleSession(sandbox_path, AgentRole.MERGER).discard()
     except (
         AgentTimeoutError,
         UsageLimitError,
