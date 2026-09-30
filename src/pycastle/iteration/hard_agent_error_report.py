@@ -1,14 +1,15 @@
 """Hard-agent-error abort translation for the pycastle iteration pipeline.
 
-This module owns only the HardAgentError abort pipeline: envelope parsing,
-service-label mapping, title/body composition, bug filing, status printing,
-and returning AbortedHardApiError.
+This module owns only the HardAgentError abort pipeline: envelope parse,
+title/body composition, filing, printing, and AbortedHardApiError construction.
 
-The private ``_ParsedEnvelope`` dataclass carries an envelope's extracted text
-and effective status code. The private ``_parse_envelope`` function walks the
-raw JSON envelope exactly once and returns a ``_ParsedEnvelope``; all
-envelope-shape knowledge (key precedence, type guards, invalid-JSON fallback,
-boolean rejection, caller-provided status-fallback rule) lives there.
+The private ``_ParsedEnvelope`` dataclass carries optional envelope-derived text
+and optional envelope-derived status code. The private ``_parse_envelope``
+function walks the raw JSON envelope exactly once and returns a
+``_ParsedEnvelope``; all envelope-shape knowledge (key precedence, type guards,
+boolean rejection) lives there. Defaults (fall back to raw input for text; fall
+back to the exception's own status_code for status) are applied at the call site
+in ``translate_hard_agent_error_to_abort``.
 
 It does not own usage-limit-parse-failure filing, AbortedSetup filing,
 merge-close-failure filing, operator-actionable git filing, or credential-failure
@@ -41,17 +42,17 @@ _SERVICE_LABEL_MAP = {
 
 @dataclass(frozen=True)
 class _ParsedEnvelope:
-    text: str
+    text: str | None
     status_code: int | None
 
 
-def _parse_envelope(raw: str, status_fallback: int | None) -> _ParsedEnvelope:
+def _parse_envelope(raw: str) -> _ParsedEnvelope:
     try:
         parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return _ParsedEnvelope(text=raw, status_code=status_fallback)
+        return _ParsedEnvelope(text=None, status_code=None)
 
-    text = raw
+    text: str | None = None
     if isinstance(parsed, dict):
         if parsed.get("result"):
             text = str(parsed["result"])
@@ -64,18 +65,12 @@ def _parse_envelope(raw: str, status_fallback: int | None) -> _ParsedEnvelope:
                 elif not isinstance(data, dict) and error.get("message"):
                     text = str(error["message"])
 
-    status_code: int | None
-    if status_fallback is not None:
-        status_code = status_fallback
-    elif isinstance(parsed, dict):
+    status_code: int | None = None
+    if isinstance(parsed, dict):
         status = parsed.get("status")
         status_code = (
-            status
-            if isinstance(status, int) and not isinstance(status, bool)
-            else status_fallback
+            status if isinstance(status, int) and not isinstance(status, bool) else None
         )
-    else:
-        status_code = status_fallback
 
     return _ParsedEnvelope(text=text, status_code=status_code)
 
@@ -96,9 +91,13 @@ def translate_hard_agent_error_to_abort(
     raw: str = err.args[0] if err.args else ""
     service_name: str = getattr(err, "service_name", "claude") or "claude"
 
-    envelope = _parse_envelope(raw, getattr(err, "status_code", None))
-    effective_status_code = envelope.status_code
-    error_text = envelope.text
+    envelope = _parse_envelope(raw)
+    error_text = envelope.text if envelope.text is not None else raw
+    effective_status_code = (
+        envelope.status_code
+        if envelope.status_code is not None
+        else getattr(err, "status_code", None)
+    )
     first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
     service_label = _SERVICE_LABEL_MAP.get(service_name, service_name)
 
