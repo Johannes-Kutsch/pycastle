@@ -3,7 +3,10 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING
 
-from pycastle.bug_reporter import auto_file_issue, file_operator_actionable_git_issue
+from pycastle.bug_reporter import (
+    BUG_REPORT_LABEL_LIST,
+    file_operator_actionable_git_issue,
+)
 from pycastle.iteration import (
     AbortedAgentCredentialFailure,
     AbortedAgentFailure,
@@ -20,17 +23,20 @@ from pycastle.iteration import (
     MergeCloseFailure,
     NoCandidate,
 )
-from pycastle.iteration.aborted_setup_report import (
-    ExitFailure,
-    translate_aborted_setup_to_directive,
-)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import datetime
 
     from pycastle.config import Config
     from pycastle.display.status_display import StatusDisplay
     from pycastle.services import GithubService, ServiceRegistry
+
+
+@dataclasses.dataclass(frozen=True)
+class ExitFailure:
+    code: int
+    message: str | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -59,6 +65,7 @@ class RouterDeps:
     now: datetime
     status_display: StatusDisplay
     github_svc: GithubService
+    bug_filer: Callable[..., str | None]
 
 
 def _route_agent_failure(
@@ -122,6 +129,31 @@ def _route_terminal(
             return None
 
 
+def _route_aborted_setup(outcome: AbortedSetup, deps: RouterDeps) -> ExitFailure:
+    from pycastle.upstream_issue_report import aborted_setup_body  # noqa: PLC0415
+
+    phase = outcome.phase
+    message = outcome.message
+    command = outcome.command
+    output = outcome.output
+
+    first_line = next(iter(message.splitlines()), "")
+    title = f"[pycastle] {phase} setup failure: {first_line}"
+    body = aborted_setup_body(
+        phase=phase, message=message, command=command, output=output
+    )
+    url = deps.bug_filer(title, body, BUG_REPORT_LABEL_LIST, cfg=deps.cfg)
+
+    local_parts = [f"{phase} setup failed: {message}"]
+    if command:
+        local_parts.append(f"Command: {command}")
+    if output:
+        local_parts.append(f"Output: {output}")
+    composed = "\n".join(local_parts) + (f"\nReport: {url}" if url else "")
+
+    return ExitFailure(code=1, message=composed)
+
+
 def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
     terminal = _route_terminal(outcome, deps)
     if terminal is not None:
@@ -154,8 +186,6 @@ def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
         case MergeCloseFailure():
             return _route_merge_close_failure(outcome, deps)
         case AbortedSetup():
-            return translate_aborted_setup_to_directive(
-                outcome, deps.cfg, deps.status_display, auto_file_issue
-            )
+            return _route_aborted_setup(outcome, deps)
         case _:
             raise TypeError(f"Unhandled outcome type: {type(outcome)}")

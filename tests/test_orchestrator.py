@@ -3552,7 +3552,7 @@ def test_orchestrator_handles_empty_preflight_setup_failure_message(tmp_path):
     """Setup-phase aborts must stay setup-specific even when the underlying error text is empty."""
     with (
         patch(
-            "pycastle.iteration.outcome_routing.auto_file_issue",
+            "pycastle.iteration.orchestrator.auto_file_issue",
             return_value="https://example.com/upstream/1",
         ) as mock_file,
         pytest.raises(SystemExit) as exc_info,

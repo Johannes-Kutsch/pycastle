@@ -5,9 +5,8 @@ from __future__ import annotations
 import dataclasses
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from pycastle.bug_reporter import auto_file_issue
 from pycastle.config import Config
 from pycastle.config.types import StageOverride
 from pycastle.iteration import (
@@ -43,6 +42,27 @@ def _now() -> datetime:
     return datetime(2026, 1, 1, 14, 30, 0, tzinfo=UTC)
 
 
+class RecordingBugFiler:
+    """In-memory bug filer that captures calls and returns a controllable URL."""
+
+    def __init__(
+        self, return_url: str | None = "https://github.com/owner/repo/issues/1"
+    ) -> None:
+        self.calls: list[tuple[str, str, list[str]]] = []
+        self._url = return_url
+
+    def __call__(
+        self,
+        title: str,
+        body: str,
+        labels: list[str],
+        *,
+        cfg: Config | None = None,
+    ) -> str | None:
+        self.calls.append((title, body, labels))
+        return self._url
+
+
 def _make_deps(
     *,
     cfg: Config | None = None,
@@ -50,6 +70,7 @@ def _make_deps(
     now: datetime | None = None,
     status_display: RecordingStatusDisplay | None = None,
     github_svc: GithubService | None = None,
+    bug_filer: RecordingBugFiler | None = None,
 ) -> RouterDeps:
     if cfg is None:
         cfg = Config()
@@ -57,12 +78,15 @@ def _make_deps(
         status_display = RecordingStatusDisplay()
     if github_svc is None:
         github_svc = MagicMock(spec=GithubService)
+    if bug_filer is None:
+        bug_filer = RecordingBugFiler(return_url=None)
     return RouterDeps(
         cfg=cfg,
         service_registry=service_registry,
         now=now or _now(),
         status_display=status_display,
         github_svc=github_svc,
+        bug_filer=bug_filer,
     )
 
 
@@ -243,20 +267,189 @@ def test_route_outcome_merge_close_failure_returns_break_loop_with_filed_numbers
 # ── AbortedSetup ──────────────────────────────────────────────────────────────
 
 
-def test_route_outcome_aborted_setup_delegates_to_translate_aborted_setup_to_directive():
+def test_route_outcome_aborted_setup_returns_exit_failure_code_1():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.code == 1
+
+
+def test_route_outcome_aborted_setup_message_contains_phase_and_error():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert "git setup failed: repository not found" in result.message
+
+
+def test_route_outcome_aborted_setup_message_no_command_line_when_absent():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert "Command:" not in result.message
+
+
+def test_route_outcome_aborted_setup_message_no_output_line_when_absent():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert "Output:" not in result.message
+
+
+def test_route_outcome_aborted_setup_message_includes_command_when_present():
+    filer = RecordingBugFiler(return_url=None)
     outcome = AbortedSetup(
-        phase="lint", message="ruff failed", command=None, output=None
+        phase="clone",
+        message="exit code 128",
+        command="git clone https://example.com/repo.git",
     )
-    deps = _make_deps()
-    with patch(
-        "pycastle.iteration.outcome_routing.translate_aborted_setup_to_directive",
-        return_value=ExitFailure(code=1),
-    ) as mock_fn:
-        result = route_outcome(outcome, deps)
-    assert result == ExitFailure(code=1)
-    mock_fn.assert_called_once_with(
-        outcome, deps.cfg, deps.status_display, auto_file_issue
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert "Command: git clone https://example.com/repo.git" in result.message
+
+
+def test_route_outcome_aborted_setup_message_includes_output_when_present():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(
+        phase="install", message="pip failed", output="error: package not found"
     )
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert "Output: error: package not found" in result.message
+
+
+def test_route_outcome_aborted_setup_message_includes_both_command_and_output():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(
+        phase="build",
+        message="make failed",
+        command="make all",
+        output="undefined reference to main",
+    )
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert "Command: make all" in result.message
+    assert "Output: undefined reference to main" in result.message
+
+
+def test_route_outcome_aborted_setup_message_appends_report_url_when_filer_returns_one():
+    url = "https://github.com/owner/repo/issues/42"
+    filer = RecordingBugFiler(return_url=url)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert f"\nReport: {url}" in result.message
+
+
+def test_route_outcome_aborted_setup_message_no_report_suffix_when_filer_returns_none():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert "Report:" not in result.message
+
+
+def test_route_outcome_aborted_setup_message_no_report_suffix_when_filer_returns_empty_string():
+    filer = RecordingBugFiler(return_url="")
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    result = route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert isinstance(result, ExitFailure)
+    assert result.message is not None
+    assert "Report:" not in result.message
+
+
+def test_route_outcome_aborted_setup_filer_called_with_phase_title():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    route_outcome(outcome, _make_deps(bug_filer=filer))
+    assert len(filer.calls) == 1
+    title, _, _ = filer.calls[0]
+    assert title == "[pycastle] git setup failure: repository not found"
+
+
+def test_route_outcome_aborted_setup_title_uses_first_line_of_multiline_message():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="first line\nsecond line\nthird line")
+    route_outcome(outcome, _make_deps(bug_filer=filer))
+    title, _, _ = filer.calls[0]
+    assert title == "[pycastle] git setup failure: first line"
+
+
+def test_route_outcome_aborted_setup_filer_called_with_body_phase_and_message():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    route_outcome(outcome, _make_deps(bug_filer=filer))
+    _, body, _ = filer.calls[0]
+    assert "## Setup phase failure" in body
+    assert "Phase: git" in body
+    assert "repository not found" in body
+
+
+def test_route_outcome_aborted_setup_filer_body_no_command_section_when_absent():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    route_outcome(outcome, _make_deps(bug_filer=filer))
+    _, body, _ = filer.calls[0]
+    assert "Command:" not in body
+
+
+def test_route_outcome_aborted_setup_filer_body_no_output_section_when_absent():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    route_outcome(outcome, _make_deps(bug_filer=filer))
+    _, body, _ = filer.calls[0]
+    assert "Output:" not in body
+
+
+def test_route_outcome_aborted_setup_filer_body_includes_command_block():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(
+        phase="clone",
+        message="exit code 128",
+        command="git clone https://example.com/repo.git",
+    )
+    route_outcome(outcome, _make_deps(bug_filer=filer))
+    _, body, _ = filer.calls[0]
+    assert "Command: `git clone https://example.com/repo.git`" in body
+
+
+def test_route_outcome_aborted_setup_filer_body_includes_output_block():
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(
+        phase="install", message="pip failed", output="error: package not found"
+    )
+    route_outcome(outcome, _make_deps(bug_filer=filer))
+    _, body, _ = filer.calls[0]
+    assert "Output:\n\n```\nerror: package not found\n```\n" in body
+
+
+def test_route_outcome_aborted_setup_filer_called_with_bug_report_labels():
+    from pycastle.bug_reporter import BUG_REPORT_LABEL_LIST
+
+    filer = RecordingBugFiler(return_url=None)
+    outcome = AbortedSetup(phase="git", message="failed")
+    route_outcome(outcome, _make_deps(bug_filer=filer))
+    _, _, labels = filer.calls[0]
+    assert labels == BUG_REPORT_LABEL_LIST
+
+
+def test_route_outcome_aborted_setup_display_not_printed_directly():
+    filer = RecordingBugFiler(return_url=None)
+    display = RecordingStatusDisplay()
+    outcome = AbortedSetup(phase="git", message="repository not found")
+    route_outcome(outcome, _make_deps(bug_filer=filer, status_display=display))
+    assert _printed_messages(display) == []
 
 
 # ── AbortedUsageLimit via route_outcome ───────────────────────────────────────

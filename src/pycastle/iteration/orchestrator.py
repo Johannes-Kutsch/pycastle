@@ -11,6 +11,7 @@ import click
 from pycastle import _time as _time_module
 from pycastle import stage_registry
 from pycastle.agents.runner import AgentRunner, AgentRunnerProtocol
+from pycastle.bug_reporter import auto_file_issue
 from pycastle.config import (
     Config,
     load_config,
@@ -388,6 +389,7 @@ async def run(
                 now=_post_iteration_now,
                 status_display=status_display,  # type: ignore[arg-type]
                 github_svc=github_service,
+                bug_filer=auto_file_issue,
             )
             directive = route_outcome(outcome, router_deps)
             match directive:
