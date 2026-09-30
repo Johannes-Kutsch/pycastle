@@ -100,30 +100,6 @@ class SectionedMarkdownBody:
     def _first_heading_index(self) -> int:
         return next((i for i, (h, _) in enumerate(self._sections) if h is not None), -1)
 
-    def _upsert_at_offset(
-        self,
-        heading: str,
-        content: str,
-        anchors: list[Anchor | str],
-        on_missing: OnMissing,
-        *,
-        offset: int,
-    ) -> None:
-        normalized = _normalize_anchors(anchors)
-        self._remove_heading(heading)
-        anchor_idx = self._find_anchor_index(normalized)
-        section: Section = (heading, content)
-
-        if anchor_idx >= 0:
-            self._sections.insert(anchor_idx + offset, section)
-        elif on_missing == OnMissing.PREPEND:
-            first = self._first_heading_index()
-            self._sections.insert(max(first, 0), section)
-        elif on_missing == OnMissing.APPEND:
-            self._sections.append(section)
-        else:
-            raise ValueError(f"No anchor found for {heading!r} and on_missing=RAISE")
-
     def upsert_before(
         self,
         heading: str,
@@ -131,8 +107,17 @@ class SectionedMarkdownBody:
         anchors: list[Anchor | str],
         on_missing: OnMissing = OnMissing.PREPEND,
     ) -> SectionedMarkdownBody:
-        self._upsert_at_offset(heading, content, anchors, on_missing, offset=0)
-        return self
+        try:
+            return self.upsert_first_matching(
+                heading,
+                content,
+                [PositioningStrategy(side=UpsertSide.BEFORE, anchors=anchors)],
+                fallback=on_missing,
+            )
+        except NoStrategyMatchedError:
+            raise ValueError(
+                f"No anchor found for {heading!r} and on_missing=RAISE"
+            ) from None
 
     def upsert_after(
         self,
@@ -141,8 +126,17 @@ class SectionedMarkdownBody:
         anchors: list[Anchor | str],
         on_missing: OnMissing = OnMissing.APPEND,
     ) -> SectionedMarkdownBody:
-        self._upsert_at_offset(heading, content, anchors, on_missing, offset=1)
-        return self
+        try:
+            return self.upsert_first_matching(
+                heading,
+                content,
+                [PositioningStrategy(side=UpsertSide.AFTER, anchors=anchors)],
+                fallback=on_missing,
+            )
+        except NoStrategyMatchedError:
+            raise ValueError(
+                f"No anchor found for {heading!r} and on_missing=RAISE"
+            ) from None
 
     def upsert_first_matching(
         self,
