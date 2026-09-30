@@ -5,8 +5,20 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
+
+_TOLERATED = (KeyError, json.JSONDecodeError, ValueError)
+
+
+def _tolerant_read[T](path: Path, decode: Callable[[str], T]) -> T | None:
+    if not path.is_file():
+        return None
+    try:
+        return decode(path.read_text(encoding="utf-8"))
+    except _TOLERATED:
+        return None
+
 
 _CANDIDATE_LIST_FILE = "_candidate_list"
 _CANDIDATE_CURSOR_FILE = "_candidate_cursor"
@@ -58,19 +70,16 @@ class ImproveRoleSessionStore:
         return self._dir / "candidates" / str(idx)
 
     def read_candidate_list(self) -> CandidateList | None:
-        path = self._dir / _CANDIDATE_LIST_FILE
-        if not path.is_file():
-            return None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+        def decode(text: str) -> CandidateList:
+            data = json.loads(text)
             candidates = tuple(
                 CandidateItem(rank=c["rank"], title=c["title"])
                 for c in data.get("candidates", [])
             )
             no_candidate = bool(data.get("no_candidate", False))
             return CandidateList(candidates=candidates, no_candidate=no_candidate)
-        except (KeyError, json.JSONDecodeError):
-            return None
+
+        return _tolerant_read(self._dir / _CANDIDATE_LIST_FILE, decode)
 
     def write_candidate_list(self, candidate_list: CandidateList) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -86,24 +95,20 @@ class ImproveRoleSessionStore:
         )
 
     def read_cursor(self) -> int | None:
-        path = self._dir / _CANDIDATE_CURSOR_FILE
-        if not path.is_file():
-            return None
-        try:
-            return int(path.read_text(encoding="utf-8").strip())
-        except ValueError:
-            return None
+        return _tolerant_read(
+            self._dir / _CANDIDATE_CURSOR_FILE,
+            lambda text: int(text.strip()),
+        )
 
     def write_cursor(self, cursor: int) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         (self._dir / _CANDIDATE_CURSOR_FILE).write_text(str(cursor), encoding="utf-8")
 
     def read_in_flight(self) -> str | None:
-        path = self._dir / _IN_FLIGHT_FILE
-        if not path.is_file():
-            return None
-        text = path.read_text(encoding="utf-8").strip()
-        return text or None
+        def decode(text: str) -> str | None:
+            return text.strip() or None
+
+        return _tolerant_read(self._dir / _IN_FLIGHT_FILE, decode)
 
     def write_in_flight(self, phase_key: str) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -113,11 +118,8 @@ class ImproveRoleSessionStore:
         (self._dir / _IN_FLIGHT_FILE).unlink(missing_ok=True)
 
     def read_candidate_record(self, idx: int) -> CandidateRecord | None:
-        path = self._candidate_dir(idx) / _CANDIDATE_RECORD_FILE
-        if not path.is_file():
-            return None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+        def decode(text: str) -> CandidateRecord:
+            data = json.loads(text)
             filed_tickets = tuple(
                 FiledTicket(
                     handle=s["handle"],
@@ -134,8 +136,8 @@ class ImproveRoleSessionStore:
                 filed_tickets=filed_tickets,
                 labels_applied=bool(data.get("labels_applied", False)),
             )
-        except (KeyError, json.JSONDecodeError):
-            return None
+
+        return _tolerant_read(self._candidate_dir(idx) / _CANDIDATE_RECORD_FILE, decode)
 
     def write_candidate_record(self, idx: int, record: CandidateRecord) -> None:
         candidate_dir = self._candidate_dir(idx)
