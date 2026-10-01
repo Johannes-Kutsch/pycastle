@@ -27,8 +27,7 @@ from pycastle.diagnostic_reporter_dispatch import (
     DiagnosticReporterDispatchAFK,
     DiagnosticReporterDispatchHITL,
     DiagnosticReporterDispatchMountFallback,
-    DiagnosticReporterDispatchValidationSkipped,
-    run_diagnostic_reporter_dispatch,
+    run_validated_diagnostic_reporter_dispatch,
 )
 from pycastle.display.status_display import PlainStatusDisplay, StatusDisplay
 from pycastle.errors import SetupPhaseError
@@ -209,7 +208,7 @@ async def _file_host_check_issue(
     deps: HostCheckIssueDeps,
 ) -> int:
     override = deps.reporter_override or deps.cfg.preflight_issue_override
-    outcome = await run_diagnostic_reporter_dispatch(
+    outcome = await run_validated_diagnostic_reporter_dispatch(
         caller="Host-Check Reporter",
         diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
         role_name=AgentRole.PREFLIGHT_ISSUE.value,
@@ -243,7 +242,6 @@ async def _file_host_check_issue(
             DiagnosticReporterDispatchMountFallback(issue_number=n)
             | DiagnosticReporterDispatchHITL(issue_number=n)
             | DiagnosticReporterDispatchAFK(issue_number=n)
-            | DiagnosticReporterDispatchValidationSkipped(issue_number=n)
         ):
             return n
 
