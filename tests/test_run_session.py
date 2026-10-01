@@ -135,12 +135,7 @@ def test_role_session_provider_state_relpath_matches_worktree_local_provider_lay
     ).rstrip("/") == (".pycastle-session/improve/main/opencode")
     assert tmp_path / provider_state_relpath(
         AgentRole.IMPROVE, "opencode", "main", session_root=SESSION_DIR_NAME
-    ).rstrip("/") == (
-        tmp_path
-        / provider_state_relpath(
-            AgentRole.IMPROVE, "opencode", "main", session_root=SESSION_DIR_NAME
-        ).rstrip("/")
-    )
+    ).rstrip("/") == (tmp_path / ".pycastle-session" / "improve" / "main" / "opencode")
 
 
 def test_claude_provider_session_state_uses_preferred_session_id_from_request_contract(
