@@ -17,7 +17,7 @@ from agent_runtime.errors import AgentCredentialFailureError, HardAgentError
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.diagnostic_reporter_dispatch import (
     DiagnosticReporterDispatchMountFallback,
-    run_diagnostic_reporter_dispatch,
+    run_raw_diagnostic_reporter_dispatch,
 )
 from pycastle.errors import (
     AgentTimeoutError,
@@ -107,7 +107,7 @@ async def translate_agent_failed_error_to_abort(
                     invocation.scope_args["EVIDENCE_PATH"] = ""
                     invocation.scope_args["HAS_EVIDENCE_PATH"] = "no"
 
-            outcome = await run_diagnostic_reporter_dispatch(
+            outcome = await run_raw_diagnostic_reporter_dispatch(
                 caller="Failure Report Agent",
                 diagnostic_role=AgentRole.FAILURE_REPORT.value,
                 role_name=err.role_value,
@@ -120,7 +120,6 @@ async def translate_agent_failed_error_to_abort(
                 mount_path=err.worktree_path,
                 deps=deps,
                 pre_run_hook=_pre_run_hook,
-                skip_validation=True,
             )
             if isinstance(outcome, DiagnosticReporterDispatchMountFallback):
                 return AbortedAgentFailure(
