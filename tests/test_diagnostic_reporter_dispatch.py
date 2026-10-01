@@ -12,6 +12,8 @@ from pycastle.diagnostic_reporter_dispatch import (
     DiagnosticReporterDispatchMountFallback,
     DiagnosticReporterDispatchValidationSkipped,
     run_diagnostic_reporter_dispatch,
+    run_raw_diagnostic_reporter_dispatch,
+    run_validated_diagnostic_reporter_dispatch,
 )
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
@@ -191,6 +193,175 @@ def test_run_diagnostic_reporter_dispatch_skip_validation_returns_validation_ski
 
     assert result == DiagnosticReporterDispatchValidationSkipped(issue_number=77)
     deps.github_svc.get_issue.assert_not_called()
+
+
+def test_run_validated_diagnostic_reporter_dispatch_returns_afk(tmp_path):
+    mount_path = _make_valid_mount(tmp_path)
+    issue_output = IssueOutput(number=42, labels=["bug", "behavior-slice"])
+    deps = _make_deps(
+        agent_result=issue_output,
+        issue_dict={"body": "x" * 100, "labels": ["bug", "behavior-slice"]},
+    )
+    deps.repo_root = tmp_path
+
+    result = asyncio.run(
+        run_validated_diagnostic_reporter_dispatch(
+            caller="Host-Check Reporter",
+            diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+            role_name=AgentRole.PREFLIGHT_ISSUE.value,
+            original_failure_summary="Host check 'ruff' failed.",
+            prompt_invocation=_make_prompt(),
+            stage_override=StageOverride(service="claude"),
+            mount_path=mount_path,
+            deps=deps,
+        )
+    )
+
+    assert result == DiagnosticReporterDispatchAFK(issue_number=42)
+
+
+def test_run_validated_diagnostic_reporter_dispatch_returns_hitl(tmp_path):
+    mount_path = _make_valid_mount(tmp_path)
+    issue_output = IssueOutput(number=55, labels=["bug", "behavior-slice"])
+    deps = _make_deps(
+        agent_result=issue_output,
+        issue_dict={"body": "x" * 100, "labels": ["bug", "ready-for-human"]},
+    )
+    deps.repo_root = tmp_path
+
+    result = asyncio.run(
+        run_validated_diagnostic_reporter_dispatch(
+            caller="Host-Check Reporter",
+            diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+            role_name=AgentRole.PREFLIGHT_ISSUE.value,
+            original_failure_summary="Host check 'ruff' failed.",
+            prompt_invocation=_make_prompt(),
+            stage_override=StageOverride(service="claude"),
+            mount_path=mount_path,
+            deps=deps,
+        )
+    )
+
+    assert result == DiagnosticReporterDispatchHITL(issue_number=55)
+
+
+def test_run_validated_diagnostic_reporter_dispatch_mount_fallback(tmp_path):
+    mount_path = _make_rejected_mount(tmp_path)
+    github_svc = MagicMock()
+    github_svc.repo = "owner/repo"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = (99, 10099)
+    deps = _make_deps(github_svc=github_svc)
+    deps.repo_root = tmp_path
+
+    result = asyncio.run(
+        run_validated_diagnostic_reporter_dispatch(
+            caller="Host-Check Reporter",
+            diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+            role_name=AgentRole.PREFLIGHT_ISSUE.value,
+            original_failure_summary="Host check 'ruff' failed.",
+            prompt_invocation=_make_prompt(),
+            stage_override=StageOverride(service="claude"),
+            mount_path=mount_path,
+            deps=deps,
+        )
+    )
+
+    assert result == DiagnosticReporterDispatchMountFallback(issue_number=99)
+    deps.agent_runner.run.assert_not_awaited()
+
+
+def test_run_validated_diagnostic_reporter_dispatch_non_issue_output_raises(tmp_path):
+    from pycastle.agents.output_protocol import CompletionOutput
+
+    mount_path = _make_valid_mount(tmp_path)
+    deps = _make_deps(agent_result=CompletionOutput())
+    deps.repo_root = tmp_path
+
+    with pytest.raises(RuntimeError, match="returned unexpected output type"):
+        asyncio.run(
+            run_validated_diagnostic_reporter_dispatch(
+                caller="Host-Check Reporter",
+                diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+                role_name=AgentRole.PREFLIGHT_ISSUE.value,
+                original_failure_summary="Host check 'ruff' failed.",
+                prompt_invocation=_make_prompt(),
+                stage_override=StageOverride(service="claude"),
+                mount_path=mount_path,
+                deps=deps,
+            )
+        )
+
+
+def test_run_raw_diagnostic_reporter_dispatch_returns_validation_skipped(tmp_path):
+    mount_path = _make_valid_mount(tmp_path)
+    issue_output = IssueOutput(number=77, labels=["bug", "behavior-slice"])
+    deps = _make_deps(agent_result=issue_output)
+    deps.repo_root = tmp_path
+
+    result = asyncio.run(
+        run_raw_diagnostic_reporter_dispatch(
+            caller="Host-Check Reporter",
+            diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+            role_name=AgentRole.PREFLIGHT_ISSUE.value,
+            original_failure_summary="Host check 'ruff' failed.",
+            prompt_invocation=_make_prompt(),
+            stage_override=StageOverride(service="claude"),
+            mount_path=mount_path,
+            deps=deps,
+        )
+    )
+
+    assert result == DiagnosticReporterDispatchValidationSkipped(issue_number=77)
+    deps.github_svc.get_issue.assert_not_called()
+
+
+def test_run_raw_diagnostic_reporter_dispatch_mount_fallback(tmp_path):
+    mount_path = _make_rejected_mount(tmp_path)
+    github_svc = MagicMock()
+    github_svc.repo = "owner/repo"
+    github_svc.search_open_issues_by_title.return_value = []
+    github_svc.create_issue_in.return_value = (99, 10099)
+    deps = _make_deps(github_svc=github_svc)
+    deps.repo_root = tmp_path
+
+    result = asyncio.run(
+        run_raw_diagnostic_reporter_dispatch(
+            caller="Host-Check Reporter",
+            diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+            role_name=AgentRole.PREFLIGHT_ISSUE.value,
+            original_failure_summary="Host check 'ruff' failed.",
+            prompt_invocation=_make_prompt(),
+            stage_override=StageOverride(service="claude"),
+            mount_path=mount_path,
+            deps=deps,
+        )
+    )
+
+    assert result == DiagnosticReporterDispatchMountFallback(issue_number=99)
+    deps.agent_runner.run.assert_not_awaited()
+
+
+def test_run_raw_diagnostic_reporter_dispatch_non_issue_output_raises(tmp_path):
+    from pycastle.agents.output_protocol import CompletionOutput
+
+    mount_path = _make_valid_mount(tmp_path)
+    deps = _make_deps(agent_result=CompletionOutput())
+    deps.repo_root = tmp_path
+
+    with pytest.raises(RuntimeError, match="returned unexpected output type"):
+        asyncio.run(
+            run_raw_diagnostic_reporter_dispatch(
+                caller="Host-Check Reporter",
+                diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
+                role_name=AgentRole.PREFLIGHT_ISSUE.value,
+                original_failure_summary="Host check 'ruff' failed.",
+                prompt_invocation=_make_prompt(),
+                stage_override=StageOverride(service="claude"),
+                mount_path=mount_path,
+                deps=deps,
+            )
+        )
 
 
 def test_run_diagnostic_reporter_dispatch_pre_run_hook_runs_before_agent(tmp_path):

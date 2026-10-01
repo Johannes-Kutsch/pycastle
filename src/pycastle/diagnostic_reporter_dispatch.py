@@ -235,46 +235,26 @@ async def run_diagnostic_reporter_dispatch(
     5. Validation via ``validate_diagnostic_issue_report``, unless
        ``skip_validation=True``, in which case the raw issue number is returned.
     """
-    mount_decision = decide_diagnostic_mount_dispatch(
-        repo_root=deps.repo_root,
-        mount_path=mount_path,
+    core = await _run_diagnostic_reporter_core(
         caller=caller,
         diagnostic_role=diagnostic_role,
         role_name=role_name,
         original_failure_summary=original_failure_summary,
-        github_svc=deps.github_svc,
+        prompt_invocation=prompt_invocation,
+        stage_override=stage_override,
+        mount_path=mount_path,
+        deps=deps,
+        pre_run_hook=pre_run_hook,
     )
-    if isinstance(mount_decision, DiagnosticMountFallbackIssue):
-        return DiagnosticReporterDispatchMountFallback(
-            issue_number=mount_decision.issue_number
-        )
-
-    if pre_run_hook is not None:
-        pre_run_hook(mount_path, prompt_invocation)
-
-    result = await deps.agent_runner.run(
-        RunRequest(
-            name=caller,
-            prompt=prompt_invocation,
-            mount_path=mount_path,
-            role=AgentRole(diagnostic_role),
-            model=stage_override.model,
-            effort=stage_override.effort,
-            service=stage_override.service,
-            status_display=deps.status_display,
-        )
-    )
-    if not isinstance(result, IssueOutput):
-        raise RuntimeError(
-            f"{caller} returned unexpected output type: {type(result).__name__}"
-        )
+    if isinstance(core, DiagnosticReporterDispatchMountFallback):
+        return core
 
     if skip_validation:
-        return DiagnosticReporterDispatchValidationSkipped(issue_number=result.number)
+        return DiagnosticReporterDispatchValidationSkipped(issue_number=core.number)
 
     validation = validate_diagnostic_issue_report(
         caller=caller,
-        issue_output=result,
+        issue_output=core,
         cfg=deps.cfg,
         filed_issue_reader=deps.github_svc,
     )
