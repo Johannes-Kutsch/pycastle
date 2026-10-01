@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
-from datetime import datetime
 from typing import TYPE_CHECKING
 
 from pycastle import stage_registry
@@ -17,12 +15,11 @@ from pycastle.services._wake_time import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from pycastle.config import Config, StageOverride
     from pycastle.iteration import AbortedModelNotAvailable, AbortedUsageLimit
     from pycastle.services.service_registry import ServiceRegistry
-
-
-_WakeTimeComputer = Callable[[datetime | None, datetime], tuple[datetime, bool]]
 
 
 def _fmt_wake(wake: datetime, now: datetime) -> str:
@@ -115,11 +112,15 @@ def _compute_exhausted_wake_time(
 def _decide_limit_continuation(
     outcome: AbortedUsageLimit,
     *,
+    cfg: Config,
     stage_override: StageOverride | None,
     service_registry: ServiceRegistry | None,
     now: datetime,
-    compute_wake_time_fn: _WakeTimeComputer,
 ) -> ContinueLoop | SleepThenContinue | BreakLoop:
+    minimum_unknown_reset_duration = _minimum_unknown_reset_duration_for_provider(
+        cfg,
+        outcome.provider,
+    )
     if _registry_has_available(service_registry, stage_override, now):
         exhausted_wake_time = _compute_exhausted_wake_time(
             outcome, service_registry, stage_override, now
@@ -144,51 +145,39 @@ def _decide_limit_continuation(
     if outcome.is_permanent:
         return BreakLoop(message=_permanent_exhaustion_message(outcome))
 
-    wake_time, is_estimated = compute_wake_time_fn(outcome.reset_time, now)
+    wake_time, is_estimated = compute_wake_time(
+        outcome.reset_time,
+        now,
+        minimum_unknown_reset_duration=minimum_unknown_reset_duration,
+    )
     return SleepThenContinue(
         wake_time=wake_time,
         message=_sleep_message(wake_time, now, is_estimated=is_estimated),
     )
 
 
-def decide_usage_limit_continuation(
-    outcome: AbortedUsageLimit,
+def decide_abort_continuation(
+    outcome: AbortedUsageLimit | AbortedModelNotAvailable,
     cfg: Config,
     service_registry: ServiceRegistry | None,
     now: datetime,
 ) -> ContinueLoop | SleepThenContinue | BreakLoop:
-    minimum_unknown_reset_duration = _minimum_unknown_reset_duration_for_provider(
-        cfg,
-        outcome.provider,
-    )
+    from pycastle.iteration import AbortedUsageLimit  # noqa: PLC0415
 
-    def _compute_wake_time(
-        reset_time: datetime | None,
-        now_: datetime,
-    ) -> tuple[datetime, bool]:
-        return compute_wake_time(
-            reset_time,
-            now_,
-            minimum_unknown_reset_duration=minimum_unknown_reset_duration,
+    if isinstance(outcome, AbortedUsageLimit):
+        stage_override = (
+            stage_registry.override_for_stage_key(cfg, outcome.stage_key)
+            if outcome.stage_key is not None
+            else None
+        )
+        return _decide_limit_continuation(
+            outcome,
+            cfg=cfg,
+            stage_override=stage_override,
+            service_registry=service_registry,
+            now=now,
         )
 
-    return _decide_limit_continuation(
-        outcome,
-        stage_override=stage_registry.override_for_stage_key(cfg, outcome.stage_key)
-        if outcome.stage_key is not None
-        else None,
-        service_registry=service_registry,
-        now=now,
-        compute_wake_time_fn=_compute_wake_time,
-    )
-
-
-def decide_model_not_available_continuation(
-    outcome: AbortedModelNotAvailable,
-    cfg: Config,
-    service_registry: ServiceRegistry | None,
-    now: datetime,
-) -> ContinueLoop | SleepThenContinue | BreakLoop:
     stage_override = (
         stage_registry.override_for_stage_key(cfg, outcome.stage_key)
         if outcome.stage_key is not None

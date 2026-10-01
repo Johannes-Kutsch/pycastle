@@ -163,20 +163,12 @@ def route_outcome(outcome: IterationOutcome, deps: RouterDeps) -> LoopDirective:
             return ExitFailure(code=1)
         case AbortedTimeout():
             return _route_timeout(outcome, deps)
-        case AbortedUsageLimit():
+        case AbortedUsageLimit() | AbortedModelNotAvailable():
             from pycastle.iteration._usage_limit_helpers import (  # noqa: PLC0415
-                decide_usage_limit_continuation,
+                decide_abort_continuation,
             )
 
-            return decide_usage_limit_continuation(
-                outcome, deps.cfg, deps.service_registry, deps.now
-            )
-        case AbortedModelNotAvailable():
-            from pycastle.iteration._usage_limit_helpers import (  # noqa: PLC0415
-                decide_model_not_available_continuation,
-            )
-
-            return decide_model_not_available_continuation(
+            return decide_abort_continuation(
                 outcome, deps.cfg, deps.service_registry, deps.now
             )
         case AbortedAgentFailure():
