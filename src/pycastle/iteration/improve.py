@@ -27,7 +27,9 @@ from pycastle.iteration.improve_candidate_lifecycle import (
 from pycastle.iteration.improve_filing import GithubFilingPort
 from pycastle.iteration.improve_preparation import (
     ImproveCandidate,
-    ImproveStepPreparationRequest,
+    ImprovePreparationStep,
+    ImprovePreparationStepConfig,
+    _compute_work_body,
     prepare_improve_step,
 )
 from pycastle.iteration.improve_role_session_store import (
@@ -394,41 +396,27 @@ _PHASES: dict[str, _PhaseConfig] = {
 def _build_preparation_request(
     step: "Step",
     *,
-    short_sid: str,
     candidate_budget: int | None,
     scan_set_size: int | None,
     candidate_ordinal: int | None,
-) -> ImproveStepPreparationRequest:
-    template = step.cfg.template
-    if template is PromptTemplate.IMPROVE_SCAN:
-        budget = candidate_budget or 0
-        work_body = (
-            "picking 1 improvement"
-            if budget == 1
-            else f"picking up to {budget} improvements"
-        )
-    elif (
-        step.candidate is not None
-        and candidate_ordinal is not None
-        and scan_set_size is not None
-    ):
-        if template is PromptTemplate.IMPROVE_SPEC:
-            work_body = f'writing spec for candidate {candidate_ordinal}/{scan_set_size} "{step.candidate.title}"'
-        elif template is PromptTemplate.IMPROVE_TICKETS:
-            work_body = f'filing tickets for candidate {candidate_ordinal}/{scan_set_size} "{step.candidate.title}"'
-        else:
-            work_body = step.cfg.display_body
-    else:
-        work_body = step.cfg.display_body
-    return ImproveStepPreparationRequest(
-        prompt_template=step.cfg.template,
-        session_namespace=step.cfg.namespace,
-        display_name=step.cfg.display_name,
-        work_body=work_body,
-        kind=step.kind,
-        short_sid=short_sid,
-        fetch_recent_spec_titles=step.fetch_recent_spec_titles,
+) -> ImprovePreparationStep:
+    work_body = _compute_work_body(
+        step.cfg.template,
         candidate_budget=candidate_budget,
+        candidate=step.candidate,
+        candidate_ordinal=candidate_ordinal,
+        scan_set_size=scan_set_size,
+        display_body=step.cfg.display_body,
+    )
+    return ImprovePreparationStep(
+        cfg=ImprovePreparationStepConfig(
+            template=step.cfg.template,
+            namespace=step.cfg.namespace,
+            display_name=step.cfg.display_name,
+        ),
+        kind=step.kind,
+        fetch_recent_spec_titles=step.fetch_recent_spec_titles,
+        work_body=work_body,
         candidate=step.candidate,
     )
 
@@ -729,7 +717,6 @@ async def improve_phase(
                 prepared_step = prepare_improve_step(
                     _build_preparation_request(
                         step,
-                        short_sid=short_sid,
                         candidate_budget=candidate_budget,
                         scan_set_size=driver.candidate_count,
                         candidate_ordinal=(step.candidate_idx + 1)
@@ -737,6 +724,8 @@ async def improve_phase(
                         else None,
                     ),
                     github_port=deps.github_svc,
+                    short_sid=short_sid,
+                    candidate_budget=candidate_budget,
                 )
                 # Save namespace before record_outcome advances the cursor.
                 step_namespace = prepared_step.session_namespace

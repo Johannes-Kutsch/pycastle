@@ -41,23 +41,22 @@ class ImprovePreparationGithubPort(Protocol):
 
 
 @dataclass(frozen=True)
-class ImproveStepPreparationRequest:
-    """Inputs required to prepare a single Improve step.
+class ImprovePreparationStepConfig:
+    """Per-template configuration for a step passed into prepare_improve_step."""
 
-    `short_sid` is required for session-scoped placeholders.
-    `fetch_recent_spec_titles` preserves the existing scan-step retry behavior
-    that skips the GitHub read. `candidate_budget` is required when preparing
-    `PromptTemplate.IMPROVE_SCAN`.
-    """
-
-    prompt_template: PromptTemplate
-    session_namespace: str
+    template: PromptTemplate
+    namespace: str
     display_name: str
-    work_body: str
+
+
+@dataclass(frozen=True)
+class ImprovePreparationStep:
+    """A driver-produced step ready to be prepared for agent dispatch."""
+
+    cfg: ImprovePreparationStepConfig
     kind: PromptKind
-    short_sid: str
-    fetch_recent_spec_titles: bool = False
-    candidate_budget: int | None = None
+    fetch_recent_spec_titles: bool
+    work_body: str
     candidate: ImproveCandidate | None = None
 
 
@@ -69,10 +68,41 @@ class PreparedImproveStep:
     work_body: str
 
 
+def _compute_work_body(
+    template: PromptTemplate,
+    *,
+    candidate_budget: int | None = None,
+    candidate: ImproveCandidate | None = None,
+    candidate_ordinal: int | None = None,
+    scan_set_size: int | None = None,
+    display_body: str = "",
+) -> str:
+    """Compute the human-readable work-body line for a step row."""
+    if template is PromptTemplate.IMPROVE_SCAN:
+        budget = candidate_budget or 0
+        return (
+            "picking 1 improvement"
+            if budget == 1
+            else f"picking up to {budget} improvements"
+        )
+    if (
+        candidate is not None
+        and candidate_ordinal is not None
+        and scan_set_size is not None
+    ):
+        if template is PromptTemplate.IMPROVE_SPEC:
+            return f'writing spec for candidate {candidate_ordinal}/{scan_set_size} "{candidate.title}"'
+        if template is PromptTemplate.IMPROVE_TICKETS:
+            return f'filing tickets for candidate {candidate_ordinal}/{scan_set_size} "{candidate.title}"'
+    return display_body
+
+
 def prepare_improve_step(
-    request: ImproveStepPreparationRequest,
+    step: ImprovePreparationStep,
     *,
     github_port: ImprovePreparationGithubPort,
+    short_sid: str,
+    candidate_budget: int | None = None,
 ) -> PreparedImproveStep:
     """Prepare the exact `RunRequest` payload for one Improve step.
 
@@ -80,60 +110,67 @@ def prepare_improve_step(
     any read error is allowed to propagate to the caller unchanged.
     """
 
-    scope_args = _render_scope_args(request, github_port=github_port)
+    scope_args = _render_scope_args(
+        step,
+        github_port=github_port,
+        short_sid=short_sid,
+        candidate_budget=candidate_budget,
+    )
     return PreparedImproveStep(
         prompt=build_prompt_invocation(
-            request.prompt_template,
+            step.cfg.template,
             scope_args,
-            kind=request.kind,
+            kind=step.kind,
         ),
-        session_namespace=request.session_namespace,
-        name=request.display_name,
-        work_body=request.work_body,
+        session_namespace=step.cfg.namespace,
+        name=step.cfg.display_name,
+        work_body=step.work_body,
     )
 
 
 def _render_scope_args(
-    request: ImproveStepPreparationRequest,
+    step: ImprovePreparationStep,
     *,
     github_port: ImprovePreparationGithubPort,
+    short_sid: str,
+    candidate_budget: int | None,
 ) -> dict[str, str]:
-    match request.prompt_template:
+    match step.cfg.template:
         case PromptTemplate.IMPROVE_SCAN:
             recent_specs = (
                 github_port.get_recent_improve_specs()
-                if request.fetch_recent_spec_titles
+                if step.fetch_recent_spec_titles
                 else []
             )
-            if request.candidate_budget is None:
+            if candidate_budget is None:
                 raise PromptRenderError(
                     "candidate_budget is required to render the improve scan prompt"
                 )
             return build_improve_scan_scope_args(
                 recent_specs=recent_specs,
-                candidate_budget=request.candidate_budget,
+                candidate_budget=candidate_budget,
             )
         case PromptTemplate.IMPROVE_SPEC:
-            if request.candidate is None:
+            if step.candidate is None:
                 raise PromptRenderError(
                     "candidate is required to render the spec prompt"
                 )
             return validated_scope_args_for_template(
-                request.prompt_template,
+                step.cfg.template,
                 {
-                    "IMPROVE_SHORT_SID": request.short_sid,
+                    "IMPROVE_SHORT_SID": short_sid,
                     "RECENT_IMPROVE_SPECS": _format_recent_improve_specs(
                         github_port.get_recent_improve_specs()
                     ),
-                    "CANDIDATE_RANK": str(request.candidate.rank),
-                    "CANDIDATE_TITLE": request.candidate.title,
+                    "CANDIDATE_RANK": str(step.candidate.rank),
+                    "CANDIDATE_TITLE": step.candidate.title,
                 },
             )
         case PromptTemplate.IMPROVE_NO_CANDIDATE:
             return validated_scope_args_for_template(
-                request.prompt_template,
+                step.cfg.template,
                 {
-                    "IMPROVE_SHORT_SID": request.short_sid,
+                    "IMPROVE_SHORT_SID": short_sid,
                     "RECENT_IMPROVE_SPECS": _format_recent_improve_specs(
                         github_port.get_recent_improve_specs()
                     ),
@@ -143,13 +180,11 @@ def _render_scope_args(
             )
         case PromptTemplate.IMPROVE_TICKETS:
             return validated_scope_args_for_template(
-                request.prompt_template,
-                {"IMPROVE_SHORT_SID": request.short_sid},
+                step.cfg.template,
+                {"IMPROVE_SHORT_SID": short_sid},
             )
         case _:
-            raise TypeError(
-                f"unsupported Improve template: {request.prompt_template.name}"
-            )
+            raise TypeError(f"unsupported Improve template: {step.cfg.template.name}")
 
 
 def _format_recent_improve_specs(recent_specs: list[dict[str, Any]]) -> str:

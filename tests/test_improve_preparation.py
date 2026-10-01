@@ -10,7 +10,8 @@ from pycastle.agents.output_protocol import (
 from pycastle.iteration.improve import ImprovePhaseDriver
 from pycastle.iteration.improve_preparation import (
     ImproveCandidate,
-    ImproveStepPreparationRequest,
+    ImprovePreparationStep,
+    ImprovePreparationStepConfig,
     prepare_improve_step,
 )
 from pycastle.prompts.dispatch import PromptKind
@@ -48,23 +49,103 @@ class _GithubPortStandIn:
         return self.comments
 
 
+def _scan_step(
+    *,
+    work_body: str = "picking up to 3 improvements",
+    fetch_recent_spec_titles: bool = True,
+    kind: PromptKind = PromptKind.ROLE_PROMPT,
+    session_namespace: str = "main",
+    display_name: str = "Scan Agent",
+) -> ImprovePreparationStep:
+    return ImprovePreparationStep(
+        cfg=ImprovePreparationStepConfig(
+            template=PromptTemplate.IMPROVE_SCAN,
+            namespace=session_namespace,
+            display_name=display_name,
+        ),
+        kind=kind,
+        fetch_recent_spec_titles=fetch_recent_spec_titles,
+        work_body=work_body,
+    )
+
+
+def _spec_step(
+    *,
+    candidate: ImproveCandidate,
+    work_body: str = "writing spec",
+    fetch_recent_spec_titles: bool = True,
+    kind: PromptKind = PromptKind.FOLLOW_UP,
+    session_namespace: str = "main",
+    display_name: str = "Spec Agent",
+) -> ImprovePreparationStep:
+    return ImprovePreparationStep(
+        cfg=ImprovePreparationStepConfig(
+            template=PromptTemplate.IMPROVE_SPEC,
+            namespace=session_namespace,
+            display_name=display_name,
+        ),
+        kind=kind,
+        fetch_recent_spec_titles=fetch_recent_spec_titles,
+        work_body=work_body,
+        candidate=candidate,
+    )
+
+
+def _no_candidate_step(
+    *,
+    work_body: str = "filing no-candidate report",
+    fetch_recent_spec_titles: bool = True,
+    kind: PromptKind = PromptKind.FOLLOW_UP,
+    session_namespace: str = "main",
+    display_name: str = "Rejection Report Agent",
+) -> ImprovePreparationStep:
+    return ImprovePreparationStep(
+        cfg=ImprovePreparationStepConfig(
+            template=PromptTemplate.IMPROVE_NO_CANDIDATE,
+            namespace=session_namespace,
+            display_name=display_name,
+        ),
+        kind=kind,
+        fetch_recent_spec_titles=fetch_recent_spec_titles,
+        work_body=work_body,
+    )
+
+
+def _tickets_step(
+    *,
+    candidate: ImproveCandidate | None = None,
+    work_body: str = "filing sub-issues",
+    fetch_recent_spec_titles: bool = False,
+    kind: PromptKind = PromptKind.FOLLOW_UP,
+    session_namespace: str = "main",
+    display_name: str = "Tickets Agent",
+) -> ImprovePreparationStep:
+    return ImprovePreparationStep(
+        cfg=ImprovePreparationStepConfig(
+            template=PromptTemplate.IMPROVE_TICKETS,
+            namespace=session_namespace,
+            display_name=display_name,
+        ),
+        kind=kind,
+        fetch_recent_spec_titles=fetch_recent_spec_titles,
+        work_body=work_body,
+        candidate=candidate,
+    )
+
+
 def test_prepare_improve_step_builds_exact_scan_payload():
     github_port = _GithubPortStandIn(
         recent_specs=[{"number": 12, "state": "OPEN", "title": "First candidate"}]
     )
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SCAN,
-            session_namespace="main",
-            display_name="Scan Agent",
+        _scan_step(
             work_body="picking up to 3 improvements",
-            kind=PromptKind.ROLE_PROMPT,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=True,
-            candidate_budget=3,
         ),
         github_port=github_port,
+        short_sid="abcd1234",
+        candidate_budget=3,
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
@@ -88,17 +169,16 @@ def test_prepare_improve_step_builds_exact_spec_payload_from_driver_step():
     )
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SPEC,
+        _spec_step(
+            candidate=ImproveCandidate(rank=1, title="Refactor"),
+            work_body='writing spec for candidate 1/1 "Refactor"',
             session_namespace="candidate/0",
             display_name="Spec Agent",
-            work_body='writing spec for candidate 1/1 "Refactor"',
             kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=True,
-            candidate=ImproveCandidate(rank=1, title="Refactor"),
         ),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SPEC
@@ -128,16 +208,15 @@ def test_prepare_improve_step_builds_exact_no_candidate_report_payload_from_driv
     )
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_NO_CANDIDATE,
+        _no_candidate_step(
+            work_body="filing no-candidate report",
             session_namespace="main",
             display_name="Rejection Report Agent",
-            work_body="filing no-candidate report",
             kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=True,
         ),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_NO_CANDIDATE
@@ -167,16 +246,13 @@ def test_prepare_improve_step_builds_exact_spec_payload_without_lookup_policy_fl
     )
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SPEC,
-            session_namespace="main",
-            display_name="Spec Agent",
-            work_body="writing spec",
-            kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
+        _spec_step(
             candidate=ImproveCandidate(rank=1, title="Refactor"),
+            work_body="writing spec",
+            fetch_recent_spec_titles=True,
         ),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SPEC
@@ -199,16 +275,12 @@ def test_prepare_improve_step_uses_exact_empty_recent_spec_message_for_spec_temp
     github_port = _GithubPortStandIn(recent_specs=[])
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SPEC,
-            session_namespace="main",
-            display_name="Spec Agent",
-            work_body="body",
-            kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
+        _spec_step(
             candidate=ImproveCandidate(rank=2, title="Deepen module"),
+            work_body="body",
         ),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.scope_args == {
@@ -224,15 +296,9 @@ def test_prepare_improve_step_uses_exact_empty_recent_spec_message_for_no_candid
     github_port = _GithubPortStandIn(recent_specs=[])
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_NO_CANDIDATE,
-            session_namespace="main",
-            display_name="Rejection Report Agent",
-            work_body="body",
-            kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
-        ),
+        _no_candidate_step(work_body="body"),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.scope_args == {
@@ -248,16 +314,12 @@ def test_prepare_improve_step_uses_short_sid_only_for_issues():
     github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_TICKETS,
-            session_namespace="main",
-            display_name="Slice Agent",
+        _tickets_step(
             work_body="filing sub-issues",
-            kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=False,
         ),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.scope_args == {
@@ -276,17 +338,13 @@ def test_prepare_improve_step_resumed_scan_uses_empty_recent_prd_message():
     )
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SCAN,
-            session_namespace="main",
-            display_name="Scan Agent",
+        _scan_step(
             work_body="picking up to 2 improvements",
-            kind=PromptKind.ROLE_PROMPT,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=False,
-            candidate_budget=2,
         ),
         github_port=github_port,
+        short_sid="abcd1234",
+        candidate_budget=2,
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_SCAN
@@ -305,16 +363,12 @@ def test_prepare_improve_step_issues_scope_contains_only_short_sid():
     github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_TICKETS,
-            session_namespace="main",
-            display_name="Slice Agent",
+        _tickets_step(
             work_body="filing sub-issues",
-            kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=False,
         ),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.scope_args == {
@@ -329,17 +383,16 @@ def test_prepare_improve_step_builds_issues_payload_from_driver_step_prd_handoff
     github_port = _GithubPortStandIn()
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_TICKETS,
+        _tickets_step(
+            candidate=ImproveCandidate(rank=1, title="Refactor"),
+            work_body='filing tickets for candidate 1/1 "Refactor"',
             session_namespace="candidate/0",
             display_name="Tickets Agent",
-            work_body='filing tickets for candidate 1/1 "Refactor"',
             kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=False,
-            candidate=ImproveCandidate(rank=1, title="Refactor"),
         ),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.template == PromptTemplate.IMPROVE_TICKETS
@@ -361,17 +414,13 @@ def test_prepare_improve_step_propagates_recent_improve_prd_lookup_failures():
 
     with pytest.raises(GithubNetworkError) as exc_info:
         prepare_improve_step(
-            ImproveStepPreparationRequest(
-                prompt_template=PromptTemplate.IMPROVE_SCAN,
-                session_namespace="main",
-                display_name="Scan Agent",
+            _scan_step(
                 work_body="picking up to 1 improvement",
-                kind=PromptKind.ROLE_PROMPT,
-                short_sid="abcd1234",
                 fetch_recent_spec_titles=True,
-                candidate_budget=1,
             ),
             github_port=github_port,
+            short_sid="abcd1234",
+            candidate_budget=1,
         )
 
     assert exc_info.value is error
@@ -398,42 +447,24 @@ def test_prepare_improve_step_prd_step_candidate_is_set_on_step(tmp_path: Path) 
     )
 
 
-def test_prepare_improve_step_accepts_request_with_candidate(tmp_path: Path) -> None:
-    """ImproveStepPreparationRequest with a candidate passes through prepare_improve_step unchanged."""
-    candidate = ImproveCandidate(rank=1, title="Foo", spec_number=42)
-    request = ImproveStepPreparationRequest(
-        prompt_template=PromptTemplate.IMPROVE_TICKETS,
-        session_namespace="candidate/0",
-        display_name="Slice Agent",
-        work_body="filing sub-issues",
-        kind=PromptKind.FOLLOW_UP,
-        short_sid="abcd1234",
-        fetch_recent_spec_titles=False,
-        candidate=candidate,
-    )
-    github_port = _GithubPortStandIn()
-
-    prepared = prepare_improve_step(request, github_port=github_port)
-
-    assert prepared.prompt.template == PromptTemplate.IMPROVE_TICKETS
-    assert prepared.prompt.scope_args == {"IMPROVE_SHORT_SID": "abcd1234"}
-
-
 def test_prepare_improve_step_prd_without_candidate_fails_loudly():
     github_port = _GithubPortStandIn(recent_specs=[])
 
     with pytest.raises(PromptRenderError):
         prepare_improve_step(
-            ImproveStepPreparationRequest(
-                prompt_template=PromptTemplate.IMPROVE_SPEC,
-                session_namespace="main",
-                display_name="PRD Agent",
-                work_body="writing PRD",
+            ImprovePreparationStep(
+                cfg=ImprovePreparationStepConfig(
+                    template=PromptTemplate.IMPROVE_SPEC,
+                    namespace="main",
+                    display_name="PRD Agent",
+                ),
                 kind=PromptKind.FOLLOW_UP,
-                short_sid="abcd1234",
+                fetch_recent_spec_titles=False,
+                work_body="writing PRD",
                 # candidate intentionally omitted
             ),
             github_port=github_port,
+            short_sid="abcd1234",
         )
 
 
@@ -442,33 +473,25 @@ def test_prepare_improve_step_scan_without_candidate_budget_fails_to_render():
 
     with pytest.raises(PromptRenderError):
         prepare_improve_step(
-            ImproveStepPreparationRequest(
-                prompt_template=PromptTemplate.IMPROVE_SCAN,
-                session_namespace="main",
-                display_name="Scan Agent",
+            _scan_step(
                 work_body="",
-                kind=PromptKind.ROLE_PROMPT,
-                short_sid="abcd1234",
                 fetch_recent_spec_titles=True,
-                # candidate_budget omitted — None by default
             ),
             github_port=github_port,
+            short_sid="abcd1234",
+            # candidate_budget omitted — None by default
         )
 
 
 def test_scan_agent_row_body_says_picking_up_to_n_improvements() -> None:
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SCAN,
-            session_namespace="main",
-            display_name="Scan Agent",
+        _scan_step(
             work_body="picking up to 3 improvements",
-            kind=PromptKind.ROLE_PROMPT,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=True,
-            candidate_budget=3,
         ),
         github_port=_GithubPortStandIn(),
+        short_sid="abcd1234",
+        candidate_budget=3,
     )
 
     assert prepared.work_body == "picking up to 3 improvements"
@@ -476,17 +499,13 @@ def test_scan_agent_row_body_says_picking_up_to_n_improvements() -> None:
 
 def test_scan_agent_row_body_with_budget_one_says_picking_1_improvement() -> None:
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SCAN,
-            session_namespace="main",
-            display_name="Scan Agent",
+        _scan_step(
             work_body="picking 1 improvement",
-            kind=PromptKind.ROLE_PROMPT,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=True,
-            candidate_budget=1,
         ),
         github_port=_GithubPortStandIn(),
+        short_sid="abcd1234",
+        candidate_budget=1,
     )
 
     assert prepared.work_body == "picking 1 improvement"
@@ -494,17 +513,15 @@ def test_scan_agent_row_body_with_budget_one_says_picking_1_improvement() -> Non
 
 def test_spec_agent_name_and_body_from_driver_prd_step() -> None:
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_SPEC,
+        _spec_step(
+            candidate=ImproveCandidate(rank=1, title="Alpha"),
+            work_body='writing spec for candidate 1/3 "Alpha"',
             session_namespace="candidate/0",
             display_name="Spec Agent",
-            work_body='writing spec for candidate 1/3 "Alpha"',
-            kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=True,
-            candidate=ImproveCandidate(rank=1, title="Alpha"),
         ),
         github_port=_GithubPortStandIn(),
+        short_sid="abcd1234",
     )
 
     assert prepared.name == "Spec Agent"
@@ -513,17 +530,15 @@ def test_spec_agent_name_and_body_from_driver_prd_step() -> None:
 
 def test_tickets_agent_name_and_body_from_driver_issues_step() -> None:
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_TICKETS,
+        _tickets_step(
+            candidate=ImproveCandidate(rank=1, title="Alpha"),
+            work_body='filing tickets for candidate 1/3 "Alpha"',
             session_namespace="candidate/0",
             display_name="Tickets Agent",
-            work_body='filing tickets for candidate 1/3 "Alpha"',
-            kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=False,
-            candidate=ImproveCandidate(rank=1, title="Alpha"),
         ),
         github_port=_GithubPortStandIn(),
+        short_sid="abcd1234",
     )
 
     assert prepared.name == "Tickets Agent"
@@ -535,15 +550,18 @@ def test_prepare_improve_step_unsupported_template_raises_type_error():
 
     with pytest.raises(TypeError):
         prepare_improve_step(
-            ImproveStepPreparationRequest(
-                prompt_template=PromptTemplate.IMPLEMENT_BEHAVIOR,
-                session_namespace="main",
-                display_name="Behavior Agent",
-                work_body="body",
+            ImprovePreparationStep(
+                cfg=ImprovePreparationStepConfig(
+                    template=PromptTemplate.IMPLEMENT_BEHAVIOR,
+                    namespace="main",
+                    display_name="Behavior Agent",
+                ),
                 kind=PromptKind.FOLLOW_UP,
-                short_sid="abcd1234",
+                fetch_recent_spec_titles=False,
+                work_body="body",
             ),
             github_port=github_port,
+            short_sid="abcd1234",
         )
 
 
@@ -553,16 +571,12 @@ def test_prepare_improve_step_tickets_with_fetch_flag_makes_no_github_call():
     )
 
     prepared = prepare_improve_step(
-        ImproveStepPreparationRequest(
-            prompt_template=PromptTemplate.IMPROVE_TICKETS,
-            session_namespace="main",
-            display_name="Tickets Agent",
+        _tickets_step(
             work_body="filing sub-issues",
-            kind=PromptKind.FOLLOW_UP,
-            short_sid="abcd1234",
             fetch_recent_spec_titles=True,
         ),
         github_port=github_port,
+        short_sid="abcd1234",
     )
 
     assert prepared.prompt.scope_args == {"IMPROVE_SHORT_SID": "abcd1234"}
