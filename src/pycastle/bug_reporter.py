@@ -178,12 +178,17 @@ def file_merge_close_failure_issue(
 ) -> int | None:
     """File one deduped issue on the consuming project's tracker when a child
     issue fails to close after merge. Never files on bug_report_repo."""
-    return upstream_issue_report.file_typed_issue(
-        upstream_issue_report.MERGE_CLOSE_FAILURE_DESCRIPTOR,
-        github_svc,
-        issue_number=issue_number,
-        exc=exc,
+    _title_prefix = "[pycastle] issue close failed"
+    report = upstream_issue_report.UpstreamIssueReport(
+        dedupe_key=_title_prefix,
+        title=_title_prefix + f": #{issue_number}",
+        body=upstream_issue_report.merge_close_failure_body(
+            issue_number=issue_number, exc=exc
+        ),
+        labels=upstream_issue_report.BUG_AND_TRIAGE_LABELS,
+        github_svc=github_svc,
     )
+    return upstream_issue_report.file_upstream_issue(report)
 
 
 def file_operator_actionable_git_issue(
@@ -195,13 +200,17 @@ def file_operator_actionable_git_issue(
 ) -> None:
     """File one deduped issue on the consuming project's origin tracker for an
     OperatorActionableGitError. Never files on bug_report_repo."""
-    upstream_issue_report.file_typed_issue(
-        upstream_issue_report.OPERATOR_ACTIONABLE_GIT_DESCRIPTOR,
-        github_svc,
-        op=op,
-        stderr=stderr,
-        attempt_count=attempt_count,
+    _title_prefix = "[pycastle] git remote unreachable"
+    report = upstream_issue_report.UpstreamIssueReport(
+        dedupe_key=_title_prefix,
+        title=_title_prefix + f": {op} failed after {attempt_count} attempt(s)",
+        body=upstream_issue_report.operator_actionable_body(
+            op=op, stderr=stderr, attempt_count=attempt_count
+        ),
+        labels=upstream_issue_report.BUG_AND_TRIAGE_LABELS,
+        github_svc=github_svc,
     )
+    upstream_issue_report.file_upstream_issue(report)
 
 
 def file_unrepairable_draft_set_issue(
@@ -213,12 +222,17 @@ def file_unrepairable_draft_set_issue(
     """File one deduped issue on the consuming project's tracker when an improve
     draft set cannot be repaired after all correction attempts. Never files on
     bug_report_repo."""
-    return upstream_issue_report.file_typed_issue(
-        upstream_issue_report.UNREPAIRABLE_DRAFT_SET_DESCRIPTOR,
-        github_svc,
-        problems=problems,
-        draft_files=draft_files,
+    _title_prefix = "[pycastle] improve draft set invalid"
+    report = upstream_issue_report.UpstreamIssueReport(
+        dedupe_key=_title_prefix,
+        title=_title_prefix,
+        body=upstream_issue_report.unrepairable_draft_body(
+            problems=problems, draft_files=draft_files
+        ),
+        labels=upstream_issue_report.BUG_AND_TRIAGE_LABELS,
+        github_svc=github_svc,
     )
+    return upstream_issue_report.file_upstream_issue(report)
 
 
 def report_and_exit(
