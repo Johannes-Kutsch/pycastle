@@ -17,8 +17,7 @@ from pycastle.diagnostic_reporter_dispatch import (
     DiagnosticReporterDispatchAFK,
     DiagnosticReporterDispatchHITL,
     DiagnosticReporterDispatchMountFallback,
-    DiagnosticReporterDispatchValidationSkipped,
-    run_diagnostic_reporter_dispatch,
+    run_validated_diagnostic_reporter_dispatch,
 )
 from pycastle.display.status_display import StatusDisplay
 from pycastle.errors import (
@@ -194,7 +193,7 @@ class PreflightCache:
         sha: str,
     ) -> PreflightHITL | PreflightAFK:
         override = self._resolved_preflight_issue_override(deps)
-        outcome = await run_diagnostic_reporter_dispatch(
+        outcome = await run_validated_diagnostic_reporter_dispatch(
             caller="Pre-Flight Reporter",
             diagnostic_role=AgentRole.PREFLIGHT_ISSUE.value,
             role_name=AgentRole.PREFLIGHT_ISSUE.value,
@@ -221,10 +220,6 @@ class PreflightCache:
                 return PreflightHITL(sha=sha, issue_number=n)
             case DiagnosticReporterDispatchAFK(issue_number=n):
                 return PreflightAFK(sha=sha, issue_number=n)
-            case DiagnosticReporterDispatchValidationSkipped():
-                raise TypeError(
-                    "exhaustive: validation-skipped is not a reachable outcome here"
-                )
 
     @staticmethod
     def _setup_error_for_missing_declared_tool(
