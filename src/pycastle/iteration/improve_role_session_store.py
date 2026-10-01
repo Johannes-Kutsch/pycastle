@@ -20,6 +20,11 @@ def _tolerant_read[T](path: Path, decode: Callable[[str], T]) -> T | None:
         return None
 
 
+def _write(path: Path, payload: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(payload, encoding="utf-8")
+
+
 _CANDIDATE_LIST_FILE = "_candidate_list"
 _CANDIDATE_CURSOR_FILE = "_candidate_cursor"
 _IN_FLIGHT_FILE = "_in_flight"
@@ -82,7 +87,6 @@ class ImproveRoleSessionStore:
         return _tolerant_read(self._dir / _CANDIDATE_LIST_FILE, decode)
 
     def write_candidate_list(self, candidate_list: CandidateList) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
         data: dict = {
             "candidates": [
                 {"rank": c.rank, "title": c.title} for c in candidate_list.candidates
@@ -90,9 +94,7 @@ class ImproveRoleSessionStore:
         }
         if candidate_list.no_candidate:
             data["no_candidate"] = True
-        (self._dir / _CANDIDATE_LIST_FILE).write_text(
-            json.dumps(data), encoding="utf-8"
-        )
+        _write(self._dir / _CANDIDATE_LIST_FILE, json.dumps(data))
 
     def read_cursor(self) -> int | None:
         return _tolerant_read(
@@ -101,8 +103,7 @@ class ImproveRoleSessionStore:
         )
 
     def write_cursor(self, cursor: int) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        (self._dir / _CANDIDATE_CURSOR_FILE).write_text(str(cursor), encoding="utf-8")
+        _write(self._dir / _CANDIDATE_CURSOR_FILE, str(cursor))
 
     def read_in_flight(self) -> str | None:
         def decode(text: str) -> str | None:
@@ -111,8 +112,7 @@ class ImproveRoleSessionStore:
         return _tolerant_read(self._dir / _IN_FLIGHT_FILE, decode)
 
     def write_in_flight(self, phase_key: str) -> None:
-        self._dir.mkdir(parents=True, exist_ok=True)
-        (self._dir / _IN_FLIGHT_FILE).write_text(phase_key, encoding="utf-8")
+        _write(self._dir / _IN_FLIGHT_FILE, phase_key)
 
     def clear_in_flight(self) -> None:
         (self._dir / _IN_FLIGHT_FILE).unlink(missing_ok=True)
@@ -140,8 +140,6 @@ class ImproveRoleSessionStore:
         return _tolerant_read(self._candidate_dir(idx) / _CANDIDATE_RECORD_FILE, decode)
 
     def write_candidate_record(self, idx: int, record: CandidateRecord) -> None:
-        candidate_dir = self._candidate_dir(idx)
-        candidate_dir.mkdir(parents=True, exist_ok=True)
         data: dict = {
             "spec_number": record.spec_number,
             "spec_database_id": record.spec_database_id,
@@ -157,9 +155,7 @@ class ImproveRoleSessionStore:
             ],
             "labels_applied": record.labels_applied,
         }
-        (candidate_dir / _CANDIDATE_RECORD_FILE).write_text(
-            json.dumps(data), encoding="utf-8"
-        )
+        _write(self._candidate_dir(idx) / _CANDIDATE_RECORD_FILE, json.dumps(data))
 
     def pending_candidates(self, cursor: int) -> Iterator[PendingCandidate]:
         candidate_list = self.read_candidate_list()
