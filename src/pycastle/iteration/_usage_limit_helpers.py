@@ -164,12 +164,13 @@ def decide_abort_continuation(
 ) -> ContinueLoop | SleepThenContinue | BreakLoop:
     from pycastle.iteration import AbortedUsageLimit  # noqa: PLC0415
 
+    stage_override = (
+        stage_registry.override_for_stage_key(cfg, outcome.stage_key)
+        if outcome.stage_key is not None
+        else None
+    )
+
     if isinstance(outcome, AbortedUsageLimit):
-        stage_override = (
-            stage_registry.override_for_stage_key(cfg, outcome.stage_key)
-            if outcome.stage_key is not None
-            else None
-        )
         return _decide_limit_continuation(
             outcome,
             cfg=cfg,
@@ -178,11 +179,6 @@ def decide_abort_continuation(
             now=now,
         )
 
-    stage_override = (
-        stage_registry.override_for_stage_key(cfg, outcome.stage_key)
-        if outcome.stage_key is not None
-        else None
-    )
     if _registry_has_available(service_registry, stage_override, now):
         return ContinueLoop()
 
