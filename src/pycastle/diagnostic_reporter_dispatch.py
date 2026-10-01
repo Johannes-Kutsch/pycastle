@@ -58,14 +58,6 @@ class DiagnosticReporterDispatchValidationSkipped:
     issue_number: int
 
 
-type DiagnosticReporterDispatchOutcome = (
-    DiagnosticReporterDispatchMountFallback
-    | DiagnosticReporterDispatchHITL
-    | DiagnosticReporterDispatchAFK
-    | DiagnosticReporterDispatchValidationSkipped
-)
-
-
 type DiagnosticReporterDispatchValidatedOutcome = (
     DiagnosticReporterDispatchMountFallback
     | DiagnosticReporterDispatchHITL
@@ -211,71 +203,13 @@ async def run_raw_diagnostic_reporter_dispatch(
     return DiagnosticReporterDispatchValidationSkipped(issue_number=core.number)
 
 
-async def run_diagnostic_reporter_dispatch(
-    *,
-    caller: str,
-    diagnostic_role: str,
-    role_name: str,
-    original_failure_summary: str,
-    prompt_invocation: PromptInvocation,
-    stage_override: StageOverride,
-    mount_path: Path,
-    deps: _DiagnosticReporterDeps,
-    pre_run_hook: Callable[[Path, PromptInvocation], None] | None = None,
-    skip_validation: bool = False,
-) -> DiagnosticReporterDispatchOutcome:
-    """Run the diagnostic-reporter dispatch pipeline.
-
-    Steps:
-    1. Managed-worktree mount decision via ``decide_diagnostic_mount_dispatch``;
-       hard-reject short-circuits with a ``DiagnosticReporterDispatchMountFallback``.
-    2. Optional pre-run hook (side effects, scope-args mutation).
-    3. Reporter-agent invocation through ``deps.agent_runner``.
-    4. Narrowing of the result to ``IssueOutput``; raises ``RuntimeError`` otherwise.
-    5. Validation via ``validate_diagnostic_issue_report``, unless
-       ``skip_validation=True``, in which case the raw issue number is returned.
-    """
-    core = await _run_diagnostic_reporter_core(
-        caller=caller,
-        diagnostic_role=diagnostic_role,
-        role_name=role_name,
-        original_failure_summary=original_failure_summary,
-        prompt_invocation=prompt_invocation,
-        stage_override=stage_override,
-        mount_path=mount_path,
-        deps=deps,
-        pre_run_hook=pre_run_hook,
-    )
-    if isinstance(core, DiagnosticReporterDispatchMountFallback):
-        return core
-
-    if skip_validation:
-        return DiagnosticReporterDispatchValidationSkipped(issue_number=core.number)
-
-    validation = validate_diagnostic_issue_report(
-        caller=caller,
-        issue_output=core,
-        cfg=deps.cfg,
-        filed_issue_reader=deps.github_svc,
-    )
-    if isinstance(validation, DiagnosticIssueReportValidationHITL):
-        return DiagnosticReporterDispatchHITL(issue_number=validation.issue_number)
-    if not isinstance(validation, DiagnosticIssueReportValidationAFK):
-        raise TypeError(
-            "exhaustive: only HITL or AFK remain after isinstance check above"
-        )
-    return DiagnosticReporterDispatchAFK(issue_number=validation.issue_number)
-
-
 __all__ = [
     "DiagnosticReporterDispatchAFK",
     "DiagnosticReporterDispatchHITL",
     "DiagnosticReporterDispatchMountFallback",
-    "DiagnosticReporterDispatchOutcome",
     "DiagnosticReporterDispatchRawOutcome",
     "DiagnosticReporterDispatchValidatedOutcome",
     "DiagnosticReporterDispatchValidationSkipped",
-    "run_diagnostic_reporter_dispatch",
     "run_raw_diagnostic_reporter_dispatch",
     "run_validated_diagnostic_reporter_dispatch",
 ]
