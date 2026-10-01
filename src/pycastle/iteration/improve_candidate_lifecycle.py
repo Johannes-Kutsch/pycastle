@@ -5,8 +5,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.agents.runner import RunRequest
 from pycastle.bug_reporter import file_unrepairable_draft_set_issue
+from pycastle.iteration.improve_draft_correction_run import (
+    CorrectionRunContext,
+    make_correction_callback,
+)
 from pycastle.iteration.improve_draft_set_resolution import (
     Unrepairable,
     resolve_draft_set,
@@ -15,9 +18,6 @@ from pycastle.iteration.improve_drafts import DraftSetValidationError, read_draf
 from pycastle.iteration.improve_filing import GithubFilingPort, file_draft_set
 from pycastle.iteration.improve_role_session_store import ImproveRoleSessionStore
 from pycastle.iteration.preflight import PreflightReady
-from pycastle.prompts.dispatch import PromptKind, build_prompt_invocation
-from pycastle.prompts.pipeline import PromptTemplate
-from pycastle.prompts.scope_args import validated_scope_args_for_template
 from pycastle.session import RoleSession
 
 if TYPE_CHECKING:
@@ -71,46 +71,22 @@ async def _file_improve_drafts(
     )
     candidate_ordinal = candidate_idx + 1
 
-    async def _correction_callback(
-        exc: DraftSetValidationError, attempt: int, total_attempts: int
-    ) -> None:
-        validation_errors = "\n".join(exc.problems)
-        correction_prompt = build_prompt_invocation(
-            PromptTemplate.IMPROVE_DRAFT_CORRECTION,
-            validated_scope_args_for_template(
-                PromptTemplate.IMPROVE_DRAFT_CORRECTION,
-                {"VALIDATION_ERRORS": validation_errors},
-            ),
-            kind=PromptKind.FOLLOW_UP,
-        )
-        correction_body = (
-            f"fixing draft validation errors for candidate"
-            f" {candidate_ordinal}/{scan_set_size}"
-            f' "{candidate_title}"'
-            f" (attempt {attempt + 1}/{total_attempts})"
-        )
-        await deps.agent_runner.run(
-            RunRequest(
-                name="Draft Correction",
-                prompt=correction_prompt,
-                mount_path=sandbox_path,
-                role=AgentRole.IMPROVE,
-                model=deps.cfg.improve_override.model,
-                effort=deps.cfg.improve_override.effort,
-                service=deps.cfg.improve_override.service,
-                stage="improve-sandbox",
-                status_display=deps.status_display,
-                work_body=correction_body,
-                session_namespace=candidate_namespace,
-                preserve_session_on_completion=True,
-            )
-        )
+    correction_ctx = CorrectionRunContext(
+        candidate_ordinal=candidate_ordinal,
+        scan_set_size=scan_set_size,
+        candidate_title=candidate_title,
+        candidate_namespace=candidate_namespace,
+        sandbox_path=sandbox_path,
+        agent_runner=deps.agent_runner,
+        improve_override=deps.cfg.improve_override,
+        status_display=deps.status_display,
+    )
 
     try:
         outcome = await resolve_draft_set(
             draft_dir=draft_dir,
             cfg=deps.cfg,
-            correction_callback=_correction_callback,
+            correction_callback=make_correction_callback(correction_ctx),
         )
         if isinstance(outcome, Unrepairable):
             file_unrepairable_draft_set_issue(
