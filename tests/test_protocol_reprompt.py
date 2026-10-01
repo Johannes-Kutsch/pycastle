@@ -5,10 +5,6 @@ import pytest
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.agents.protocol_reprompt import (
-    GENERIC_PROTOCOL_REPROMPT_MESSAGE,
-    GenericProtocolReprompt,
-    TemplateSpecificProtocolReprompt,
-    UnsupportedProtocolReprompt,
     plan_protocol_reprompt,
 )
 from pycastle.prompts.dispatch import (
@@ -20,6 +16,12 @@ from pycastle.prompts.pipeline import PromptRenderer, PromptTemplate
 
 _SHIPPED_PROMPTS_DIR = (
     Path(__file__).parent.parent / "src" / "pycastle" / "defaults" / "prompts"
+)
+
+_GENERIC_REPROMPT_MESSAGE = (
+    "Your last response did not include the required protocol output. "
+    "Please review the task requirements and try again, making sure to "
+    "include the required output tag."
 )
 
 
@@ -137,26 +139,26 @@ _TEMPLATE_SPECIFIC_PROTOCOL_CASES = (
 )
 
 
-def test_plan_protocol_reprompt_returns_unsupported_for_resume_without_rendering():
+def test_plan_protocol_reprompt_returns_generic_for_resume_without_rendering():
     calls: list[object] = []
 
     def render_expected_output_shape() -> str:
         calls.append(object())
         return ""
 
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=AgentRole.PLANNER,
         invocation=_invocation(PromptTemplate.RESUME),
         parser_error="missing tag",
         render_expected_output_shape=render_expected_output_shape,
     )
 
-    assert plan == UnsupportedProtocolReprompt()
+    assert message == _GENERIC_REPROMPT_MESSAGE
     assert calls == []
 
 
 @pytest.mark.parametrize("role", tuple(AgentRole))
-def test_plan_protocol_reprompt_returns_unsupported_for_resume_for_every_role(
+def test_plan_protocol_reprompt_returns_generic_for_resume_for_every_role(
     role: AgentRole,
 ):
     calls: list[object] = []
@@ -165,35 +167,33 @@ def test_plan_protocol_reprompt_returns_unsupported_for_resume_for_every_role(
         calls.append(object())
         return ""
 
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=role,
         invocation=_invocation(PromptTemplate.RESUME),
         parser_error="missing tag",
         render_expected_output_shape=render_expected_output_shape,
     )
 
-    assert plan == UnsupportedProtocolReprompt()
+    assert message == _GENERIC_REPROMPT_MESSAGE
     assert calls == []
 
 
 def test_plan_protocol_reprompt_returns_planner_specific_message():
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=AgentRole.PLANNER,
         invocation=_invocation(PromptTemplate.PLAN),
         parser_error="invalid json",
         render_expected_output_shape=lambda: "<plan>{...}</plan>",
     )
 
-    assert plan == TemplateSpecificProtocolReprompt(
-        message=(
-            "Your last response did not include the required protocol output.\n"
-            "Please review the task requirements and try again, making sure to include the required output tag.\n"
-            "The parser reported the following error:\n"
-            "invalid json\n"
-            "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).\n"
-            "Use this Planner output shape exactly:\n"
-            "<plan>{...}</plan>"
-        )
+    assert message == (
+        "Your last response did not include the required protocol output.\n"
+        "Please review the task requirements and try again, making sure to include the required output tag.\n"
+        "The parser reported the following error:\n"
+        "invalid json\n"
+        "On retry, return a raw JSON object in a `<plan>` tag (do not quote or escape the JSON).\n"
+        "Use this Planner output shape exactly:\n"
+        "<plan>{...}</plan>"
     )
 
 
@@ -204,34 +204,32 @@ def test_plan_protocol_reprompt_calls_expected_output_shape_callback_once():
         seen.append(object())
         return "<plan>{...}</plan>"
 
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=AgentRole.PLANNER,
         invocation=_invocation(PromptTemplate.PLAN),
         parser_error="invalid json",
         render_expected_output_shape=render_expected_output_shape,
     )
 
-    assert isinstance(plan, TemplateSpecificProtocolReprompt)
+    assert isinstance(message, str)
     assert len(seen) == 1
 
 
 def test_plan_protocol_reprompt_returns_template_specific_message_for_host_check_issue():
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=AgentRole.PREFLIGHT_ISSUE,
         invocation=_invocation(PromptTemplate.HOST_CHECK_ISSUE),
         parser_error="missing issue tag",
         render_expected_output_shape=lambda: "<issue>{...}</issue>",
     )
 
-    assert plan == TemplateSpecificProtocolReprompt(
-        message=(
-            "Your last response did not include the required protocol output.\n"
-            "Please review the task requirements and try again, making sure to include the required output tag.\n"
-            "The parser reported the following error:\n"
-            "missing issue tag\n"
-            "Use this output shape exactly:\n"
-            "<issue>{...}</issue>"
-        )
+    assert message == (
+        "Your last response did not include the required protocol output.\n"
+        "Please review the task requirements and try again, making sure to include the required output tag.\n"
+        "The parser reported the following error:\n"
+        "missing issue tag\n"
+        "Use this output shape exactly:\n"
+        "<issue>{...}</issue>"
     )
 
 
@@ -253,7 +251,7 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_all_diagno
             "protocol_error",
         ),
     ):
-        plan = plan_protocol_reprompt(
+        message = plan_protocol_reprompt(
             role=role,
             invocation=_invocation(template),
             parser_error="unexpected <issue> tag while ignoring <promise>COMPLETE</promise>",
@@ -262,17 +260,15 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_all_diagno
             ),
         )
 
-        assert plan == TemplateSpecificProtocolReprompt(
-            message="\n".join(
-                [
-                    "Your last response did not include the required protocol output.",
-                    "Please review the task requirements and try again, making sure to include the required output tag.",
-                    "The parser reported the following error:",
-                    "unexpected <issue> tag while ignoring <promise>COMPLETE</promise>",
-                    "Use this output shape exactly:",
-                    f"shape for {template.name} with {expected_scope_fragment}",
-                ]
-            )
+        assert message == "\n".join(
+            [
+                "Your last response did not include the required protocol output.",
+                "Please review the task requirements and try again, making sure to include the required output tag.",
+                "The parser reported the following error:",
+                "unexpected <issue> tag while ignoring <promise>COMPLETE</promise>",
+                "Use this output shape exactly:",
+                f"shape for {template.name} with {expected_scope_fragment}",
+            ]
         )
 
 
@@ -292,7 +288,7 @@ def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes(
             kind=PromptKind.FOLLOW_UP,
         )
 
-        plan = plan_protocol_reprompt(
+        message = plan_protocol_reprompt(
             role=role,
             invocation=invocation,
             parser_error="unexpected <promise>COMPLETE</promise> tag",
@@ -301,8 +297,7 @@ def test_plan_protocol_reprompt_returns_coordination_template_specific_outcomes(
             ),
         )
 
-        assert isinstance(plan, TemplateSpecificProtocolReprompt)
-        assert plan.message == "\n".join(
+        assert message == "\n".join(
             [
                 "Your last response did not include the required protocol output.",
                 "Please review the task requirements and try again, making sure to include the required output tag.",
@@ -329,46 +324,42 @@ def test_plan_protocol_reprompt_returns_template_specific_message_for_work_famil
             render_calls.append(object())
             return f"shape for {t.name} with {inv.scope_args['BRANCH']}"
 
-        plan = plan_protocol_reprompt(
+        message = plan_protocol_reprompt(
             role=role,
             invocation=invocation,
             parser_error="missing commit_message tag",
             render_expected_output_shape=render_expected_output_shape,
         )
 
-        assert plan == TemplateSpecificProtocolReprompt(
-            message="\n".join(
-                [
-                    "Your last response did not include the required protocol output.",
-                    "Please review the task requirements and try again, making sure to include the required output tag.",
-                    "The parser reported the following error:",
-                    "missing commit_message tag",
-                    "Use this output shape exactly:",
-                    f"shape for {template.name} with pycastle/issue-1928",
-                ]
-            )
+        assert message == "\n".join(
+            [
+                "Your last response did not include the required protocol output.",
+                "Please review the task requirements and try again, making sure to include the required output tag.",
+                "The parser reported the following error:",
+                "missing commit_message tag",
+                "Use this output shape exactly:",
+                f"shape for {template.name} with pycastle/issue-1928",
+            ]
         )
 
     assert len(render_calls) == 4
 
 
 def test_plan_protocol_reprompt_returns_improve_specific_message():
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=AgentRole.IMPROVE,
         invocation=_invocation(PromptTemplate.IMPROVE_SPEC),
         parser_error="missing promise tag",
         render_expected_output_shape=lambda: "<issue>{...}</issue>",
     )
 
-    assert plan == TemplateSpecificProtocolReprompt(
-        message=(
-            "Your last response did not include the required protocol output.\n"
-            "Please review the task requirements and try again, making sure to include the required output tag.\n"
-            "The parser reported the following error:\n"
-            "missing promise tag\n"
-            "Use this Improve output shape exactly:\n"
-            "<issue>{...}</issue>"
-        )
+    assert message == (
+        "Your last response did not include the required protocol output.\n"
+        "Please review the task requirements and try again, making sure to include the required output tag.\n"
+        "The parser reported the following error:\n"
+        "missing promise tag\n"
+        "Use this Improve output shape exactly:\n"
+        "<issue>{...}</issue>"
     )
 
 
@@ -379,7 +370,7 @@ def test_plan_protocol_reprompt_preserves_exact_improve_phase_invocations():
         (PromptTemplate.IMPROVE_TICKETS, "IMPROVE_SHORT_SID=abc123"),
         (PromptTemplate.IMPROVE_NO_CANDIDATE, "RECENT_IMPROVE_SPECS=[]"),
     ):
-        plan = plan_protocol_reprompt(
+        message = plan_protocol_reprompt(
             role=AgentRole.IMPROVE,
             invocation=_invocation(template),
             parser_error=(
@@ -391,17 +382,15 @@ def test_plan_protocol_reprompt_preserves_exact_improve_phase_invocations():
             ),
         )
 
-        assert plan == TemplateSpecificProtocolReprompt(
-            message="\n".join(
-                [
-                    "Your last response did not include the required protocol output.",
-                    "Please review the task requirements and try again, making sure to include the required output tag.",
-                    "The parser reported the following error:",
-                    "unexpected <issue>123</issue> while ignoring <promise>COMPLETE</promise>",
-                    "Use this Improve output shape exactly:",
-                    f"shape for {template.name} with {expected_scope_fragment}",
-                ]
-            )
+        assert message == "\n".join(
+            [
+                "Your last response did not include the required protocol output.",
+                "Please review the task requirements and try again, making sure to include the required output tag.",
+                "The parser reported the following error:",
+                "unexpected <issue>123</issue> while ignoring <promise>COMPLETE</promise>",
+                "Use this Improve output shape exactly:",
+                f"shape for {template.name} with {expected_scope_fragment}",
+            ]
         )
 
 
@@ -419,7 +408,7 @@ def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
         no_candidate_invocation.scope_args,
     )
 
-    issues_plan = plan_protocol_reprompt(
+    issues_message = plan_protocol_reprompt(
         role=AgentRole.IMPROVE,
         invocation=issues_invocation,
         parser_error=parser_error,
@@ -428,7 +417,7 @@ def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
             issues_invocation.scope_args,
         ),
     )
-    no_candidate_plan = plan_protocol_reprompt(
+    no_candidate_message = plan_protocol_reprompt(
         role=AgentRole.IMPROVE,
         invocation=no_candidate_invocation,
         parser_error=parser_error,
@@ -438,26 +427,22 @@ def test_plan_protocol_reprompt_uses_distinct_no_candidate_shape():
         ),
     )
 
-    assert issues_plan == TemplateSpecificProtocolReprompt(
-        message=(
-            "Your last response did not include the required protocol output.\n"
-            "Please review the task requirements and try again, making sure to include the required output tag.\n"
-            "The parser reported the following error:\n"
-            "unexpected <issue>17</issue> before <promise>COMPLETE</promise>\n"
-            f"Use this Improve output shape exactly:\n{issues_shape}"
-        )
+    assert issues_message == (
+        "Your last response did not include the required protocol output.\n"
+        "Please review the task requirements and try again, making sure to include the required output tag.\n"
+        "The parser reported the following error:\n"
+        "unexpected <issue>17</issue> before <promise>COMPLETE</promise>\n"
+        f"Use this Improve output shape exactly:\n{issues_shape}"
     )
     assert no_candidate_shape != issues_shape
-    assert no_candidate_plan == TemplateSpecificProtocolReprompt(
-        message=(
-            "Your last response did not include the required protocol output.\n"
-            "Please review the task requirements and try again, making sure to include the required output tag.\n"
-            "The parser reported the following error:\n"
-            "unexpected <issue>17</issue> before <promise>COMPLETE</promise>\n"
-            f"Use this Improve output shape exactly:\n{no_candidate_shape}"
-        )
+    assert no_candidate_message == (
+        "Your last response did not include the required protocol output.\n"
+        "Please review the task requirements and try again, making sure to include the required output tag.\n"
+        "The parser reported the following error:\n"
+        "unexpected <issue>17</issue> before <promise>COMPLETE</promise>\n"
+        f"Use this Improve output shape exactly:\n{no_candidate_shape}"
     )
-    assert no_candidate_plan != issues_plan
+    assert no_candidate_message != issues_message
 
 
 def test_plan_protocol_reprompt_returns_generic_fallback_without_rendering():
@@ -467,14 +452,14 @@ def test_plan_protocol_reprompt_returns_generic_fallback_without_rendering():
         calls.append(object())
         return ""
 
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=AgentRole.IMPLEMENTER,
         invocation=_invocation(PromptTemplate.PLAN),
         parser_error="missing tag",
         render_expected_output_shape=render_expected_output_shape,
     )
 
-    assert plan == GenericProtocolReprompt(message=GENERIC_PROTOCOL_REPROMPT_MESSAGE)
+    assert message == _GENERIC_REPROMPT_MESSAGE
     assert calls == []
 
 
@@ -485,14 +470,14 @@ def test_plan_protocol_reprompt_returns_generic_fallback_for_mismatched_role_pol
         calls.append(object())
         return ""
 
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=AgentRole.PLANNER,
         invocation=_invocation(PromptTemplate.MERGE),
         parser_error="missing plan tag",
         render_expected_output_shape=render_expected_output_shape,
     )
 
-    assert plan == GenericProtocolReprompt(message=GENERIC_PROTOCOL_REPROMPT_MESSAGE)
+    assert message == _GENERIC_REPROMPT_MESSAGE
     assert calls == []
 
 
@@ -506,14 +491,15 @@ def test_plan_protocol_reprompt_returns_template_specific_only_for_supported_rol
         calls.append(object())
         return "<shape/>"
 
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=role,
         invocation=_invocation(template),
         parser_error="missing tag",
         render_expected_output_shape=render_expected_output_shape,
     )
 
-    assert isinstance(plan, TemplateSpecificProtocolReprompt)
+    assert isinstance(message, str)
+    assert message != _GENERIC_REPROMPT_MESSAGE
     assert len(calls) == 1
 
 
@@ -536,12 +522,12 @@ def test_plan_protocol_reprompt_returns_generic_fallback_for_every_non_policy_te
         calls.append(object())
         return ""
 
-    plan = plan_protocol_reprompt(
+    message = plan_protocol_reprompt(
         role=role,
         invocation=_invocation(template),
         parser_error="missing tag",
         render_expected_output_shape=render_expected_output_shape,
     )
 
-    assert plan == GenericProtocolReprompt(message=GENERIC_PROTOCOL_REPROMPT_MESSAGE)
+    assert message == _GENERIC_REPROMPT_MESSAGE
     assert calls == []

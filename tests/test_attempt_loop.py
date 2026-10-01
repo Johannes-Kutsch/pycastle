@@ -28,11 +28,11 @@ from pycastle.agents.attempt_loop import (
     _ReturnParsed,
 )
 from pycastle.agents.output_protocol import AgentRole
-from pycastle.agents.protocol_reprompt import (
-    GENERIC_PROTOCOL_REPROMPT_MESSAGE,
-    GenericProtocolReprompt,
-    TemplateSpecificProtocolReprompt,
-    UnsupportedProtocolReprompt,
+
+_GENERIC_REPROMPT_MESSAGE = (
+    "Your last response did not include the required protocol output. "
+    "Please review the task requirements and try again, making sure to "
+    "include the required output tag."
 )
 
 _FAKE_SELECTED = SimpleNamespace(service="codex", model="gpt-5.5")
@@ -53,7 +53,7 @@ def _call(outcome_kind, **overrides):
         "selected": _FAKE_SELECTED,
         "output_text": _VALID_IMPLEMENTER_OUTPUT,
         "role": AgentRole.IMPLEMENTER,
-        "protocol_reprompt_plan": lambda _: UnsupportedProtocolReprompt(),
+        "protocol_reprompt_plan": lambda _: _GENERIC_REPROMPT_MESSAGE,
         "preserve_session_on_completion": False,
         "role_value": "implementer",
         "mount_path": _FAKE_MOUNT,
@@ -124,34 +124,23 @@ def test_completed_parse_error_below_cap_returns_reprompt():
     assert isinstance(d, _Reprompt)
 
 
-def test_completed_parse_error_reprompt_uses_generic_when_unsupported():
+def test_completed_parse_error_reprompt_uses_generic_message():
     d = _call_planner(
         attempt=0,
-        protocol_reprompt_plan=lambda _: UnsupportedProtocolReprompt(),
+        protocol_reprompt_plan=lambda _: _GENERIC_REPROMPT_MESSAGE,
     )
     assert isinstance(d, _Reprompt)
-    assert d.message == GENERIC_PROTOCOL_REPROMPT_MESSAGE
+    assert d.message == _GENERIC_REPROMPT_MESSAGE
 
 
 def test_completed_parse_error_reprompt_uses_plan_message():
     custom = "Custom reprompt message"
     d = _call_planner(
         attempt=0,
-        protocol_reprompt_plan=lambda _: TemplateSpecificProtocolReprompt(
-            message=custom
-        ),
+        protocol_reprompt_plan=lambda _: custom,
     )
     assert isinstance(d, _Reprompt)
     assert d.message == custom
-
-
-def test_completed_parse_error_reprompt_uses_generic_plan_message():
-    d = _call_planner(
-        attempt=0,
-        protocol_reprompt_plan=lambda _: GenericProtocolReprompt(),
-    )
-    assert isinstance(d, _Reprompt)
-    assert d.message == GENERIC_PROTOCOL_REPROMPT_MESSAGE
 
 
 # ---------------------------------------------------------------------------

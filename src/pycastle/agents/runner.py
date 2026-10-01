@@ -532,7 +532,7 @@ class AgentRunner:
 
         def _planned_protocol_reprompt(
             parser_error: str | None,
-        ) -> protocol_reprompt.ProtocolRepromptPlan:
+        ) -> str:
             return protocol_reprompt.plan_protocol_reprompt(
                 role=request.role,
                 invocation=invocation,

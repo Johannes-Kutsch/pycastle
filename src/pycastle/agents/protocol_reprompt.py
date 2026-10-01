@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.prompts.pipeline import PromptTemplate
@@ -11,37 +11,13 @@ from pycastle.prompts.pipeline import PromptTemplate
 if TYPE_CHECKING:
     from pycastle.prompts.dispatch import PromptInvocation
 
-GENERIC_PROTOCOL_REPROMPT_MESSAGE = (
+_GENERIC_PROTOCOL_REPROMPT_MESSAGE = (
     "Your last response did not include the required protocol output. "
     "Please review the task requirements and try again, making sure to "
     "include the required output tag."
 )
 
 type ExpectedOutputShapeRenderer = Callable[[], str]
-
-
-@dataclass(frozen=True)
-class UnsupportedProtocolReprompt:
-    kind: Literal["unsupported"] = "unsupported"
-
-
-@dataclass(frozen=True)
-class GenericProtocolReprompt:
-    message: str = GENERIC_PROTOCOL_REPROMPT_MESSAGE
-    kind: Literal["generic"] = "generic"
-
-
-@dataclass(frozen=True)
-class TemplateSpecificProtocolReprompt:
-    message: str
-    kind: Literal["template_specific"] = "template_specific"
-
-
-type ProtocolRepromptPlan = (
-    UnsupportedProtocolReprompt
-    | GenericProtocolReprompt
-    | TemplateSpecificProtocolReprompt
-)
 
 _TEMPLATE_SPECIFIC_PROTOCOL_POLICY = MappingProxyType(
     {
@@ -125,13 +101,13 @@ def plan_protocol_reprompt(
     invocation: PromptInvocation,
     parser_error: str,
     render_expected_output_shape: ExpectedOutputShapeRenderer,
-) -> ProtocolRepromptPlan:
+) -> str:
     if invocation.template is PromptTemplate.RESUME:
-        return UnsupportedProtocolReprompt()
+        return _GENERIC_PROTOCOL_REPROMPT_MESSAGE
 
     supported_templates = _TEMPLATE_SPECIFIC_PROTOCOL_POLICY.get(role, frozenset())
     if invocation.template not in supported_templates:
-        return GenericProtocolReprompt()
+        return _GENERIC_PROTOCOL_REPROMPT_MESSAGE
 
     customization = _ROLE_REPROMPT_CUSTOMIZATION.get(role, _RoleRepromptCustomization())
     kwargs: dict[str, str] = {}
@@ -139,21 +115,14 @@ def plan_protocol_reprompt(
         kwargs["retry_instruction"] = customization.retry_instruction
     if customization.shape_label is not None:
         kwargs["shape_label"] = customization.shape_label
-    return TemplateSpecificProtocolReprompt(
-        message=_protocol_reprompt_message_with_expected_shape(
-            parser_error=parser_error,
-            expected_shape=render_expected_output_shape(),
-            **kwargs,
-        ),
+    return _protocol_reprompt_message_with_expected_shape(
+        parser_error=parser_error,
+        expected_shape=render_expected_output_shape(),
+        **kwargs,
     )
 
 
 __all__ = [
-    "GENERIC_PROTOCOL_REPROMPT_MESSAGE",
     "ExpectedOutputShapeRenderer",
-    "GenericProtocolReprompt",
-    "ProtocolRepromptPlan",
-    "TemplateSpecificProtocolReprompt",
-    "UnsupportedProtocolReprompt",
     "plan_protocol_reprompt",
 ]

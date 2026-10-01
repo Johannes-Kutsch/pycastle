@@ -25,7 +25,6 @@ from agent_runtime.runtime import (
 )
 
 from pycastle import stage_registry
-from pycastle.agents import protocol_reprompt
 from pycastle.agents.output_protocol import (
     AgentOutput,
     AgentOutputProtocolError,
@@ -157,9 +156,7 @@ def _decide_transition(  # noqa: PLR0913
     selected: ResolvedProvider,
     output_text: str,
     role: AgentRole,
-    protocol_reprompt_plan: Callable[
-        [str | None], protocol_reprompt.ProtocolRepromptPlan
-    ],
+    protocol_reprompt_plan: Callable[[str | None], str],
     preserve_session_on_completion: bool,
     role_value: str,
     mount_path: Path,
@@ -185,12 +182,7 @@ def _decide_transition(  # noqa: PLR0913
                     session_store=session_store,
                     log_path=log_path,
                 )
-            reprompt = protocol_reprompt_plan(str(exc))
-            message = (
-                protocol_reprompt.GENERIC_PROTOCOL_REPROMPT_MESSAGE
-                if isinstance(reprompt, protocol_reprompt.UnsupportedProtocolReprompt)
-                else reprompt.message
-            )
+            message = protocol_reprompt_plan(str(exc))
             return _Reprompt(message=message)
         return _ReturnParsed(
             parsed=parsed,
@@ -251,9 +243,7 @@ class _AttemptLoopBundle:
     resolved_model: str
     resolved_effort: str
     status_display: Any  # StatusDisplay
-    protocol_reprompt_plan: Callable[
-        [str | None], protocol_reprompt.ProtocolRepromptPlan
-    ]
+    protocol_reprompt_plan: Callable[[str | None], str]
     render_prompt: Callable[..., Any]  # async (request, run_kind) -> str
     handle_provider_account_exhaustion: Callable[[AgentService, UsageLimitError], None]
     is_working_tree_clean: Callable[[Path], bool]
