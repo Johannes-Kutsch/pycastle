@@ -6,7 +6,6 @@ from pycastle.session.role import (
     RoleSession,
     any_role_dir_present,
     is_stage_done_for,
-    provider_state_relpath,
 )
 from pycastle.session.run_state import ProviderFreshFallbackReason, ProviderRunState
 
@@ -18,5 +17,4 @@ __all__ = [
     "RunKind",
     "any_role_dir_present",
     "is_stage_done_for",
-    "provider_state_relpath",
 ]

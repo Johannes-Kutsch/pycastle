@@ -7,9 +7,6 @@ from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import (
     RunKind,
 )
-from pycastle.runtime_session import (
-    provider_state_relpath as runtime_provider_state_relpath,
-)
 
 SESSION_DIR_NAME = ".pycastle-session"
 _CONTINUATION_FILENAME = "_continuation"
@@ -35,19 +32,6 @@ def any_role_dir_present(worktree_path: Path) -> bool:
     return any(candidate.is_dir() for candidate in session_base.iterdir())
 
 
-def provider_state_relpath(
-    role: AgentRole,
-    provider_name: str,
-    namespace: str = "",
-) -> str:
-    return runtime_provider_state_relpath(
-        role,
-        provider_name,
-        namespace,
-        session_root=SESSION_DIR_NAME,
-    )
-
-
 class RoleSession:
     def __init__(self, worktree: Path, role: AgentRole, namespace: str = "") -> None:
         self._worktree = worktree
@@ -67,24 +51,6 @@ class RoleSession:
 
     def _fingerprint_path(self) -> Path:
         return self.path / _FINGERPRINT_FILENAME
-
-    @staticmethod
-    def provider_state_relpath_for(
-        role: AgentRole,
-        provider_name: str,
-        namespace: str = "",
-    ) -> str:
-        return provider_state_relpath(role, provider_name, namespace)
-
-    def provider_state_relpath(self, provider_name: str) -> str:
-        return self.provider_state_relpath_for(
-            self._role,
-            provider_name,
-            self._namespace,
-        ).rstrip("/")
-
-    def provider_state_dir(self, provider_name: str) -> Path:
-        return self._worktree / self.provider_state_relpath(provider_name)
 
     def read_fingerprint(self) -> str | None:
         p = self._fingerprint_path()
