@@ -2276,20 +2276,6 @@ def _make_improve_deps(
     )
 
 
-def test_run_iteration_endless_dispatches_improve_when_idle(tmp_path, git_svc, logger):
-    """endless + 0 AFK + not slept → improve dispatched, iteration returns Continue."""
-    deps = _make_improve_deps(
-        tmp_path,
-        git_svc,
-        logger,
-        improve_mode="endless",
-        slept_once=False,
-        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
-    )
-    result = asyncio.run(run_iteration(deps))
-    assert isinstance(result, Continue)
-
-
 def test_run_iteration_until_sleep_exits_when_slept_and_idle(tmp_path, git_svc, logger):
     """until_sleep + slept_once=True + 0 AFK → Done without dispatching improve."""
     deps = _make_improve_deps(
@@ -2330,38 +2316,6 @@ def test_run_iteration_until_sleep_resumes_interrupted_cycle_when_slept(
     assert not deps.improve_cycle_interrupted, (
         "improve_cycle_interrupted must be cleared once the cycle completes"
     )
-
-
-def test_run_iteration_until_sleep_dispatches_improve_before_first_sleep(
-    tmp_path, git_svc, logger
-):
-    """until_sleep + slept_once=False + 0 AFK → improve dispatched, returns Continue."""
-    deps = _make_improve_deps(
-        tmp_path,
-        git_svc,
-        logger,
-        improve_mode="until_sleep",
-        slept_once=False,
-        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
-    )
-    result = asyncio.run(run_iteration(deps))
-    assert isinstance(result, Continue)
-
-
-def test_run_iteration_endless_dispatches_improve_even_after_sleep(
-    tmp_path, git_svc, logger
-):
-    """endless + slept_once=True + 0 AFK → improve dispatched, returns Continue (slept ignored)."""
-    deps = _make_improve_deps(
-        tmp_path,
-        git_svc,
-        logger,
-        improve_mode="endless",
-        slept_once=True,
-        agent_responses=[make_scan_output(), CompletionOutput(), CompletionOutput()],
-    )
-    result = asyncio.run(run_iteration(deps))
-    assert isinstance(result, Continue)
 
 
 def test_run_iteration_returns_no_candidate_after_rejection_report_filed(

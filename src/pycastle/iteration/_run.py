@@ -35,6 +35,7 @@ from pycastle.iteration.improve import (
     ImproveNoCandidate,
     improve_phase,
 )
+from pycastle.iteration.iteration_dispatch import RunPlanning, dispatch_iteration
 from pycastle.iteration.merge import merge_phase
 from pycastle.iteration.planning import AllBlocked, planning_phase
 from pycastle.iteration.planning_issue_intake import (
@@ -219,37 +220,35 @@ async def _run_plan_and_implement(
 
 async def _run_iteration_inner(deps: Deps) -> IterationOutcome:
     inputs = _collect_planning_inputs(deps)
+    dispatch = dispatch_iteration(
+        inputs.open_issues,
+        inputs.in_flight,
+        improve_cycle_interrupted=deps.improve_cycle_interrupted,
+    )
 
-    # An interrupted improve cycle widens the idle gate: even when ready-for-agent
-    # tickets exist (filed by an earlier improve pass), improve owns this iteration.
-    # `had_pending_work` distinguishes this path from the normal idle path so that
-    # planning is deferred to the following iteration rather than chained in the
-    # same one (which would let improve-filed tickets preempt remaining candidates).
-    had_pending_work = bool(inputs.open_issues) or bool(inputs.in_flight)
-    if (
-        not inputs.open_issues and not inputs.in_flight
-    ) or deps.improve_cycle_interrupted:
-        try:
-            outcome = await _run_improve_phase(deps)
-        except UsageLimitError as err:
-            # Mark the cycle as interrupted so the next iteration resumes it
-            # rather than treating the sleep as a completed-cycle stop signal.
-            # Also stamp stage_key for accurate sleep-duration routing.
-            deps.improve_cycle_interrupted = True
-            if err.stage_key is None:
-                err.stage_key = "improve"
-            raise
-        if outcome is not None:
-            return outcome
-        if had_pending_work:
-            # We entered via improve_cycle_interrupted with existing open issues.
-            # Return now so planning picks them up in the following iteration with
-            # the flag cleared, rather than preempting remaining candidates.
-            return Continue()
-        inputs = _collect_planning_inputs(deps)
-        if not inputs.open_issues:
-            return Continue()
+    if isinstance(dispatch, RunPlanning):
+        return await _run_plan_and_implement(
+            deps,
+            inputs.open_issues,
+            inputs.prepared_issue_set,
+            inputs.all_open_issues,
+            inputs.in_flight,
+        )
 
+    try:
+        outcome = await _run_improve_phase(deps)
+    except UsageLimitError as err:
+        deps.improve_cycle_interrupted = True
+        if err.stage_key is None:
+            err.stage_key = "improve"
+        raise
+    if outcome is not None:
+        return outcome
+    if dispatch.had_pending_work:
+        return Continue()
+    inputs = _collect_planning_inputs(deps)
+    if not inputs.open_issues:
+        return Continue()
     return await _run_plan_and_implement(
         deps,
         inputs.open_issues,
