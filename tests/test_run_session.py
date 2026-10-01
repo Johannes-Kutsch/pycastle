@@ -9,6 +9,7 @@ from pycastle.agents.output_protocol import AgentRole
 from pycastle.runtime_session import (
     ProviderSessionStateRequest,
     RunKind,
+    provider_state_relpath,
 )
 from pycastle.services import ClaudeService
 from pycastle.services.runtime_services import (
@@ -17,8 +18,8 @@ from pycastle.services.runtime_services import (
 )
 from pycastle.session import (
     RoleSession,
-    provider_state_relpath,
 )
+from pycastle.session.role import SESSION_DIR_NAME
 from pycastle.session.run_session import (
     AuthSeedingRequirement,
     LocalAuthSeedAction,
@@ -48,68 +49,97 @@ def _role_session_service_session_id(
 
 def test_provider_state_relpath_formats_role_namespace_and_provider_name() -> None:
     assert (
-        RoleSession.provider_state_relpath_for(AgentRole.IMPLEMENTER, "codex")
+        provider_state_relpath(
+            AgentRole.IMPLEMENTER, "codex", session_root=SESSION_DIR_NAME
+        )
         == ".pycastle-session/implementer/codex/"
     )
     assert (
-        RoleSession.provider_state_relpath_for(AgentRole.IMPROVE, "codex", "main")
+        provider_state_relpath(
+            AgentRole.IMPROVE, "codex", "main", session_root=SESSION_DIR_NAME
+        )
         == ".pycastle-session/improve/main/codex/"
     )
-    assert RoleSession.provider_state_relpath_for(
-        AgentRole.IMPLEMENTER, "claude", ""
-    ) == (RoleSession.provider_state_relpath_for(AgentRole.IMPLEMENTER, "claude"))
+    assert provider_state_relpath(
+        AgentRole.IMPLEMENTER, "claude", "", session_root=SESSION_DIR_NAME
+    ) == (
+        provider_state_relpath(
+            AgentRole.IMPLEMENTER, "claude", session_root=SESSION_DIR_NAME
+        )
+    )
     assert (
-        provider_state_relpath(AgentRole.IMPLEMENTER, "codex")
+        provider_state_relpath(
+            AgentRole.IMPLEMENTER, "codex", session_root=SESSION_DIR_NAME
+        )
         == ".pycastle-session/implementer/codex/"
     )
     assert (
-        provider_state_relpath(AgentRole.IMPROVE, "codex", "main")
+        provider_state_relpath(
+            AgentRole.IMPROVE, "codex", "main", session_root=SESSION_DIR_NAME
+        )
         == ".pycastle-session/improve/main/codex/"
     )
     assert (
-        provider_state_relpath(AgentRole.IMPROVE, "codex", "")
+        provider_state_relpath(
+            AgentRole.IMPROVE, "codex", "", session_root=SESSION_DIR_NAME
+        )
         == ".pycastle-session/improve/codex/"
     )
-    assert provider_state_relpath(AgentRole.IMPLEMENTER, "claude", "") == (
-        provider_state_relpath(AgentRole.IMPLEMENTER, "claude")
+    assert provider_state_relpath(
+        AgentRole.IMPLEMENTER, "claude", "", session_root=SESSION_DIR_NAME
+    ) == (
+        provider_state_relpath(
+            AgentRole.IMPLEMENTER, "claude", session_root=SESSION_DIR_NAME
+        )
     )
-    assert RoleSession.provider_state_relpath_for(
-        AgentRole.IMPLEMENTER, "opencode"
-    ) == (".pycastle-session/implementer/opencode/")
-    assert RoleSession.provider_state_relpath_for(
-        AgentRole.IMPROVE, "opencode", "main"
-    ) == (".pycastle-session/improve/main/opencode/")
-    assert RoleSession.provider_state_relpath_for(
-        AgentRole.IMPLEMENTER, "opencode", ""
-    ) == (RoleSession.provider_state_relpath_for(AgentRole.IMPLEMENTER, "opencode"))
-    assert provider_state_relpath(AgentRole.IMPLEMENTER, "codex").endswith("/")
+    assert (
+        provider_state_relpath(
+            AgentRole.IMPLEMENTER, "opencode", session_root=SESSION_DIR_NAME
+        )
+        == ".pycastle-session/implementer/opencode/"
+    )
+    assert (
+        provider_state_relpath(
+            AgentRole.IMPROVE, "opencode", "main", session_root=SESSION_DIR_NAME
+        )
+        == ".pycastle-session/improve/main/opencode/"
+    )
+    assert provider_state_relpath(
+        AgentRole.IMPLEMENTER, "opencode", "", session_root=SESSION_DIR_NAME
+    ) == (
+        provider_state_relpath(
+            AgentRole.IMPLEMENTER, "opencode", session_root=SESSION_DIR_NAME
+        )
+    )
+    assert provider_state_relpath(
+        AgentRole.IMPLEMENTER, "codex", session_root=SESSION_DIR_NAME
+    ).endswith("/")
 
 
 def test_role_session_provider_state_dir_matches_worktree_local_provider_layout(
     tmp_path: Path,
 ) -> None:
-    assert RoleSession(tmp_path, AgentRole.IMPLEMENTER).provider_state_dir("codex") == (
-        tmp_path / ".pycastle-session" / "implementer" / "codex"
-    )
-    assert RoleSession(
-        tmp_path,
-        AgentRole.IMPROVE,
-        "main",
-    ).provider_state_dir("opencode") == (
-        tmp_path / ".pycastle-session" / "improve" / "main" / "opencode"
-    )
+    assert tmp_path / provider_state_relpath(
+        AgentRole.IMPLEMENTER, "codex", session_root=SESSION_DIR_NAME
+    ).rstrip("/") == (tmp_path / ".pycastle-session" / "implementer" / "codex")
+    assert tmp_path / provider_state_relpath(
+        AgentRole.IMPROVE, "opencode", "main", session_root=SESSION_DIR_NAME
+    ).rstrip("/") == (tmp_path / ".pycastle-session" / "improve" / "main" / "opencode")
 
 
 def test_role_session_provider_state_relpath_matches_worktree_local_provider_layout(
     tmp_path: Path,
 ) -> None:
-    role_session = RoleSession(tmp_path, AgentRole.IMPROVE, "main")
-
-    assert role_session.provider_state_relpath("opencode") == (
-        ".pycastle-session/improve/main/opencode"
-    )
-    assert role_session.provider_state_dir("opencode") == (
-        tmp_path / role_session.provider_state_relpath("opencode")
+    assert provider_state_relpath(
+        AgentRole.IMPROVE, "opencode", "main", session_root=SESSION_DIR_NAME
+    ).rstrip("/") == (".pycastle-session/improve/main/opencode")
+    assert tmp_path / provider_state_relpath(
+        AgentRole.IMPROVE, "opencode", "main", session_root=SESSION_DIR_NAME
+    ).rstrip("/") == (
+        tmp_path
+        / provider_state_relpath(
+            AgentRole.IMPROVE, "opencode", "main", session_root=SESSION_DIR_NAME
+        ).rstrip("/")
     )
 
 

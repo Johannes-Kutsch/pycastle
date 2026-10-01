@@ -16,6 +16,7 @@ from pycastle.runtime_session import (
     ProviderSessionPreferencesRequest,
     ProviderSessionState,
     ProviderSessionStateRequest,
+    provider_state_relpath,
 )
 from pycastle.runtime_session import (
     session_uuid as runtime_session_uuid,
@@ -31,6 +32,7 @@ from pycastle.session import (
     any_role_dir_present,
     is_stage_done_for,
 )
+from pycastle.session.role import SESSION_DIR_NAME
 from pycastle.session.service_session_store import (
     ServiceSessionStore,
     has_exact_transcript,
@@ -282,15 +284,27 @@ def test_service_session_id_sidecars_follow_role_session_provider_state_layout(
 
     assert (
         ServiceSessionStore(rs.path).session_id_path("codex")
-        == rs.provider_state_dir("codex") / "thread_id"
+        == worktree
+        / provider_state_relpath(
+            AgentRole.IMPROVE, "codex", "main", session_root=SESSION_DIR_NAME
+        ).rstrip("/")
+        / "thread_id"
     )
     assert (
         ServiceSessionStore(rs.path).session_id_path("opencode")
-        == rs.provider_state_dir("opencode") / "session_id"
+        == worktree
+        / provider_state_relpath(
+            AgentRole.IMPROVE, "opencode", "main", session_root=SESSION_DIR_NAME
+        ).rstrip("/")
+        / "session_id"
     )
     assert (
         ServiceSessionStore(rs.path).session_id_path("unknown-service")
-        == rs.provider_state_dir("unknown-service") / "thread_id"
+        == worktree
+        / provider_state_relpath(
+            AgentRole.IMPROVE, "unknown-service", "main", session_root=SESSION_DIR_NAME
+        ).rstrip("/")
+        / "thread_id"
     )
     assert (
         worktree / ".pycastle-session" / "improve" / "main" / "codex" / "thread_id"
