@@ -13,16 +13,12 @@ if TYPE_CHECKING:
 
 from pycastle.agents.output_protocol import AgentRole
 from pycastle.execution_contracts import (
-    RuntimeInvocationDependencies,
     RuntimeInvocationRequest,
     RuntimeRunSession,
 )
 from pycastle.runtime import _execute_runtime_request
 from pycastle.services.runtime_services import AgentService
-from tests.support.runtime import (
-    plain_runtime_status_row_factory,
-    plain_status_display_factory,
-)
+from tests.support.runtime import make_runtime_invocation_dependencies
 
 
 class _ExplodingExitSession:
@@ -37,21 +33,11 @@ def _make_request(tmp_path: Path) -> RuntimeInvocationRequest:
     service = MagicMock(spec=AgentService)
     service.name = "codex"
 
-    prepared_session = MagicMock()
-    prepared_session.provider_state_dir_container_path = None
-
     exploding_session = _ExplodingExitSession()
 
-    deps = RuntimeInvocationDependencies(
-        container_workspace="/workspace",
-        timeout_retries=0,
-        stage_key_for_role=lambda _role: None,
-        prepare_session=lambda _: prepared_session,
+    deps = make_runtime_invocation_dependencies(
         build_session=lambda *_: exploding_session,
-        build_runner=lambda *_: MagicMock(),
         get_git_identity=lambda: (_ for _ in ()).throw(ValueError("fail fast")),
-        status_display_factory=plain_status_display_factory,
-        status_row_factory=plain_runtime_status_row_factory,
     )
 
     run_session = RuntimeRunSession(
