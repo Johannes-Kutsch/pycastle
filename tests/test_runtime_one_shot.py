@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -13,7 +12,6 @@ if TYPE_CHECKING:
 from pycastle.config.types import StageOverride
 from pycastle.errors import UsageLimitError
 from pycastle.execution_contracts import (
-    RuntimeInvocationDependencies,
     WorkSessionState,
     WorktreeMount,
 )
@@ -21,10 +19,7 @@ from pycastle.runtime import OneShotRunRequest, run_one_shot
 from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import ToolPolicy
 from pycastle.services.service_registry import ServiceRegistry
-from tests.support.runtime import (
-    plain_runtime_status_row_factory,
-    plain_status_display_factory,
-)
+from tests.support.runtime import make_runtime_invocation_dependencies
 
 # ---------------------------------------------------------------------------
 # Fake infrastructure
@@ -108,35 +103,6 @@ class _ExhaustingService:
         return None
 
 
-def _make_session_mock() -> MagicMock:
-    prepared_session = MagicMock()
-    prepared_session.provider_state_dir_container_path = None
-    provider_run_session = MagicMock()
-    provider_run_session.run_kind = RunKind.FRESH
-    provider_run_session.provider_session_id = None
-    prepared_session.initial_provider_run_session.return_value = provider_run_session
-    prepared_session.resumable_provider_run_session.return_value = provider_run_session
-    prepared_session.protocol_reprompt_provider_run_session.return_value = None
-    return prepared_session
-
-
-def _deps_for_runner(runner: _RecordingRunner) -> RuntimeInvocationDependencies:
-    return RuntimeInvocationDependencies(
-        container_workspace="/workspace",
-        timeout_retries=0,
-        stage_key_for_role=lambda _: None,
-        prepare_session=lambda _: _make_session_mock(),
-        build_session=lambda *_: MagicMock(),
-        build_runner=lambda *_: runner,  # type: ignore[arg-type]
-        get_git_identity=lambda: ("Test User", "test@example.com"),
-        status_display_factory=plain_status_display_factory,
-        status_row_factory=plain_runtime_status_row_factory,
-        handle_provider_account_exhaustion=lambda svc, err: svc.mark_exhausted(
-            err.reset_time
-        ),
-    )
-
-
 class _FakeSingleServiceAdapter:
     """Execution adapter backed by one service and one runner."""
 
@@ -147,10 +113,10 @@ class _FakeSingleServiceAdapter:
     def resolve_service(self, service_name: str = "") -> _ExhaustingService:
         return self._service
 
-    def build_work_dependencies(
-        self, *, name, model, effort, service
-    ) -> RuntimeInvocationDependencies:
-        return _deps_for_runner(self._runner)
+    def build_work_dependencies(self, *, name, model, effort, service):
+        return make_runtime_invocation_dependencies(
+            build_runner=lambda *_: self._runner  # type: ignore[arg-type]
+        )
 
 
 class _FakeTwoServiceAdapter:
@@ -173,15 +139,15 @@ class _FakeTwoServiceAdapter:
             return self._primary
         return self._fallback
 
-    def build_work_dependencies(
-        self, *, name, model, effort, service
-    ) -> RuntimeInvocationDependencies:
+    def build_work_dependencies(self, *, name, model, effort, service):
         runner = (
             self._primary_runner
             if service.name == self._primary.name
             else self._fallback_runner
         )
-        return _deps_for_runner(runner)
+        return make_runtime_invocation_dependencies(
+            build_runner=lambda *_: runner  # type: ignore[arg-type]
+        )
 
 
 def _make_worktree(tmp_path: Path) -> WorktreeMount:
