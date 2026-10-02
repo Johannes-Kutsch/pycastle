@@ -2847,4 +2847,3 @@ def test_no_transcript_owner_does_not_trigger_fresh_start(tmp_path, monkeypatch)
 
     assert isinstance(result, CommitMessageOutput)
     assert call_log == ["resumed"], "no transcript owner must not trigger fresh start"
-

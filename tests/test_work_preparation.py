@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 from unittest.mock import MagicMock
 
 import pytest
@@ -359,6 +360,23 @@ def test_prepare_work_guard_does_not_build_state_on_cancelled_token(tmp_path):
     assert build_session_calls == []
 
 
+def test_prepare_work_unavailable_service_does_not_cancel_token(tmp_path):
+    mount_path = _mount(tmp_path, "issue-2482o3")
+    token = CancellationToken()
+
+    class _UnavailableService(_FakeService):
+        def is_available(self, now=None, *, model=None):
+            del now, model
+            return False
+
+    with pytest.raises(UsageLimitError):
+        _call_prepare(
+            _make_request(mount_path, token=token), _UnavailableService(), tmp_path
+        )
+
+    assert not token.is_cancelled
+
+
 # ── AC8: status_display defaulting ─────────────────────────────────────────
 
 
@@ -423,13 +441,7 @@ def test_prepare_work_render_prompt_uses_request_prompt_at_call_time(
             "INTERRUPTED_WORK": "some work",
         },
     )
-    modified_request = RunRequest(
-        **{
-            f.name: getattr(original_request, f.name)
-            for f in original_request.__dataclass_fields__.values()
-        }
-        | {"prompt": modified_prompt},
-    )
+    modified_request = dataclasses.replace(original_request, prompt=modified_prompt)
 
     captured: list[PromptInvocation] = []
 
