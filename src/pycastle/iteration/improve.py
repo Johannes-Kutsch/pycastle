@@ -66,8 +66,9 @@ def _candidate_namespace(idx: int) -> str:
 
 class _PhaseHandler:
     """Per-phase seam owning step construction, body text, gate queries, output
-    verification, and outcome recording. Default implementations are no-ops;
-    concrete subclasses override only the methods relevant to their phase."""
+    verification, and outcome recording. Most defaults are no-ops; subclasses
+    override the methods relevant to their phase. apply_outcome must be
+    overridden — the base raises NotImplementedError."""
 
     in_flight_token: str = ""
 
