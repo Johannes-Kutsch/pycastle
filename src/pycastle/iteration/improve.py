@@ -42,7 +42,7 @@ from pycastle.iteration.preflight import (
     PreflightCache,
     PreflightHITL,
 )
-from pycastle.iteration.sandbox_role_session import reusable_sandbox_entry
+from pycastle.iteration.sandbox_role_session import ReusableSandboxKind, sandbox_entry
 from pycastle.prompts.dispatch import PromptKind
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import compute_candidate_budget
@@ -642,10 +642,9 @@ async def improve_phase(
             cfg=deps.cfg,
         )
 
-        async with reusable_sandbox_entry(
-            IMPROVE_SANDBOX_INTENT,
+        async with sandbox_entry(
+            ReusableSandboxKind(intent=IMPROVE_SANDBOX_INTENT, role=AgentRole.IMPROVE),
             fingerprint=fingerprint,
-            role=AgentRole.IMPROVE,
             deps=deps,
             sha=verdict.sha,
             operating_branch=deps.cfg.operating_branch,

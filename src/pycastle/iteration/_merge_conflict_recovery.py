@@ -27,7 +27,7 @@ from pycastle.iteration._merge_reporting import MergeProgressReporter
 from pycastle.iteration._merged_branch_teardown import teardown_merged_branch
 from pycastle.iteration._utils import _advance_branch_ref_through_gate
 from pycastle.iteration.implement import branch_for
-from pycastle.iteration.sandbox_role_session import merger_sandbox_entry
+from pycastle.iteration.sandbox_role_session import MergerSandboxKind, sandbox_entry
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import build_merge_scope_args
@@ -131,8 +131,8 @@ async def _recover_active_conflict(
     conflict_branch = branch_for(active_issue["number"])
     fingerprint = hashlib.sha256((safe_sha + conflict_branch).encode()).hexdigest()
     try:
-        async with merger_sandbox_entry(
-            active_issue["number"],
+        async with sandbox_entry(
+            MergerSandboxKind(issue_number=active_issue["number"]),
             fingerprint=fingerprint,
             deps=deps,
             sha=safe_sha,

@@ -43,7 +43,7 @@ from pycastle.iteration._utils import (
     _advance_branch_ref_through_gate,
     _wait_for_operating_branch_release,
 )
-from pycastle.iteration.sandbox_role_session import reusable_sandbox_entry
+from pycastle.iteration.sandbox_role_session import ReusableSandboxKind, sandbox_entry
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
 from pycastle.prompts.scope_args import (
@@ -116,10 +116,12 @@ class BranchRefreshBoundary:
             current_sha = deps.git_svc.get_branch_sha(deps.repo_root, branch)
             fingerprint = _diverge_sandbox_fingerprint(current_sha, branch)
             try:
-                async with reusable_sandbox_entry(
-                    self._DIVERGE_SANDBOX_INTENT,
+                async with sandbox_entry(
+                    ReusableSandboxKind(
+                        intent=self._DIVERGE_SANDBOX_INTENT,
+                        role=AgentRole.DIVERGENCE_RESOLVER,
+                    ),
                     fingerprint=fingerprint,
-                    role=AgentRole.DIVERGENCE_RESOLVER,
                     deps=deps,
                     sha=current_sha,
                     operating_branch=deps.cfg.operating_branch,
