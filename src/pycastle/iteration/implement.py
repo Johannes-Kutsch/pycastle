@@ -331,7 +331,7 @@ async def implement_phase(
         ],
         return_exceptions=True,
     )
-    from pycastle.iteration._implement_dispatch_classify import (  # local import breaks circular dependency
+    from pycastle.iteration._implement_dispatch_classify import (  # noqa: PLC0415 — local import breaks circular dependency
         ClassifyFatal,
         classify,
     )
