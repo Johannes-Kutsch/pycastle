@@ -6,8 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from agent_runtime.errors import HardAgentError
-
 from pycastle.agents.output_protocol import (
     AgentRole,
     AgentSuccessOutput,
@@ -17,12 +15,8 @@ from pycastle.agents.runner import AgentRunnerProtocol, RunRequest
 from pycastle.config import Config
 from pycastle.display.status_display import StatusDisplay
 from pycastle.errors import (
-    AgentFailedError,
     BranchCollisionError,
-    ModelNotAvailableError,
     SetupPhaseError,
-    TransientAgentError,
-    UsageLimitError,
 )
 from pycastle.execution_contracts import CancellationToken
 from pycastle.infrastructure.worktree import (
@@ -277,63 +271,6 @@ async def run_issue(
     return issue
 
 
-_FATAL_ERROR_PRIORITY: tuple[type[Exception], ...] = (
-    AgentFailedError,
-    HardAgentError,
-    TransientAgentError,
-    ModelNotAvailableError,
-)
-
-
-def _raise_first_fatal(results: list, priority: tuple[type[Exception], ...]) -> None:
-    best: Exception | None = None
-    best_rank = len(priority)
-    for result in results:
-        if not isinstance(result, Exception):
-            continue
-        for rank, cls in enumerate(priority):
-            if isinstance(result, cls) and rank < best_rank:
-                best = result
-                best_rank = rank
-                break
-    if best is not None:
-        raise best
-
-
-def _build_implement_result(
-    issues: list[dict],
-    results: list,
-    deps: _ImplementDeps,
-    usage_limit_errors: list[UsageLimitError],
-) -> ImplementResult:
-    usage_limit_hit = bool(usage_limit_errors)
-    usage_limit_reset_time = next(
-        (e.reset_time for e in usage_limit_errors if e.reset_time is not None),
-        None,
-    )
-    first = usage_limit_errors[0] if usage_limit_errors else None
-    completed: list[dict] = []
-    errors: list[tuple[dict, Exception]] = []
-    for issue, result in zip(issues, results, strict=False):
-        if isinstance(result, UsageLimitError):
-            continue
-        if isinstance(result, Exception):
-            deps.logger.log_error(issue, result)
-            errors.append((issue, result))
-        elif isinstance(result, dict):
-            completed.append(issue)
-    return ImplementResult(
-        completed=completed,
-        errors=errors,
-        usage_limit_hit=usage_limit_hit,
-        usage_limit_reset_time=usage_limit_reset_time,
-        usage_limit_provider=first.provider if first else None,
-        usage_limit_raw_message=first.raw_message if first else None,
-        usage_limit_account_label=first.account_label if first else None,
-        usage_limit_is_permanent=first.is_permanent if first else False,
-    )
-
-
 async def implement_phase(
     issues: list[dict],
     deps: _ImplementDeps,
@@ -394,6 +331,12 @@ async def implement_phase(
         ],
         return_exceptions=True,
     )
-    _raise_first_fatal(results, _FATAL_ERROR_PRIORITY)
-    usage_limit_errors = [r for r in results if isinstance(r, UsageLimitError)]
-    return _build_implement_result(issues, results, deps, usage_limit_errors)
+    from pycastle.iteration._implement_dispatch_classify import (  # local import breaks circular dependency
+        ClassifyFatal,
+        classify,
+    )
+
+    outcome = classify(issues, list(results), log_error=deps.logger.log_error)
+    if isinstance(outcome, ClassifyFatal):
+        raise outcome.exception
+    return outcome.result
