@@ -1,4 +1,3 @@
-import asyncio
 import contextlib
 import dataclasses
 from collections.abc import Callable, Coroutine
@@ -25,7 +24,7 @@ from agent_runtime.runtime import (
 
 from pycastle import _time as _time_module
 from pycastle import stage_registry
-from pycastle.agents import protocol_reprompt
+from pycastle.agents._work_preparation import _CONTAINER_WORKSPACE, _prepare_work
 from pycastle.agents.attempt_loop import (
     _decide_transition,
     _RaiseAgentFailed,
@@ -81,7 +80,7 @@ from pycastle.infrastructure.preflight_failure_interpreter import (
     PreflightCommandFailure,
 )
 from pycastle.managed_worktree_mount_policy import enforce_managed_worktree_mount
-from pycastle.prompts.dispatch import PromptInvocation, render_prompt_invocation
+from pycastle.prompts.dispatch import PromptInvocation
 from pycastle.prompts.pipeline import PromptRenderer
 from pycastle.prompts.scope_args import build_interrupted_work_clause
 from pycastle.services import GitService
@@ -98,8 +97,6 @@ from pycastle.services.service_registry import ServiceRegistry
 from pycastle.session import RoleSession, RunKind
 from pycastle.session.service_session_store import ServiceSessionStore
 
-_CONTAINER_WORKSPACE = "/home/agent/workspace"
-
 
 def _minimum_unknown_reset_or_default(
     reset_time: datetime | None,
@@ -114,20 +111,6 @@ def _minimum_unknown_reset_or_default(
         minimum_unknown_reset_duration=minimum_unknown_reset_duration,
     )
     return wake - timedelta(minutes=2)
-
-
-def _default_effort() -> str:
-    return "medium"
-
-
-def _default_model(service: AgentService) -> str:
-    valid_models = service.valid_models()
-    for candidate in ("gpt-5.5", "gpt-5.4", "haiku", "opus", "sonnet"):
-        if candidate in valid_models:
-            return candidate
-    if valid_models:
-        return min(valid_models)
-    return "gpt-5.5"
 
 
 class _UnavailableDockerSession:
@@ -203,47 +186,6 @@ class AgentRunnerProtocol(Protocol):
         status_display: StatusDisplay | None = None,
         work_body: str = "",
     ) -> list[PreflightCommandFailure]: ...
-
-
-async def _render_runtime_prompt(
-    *,
-    prompt_invocation: PromptInvocation,
-    renderer: PromptRenderer,
-    runner: ContainerRunner,
-    run_kind: RunKind,
-) -> str:
-    loop = asyncio.get_running_loop()
-
-    async def _container_exec(command: str) -> str:
-        return await loop.run_in_executor(
-            None,
-            runner.exec_command,
-            command,
-        )
-
-    return await render_prompt_invocation(
-        prompt_invocation,
-        renderer=renderer,
-        run_kind=run_kind,
-        exec_fn=_container_exec,
-    )
-
-
-@dataclasses.dataclass(frozen=True)
-class _RuntimeResourceBundle:
-    service: AgentService
-    role_session: RoleSession
-    provider_state_dir: Path
-    state_dir_container_path: str
-    provider_auth: Any
-    resolved_model: str
-    resolved_effort: str
-    git_name: str
-    git_email: str
-    session: Any  # DockerSession
-    runner: Any  # ContainerRunner
-    runtime_client: Any
-    model_display: ModelDisplayMetadata
 
 
 class AgentRunner:
@@ -469,76 +411,6 @@ class AgentRunner:
             role=role.value,
         )
 
-    def _assemble_runtime_resources(
-        self, request: RunRequest, status_display: StatusDisplay
-    ) -> _RuntimeResourceBundle:
-        service = self._resolve_service(request.service)
-        role_session = RoleSession(
-            request.mount_path,
-            request.role,
-            request.session_namespace,
-        )
-        state_dir_relpath = service.state_dir_relpath(
-            request.role, request.session_namespace
-        )
-        if state_dir_relpath is not None:
-            provider_state_dir: Path = request.mount_path / state_dir_relpath
-            state_dir_container_path = str(
-                Path(_CONTAINER_WORKSPACE) / state_dir_relpath
-            )
-        else:
-            provider_state_dir = role_session.path
-            state_dir_container_path = str(
-                Path(_CONTAINER_WORKSPACE)
-                / role_session.path.relative_to(request.mount_path)
-            )
-        _auth_seed_action = service.auth_seed_action(provider_state_dir)
-        if _auth_seed_action is not None:
-            _auth_seed_action.apply()
-        provider_auth = service.provider_auth()
-        resolved_model = request.model or _default_model(service)
-        resolved_effort = request.effort or _default_effort()
-        git_name = self._git_service.get_user_name()
-        git_email = self._git_service.get_user_email()
-        session = self._build_session(
-            request.mount_path,
-            service,
-            state_dir_container_path,
-        )
-        runner = ContainerRunner(
-            request.name,
-            session,
-            _ContainerRunnerConfig(
-                cfg=self._cfg,
-                model=resolved_model,
-                effort=resolved_effort,
-                status_display=status_display,
-                service=service,
-                mount_path=request.mount_path,
-            ),
-        )
-        runtime_client = runner.get_runtime_client()
-        model_display = ModelDisplayMetadata(
-            service=service.name,
-            model=resolved_model,
-            effort=resolved_effort,
-        )
-        return _RuntimeResourceBundle(
-            service=service,
-            role_session=role_session,
-            provider_state_dir=provider_state_dir,
-            state_dir_container_path=state_dir_container_path,
-            provider_auth=provider_auth,
-            resolved_model=resolved_model,
-            resolved_effort=resolved_effort,
-            git_name=git_name,
-            git_email=git_email,
-            session=session,
-            runner=runner,
-            runtime_client=runtime_client,
-            model_display=model_display,
-        )
-
     async def run(self, request: RunRequest) -> AgentSuccessOutput:
         self._enforce_role_mount_precondition(
             name=request.name,
@@ -548,72 +420,58 @@ class AgentRunner:
         return await translate_run_outcome(self._run(request), request)
 
     async def _run(self, request: RunRequest) -> AgentOutput:
-        invocation = request.prompt
         service = self._resolve_service(request.service)
-        color_key: int | None = None
-        if request.role in (AgentRole.IMPLEMENTER, AgentRole.REVIEWER):
-            issue_number_str = invocation.scope_args.get("ISSUE_NUMBER", "")
-            if issue_number_str.isdigit():
-                color_key = int(issue_number_str)
-
-        token = request.token if request.token is not None else CancellationToken()
-        if token.is_cancelled or not service.is_available():
-            raise UsageLimitError(
-                reset_time=None,
-                stage_key=stage_registry.stage_key_for_role(request.role),
-            )
-
-        status_display = (
-            request.status_display
-            if request.status_display is not None
-            else PlainStatusDisplay()
+        prep = _prepare_work(
+            request,
+            service,
+            self._cfg,
+            self._git_service,
+            self._renderer,
+            self._build_session,
         )
-        resources = self._assemble_runtime_resources(request, status_display)
 
         async with status_row(
-            status_display,
+            prep.status_display,
             request.name,
             kind="agent",
             must_close=False,
             config=StatusRowConfig(
-                color_key=color_key,
+                color_key=prep.color_key,
                 work_body=request.work_body,
-                model_display=resources.model_display,
+                model_display=prep.model_display,
             ),
         ) as row:
             try:
                 try:
-                    await resources.runner.setup(
-                        resources.git_name, resources.git_email
-                    )
+                    await prep.runner.setup(prep.git_name, prep.git_email)
                 except DockerError as exc:
                     raise SetupPhaseError(request.role.value, str(exc)) from exc
-                status_display.update_phase(request.name, WORK_PHASE)
+                prep.status_display.update_phase(request.name, WORK_PHASE)
                 loop = _AttemptLoop(
                     host=self,
-                    service=resources.service,
-                    runner=resources.runner,
-                    runtime_client=resources.runtime_client,
-                    role_session=resources.role_session,
-                    provider_state_dir=resources.provider_state_dir,
-                    provider_auth=resources.provider_auth,
-                    status_display=status_display,
-                    resolved_model=resources.resolved_model,
-                    resolved_effort=resources.resolved_effort,
+                    service=prep.service,
+                    runner=prep.runner,
+                    runtime_client=prep.runtime_client,
+                    role_session=prep.role_session,
+                    provider_state_dir=prep.provider_state_dir,
+                    provider_auth=prep.provider_auth,
+                    status_display=prep.status_display,
+                    resolved_model=prep.resolved_model,
+                    resolved_effort=prep.resolved_effort,
                     timeout_retries=self._cfg.timeout_retries,
                     idle_timeout=self._cfg.idle_timeout,
-                    invocation=invocation,
-                    role=request.role,
+                    render_prompt=prep.render_prompt,
+                    protocol_reprompt_plan=prep.planned_protocol_reprompt,
                 )
                 output = await loop.run(request)
-                if token.is_cancelled:
+                if request.token is not None and request.token.is_cancelled:
                     row.close("cancelled", shutdown_style="interrupted")
                 else:
                     row.close("finished")
                 return output
             finally:
                 with contextlib.suppress(OSError):
-                    resources.session.__exit__(None, None, None)
+                    prep.session.__exit__(None, None, None)
 
     async def run_preflight(
         self,
@@ -674,8 +532,8 @@ class _AttemptLoop:
         resolved_effort: str,
         timeout_retries: int,
         idle_timeout: int,
-        invocation: PromptInvocation,
-        role: AgentRole,
+        render_prompt: Callable[..., Any],
+        protocol_reprompt_plan: Callable[[str | None], str],
     ) -> None:
         self._host = host
         self.service = service
@@ -689,30 +547,14 @@ class _AttemptLoop:
         self.resolved_effort = resolved_effort
         self.timeout_retries = timeout_retries
         self.idle_timeout = idle_timeout
-        self._invocation = invocation
-        self._role = role
+        self._render_prompt_fn = render_prompt
+        self._protocol_reprompt_plan_fn = protocol_reprompt_plan
 
     async def _render_prompt(self, request: RunRequest, run_kind: RunKind) -> str:
-        return await _render_runtime_prompt(
-            prompt_invocation=request.prompt,
-            renderer=self._host._renderer,  # noqa: SLF001
-            runner=self.runner,
-            run_kind=run_kind,
-        )
+        return await self._render_prompt_fn(request, run_kind)
 
     def _protocol_reprompt_plan(self, parser_error: str | None) -> str:
-        def _render_expected_output_shape() -> str:
-            return self._host._renderer.render_expected_output_shape(  # noqa: SLF001
-                self._invocation.template,
-                self._invocation.scope_args,
-            )
-
-        return protocol_reprompt.plan_protocol_reprompt(
-            role=self._role,
-            invocation=self._invocation,
-            parser_error=parser_error if parser_error is not None else "unknown",
-            render_expected_output_shape=_render_expected_output_shape,
-        )
+        return self._protocol_reprompt_plan_fn(parser_error)
 
     def _handle_provider_account_exhaustion(
         self, service: AgentService, error: UsageLimitError

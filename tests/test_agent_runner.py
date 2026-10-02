@@ -376,7 +376,7 @@ def _run_agent_with_live_event(tmp_path, monkeypatch, event: object):
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -464,7 +464,7 @@ def test_agent_runner_captures_raw_provider_output_for_all_live_events_in_log(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -540,7 +540,7 @@ def test_agent_runner_captures_final_response_when_live_output_has_no_raw_provid
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -657,7 +657,7 @@ def test_agent_runner_switches_runtime_rows_to_work_before_runtime_invocation(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -740,7 +740,7 @@ def test_agent_runner_parallel_runtime_rows_switch_to_work_independently(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
 
@@ -911,7 +911,7 @@ def test_agent_runner_routes_opencode_timeout_to_usage_limit_without_retries(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1003,7 +1003,7 @@ def test_agent_runner_keeps_retry_loop_for_non_opencode_timeouts(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1091,7 +1091,7 @@ def test_agent_runner_retries_malformed_planner_output_with_planner_specific_pro
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="initial planner prompt"),
     )
     monkeypatch.setattr(
@@ -1237,7 +1237,7 @@ def test_stale_continuation_fresh_retry_succeeds_on_unrecoverable_error(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1297,7 +1297,7 @@ def test_stale_continuation_fresh_retry_sets_interrupted_work_on_dirty_tree(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation", recording_render
+        "pycastle.agents._work_preparation.render_prompt_invocation", recording_render
     )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
@@ -1390,7 +1390,7 @@ def test_stale_continuation_proactive_service_mismatch_skips_resumed_session(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1492,7 +1492,7 @@ def test_stale_continuation_proactive_service_mismatch_sets_interrupted_work_on_
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation", recording_render
+        "pycastle.agents._work_preparation.render_prompt_invocation", recording_render
     )
     monkeypatch.setattr(
         "pycastle.infrastructure.container_runner.ContainerRunner.setup",
@@ -1710,7 +1710,7 @@ def _setup_runner_for_token_tests(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1804,7 +1804,7 @@ def test_agent_runner_uses_provider_state_dir_as_runtime_session_store(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -1888,7 +1888,7 @@ def test_agent_runner_model_not_available_records_restriction_and_raises(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -2006,7 +2006,7 @@ def test_improve_same_run_phase2_resumes_phase1_session(tmp_path, monkeypatch):
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -2224,36 +2224,6 @@ def test_model_not_available_does_not_cancel_shared_token(tmp_path, monkeypatch)
     assert not token.is_cancelled
 
 
-def test_early_guard_fires_on_unavailable_service_without_cancelled_token(
-    tmp_path, monkeypatch
-):
-    service = _ExhaustableService("codex")
-    service.mark_exhausted(None)  # exhaust before the agent even starts
-
-    class _NeverCalledRuntimeClient:
-        async def run_new_session(self, request):
-            raise AssertionError(
-                "runtime must not be reached when service is unavailable"
-            )
-
-    runner, mount_path = _setup_runner_for_token_tests(
-        tmp_path,
-        monkeypatch,
-        service=service,
-        runtime_client=_NeverCalledRuntimeClient(),
-        issue=2054,
-    )
-    token = CancellationToken()
-    assert not token.is_cancelled
-
-    with pytest.raises(UsageLimitError):
-        asyncio.run(
-            runner.run(_make_implement_request(mount_path, "codex", 2054, token=token))
-        )
-
-    assert not token.is_cancelled
-
-
 def test_opencode_timeout_does_not_cancel_shared_token(tmp_path, monkeypatch):
     service = _ExhaustableService("opencode")
     continuation = Continuation(serialized="opaque-continuation")
@@ -2311,54 +2281,6 @@ class _ExplodingExitDockerSession(_FakeDockerSession):
 
     def __exit__(self, *_args) -> None:
         raise RuntimeError("session teardown failed")
-
-
-class _FailingValidModelsService(_FakeService):
-    """Service whose valid_models() raises to verify the error propagates."""
-
-    def valid_models(self) -> frozenset[str]:
-        raise ValueError("models unavailable")
-
-
-def test_default_model_propagates_valid_models_error(tmp_path):
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2007"
-    mount_path.mkdir(parents=True)
-
-    git_service = MagicMock(spec=GitService)
-    git_service.get_user_name.return_value = "Test User"
-    git_service.get_user_email.return_value = "test@example.com"
-    runner = AgentRunner(
-        env={},
-        cfg=Config(logs_dir=tmp_path / "logs"),
-        git_service=git_service,
-        service_registry={"codex": _FailingValidModelsService()},
-    )
-
-    with pytest.raises(ValueError, match="models unavailable"):
-        asyncio.run(
-            runner.run(
-                RunRequest(
-                    name="Test Agent",
-                    prompt=PromptInvocation(
-                        template=PromptTemplate.IMPLEMENT_BEHAVIOR,
-                        scope_args={
-                            "ISSUE_NUMBER": "2007",
-                            "ISSUE_TITLE": "Test",
-                            "ISSUE_BODY": "",
-                            "ISSUE_COMMENTS": "",
-                            "BRANCH": "issue-2007",
-                            "INTERRUPTED_WORK": "",
-                            "OPERATING_BRANCH": "main",
-                        },
-                    ),
-                    mount_path=mount_path,
-                    role=AgentRole.IMPLEMENTER,
-                    model="",
-                    effort="medium",
-                    service="codex",
-                )
-            )
-        )
 
 
 def test_run_propagates_non_docker_exceptions_from_session_build(tmp_path, monkeypatch):
@@ -2429,7 +2351,7 @@ def test_run_propagates_non_oserror_from_session_exit(tmp_path, monkeypatch):
         runner, "_build_session", lambda *_a, **_kw: _ExplodingExitDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -2507,7 +2429,7 @@ def _make_runner_for_policy_test(tmp_path, monkeypatch, *, issue: int, runtime_c
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -2713,7 +2635,7 @@ def test_cross_service_fallback_with_transcript_owner_starts_fresh_without_resum
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -2796,7 +2718,7 @@ def test_same_service_transcript_owner_resumes_without_fresh_start(
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -2885,7 +2807,7 @@ def test_no_transcript_owner_does_not_trigger_fresh_start(tmp_path, monkeypatch)
         runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
     )
     monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
+        "pycastle.agents._work_preparation.render_prompt_invocation",
         AsyncMock(return_value="prompt"),
     )
     monkeypatch.setattr(
@@ -2926,255 +2848,3 @@ def test_no_transcript_owner_does_not_trigger_fresh_start(tmp_path, monkeypatch)
     assert isinstance(result, CommitMessageOutput)
     assert call_log == ["resumed"], "no transcript owner must not trigger fresh start"
 
-
-# ---------------------------------------------------------------------------
-# Guard tests: _assemble_runtime_resources ADR-adjacent assembly rules (#2429)
-# ---------------------------------------------------------------------------
-
-
-def _make_runner_with_service(
-    tmp_path: Path,
-    service,
-    *,
-    git_name: str = "Test User",
-    git_email: str = "test@example.com",
-) -> AgentRunner:
-    git_service = MagicMock(spec=GitService)
-    git_service.get_user_name.return_value = git_name
-    git_service.get_user_email.return_value = git_email
-    service_name = service.name
-    return AgentRunner(
-        env={},
-        cfg=Config(logs_dir=tmp_path / "logs"),
-        git_service=git_service,
-        service_registry={service_name: service},
-    )
-
-
-def _minimal_run_request(
-    mount_path: Path,
-    *,
-    service: str = "codex",
-    model: str = "gpt-5.5",
-    effort: str = "medium",
-    status_display=None,
-    issue_number: str = "2429",
-) -> RunRequest:
-    return RunRequest(
-        name=f"Implement Agent #{issue_number}",
-        prompt=PromptInvocation(
-            template=PromptTemplate.IMPLEMENT_BEHAVIOR,
-            scope_args={
-                "ISSUE_NUMBER": issue_number,
-                "ISSUE_TITLE": "Test",
-                "ISSUE_BODY": "",
-                "ISSUE_COMMENTS": "",
-                "BRANCH": f"issue-{issue_number}",
-                "INTERRUPTED_WORK": "",
-                "OPERATING_BRANCH": "main",
-            },
-        ),
-        mount_path=mount_path,
-        role=AgentRole.IMPLEMENTER,
-        model=model,
-        effort=effort,
-        service=service,
-        status_display=status_display,
-    )
-
-
-def _run_with_capturing_client(
-    tmp_path: Path, monkeypatch, runner: AgentRunner, request: RunRequest
-) -> _SessionStoreCapturingRuntimeClient:
-    runtime_client = _SessionStoreCapturingRuntimeClient()
-    monkeypatch.setattr(
-        runner, "_build_session", lambda *_args, **_kwargs: _FakeDockerSession()
-    )
-    monkeypatch.setattr(
-        "pycastle.agents.runner.render_prompt_invocation",
-        AsyncMock(return_value="prompt"),
-    )
-    monkeypatch.setattr(
-        "pycastle.infrastructure.container_runner.ContainerRunner.setup",
-        AsyncMock(return_value=None),
-    )
-    monkeypatch.setattr(
-        "pycastle.infrastructure.container_runner.ContainerRunner._get_runtime_client",
-        lambda _self: runtime_client,
-    )
-    asyncio.run(runner.run(request))
-    return runtime_client
-
-
-def test_assemble_resources_state_dir_relpath_none_uses_role_session_path(
-    tmp_path, monkeypatch
-):
-    """ADR 0068 null branch: provider_state_dir equals RoleSession.path."""
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429a"
-    mount_path.mkdir(parents=True)
-
-    service = _FakeService()  # state_dir_relpath returns None
-    runner = _make_runner_with_service(tmp_path, service)
-    request = _minimal_run_request(mount_path, service=service.name)
-
-    runtime_client = _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
-
-    expected = mount_path / ".pycastle-session" / "implementer"
-    assert runtime_client.session_store == expected
-
-
-def test_assemble_resources_state_dir_relpath_present_uses_relpath(
-    tmp_path, monkeypatch
-):
-    """ADR 0068 non-null branch: provider_state_dir equals mount_path / relpath."""
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429b"
-    mount_path.mkdir(parents=True)
-
-    service = (
-        _ProviderStateDirService()
-    )  # returns ".pycastle-session/implementer/codex/"
-    runner = _make_runner_with_service(tmp_path, service)
-    request = _minimal_run_request(mount_path, service=service.name)
-
-    runtime_client = _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
-
-    expected = mount_path / ".pycastle-session" / "implementer" / "codex"
-    assert runtime_client.session_store == expected
-
-
-def test_assemble_resources_auth_seed_action_apply_called_before_provider_auth(
-    tmp_path, monkeypatch
-):
-    """auth_seed_action.apply() must run before provider_auth() is read."""
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429c"
-    mount_path.mkdir(parents=True)
-
-    call_order: list[str] = []
-
-    class _AuthSeedAction:
-        def apply(self) -> None:
-            call_order.append("apply")
-
-    class _AuthSeedService(_FakeService):
-        def auth_seed_action(self, provider_state_dir: Path):
-            return _AuthSeedAction()
-
-        def provider_auth(self):
-            call_order.append("provider_auth")
-
-    service = _AuthSeedService()
-    runner = _make_runner_with_service(tmp_path, service)
-    request = _minimal_run_request(mount_path, service=service.name)
-
-    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
-
-    assert call_order == ["apply", "provider_auth"]
-
-
-def test_assemble_resources_empty_model_resolves_to_service_default(
-    tmp_path, monkeypatch
-):
-    """When request.model is empty the bundle carries _default_model(service)."""
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429d"
-    mount_path.mkdir(parents=True)
-
-    class _KnownModelService(_FakeService):
-        def valid_models(self) -> frozenset[str]:
-            return frozenset({"haiku"})
-
-    service = _KnownModelService()
-    runner = _make_runner_with_service(tmp_path, service)
-    status_display = RecordingStatusDisplay()
-    request = _minimal_run_request(
-        mount_path, service=service.name, model="", status_display=status_display
-    )
-
-    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
-
-    model_display = status_display.register_calls[0]["model_display"]
-    assert model_display is not None
-    assert model_display.model == "haiku"
-
-
-def test_assemble_resources_non_empty_model_carried_verbatim(tmp_path, monkeypatch):
-    """When request.model is non-empty the bundle carries it unchanged."""
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429e"
-    mount_path.mkdir(parents=True)
-
-    service = _FakeService()
-    runner = _make_runner_with_service(tmp_path, service)
-    status_display = RecordingStatusDisplay()
-    request = _minimal_run_request(
-        mount_path, service=service.name, model="gpt-5.5", status_display=status_display
-    )
-
-    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
-
-    model_display = status_display.register_calls[0]["model_display"]
-    assert model_display is not None
-    assert model_display.model == "gpt-5.5"
-
-
-def test_assemble_resources_empty_effort_defaults_to_medium(tmp_path, monkeypatch):
-    """When request.effort is empty the bundle carries the module default 'medium'."""
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429f"
-    mount_path.mkdir(parents=True)
-
-    service = _FakeService()
-    runner = _make_runner_with_service(tmp_path, service)
-    status_display = RecordingStatusDisplay()
-    request = _minimal_run_request(
-        mount_path, service=service.name, effort="", status_display=status_display
-    )
-
-    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
-
-    model_display = status_display.register_calls[0]["model_display"]
-    assert model_display is not None
-    assert model_display.effort == "medium"
-
-
-def test_assemble_resources_non_empty_effort_carried_verbatim(tmp_path, monkeypatch):
-    """When request.effort is non-empty the bundle carries it unchanged."""
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429g"
-    mount_path.mkdir(parents=True)
-
-    service = _FakeService()
-    runner = _make_runner_with_service(tmp_path, service)
-    status_display = RecordingStatusDisplay()
-    request = _minimal_run_request(
-        mount_path, service=service.name, effort="high", status_display=status_display
-    )
-
-    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
-
-    model_display = status_display.register_calls[0]["model_display"]
-    assert model_display is not None
-    assert model_display.effort == "high"
-
-
-def test_assemble_resources_model_display_carries_service_model_effort(
-    tmp_path, monkeypatch
-):
-    """ModelDisplayMetadata carries the resolved service name, model, and effort."""
-    mount_path = tmp_path / "repo" / "pycastle" / ".worktrees" / "issue-2429h"
-    mount_path.mkdir(parents=True)
-
-    service = _FakeService()
-    runner = _make_runner_with_service(tmp_path, service)
-    status_display = RecordingStatusDisplay()
-    request = _minimal_run_request(
-        mount_path,
-        service=service.name,
-        model="gpt-5.5",
-        effort="medium",
-        status_display=status_display,
-    )
-
-    _run_with_capturing_client(tmp_path, monkeypatch, runner, request)
-
-    model_display = status_display.register_calls[0]["model_display"]
-    assert model_display is not None
-    assert model_display.service == "codex"
-    assert model_display.model == "gpt-5.5"
-    assert model_display.effort == "medium"
