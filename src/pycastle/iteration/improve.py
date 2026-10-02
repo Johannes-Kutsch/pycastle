@@ -61,24 +61,6 @@ def _candidate_namespace(idx: int) -> str:
     return f"{_CANDIDATE_NS_PREFIX}/{idx}"
 
 
-# ── Outcome writer ────────────────────────────────────────────────────────────
-
-
-class _OutcomeWriter(Protocol):
-    def record_scan_candidates(
-        self,
-        candidates: tuple[ScanCandidateItem, ...],
-        *,
-        no_candidate: bool,
-    ) -> None: ...
-
-    def mark_spec_complete(self) -> None: ...
-
-    def advance_cursor(self) -> None: ...
-
-    def advance_report_cursor(self) -> None: ...
-
-
 # ── Phase handler seam ────────────────────────────────────────────────────────
 
 
@@ -131,13 +113,13 @@ class _PhaseHandler:
             return PromptKind.ROLE_PROMPT
         return PromptKind.FOLLOW_UP
 
-    def record_outcome(
+    def apply_outcome(
         self,
         step: "Step",
         output: AgentOutput,
-        writer: "_OutcomeWriter",
+        state: "ImprovePhaseDriver",
     ) -> None:
-        pass
+        raise NotImplementedError(f"{type(self).__name__} must implement apply_outcome")
 
 
 # ── Phase config and Step ─────────────────────────────────────────────────────
@@ -197,19 +179,19 @@ class _ScanPhaseHandler(_PhaseHandler):
             ns = _candidate_namespace(idx)
             main_session.fork_namespace_if_missing(ns)
 
-    def record_outcome(
+    def apply_outcome(
         self,
         step: Step,  # noqa: ARG002
         output: AgentOutput,
-        writer: "_OutcomeWriter",
+        state: "ImprovePhaseDriver",
     ) -> None:
         if isinstance(output, ScanCandidatesOutput):
-            writer.record_scan_candidates(
+            state.record_scan_candidates(
                 tuple(output.candidates),
                 no_candidate=False,
             )
-        elif isinstance(output, NoCandidateOutput):
-            writer.record_scan_candidates((), no_candidate=True)
+        else:
+            state.record_scan_candidates((), no_candidate=True)
 
 
 class _CandidatePhaseHandler(_PhaseHandler):
@@ -281,13 +263,13 @@ class _SpecPhaseHandler(_CandidatePhaseHandler):
     def needs_candidate_gate(self, step: Step) -> bool:
         return step.kind is PromptKind.FOLLOW_UP
 
-    def record_outcome(
+    def apply_outcome(
         self,
         step: Step,  # noqa: ARG002
         output: AgentOutput,  # noqa: ARG002
-        writer: "_OutcomeWriter",
+        state: "ImprovePhaseDriver",
     ) -> None:
-        writer.mark_spec_complete()
+        state.mark_spec_complete()
 
 
 class _TicketsPhaseHandler(_CandidatePhaseHandler):
@@ -315,13 +297,13 @@ class _TicketsPhaseHandler(_CandidatePhaseHandler):
     def should_file_and_decide(self) -> bool:
         return True
 
-    def record_outcome(
+    def apply_outcome(
         self,
         step: Step,  # noqa: ARG002
         output: AgentOutput,  # noqa: ARG002
-        writer: "_OutcomeWriter",
+        state: "ImprovePhaseDriver",
     ) -> None:
-        writer.advance_cursor()
+        state.advance_cursor()
 
 
 class _ReportPhaseHandler(_PhaseHandler):
@@ -345,13 +327,13 @@ class _ReportPhaseHandler(_PhaseHandler):
     ) -> str | None:
         return "filing no-candidate report"
 
-    def record_outcome(
+    def apply_outcome(
         self,
         step: Step,  # noqa: ARG002
         output: AgentOutput,  # noqa: ARG002
-        writer: "_OutcomeWriter",
+        state: "ImprovePhaseDriver",
     ) -> None:
-        writer.advance_report_cursor()
+        state.advance_report_cursor()
 
 
 # ── Phase registry ────────────────────────────────────────────────────────────
@@ -585,7 +567,7 @@ class ImprovePhaseDriver:
         self._store.write_cursor(1)
 
     def record_outcome(self, step: "Step", output: AgentOutput) -> None:
-        step.cfg.handler.record_outcome(step, output, self)
+        step.cfg.handler.apply_outcome(step, output, self)
         self._store.clear_in_flight()
 
     @property
