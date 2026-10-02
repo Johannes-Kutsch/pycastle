@@ -17,7 +17,6 @@ from pycastle.agents.slice_classifier import (
 )
 from pycastle.config.types import StageOverride
 from pycastle.execution_contracts import (
-    RuntimeInvocationDependencies,
     RuntimeRunSession,
     WorkSessionState,
     WorktreeMount,
@@ -27,8 +26,8 @@ from pycastle.runtime_session import RunKind
 from pycastle.services.runtime_services import ToolPolicy
 from pycastle.services.service_registry import ServiceRegistry
 from tests.support.runtime import (
-    plain_runtime_status_row_factory,
-    plain_status_display_factory,
+    _make_session_mock,
+    make_runtime_invocation_dependencies,
 )
 
 if TYPE_CHECKING:
@@ -97,35 +96,6 @@ class _SimpleService:
         return None
 
 
-def _make_session_mock() -> MagicMock:
-    prepared_session = MagicMock()
-    prepared_session.provider_state_dir_container_path = None
-    provider_run_session = MagicMock()
-    provider_run_session.run_kind = RunKind.FRESH
-    provider_run_session.provider_session_id = None
-    prepared_session.initial_provider_run_session.return_value = provider_run_session
-    prepared_session.resumable_provider_run_session.return_value = provider_run_session
-    prepared_session.protocol_reprompt_provider_run_session.return_value = None
-    return prepared_session
-
-
-def _deps_for_runner(runner: _CapturingRunner) -> RuntimeInvocationDependencies:
-    return RuntimeInvocationDependencies(
-        container_workspace="/workspace",
-        timeout_retries=0,
-        stage_key_for_role=lambda _: None,
-        prepare_session=lambda _: _make_session_mock(),
-        build_session=lambda *_: MagicMock(),
-        build_runner=lambda *_: runner,  # type: ignore[arg-type]
-        get_git_identity=lambda: ("Test User", "test@example.com"),
-        status_display_factory=plain_status_display_factory,
-        status_row_factory=plain_runtime_status_row_factory,
-        handle_provider_account_exhaustion=lambda svc, err: svc.mark_exhausted(
-            err.reset_time
-        ),
-    )
-
-
 class _FakeAdapter:
     def __init__(self, service: _SimpleService, runner: _CapturingRunner) -> None:
         self._service = service
@@ -134,10 +104,10 @@ class _FakeAdapter:
     def resolve_service(self, service_name: str = "") -> _SimpleService:
         return self._service
 
-    def build_work_dependencies(
-        self, *, name, model, effort, service
-    ) -> RuntimeInvocationDependencies:
-        return _deps_for_runner(self._runner)
+    def build_work_dependencies(self, *, name, model, effort, service):
+        return make_runtime_invocation_dependencies(
+            build_runner=lambda *_: self._runner,  # type: ignore[arg-type]
+        )
 
 
 def _make_worktree(tmp_path: Path) -> WorktreeMount:
@@ -374,34 +344,6 @@ class _DirCreatingPreparedRunSessionState:
         return None
 
 
-def _deps_with_dir_creation(
-    runner: _CapturingRunner,
-    captured_state_paths: list[str | None],
-) -> RuntimeInvocationDependencies:
-    def _capturing_build_session(
-        mount_path: object,
-        service: object,
-        provider_state_dir_container_path: str | None,
-    ) -> MagicMock:
-        captured_state_paths.append(provider_state_dir_container_path)
-        return MagicMock()
-
-    return RuntimeInvocationDependencies(
-        container_workspace="/workspace",
-        timeout_retries=0,
-        stage_key_for_role=lambda _: None,
-        prepare_session=_DirCreatingPreparedRunSessionState,  # type: ignore[arg-type]
-        build_session=_capturing_build_session,  # type: ignore[arg-type]
-        build_runner=lambda *_: runner,  # type: ignore[arg-type]
-        get_git_identity=lambda: ("Test User", "test@example.com"),
-        status_display_factory=plain_status_display_factory,
-        status_row_factory=plain_runtime_status_row_factory,
-        handle_provider_account_exhaustion=lambda svc, err: svc.mark_exhausted(
-            err.reset_time
-        ),
-    )
-
-
 class _TrackingAdapter:
     def __init__(self, service: _SimpleService, runner: _CapturingRunner) -> None:
         self._service = service
@@ -413,8 +355,20 @@ class _TrackingAdapter:
 
     def build_work_dependencies(
         self, *, name: str, model: str, effort: str, service: object
-    ) -> RuntimeInvocationDependencies:
-        return _deps_with_dir_creation(self._runner, self.captured_state_paths)
+    ):
+        def _capturing_build_session(
+            mount_path: object,
+            service: object,
+            provider_state_dir_container_path: str | None,
+        ) -> MagicMock:
+            self.captured_state_paths.append(provider_state_dir_container_path)
+            return MagicMock()
+
+        return make_runtime_invocation_dependencies(
+            build_session=_capturing_build_session,  # type: ignore[arg-type]
+            prepare_session=_DirCreatingPreparedRunSessionState,  # type: ignore[arg-type]
+            build_runner=lambda *_: self._runner,  # type: ignore[arg-type]
+        )
 
 
 # ── Behavior 6: classify_slice leaves no Implementer session dir ──────────────
