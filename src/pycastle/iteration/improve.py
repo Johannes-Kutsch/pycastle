@@ -1,7 +1,7 @@
 import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from pycastle.agents.output_protocol import (
     AgentOutput,
@@ -61,78 +61,25 @@ def _candidate_namespace(idx: int) -> str:
     return f"{_CANDIDATE_NS_PREFIX}/{idx}"
 
 
-# ── Phase handler seam ────────────────────────────────────────────────────────
-
-
-class _PhaseHandler:
-    """Per-phase seam owning step construction, body text, gate queries, output
-    verification, and outcome recording. Most defaults are no-ops; subclasses
-    override the methods relevant to their phase. apply_outcome must be
-    overridden — the base raises NotImplementedError."""
-
-    in_flight_token: str = ""
-
-    def step_body(
-        self,
-        step: "Step",  # noqa: ARG002
-        *,
-        n_candidates: int,  # noqa: ARG002
-        improve_dispatched_count: int,  # noqa: ARG002
-        improve_max: int | None,  # noqa: ARG002
-    ) -> str | None:
-        return None
-
-    def announce_candidate(
-        self,
-        step: "Step",  # noqa: ARG002
-        *,
-        status_display: StatusDisplay,  # noqa: ARG002
-        candidate_count: int,  # noqa: ARG002
-        last_announced_idx: int,
-    ) -> int:
-        return last_announced_idx
-
-    def needs_candidate_gate(self, step: "Step") -> bool:  # noqa: ARG002
-        return False
-
-    def verify_output(self, step: "Step", output: AgentOutput) -> None:
-        pass
-
-    def post_record(
-        self,
-        step: "Step",
-        output: AgentOutput,
-        sandbox_path: Path,
-    ) -> None:
-        pass
-
-    def should_file_and_decide(self) -> bool:
-        return False
-
-    def resume_kind(self, in_flight: str | None) -> PromptKind:
-        if self.in_flight_token and in_flight == self.in_flight_token:
-            return PromptKind.ROLE_PROMPT
-        return PromptKind.FOLLOW_UP
-
-    def apply_outcome(
-        self,
-        step: "Step",
-        output: AgentOutput,
-        state: "ImprovePhaseDriver",
-    ) -> None:
-        raise NotImplementedError(f"{type(self).__name__} must implement apply_outcome")
-
-
 # ── Phase config and Step ─────────────────────────────────────────────────────
 
 
 @dataclass(frozen=True)
 class _PhaseConfig:
+    prompt_key: str
     template: PromptTemplate
     namespace: str
     display_name: str
     display_body: str
-    handler: _PhaseHandler = field(compare=False, hash=False)
+    in_flight_token: str
+    make_step: Any = field(compare=False, hash=False)
+    step_body: Any = field(compare=False, hash=False)
+    announce_candidate: Any = field(compare=False, hash=False)
+    needs_candidate_gate: Any = field(compare=False, hash=False)
+    verify_output: Any = field(compare=False, hash=False)
+    post_record: Any = field(compare=False, hash=False)
+    should_file_and_decide: Any = field(compare=False, hash=False)
+    apply_outcome: Any = field(compare=False, hash=False)
 
 
 @dataclass(frozen=True)
@@ -145,54 +92,56 @@ class Step:
     candidate_idx: int | None = None
 
 
-# ── Concrete phase handlers ───────────────────────────────────────────────────
+# ── Shared no-op defaults ─────────────────────────────────────────────────────
 
 
-class _ScanPhaseHandler(_PhaseHandler):
-    in_flight_token = "01-scan"  # noqa: S105
+def _noop_step_body(
+    step: Step,  # noqa: ARG001
+    *,
+    n_candidates: int,  # noqa: ARG001
+    improve_dispatched_count: int,  # noqa: ARG001
+    improve_max: int | None,  # noqa: ARG001
+) -> str | None:
+    return None
 
-    def make_step(self, *, fetch_recent_spec_titles: bool) -> Step:
-        return Step(
-            prompt_key="01-scan.md",
-            cfg=_PHASES["01-scan.md"],
-            kind=PromptKind.ROLE_PROMPT,
-            fetch_recent_spec_titles=fetch_recent_spec_titles,
-        )
 
-    def verify_output(self, step: Step, output: AgentOutput) -> None:  # noqa: ARG002
-        if not isinstance(output, (ScanCandidatesOutput, NoCandidateOutput)):
-            raise AgentOutputProtocolError(
-                f"Scan phase completed without a <candidates> block. "
-                f"Expected ScanCandidatesOutput or NoCandidateOutput, "
-                f"got {type(output).__name__}."
-            )
+def _noop_announce_candidate(
+    step: Step,  # noqa: ARG001
+    *,
+    status_display: StatusDisplay,  # noqa: ARG001
+    candidate_count: int,  # noqa: ARG001
+    last_announced_idx: int,
+) -> int:
+    return last_announced_idx
 
-    def post_record(
-        self,
-        step: Step,  # noqa: ARG002
-        output: AgentOutput,
-        sandbox_path: Path,
-    ) -> None:
-        if not isinstance(output, ScanCandidatesOutput):
-            return
-        main_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
-        for idx in range(len(output.candidates)):
-            ns = _candidate_namespace(idx)
-            main_session.fork_namespace_if_missing(ns)
 
-    def apply_outcome(
-        self,
-        step: Step,  # noqa: ARG002
-        output: AgentOutput,
-        state: "ImprovePhaseDriver",
-    ) -> None:
-        if isinstance(output, ScanCandidatesOutput):
-            state.record_scan_candidates(
-                tuple(output.candidates),
-                no_candidate=False,
-            )
-        else:
-            state.record_scan_candidates((), no_candidate=True)
+def _noop_needs_candidate_gate(step: Step) -> bool:  # noqa: ARG001
+    return False
+
+
+def _noop_verify_output(step: Step, output: AgentOutput) -> None:
+    pass
+
+
+def _noop_post_record(
+    step: Step,
+    output: AgentOutput,
+    sandbox_path: Path,
+) -> None:
+    pass
+
+
+def _noop_should_file_and_decide() -> bool:
+    return False
+
+
+def _resume_kind(in_flight_token: str, in_flight: str | None) -> PromptKind:
+    if in_flight_token and in_flight == in_flight_token:
+        return PromptKind.ROLE_PROMPT
+    return PromptKind.FOLLOW_UP
+
+
+# ── Shared candidate-phase callables ──────────────────────────────────────────
 
 
 def _candidate_step_body(
@@ -235,199 +184,218 @@ def _announce_candidate(
     return candidate_idx
 
 
-class _SpecPhaseHandler(_PhaseHandler):
-    in_flight_token = "02-spec"  # noqa: S105
+# ── Scan phase callables ──────────────────────────────────────────────────────
 
-    def step_body(
-        self,
-        step: Step,
-        *,
-        n_candidates: int,
-        improve_dispatched_count: int,
-        improve_max: int | None,
-    ) -> str | None:
-        return _candidate_step_body(
-            step,
-            n_candidates=n_candidates,
-            improve_dispatched_count=improve_dispatched_count,
-            improve_max=improve_max,
+
+def _scan_make_step(*, fetch_recent_spec_titles: bool) -> Step:
+    return Step(
+        prompt_key="01-scan.md",
+        cfg=_PHASES["01-scan.md"],
+        kind=PromptKind.ROLE_PROMPT,
+        fetch_recent_spec_titles=fetch_recent_spec_titles,
+    )
+
+
+def _scan_verify_output(step: Step, output: AgentOutput) -> None:  # noqa: ARG001
+    if not isinstance(output, (ScanCandidatesOutput, NoCandidateOutput)):
+        raise AgentOutputProtocolError(
+            f"Scan phase completed without a <candidates> block. "
+            f"Expected ScanCandidatesOutput or NoCandidateOutput, "
+            f"got {type(output).__name__}."
         )
 
-    def announce_candidate(
-        self,
-        step: Step,
-        *,
-        status_display: StatusDisplay,
-        candidate_count: int,
-        last_announced_idx: int,
-    ) -> int:
-        return _announce_candidate(
-            step,
-            status_display=status_display,
-            candidate_count=candidate_count,
-            last_announced_idx=last_announced_idx,
+
+def _scan_post_record(
+    step: Step,  # noqa: ARG001
+    output: AgentOutput,
+    sandbox_path: Path,
+) -> None:
+    if not isinstance(output, ScanCandidatesOutput):
+        return
+    main_session = RoleSession(sandbox_path, AgentRole.IMPROVE, "main")
+    for idx in range(len(output.candidates)):
+        ns = _candidate_namespace(idx)
+        main_session.fork_namespace_if_missing(ns)
+
+
+def _scan_apply_outcome(
+    step: Step,  # noqa: ARG001
+    output: AgentOutput,
+    state: "ImprovePhaseDriver",
+) -> None:
+    if isinstance(output, ScanCandidatesOutput):
+        state.record_scan_candidates(
+            tuple(output.candidates),
+            no_candidate=False,
         )
-
-    def make_step(
-        self,
-        *,
-        kind: PromptKind,
-        idx: int,
-        candidate: ImproveCandidate,
-    ) -> Step:
-        cfg = dataclasses.replace(
-            _PHASES["02-spec.md"], namespace=_candidate_namespace(idx)
-        )
-        return Step(
-            prompt_key="02-spec.md",
-            cfg=cfg,
-            kind=kind,
-            fetch_recent_spec_titles=True,
-            candidate=candidate,
-            candidate_idx=idx,
-        )
-
-    def needs_candidate_gate(self, step: Step) -> bool:
-        return step.kind is PromptKind.FOLLOW_UP
-
-    def apply_outcome(
-        self,
-        step: Step,  # noqa: ARG002
-        output: AgentOutput,  # noqa: ARG002
-        state: "ImprovePhaseDriver",
-    ) -> None:
-        state.mark_spec_complete()
+    else:
+        state.record_scan_candidates((), no_candidate=True)
 
 
-class _TicketsPhaseHandler(_PhaseHandler):
-    in_flight_token = "03-tickets"  # noqa: S105
-
-    def step_body(
-        self,
-        step: Step,
-        *,
-        n_candidates: int,
-        improve_dispatched_count: int,
-        improve_max: int | None,
-    ) -> str | None:
-        return _candidate_step_body(
-            step,
-            n_candidates=n_candidates,
-            improve_dispatched_count=improve_dispatched_count,
-            improve_max=improve_max,
-        )
-
-    def announce_candidate(
-        self,
-        step: Step,
-        *,
-        status_display: StatusDisplay,
-        candidate_count: int,
-        last_announced_idx: int,
-    ) -> int:
-        return _announce_candidate(
-            step,
-            status_display=status_display,
-            candidate_count=candidate_count,
-            last_announced_idx=last_announced_idx,
-        )
-
-    def make_step(
-        self,
-        *,
-        kind: PromptKind,
-        idx: int,
-        candidate: ImproveCandidate,
-    ) -> Step:
-        cfg = dataclasses.replace(
-            _PHASES["03-tickets.md"], namespace=_candidate_namespace(idx)
-        )
-        return Step(
-            prompt_key="03-tickets.md",
-            cfg=cfg,
-            kind=kind,
-            fetch_recent_spec_titles=False,
-            candidate=candidate,
-            candidate_idx=idx,
-        )
-
-    def should_file_and_decide(self) -> bool:
-        return True
-
-    def apply_outcome(
-        self,
-        step: Step,  # noqa: ARG002
-        output: AgentOutput,  # noqa: ARG002
-        state: "ImprovePhaseDriver",
-    ) -> None:
-        state.advance_cursor()
+# ── Spec phase callables ──────────────────────────────────────────────────────
 
 
-class _ReportPhaseHandler(_PhaseHandler):
-    in_flight_token = "04-no-candidate-report"  # noqa: S105
+def _spec_make_step(
+    *,
+    kind: PromptKind,
+    idx: int,
+    candidate: ImproveCandidate,
+) -> Step:
+    cfg = dataclasses.replace(
+        _PHASES["02-spec.md"], namespace=_candidate_namespace(idx)
+    )
+    return Step(
+        prompt_key="02-spec.md",
+        cfg=cfg,
+        kind=kind,
+        fetch_recent_spec_titles=True,
+        candidate=candidate,
+        candidate_idx=idx,
+    )
 
-    def make_step(self, *, kind: PromptKind) -> Step:
-        return Step(
-            prompt_key="04-no-candidate-report.md",
-            cfg=_PHASES["04-no-candidate-report.md"],
-            kind=kind,
-            fetch_recent_spec_titles=True,
-        )
 
-    def step_body(
-        self,
-        step: Step,  # noqa: ARG002
-        *,
-        n_candidates: int,  # noqa: ARG002
-        improve_dispatched_count: int,  # noqa: ARG002
-        improve_max: int | None,  # noqa: ARG002
-    ) -> str | None:
-        return "filing no-candidate report"
+def _spec_needs_candidate_gate(step: Step) -> bool:
+    return step.kind is PromptKind.FOLLOW_UP
 
-    def apply_outcome(
-        self,
-        step: Step,  # noqa: ARG002
-        output: AgentOutput,  # noqa: ARG002
-        state: "ImprovePhaseDriver",
-    ) -> None:
-        state.advance_report_cursor()
+
+def _spec_apply_outcome(
+    step: Step,  # noqa: ARG001
+    output: AgentOutput,  # noqa: ARG001
+    state: "ImprovePhaseDriver",
+) -> None:
+    state.mark_spec_complete()
+
+
+# ── Tickets phase callables ───────────────────────────────────────────────────
+
+
+def _tickets_make_step(
+    *,
+    kind: PromptKind,
+    idx: int,
+    candidate: ImproveCandidate,
+) -> Step:
+    cfg = dataclasses.replace(
+        _PHASES["03-tickets.md"], namespace=_candidate_namespace(idx)
+    )
+    return Step(
+        prompt_key="03-tickets.md",
+        cfg=cfg,
+        kind=kind,
+        fetch_recent_spec_titles=False,
+        candidate=candidate,
+        candidate_idx=idx,
+    )
+
+
+def _tickets_should_file_and_decide() -> bool:
+    return True
+
+
+def _tickets_apply_outcome(
+    step: Step,  # noqa: ARG001
+    output: AgentOutput,  # noqa: ARG001
+    state: "ImprovePhaseDriver",
+) -> None:
+    state.advance_cursor()
+
+
+# ── Report phase callables ────────────────────────────────────────────────────
+
+
+def _report_make_step(*, kind: PromptKind) -> Step:
+    return Step(
+        prompt_key="04-no-candidate-report.md",
+        cfg=_PHASES["04-no-candidate-report.md"],
+        kind=kind,
+        fetch_recent_spec_titles=True,
+    )
+
+
+def _report_step_body(
+    step: Step,  # noqa: ARG001
+    *,
+    n_candidates: int,  # noqa: ARG001
+    improve_dispatched_count: int,  # noqa: ARG001
+    improve_max: int | None,  # noqa: ARG001
+) -> str | None:
+    return "filing no-candidate report"
+
+
+def _report_apply_outcome(
+    step: Step,  # noqa: ARG001
+    output: AgentOutput,  # noqa: ARG001
+    state: "ImprovePhaseDriver",
+) -> None:
+    state.advance_report_cursor()
 
 
 # ── Phase registry ────────────────────────────────────────────────────────────
 
-_scan_handler = _ScanPhaseHandler()
-_spec_handler = _SpecPhaseHandler()
-_tickets_handler = _TicketsPhaseHandler()
-_report_handler = _ReportPhaseHandler()
-
 _PHASES: dict[str, _PhaseConfig] = {
     "01-scan.md": _PhaseConfig(
+        prompt_key="01-scan.md",
         template=PromptTemplate.IMPROVE_SCAN,
         namespace="main",
         display_name="Scan Agent",
         display_body="picking an improvement",
-        handler=_scan_handler,
+        in_flight_token="01-scan",  # noqa: S106
+        make_step=_scan_make_step,
+        step_body=_noop_step_body,
+        announce_candidate=_noop_announce_candidate,
+        needs_candidate_gate=_noop_needs_candidate_gate,
+        verify_output=_scan_verify_output,
+        post_record=_scan_post_record,
+        should_file_and_decide=_noop_should_file_and_decide,
+        apply_outcome=_scan_apply_outcome,
     ),
     "02-spec.md": _PhaseConfig(
+        prompt_key="02-spec.md",
         template=PromptTemplate.IMPROVE_SPEC,
         namespace="main",
         display_name="Spec Agent",
         display_body="writing spec",
-        handler=_spec_handler,
+        in_flight_token="02-spec",  # noqa: S106
+        make_step=_spec_make_step,
+        step_body=_candidate_step_body,
+        announce_candidate=_announce_candidate,
+        needs_candidate_gate=_spec_needs_candidate_gate,
+        verify_output=_noop_verify_output,
+        post_record=_noop_post_record,
+        should_file_and_decide=_noop_should_file_and_decide,
+        apply_outcome=_spec_apply_outcome,
     ),
     "03-tickets.md": _PhaseConfig(
+        prompt_key="03-tickets.md",
         template=PromptTemplate.IMPROVE_TICKETS,
         namespace="main",
         display_name="Tickets Agent",
         display_body="filing tickets",
-        handler=_tickets_handler,
+        in_flight_token="03-tickets",  # noqa: S106
+        make_step=_tickets_make_step,
+        step_body=_candidate_step_body,
+        announce_candidate=_announce_candidate,
+        needs_candidate_gate=_noop_needs_candidate_gate,
+        verify_output=_noop_verify_output,
+        post_record=_noop_post_record,
+        should_file_and_decide=_tickets_should_file_and_decide,
+        apply_outcome=_tickets_apply_outcome,
     ),
     "04-no-candidate-report.md": _PhaseConfig(
+        prompt_key="04-no-candidate-report.md",
         template=PromptTemplate.IMPROVE_NO_CANDIDATE,
         namespace="main",
         display_name="Rejection Report Agent",
         display_body="filing no-candidate report",
-        handler=_report_handler,
+        in_flight_token="04-no-candidate-report",  # noqa: S106
+        make_step=_report_make_step,
+        step_body=_report_step_body,
+        announce_candidate=_noop_announce_candidate,
+        needs_candidate_gate=_noop_needs_candidate_gate,
+        verify_output=_noop_verify_output,
+        post_record=_noop_post_record,
+        should_file_and_decide=_noop_should_file_and_decide,
+        apply_outcome=_report_apply_outcome,
     ),
 }
 
@@ -502,16 +470,18 @@ class ImprovePhaseDriver:
         if record is None:
             # No record → spec phase. Check in-flight for mid-spec resume.
             in_flight = self._store.read_in_flight() if from_start else None
-            return _spec_handler.make_step(
-                kind=_spec_handler.resume_kind(in_flight),
+            spec_cfg = _PHASES["02-spec.md"]
+            return spec_cfg.make_step(
+                kind=_resume_kind(spec_cfg.in_flight_token, in_flight),
                 idx=idx,
                 candidate=candidate,
             )
 
         # Record exists → tickets phase.
         in_flight = self._store.read_in_flight() if from_start else None
-        return _tickets_handler.make_step(
-            kind=_tickets_handler.resume_kind(in_flight),
+        tickets_cfg = _PHASES["03-tickets.md"]
+        return tickets_cfg.make_step(
+            kind=_resume_kind(tickets_cfg.in_flight_token, in_flight),
             idx=idx,
             candidate=candidate,
         )
@@ -539,11 +509,14 @@ class ImprovePhaseDriver:
         if candidate_list is None:
             # Scan not done → return scan step.
             in_flight = self._store.read_in_flight()
-            step = _scan_handler.make_step(
-                fetch_recent_spec_titles=_scan_handler.resume_kind(in_flight)
+            scan_cfg = _PHASES["01-scan.md"]
+            step = scan_cfg.make_step(
+                fetch_recent_spec_titles=_resume_kind(
+                    scan_cfg.in_flight_token, in_flight
+                )
                 is PromptKind.FOLLOW_UP
             )
-            self._store.write_in_flight(step.cfg.handler.in_flight_token)
+            self._store.write_in_flight(step.cfg.in_flight_token)
             return step
 
         candidates = [
@@ -560,16 +533,17 @@ class ImprovePhaseDriver:
         if no_candidate:
             if self._no_candidate_report and cursor == 0:
                 in_flight = self._store.read_in_flight()
-                step = _report_handler.make_step(
-                    kind=_report_handler.resume_kind(in_flight)
+                report_cfg = _PHASES["04-no-candidate-report.md"]
+                step = report_cfg.make_step(
+                    kind=_resume_kind(report_cfg.in_flight_token, in_flight)
                 )
-                self._store.write_in_flight(step.cfg.handler.in_flight_token)
+                self._store.write_in_flight(step.cfg.in_flight_token)
                 return step
             return None
 
         next_step: Step | None = self._next_step_from_cursor(cursor, from_start=True)
         if next_step is not None:
-            self._store.write_in_flight(next_step.cfg.handler.in_flight_token)
+            self._store.write_in_flight(next_step.cfg.in_flight_token)
         return next_step
 
     def next(self) -> "Step | None":
@@ -579,8 +553,9 @@ class ImprovePhaseDriver:
 
         if self._no_candidate:
             if self._no_candidate_report and self._cursor == 0:
-                step = _report_handler.make_step(kind=PromptKind.FOLLOW_UP)
-                self._store.write_in_flight(step.cfg.handler.in_flight_token)
+                report_cfg = _PHASES["04-no-candidate-report.md"]
+                step = report_cfg.make_step(kind=PromptKind.FOLLOW_UP)
+                self._store.write_in_flight(step.cfg.in_flight_token)
                 return step
             return None
 
@@ -588,7 +563,7 @@ class ImprovePhaseDriver:
             self._cursor, from_start=False
         )
         if next_step is not None:
-            self._store.write_in_flight(next_step.cfg.handler.in_flight_token)
+            self._store.write_in_flight(next_step.cfg.in_flight_token)
         return next_step
 
     # ── _OutcomeWriter implementation ─────────────────────────────────────────
@@ -624,7 +599,7 @@ class ImprovePhaseDriver:
         self._store.write_cursor(1)
 
     def record_outcome(self, step: "Step", output: AgentOutput) -> None:
-        step.cfg.handler.apply_outcome(step, output, self)
+        step.cfg.apply_outcome(step, output, self)
         self._store.clear_in_flight()
 
     @property
@@ -716,7 +691,7 @@ async def improve_phase(
             step = driver.start()
             if (
                 step is not None
-                and step.cfg.handler.needs_candidate_gate(step)
+                and step.cfg.needs_candidate_gate(step)
                 and not _candidate_transcript_ok(step, sandbox_path)
             ):
                 deps.status_display.print(
@@ -735,15 +710,14 @@ async def improve_phase(
             completed_count = 0
             last_announced_idx = -1
             while step is not None:
-                handler = step.cfg.handler
                 n_candidates = driver.candidate_count or 0
-                last_announced_idx = handler.announce_candidate(
+                last_announced_idx = step.cfg.announce_candidate(
                     step,
                     status_display=deps.status_display,
                     candidate_count=n_candidates,
                     last_announced_idx=last_announced_idx,
                 )
-                body = handler.step_body(
+                body = step.cfg.step_body(
                     step,
                     n_candidates=n_candidates,
                     improve_dispatched_count=deps.improve_dispatched_count,
@@ -783,11 +757,11 @@ async def improve_phase(
                         preserve_session_on_completion=True,
                     )
                 )
-                handler.verify_output(step, output)
+                step.cfg.verify_output(step, output)
                 driver.record_outcome(step, output)
-                handler.post_record(step, output, sandbox_path)
+                step.cfg.post_record(step, output, sandbox_path)
 
-                if handler.should_file_and_decide():
+                if step.cfg.should_file_and_decide():
                     assert step.candidate_idx is not None  # noqa: S101
                     outcome = await file_and_decide(
                         candidate_idx=step.candidate_idx,
