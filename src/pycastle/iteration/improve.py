@@ -195,52 +195,78 @@ class _ScanPhaseHandler(_PhaseHandler):
             state.record_scan_candidates((), no_candidate=True)
 
 
-class _CandidatePhaseHandler(_PhaseHandler):
-    """Base for spec and tickets phases that operate on per-candidate namespaces."""
+def _candidate_step_body(
+    step: Step,
+    *,
+    n_candidates: int,
+    improve_dispatched_count: int,
+    improve_max: int | None,
+) -> str | None:
+    k = (step.candidate_idx + 1) if step.candidate_idx is not None else 1
+    if improve_max is not None:
+        return f"candidate {k}/{n_candidates} · improvement {improve_dispatched_count + k}/{improve_max}"
+    return f"candidate {k}/{n_candidates}"
+
+
+def _announce_candidate(
+    step: Step,
+    *,
+    status_display: StatusDisplay,
+    candidate_count: int,
+    last_announced_idx: int,
+) -> int:
+    candidate_ordinal = (
+        (step.candidate_idx + 1) if step.candidate_idx is not None else 1
+    )
+    candidate_idx = step.candidate_idx if step.candidate_idx is not None else 0
+    if candidate_idx == last_announced_idx:
+        return last_announced_idx
+    title = step.candidate.title if step.candidate else ""
+    if step.kind is PromptKind.ROLE_PROMPT:
+        status_display.print(
+            "Improve",
+            f'→ resuming candidate {candidate_ordinal}/{candidate_count} "{title}" at {step.cfg.display_name}',
+        )
+    else:
+        status_display.print(
+            "Improve",
+            f'→ candidate {candidate_ordinal}/{candidate_count} "{title}"',
+        )
+    return candidate_idx
+
+
+class _SpecPhaseHandler(_PhaseHandler):
+    in_flight_token = "02-spec"  # noqa: S105
 
     def step_body(
         self,
-        step: Step,
+        step: "Step",
         *,
         n_candidates: int,
         improve_dispatched_count: int,
         improve_max: int | None,
     ) -> str | None:
-        k = (step.candidate_idx + 1) if step.candidate_idx is not None else 1
-        if improve_max is not None:
-            return f"candidate {k}/{n_candidates} · improvement {improve_dispatched_count + k}/{improve_max}"
-        return f"candidate {k}/{n_candidates}"
+        return _candidate_step_body(
+            step,
+            n_candidates=n_candidates,
+            improve_dispatched_count=improve_dispatched_count,
+            improve_max=improve_max,
+        )
 
     def announce_candidate(
         self,
-        step: Step,
+        step: "Step",
         *,
         status_display: StatusDisplay,
         candidate_count: int,
         last_announced_idx: int,
     ) -> int:
-        candidate_ordinal = (
-            (step.candidate_idx + 1) if step.candidate_idx is not None else 1
+        return _announce_candidate(
+            step,
+            status_display=status_display,
+            candidate_count=candidate_count,
+            last_announced_idx=last_announced_idx,
         )
-        candidate_idx = step.candidate_idx if step.candidate_idx is not None else 0
-        if candidate_idx == last_announced_idx:
-            return last_announced_idx
-        title = step.candidate.title if step.candidate else ""
-        if step.kind is PromptKind.ROLE_PROMPT:
-            status_display.print(
-                "Improve",
-                f'→ resuming candidate {candidate_ordinal}/{candidate_count} "{title}" at {step.cfg.display_name}',
-            )
-        else:
-            status_display.print(
-                "Improve",
-                f'→ candidate {candidate_ordinal}/{candidate_count} "{title}"',
-            )
-        return candidate_idx
-
-
-class _SpecPhaseHandler(_CandidatePhaseHandler):
-    in_flight_token = "02-spec"  # noqa: S105
 
     def make_step(
         self,
@@ -273,8 +299,38 @@ class _SpecPhaseHandler(_CandidatePhaseHandler):
         state.mark_spec_complete()
 
 
-class _TicketsPhaseHandler(_CandidatePhaseHandler):
+class _TicketsPhaseHandler(_PhaseHandler):
     in_flight_token = "03-tickets"  # noqa: S105
+
+    def step_body(
+        self,
+        step: "Step",
+        *,
+        n_candidates: int,
+        improve_dispatched_count: int,
+        improve_max: int | None,
+    ) -> str | None:
+        return _candidate_step_body(
+            step,
+            n_candidates=n_candidates,
+            improve_dispatched_count=improve_dispatched_count,
+            improve_max=improve_max,
+        )
+
+    def announce_candidate(
+        self,
+        step: "Step",
+        *,
+        status_display: StatusDisplay,
+        candidate_count: int,
+        last_announced_idx: int,
+    ) -> int:
+        return _announce_candidate(
+            step,
+            status_display=status_display,
+            candidate_count=candidate_count,
+            last_announced_idx=last_announced_idx,
+        )
 
     def make_step(
         self,
