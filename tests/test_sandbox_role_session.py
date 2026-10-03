@@ -140,6 +140,24 @@ def test_sandbox_entry_reusable_kind_writes_fingerprint(deps):
     asyncio.run(run())
 
 
+# AC 3: unified entry yields RoleSession at sandbox_path for given role
+
+
+def test_sandbox_entry_yields_role_session_at_sandbox_path(deps):
+    async def run():
+        async with sandbox_entry(
+            ReusableSandboxKind(SandboxWorktreeIntent.PLAN, AgentRole.PLANNER),
+            fingerprint=FINGERPRINT,
+            deps=deps,
+            sha=None,
+            operating_branch=OPERATING_BRANCH,
+        ) as (sandbox_path, role_session):
+            assert isinstance(role_session, RoleSession)
+            assert role_session.path == sandbox_path / ".pycastle-session" / "planner"
+
+    asyncio.run(run())
+
+
 # AC 3: merger discriminator uses pycastle/merge-sandbox-issue-N naming
 
 
@@ -228,6 +246,24 @@ def test_sandbox_entry_merger_kind_no_continuation_rebuilds_worktree(deps, git_s
             operating_branch=OPERATING_BRANCH,
         ) as (sandbox_path, _role_session):
             assert not (sandbox_path / "prior_work.txt").exists()
+
+    asyncio.run(run())
+
+
+# AC 4: merger discriminator yields RoleSession with merger role
+
+
+def test_sandbox_entry_merger_kind_yields_merger_role(deps):
+    async def run():
+        async with sandbox_entry(
+            MergerSandboxKind(ISSUE_NUMBER),
+            fingerprint=FINGERPRINT,
+            deps=deps,
+            sha=None,
+            operating_branch=OPERATING_BRANCH,
+        ) as (sandbox_path, role_session):
+            assert isinstance(role_session, RoleSession)
+            assert role_session.path == sandbox_path / ".pycastle-session" / "merger"
 
     asyncio.run(run())
 
