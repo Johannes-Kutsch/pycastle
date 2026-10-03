@@ -322,14 +322,11 @@ async def run_iteration(deps: Deps) -> IterationOutcome:
         routed_result = _route_and_abort_agent_credential_failure(err, deps)
         if routed_result is not None:
             return routed_result
-        from pycastle.iteration import auto_file_issue
         from pycastle.iteration.hard_agent_error_report import (
             translate_hard_agent_error_to_abort,
         )
 
-        return translate_hard_agent_error_to_abort(
-            err, deps.cfg, deps.status_display, auto_file_issue
-        )
+        return translate_hard_agent_error_to_abort(err, deps.cfg, deps.status_display)
     except SetupPhaseError as err:
         return AbortedSetup(
             phase=err.phase,

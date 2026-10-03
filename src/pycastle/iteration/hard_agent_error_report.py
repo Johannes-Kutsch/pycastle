@@ -14,12 +14,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pycastle.bug_reporter import auto_file_issue
 from pycastle.iteration import AbortedHardApiError
 from pycastle.upstream_issue_report import compose_hard_agent_error_report
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from agent_runtime.errors import HardAgentError
 
     from pycastle.config import Config
@@ -30,17 +29,18 @@ def translate_hard_agent_error_to_abort(
     err: HardAgentError,
     cfg: Config,
     status_display: StatusDisplay,
-    bug_filer: Callable[..., str | None],
 ) -> AbortedHardApiError:
     """Translate a HardAgentError into AbortedHardApiError.
 
     Delegates title/body/label composition to the shared composer, files the
-    report via the injected bug_filer callable, prints a status message via the
-    injected StatusDisplay, and returns AbortedHardApiError.  Does not handle
-    credential failures.
+    report via auto_file_issue, prints a status message via the injected
+    StatusDisplay, and returns AbortedHardApiError.  Does not handle credential
+    failures.
     """
     composition = compose_hard_agent_error_report(err)
-    url = bug_filer(composition.title, composition.body, composition.labels, cfg=cfg)
+    url = auto_file_issue(
+        composition.title, composition.body, composition.labels, cfg=cfg
+    )
 
     status_code_str = (
         str(composition.effective_status_code)
