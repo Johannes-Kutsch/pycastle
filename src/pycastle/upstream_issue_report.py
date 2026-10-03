@@ -16,6 +16,7 @@ and never propagates.
 from __future__ import annotations
 
 import dataclasses
+import json
 import platform
 import sys
 from importlib.metadata import PackageNotFoundError, version
@@ -24,11 +25,98 @@ from typing import TYPE_CHECKING
 import click
 
 if TYPE_CHECKING:
+    from agent_runtime.errors import HardAgentError
+
     from pycastle.display.status_display import StatusDisplay
     from pycastle.managed_worktree_mount_policy import ManagedWorktreeMountRejected
     from pycastle.services import GithubService
 
 BUG_AND_TRIAGE_LABELS: list[str] = ["bug", "needs-triage"]
+
+_SERVICE_LABEL_MAP = {
+    "claude": "Claude",
+    "codex": "Codex",
+    "opencode": "OpenCode",
+}
+
+
+@dataclasses.dataclass(frozen=True)
+class _ParsedEnvelope:
+    text: str | None
+    status_code: int | None
+
+
+def _parse_envelope(raw: str) -> _ParsedEnvelope:
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return _ParsedEnvelope(text=None, status_code=None)
+
+    text: str | None = None
+    if isinstance(parsed, dict):
+        if parsed.get("result"):
+            text = str(parsed["result"])
+        else:
+            error = parsed.get("error")
+            if isinstance(error, dict):
+                data = error.get("data")
+                if isinstance(data, dict) and data.get("message"):
+                    text = str(data["message"])
+                elif not isinstance(data, dict) and error.get("message"):
+                    text = str(error["message"])
+
+    status_code: int | None = None
+    if isinstance(parsed, dict):
+        status = parsed.get("status")
+        status_code = (
+            status if isinstance(status, int) and not isinstance(status, bool) else None
+        )
+
+    return _ParsedEnvelope(text=text, status_code=status_code)
+
+
+@dataclasses.dataclass(frozen=True)
+class HardAgentErrorComposition:
+    """Result of composing a hard-agent-error upstream report."""
+
+    title: str
+    body: str
+    labels: list[str]
+    effective_status_code: int | None
+
+
+def compose_hard_agent_error_report(err: HardAgentError) -> HardAgentErrorComposition:
+    """Compose title, body, and labels for a hard-agent-error upstream report.
+
+    Pure: no I/O, no filing, no printing, does not read Config.  Never raises.
+    """
+    raw: str = err.args[0] if err.args else ""
+    service_name: str = getattr(err, "service_name", "claude") or "claude"
+
+    envelope = _parse_envelope(raw)
+    error_text = envelope.text if envelope.text is not None else raw
+    effective_status_code = (
+        envelope.status_code
+        if envelope.status_code is not None
+        else getattr(err, "status_code", None)
+    )
+    first_line = next(iter(error_text.splitlines()), "") or str(err) or "<unknown>"
+    service_label = _SERVICE_LABEL_MAP.get(service_name, service_name)
+
+    title = f"[pycastle] {service_label} API {effective_status_code}: {first_line}"
+    body = hard_agent_error_body(
+        raw=raw,
+        effective_status_code=effective_status_code,
+        caller=getattr(err, "caller", ""),
+        service_name=service_name,
+    )
+    return HardAgentErrorComposition(
+        title=title,
+        body=body,
+        labels=BUG_AND_TRIAGE_LABELS,
+        effective_status_code=effective_status_code,
+    )
+
 
 # ── Env-block helper ─────────────────────────────────────────────────────────
 
