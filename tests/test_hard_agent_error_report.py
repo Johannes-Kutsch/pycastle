@@ -21,7 +21,6 @@ from pycastle.iteration.hard_agent_error_report import (
 from tests.support import RecordingStatusDisplay
 
 _AUTO_FILE_ISSUE = "pycastle.iteration.hard_agent_error_report.auto_file_issue"
-_DEFAULT_URL = "https://github.com/owner/repo/issues/1"
 
 
 def _make_err(
