@@ -58,6 +58,8 @@ from pycastle.services import (
 )
 from pycastle.services.git_service import OperatingBranchCheckedOutError
 
+_DIVERGE_SANDBOX_INTENT = SandboxWorktreeIntent.DIVERGENCE
+
 
 def _diverge_sandbox_fingerprint(safe_sha: str, branch: str) -> str:
     return hashlib.sha256(f"{safe_sha}\n{branch}".encode()).hexdigest()
@@ -92,80 +94,6 @@ class _PreflightDeps(Protocol):
     repo_root: Path
 
 
-class BranchRefreshBoundary:
-    _DIVERGE_SANDBOX_INTENT = SandboxWorktreeIntent.DIVERGENCE
-
-    async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
-        """Operating-branch refresh per ADR 0062, escalating to the divergence-resolver on divergence."""
-        from pycastle.services._operating_branch_refresh import OperatingBranchDiverged
-
-        branch = deps.cfg.operating_branch
-        while True:
-            try:
-                relation = deps.git_svc.refresh_operating_branch(deps.repo_root, branch)
-            except OperatingBranchCheckedOutError:
-                await _wait_for_operating_branch_release(deps, "Preflight")
-                continue
-
-            if not isinstance(relation, OperatingBranchDiverged):
-                return
-
-            pull_exc = GitCommandError(
-                f"operating branch {branch!r} has diverged from origin", returncode=1
-            )
-            current_sha = deps.git_svc.get_branch_sha(deps.repo_root, branch)
-            fingerprint = _diverge_sandbox_fingerprint(current_sha, branch)
-            try:
-                async with sandbox_entry(
-                    ReusableSandboxKind(
-                        intent=self._DIVERGE_SANDBOX_INTENT,
-                        role=AgentRole.DIVERGENCE_RESOLVER,
-                    ),
-                    fingerprint=fingerprint,
-                    deps=deps,
-                    sha=current_sha,
-                    operating_branch=deps.cfg.operating_branch,
-                ) as (sandbox_path, role_session):
-                    await deps.agent_runner.run(
-                        RunRequest(
-                            name="Divergence Resolver",
-                            prompt=build_prompt_invocation(
-                                PromptTemplate.DIVERGENCE_RESOLVE,
-                                build_divergence_scope_args(branch=branch),
-                            ),
-                            mount_path=sandbox_path,
-                            role=AgentRole.DIVERGENCE_RESOLVER,
-                            service=deps.cfg.merge_override.service,
-                            status_display=deps.status_display,
-                            work_body="Resolving divergence",
-                        )
-                    )
-                    await _advance_branch_ref_through_gate(
-                        deps,
-                        "Preflight",
-                        branch,
-                        f"pycastle/{self._DIVERGE_SANDBOX_INTENT}",
-                    )
-                    role_session.discard()
-            except AgentCredentialFailureError:
-                raise
-            except (
-                SetupPhaseError,
-                WorktreeError,
-                WorktreeTimeoutError,
-                AgentTimeoutError,
-                TransientAgentError,
-                HardAgentError,
-                AgentFailedError,
-                UsageLimitError,
-                ModelNotAvailableError,
-                GitCommandError,
-                OSError,
-            ):
-                raise pull_exc from None
-            return
-
-
 class PreflightCache:
     """Single-slot, process-scoped cache for preflight verdicts.
 
@@ -176,7 +104,6 @@ class PreflightCache:
     def __init__(self) -> None:
         self._verdict: PreflightResult | None = None
         self._lock: asyncio.Lock = asyncio.Lock()
-        self._branch_refresh = BranchRefreshBoundary()
 
     def _resolved_preflight_issue_override(self, deps: _PreflightDeps) -> StageOverride:
         registry = cast(
@@ -252,7 +179,74 @@ class PreflightCache:
         return first_decision
 
     async def pull_with_resolution(self, deps: _PreflightDeps) -> None:
-        await self._branch_refresh.pull_with_resolution(deps)
+        """Operating-branch refresh per ADR 0062, escalating to the divergence-resolver on divergence."""
+        from pycastle.services._operating_branch_refresh import OperatingBranchDiverged
+
+        branch = deps.cfg.operating_branch
+        while True:
+            try:
+                relation = deps.git_svc.refresh_operating_branch(deps.repo_root, branch)
+            except OperatingBranchCheckedOutError:
+                await _wait_for_operating_branch_release(deps, "Preflight")
+                continue
+
+            if not isinstance(relation, OperatingBranchDiverged):
+                return
+
+            pull_exc = GitCommandError(
+                f"operating branch {branch!r} has diverged from origin", returncode=1
+            )
+            current_sha = deps.git_svc.get_branch_sha(deps.repo_root, branch)
+            fingerprint = _diverge_sandbox_fingerprint(current_sha, branch)
+            try:
+                async with sandbox_entry(
+                    ReusableSandboxKind(
+                        intent=_DIVERGE_SANDBOX_INTENT,
+                        role=AgentRole.DIVERGENCE_RESOLVER,
+                    ),
+                    fingerprint=fingerprint,
+                    deps=deps,
+                    sha=current_sha,
+                    operating_branch=deps.cfg.operating_branch,
+                ) as (sandbox_path, role_session):
+                    await deps.agent_runner.run(
+                        RunRequest(
+                            name="Divergence Resolver",
+                            prompt=build_prompt_invocation(
+                                PromptTemplate.DIVERGENCE_RESOLVE,
+                                build_divergence_scope_args(branch=branch),
+                            ),
+                            mount_path=sandbox_path,
+                            role=AgentRole.DIVERGENCE_RESOLVER,
+                            service=deps.cfg.merge_override.service,
+                            status_display=deps.status_display,
+                            work_body="Resolving divergence",
+                        )
+                    )
+                    await _advance_branch_ref_through_gate(
+                        deps,
+                        "Preflight",
+                        branch,
+                        f"pycastle/{_DIVERGE_SANDBOX_INTENT}",
+                    )
+                    role_session.discard()
+            except AgentCredentialFailureError:
+                raise
+            except (
+                SetupPhaseError,
+                WorktreeError,
+                WorktreeTimeoutError,
+                AgentTimeoutError,
+                TransientAgentError,
+                HardAgentError,
+                AgentFailedError,
+                UsageLimitError,
+                ModelNotAvailableError,
+                GitCommandError,
+                OSError,
+            ):
+                raise pull_exc from None
+            return
 
     async def get_safe_sha(self, deps: _PreflightDeps) -> PreflightResult:
         from pycastle.infrastructure.worktree import detached_transient_worktree
@@ -260,7 +254,7 @@ class PreflightCache:
         async with self._lock:
             await _wait_for_operating_branch_release(deps, "Preflight")
             try:
-                await self._branch_refresh.pull_with_resolution(deps)
+                await self.pull_with_resolution(deps)
             except GitCommandError as pull_exc:
                 if "diverged" not in str(pull_exc).lower():
                     deps.status_display.print(
