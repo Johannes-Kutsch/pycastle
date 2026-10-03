@@ -240,7 +240,7 @@ class _SpecPhaseHandler(_PhaseHandler):
 
     def step_body(
         self,
-        step: "Step",
+        step: Step,
         *,
         n_candidates: int,
         improve_dispatched_count: int,
@@ -255,7 +255,7 @@ class _SpecPhaseHandler(_PhaseHandler):
 
     def announce_candidate(
         self,
-        step: "Step",
+        step: Step,
         *,
         status_display: StatusDisplay,
         candidate_count: int,
@@ -304,7 +304,7 @@ class _TicketsPhaseHandler(_PhaseHandler):
 
     def step_body(
         self,
-        step: "Step",
+        step: Step,
         *,
         n_candidates: int,
         improve_dispatched_count: int,
@@ -319,7 +319,7 @@ class _TicketsPhaseHandler(_PhaseHandler):
 
     def announce_candidate(
         self,
-        step: "Step",
+        step: Step,
         *,
         status_display: StatusDisplay,
         candidate_count: int,
