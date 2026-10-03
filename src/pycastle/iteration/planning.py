@@ -27,7 +27,7 @@ from pycastle.iteration.planning_issue_intake import (
     apply_slice_classifier_verdicts,
 )
 from pycastle.iteration.preflight import PreflightAFK, PreflightCache, PreflightHITL
-from pycastle.iteration.sandbox_role_session import reusable_sandbox_entry
+from pycastle.iteration.sandbox_role_session import ReusableSandboxKind, sandbox_entry
 from pycastle.iteration.startable import startable_issues
 from pycastle.prompts.dispatch import build_prompt_invocation
 from pycastle.prompts.pipeline import PromptTemplate
@@ -258,10 +258,9 @@ async def planning_phase(
         _sorted_ids = sorted(i["number"] for i in all_open_issues)
         fingerprint = hashlib.sha256(f"{sha}:{_sorted_ids}".encode()).hexdigest()
 
-        async with reusable_sandbox_entry(
-            SandboxWorktreeIntent.PLAN,
+        async with sandbox_entry(
+            ReusableSandboxKind(SandboxWorktreeIntent.PLAN, AgentRole.PLANNER),
             fingerprint=fingerprint,
-            role=AgentRole.PLANNER,
             deps=deps,
             sha=sha,
             operating_branch=deps.cfg.operating_branch,
