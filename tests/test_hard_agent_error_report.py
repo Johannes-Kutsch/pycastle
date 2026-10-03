@@ -181,6 +181,18 @@ def test_unrelated_top_level_json_uses_raw_message():
     assert raw in title or raw in body
 
 
+def test_non_object_json_array_uses_raw_message():
+    raw = json.dumps([1, 2, 3])
+    filer = RecordingBugFiler(return_url=None)
+    display = RecordingStatusDisplay()
+    err = _make_err(message=raw, service_name="claude")
+
+    translate_hard_agent_error_to_abort(err, Config(), display, filer)
+
+    title, body, _ = filer.calls[0]
+    assert raw in title or raw in body
+
+
 # ── Status-code extraction ────────────────────────────────────────────────────
 
 

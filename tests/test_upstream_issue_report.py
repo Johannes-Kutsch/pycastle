@@ -472,3 +472,68 @@ def test_diagnostic_mount_fallback_body_contains_expected_sections(tmp_path):
     assert "invalid_mount_path" in body
     assert "test failed" in body
     assert "## Environment" not in body
+
+
+# ── compose_hard_agent_error_report ──────────────────────────────────────────
+
+
+def _make_hard_agent_error(
+    message: str = "error",
+    service_name: str = "claude",
+    caller: str = "Implementer",
+    status_code: int | None = None,
+):
+    from agent_runtime.errors import HardAgentError
+
+    err = HardAgentError(message=message, service_name=service_name)
+    err.caller = caller
+    if status_code is not None:
+        setattr(err, "status_code", status_code)  # noqa: B010
+    return err
+
+
+def test_compose_hard_agent_error_report_returns_composition_fields():
+    from pycastle.upstream_issue_report import compose_hard_agent_error_report
+
+    err = _make_hard_agent_error(message="plain error", service_name="claude")
+    result = compose_hard_agent_error_report(err)
+
+    assert result.title.startswith("[pycastle] Claude API")
+    assert "plain error" in result.title
+    assert result.labels == ["bug", "needs-triage"]
+    assert "## Raw result envelope" in result.body
+
+
+def test_compose_hard_agent_error_report_non_object_json_uses_raw():
+    import json
+
+    from pycastle.upstream_issue_report import compose_hard_agent_error_report
+
+    raw = json.dumps([1, 2, 3])
+    err = _make_hard_agent_error(message=raw, service_name="claude")
+    result = compose_hard_agent_error_report(err)
+
+    assert raw in result.title or raw in result.body
+
+
+def test_compose_hard_agent_error_report_never_raises_on_empty_message():
+    from pycastle.upstream_issue_report import compose_hard_agent_error_report
+
+    err = _make_hard_agent_error(message="", service_name="claude", caller="")
+    result = compose_hard_agent_error_report(err)
+
+    assert "<unknown>" in result.title
+    assert result.effective_status_code is None
+
+
+def test_compose_hard_agent_error_report_effective_status_code_exposed():
+    import json
+
+    from pycastle.upstream_issue_report import compose_hard_agent_error_report
+
+    raw = json.dumps({"result": "msg", "status": 429})
+    err = _make_hard_agent_error(message=raw, service_name="claude")
+    result = compose_hard_agent_error_report(err)
+
+    assert result.effective_status_code == 429
+    assert "429" in result.title
